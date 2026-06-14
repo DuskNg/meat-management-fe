@@ -34,6 +34,15 @@ export default function CustomerDetailScreen() {
   const editDebtModalRef = useRef(null);
   const editPaymentModalRef = useRef(null);
 
+  // Xử lý quay lại an toàn khi tải lại trang trực tiếp
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
+
   // 1. Tải thông tin chi tiết khách hàng
   const {
     data: customerResponse,
@@ -187,7 +196,7 @@ export default function CustomerDetailScreen() {
       <View style={styles.contentWrapper}>
         {/* ── HEADER ─────────────────────────────────────────────────────── */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Text style={styles.backButtonText}>⬅ QUAY LẠI</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -240,18 +249,13 @@ export default function CustomerDetailScreen() {
 
           {/* ── TIÊU ĐỀ LỊCH SỬ ── */}
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>📚 LỊCH SỬ MUA BÁN & THANH TOÁN</Text>
-            {dayGroups.length > 0 && (
-              <View style={styles.countBadge}>
-                <Text style={styles.countText}>{dayGroups.length} ngày</Text>
-              </View>
-            )}
+            <Text style={styles.sectionTitle}>📚 LỊCH SỬ MUA BÁN</Text>
           </View>
 
           {/* Chú thích */}
           {dayGroups.length > 0 && (
             <View style={styles.legend}>
-              <Text style={styles.legendHint}>• Bấm ô để xem chi tiết</Text>
+              <Text style={styles.legendHint}>• Bấm vào ô để xem chi tiết</Text>
             </View>
           )}
 
