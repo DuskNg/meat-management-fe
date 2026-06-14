@@ -16,6 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import ProductListModal from './ProductListModal';
+import DatePickerInput from './DatePickerInput';
 
 const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   // Lấy chuỗi ngày hôm nay định dạng DD/MM/YYYY
@@ -267,21 +268,12 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   onChangeText={(text) => setPrice(formatNumberString(text))}
                 />
 
-                {/* Nhập ngày ghi nợ */}
-                <Text style={styles.label}>4. Ngày ghi nợ (ngày/tháng/năm):</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ví dụ: 14/06/2026"
-                  placeholderTextColor={COLORS.textLight}
+                {/* Chọn ngày ghi nợ bằng date picker native */}
+                <Text style={styles.label}>4. Ngày ghi nợ:</Text>
+                <DatePickerInput
                   value={dateStr}
-                  onChangeText={setDateStr}
+                  onChange={(newDate) => setDateStr(newDate)}
                 />
-
-                {/* Hiển thị thành tiền tự động tính toán */}
-                <View style={styles.totalContainer}>
-                  <Text style={styles.totalLabel}>💰 THÀNH TIỀN:</Text>
-                  <Text style={styles.totalValue}>{formatCurrency(displayTotal)}</Text>
-                </View>
 
                 {/* Ghi chú thêm */}
                 <Text style={styles.label}>5. Ghi chú đơn hàng này (Có thể bỏ qua):</Text>
@@ -301,6 +293,14 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
               <Text style={styles.selectPrompt}>Vui lòng chạm chọn một loại thịt ở danh sách phía trên trước.</Text>
             )}
           </ScrollView>
+
+          {/* Hiển thị thành tiền tự động tính toán - Đặt cố định ở phần bottom */}
+          {selectedProduct ? (
+            <View style={styles.totalContainer}>
+              <Text style={styles.totalLabel}>💰 THÀNH TIỀN:</Text>
+              <Text style={styles.totalValue}>{formatCurrency(displayTotal)}</Text>
+            </View>
+          ) : null}
 
           {/* Các nút hành động */}
           <View style={styles.buttonContainer}>
@@ -324,6 +324,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
               )}
             </TouchableOpacity>
           </View>
+
         </View>
       </KeyboardAvoidingView>
       {/* Modal Quản lý / Thêm thịt mới ngay khi đang ghi nợ */}
