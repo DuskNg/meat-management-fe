@@ -2,6 +2,7 @@
   "expo": {
     "name": "meat-management-fe",
     "slug": "meat-management-fe",
+    "scheme": "meatmanagementfe",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
