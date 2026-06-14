@@ -18,10 +18,36 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import ProductListModal from './ProductListModal';
 
 const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
+  // Lấy chuỗi ngày hôm nay định dạng DD/MM/YYYY
+  const getTodayFormatted = () => {
+    const today = new Date();
+    const d = String(today.getDate()).padStart(2, '0');
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const y = today.getFullYear();
+    return `${d}/${m}/${y}`;
+  };
+
+  // Chuyển chuỗi định dạng ngày thành đối tượng Date ISO String để gửi lên API
+  const parseDateString = (str) => {
+    const parts = str.trim().split(/[\/\-]/);
+    if (parts.length !== 3) return null;
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const year = parseInt(parts[2], 10);
+    if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+
+    const dateObj = new Date(year, month - 1, day);
+    if (dateObj.getFullYear() !== year || dateObj.getMonth() !== month - 1 || dateObj.getDate() !== day) {
+      return null;
+    }
+    return dateObj.toISOString();
+  };
+
   const [visible, setVisible] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
+  const [dateStr, setDateStr] = useState(getTodayFormatted());
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,6 +72,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setSelectedProduct(null);
       setQuantity('');
       setPrice('');
+      setDateStr(getTodayFormatted());
       setNote('');
       setError('');
     },
@@ -101,11 +128,18 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       return;
     }
 
+    const isoDate = parseDateString(dateStr);
+    if (!isoDate) {
+      setError('Ngày ghi nợ không đúng định dạng ngày/tháng/năm (Ví dụ: 14/06/2026).');
+      return;
+    }
+
     setError('');
     setLoading(true);
     try {
       const response = await api.post('/transactions', {
         customerId,
+        date: isoDate,
         note: note.trim() || null,
         items: [
           {
@@ -128,6 +162,10 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setLoading(false);
     }
   };
+
+  // Tính toán thành tiền tự động từ khối lượng và đơn giá thực tế
+  const calculatedTotal = parseFloat(quantity) * parseNumberString(price);
+  const displayTotal = isNaN(calculatedTotal) ? 0 : calculatedTotal;
 
   return (
     <Modal
@@ -229,8 +267,24 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   onChangeText={(text) => setPrice(formatNumberString(text))}
                 />
 
+                {/* Nhập ngày ghi nợ */}
+                <Text style={styles.label}>4. Ngày ghi nợ (ngày/tháng/năm):</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ví dụ: 14/06/2026"
+                  placeholderTextColor={COLORS.textLight}
+                  value={dateStr}
+                  onChangeText={setDateStr}
+                />
+
+                {/* Hiển thị thành tiền tự động tính toán */}
+                <View style={styles.totalContainer}>
+                  <Text style={styles.totalLabel}>💰 THÀNH TIỀN:</Text>
+                  <Text style={styles.totalValue}>{formatCurrency(displayTotal)}</Text>
+                </View>
+
                 {/* Ghi chú thêm */}
-                <Text style={styles.label}>4. Ghi chú đơn hàng này (Có thể bỏ qua):</Text>
+                <Text style={styles.label}>5. Ghi chú đơn hàng này (Có thể bỏ qua):</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
@@ -251,6 +305,14 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           {/* Các nút hành động */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
+              style={[styles.button, styles.cancelButton]}
+              onPress={() => setVisible(false)}
+              disabled={loading}
+            >
+              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.button, styles.submitButton]}
               onPress={handleSubmit}
               disabled={loading || !selectedProduct}
@@ -258,16 +320,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
               {loading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.submitButtonText}>XÁC NHẬN GHI NỢ</Text>
+                <Text style={styles.submitButtonText}>XÁC NHẬN</Text>
               )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={() => setVisible(false)}
-              disabled={loading}
-            >
-              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -392,14 +446,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   buttonContainer: {
-    flexDirection: 'column', // Xếp chồng dọc để không bị tràn chữ
+    flexDirection: 'row', // Chia đôi cùng một hàng
+    justifyContent: 'space-between',
     gap: 12,
-    marginTop: 10,
+    marginTop: 15,
   },
   button: {
-    width: '100%',
-    height: 58,
-    borderRadius: 14,
+    flex: 1, // Chia đôi 50/50
+    height: 56,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -410,7 +465,7 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: COLORS.textSecondary,
-    fontSize: FONTS.subtitle,
+    fontSize: 16, // Giảm nhẹ kích thước để không rớt dòng
     fontWeight: 'bold',
   },
   submitButton: {
@@ -423,8 +478,29 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: FONTS.subtitle,
+    fontSize: 16, // Giảm nhẹ kích thước để không rớt dòng
     fontWeight: 'bold',
+  },
+  totalContainer: {
+    backgroundColor: '#E6F4EA', // Màu nền xanh lá dịu nhẹ
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary, // Viền xanh lá
+    marginBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  totalLabel: {
+    fontSize: FONTS.body,
+    fontWeight: 'bold',
+    color: '#065F46', // Chữ xanh lục sẫm
+  },
+  totalValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.primaryDark,
   },
   backdrop: {
     position: 'absolute',
