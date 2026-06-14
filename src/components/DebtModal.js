@@ -1,0 +1,369 @@
+// meat-management-fe/src/components/DebtModal.js
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  Modal, 
+  TextInput, 
+  TouchableOpacity, 
+  ActivityIndicator, 
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  FlatList
+} from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api/client';
+import { COLORS, FONTS, SHADOWS } from '../theme';
+
+const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
+  const [visible, setVisible] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [quantity, setQuantity] = useState('');
+  const [price, setPrice] = useState('');
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // 1. Tải danh mục sản phẩm từ Backend
+  const { data: productsResponse } = useQuery({
+    queryKey: ['products'],
+    queryFn: async () => {
+      const response = await api.get('/products');
+      return response.data;
+    },
+    enabled: visible, // Chỉ gọi API khi modal được mở ra
+  });
+
+  const products = productsResponse?.data || [];
+
+  // 2. Phơi bày các hàm điều khiển Modal ra ngoài component cha (Customer Detail)
+  useImperativeHandle(ref, () => ({
+    open: () => {
+      setVisible(true);
+      setSelectedProduct(null);
+      setQuantity('');
+      setPrice('');
+      setNote('');
+      setError('');
+    },
+    close: () => {
+      setVisible(false);
+    }
+  }));
+
+  // 3. Khi người dùng chọn một sản phẩm thịt
+  const handleSelectProduct = (product) => {
+    setSelectedProduct(product);
+    // Tự động điền giá mặc định của sản phẩm đó làm giá bán gợi ý
+    setPrice(product.defaultPrice.toString());
+    setError('');
+  };
+
+  // 4. Định dạng tiền tệ cho đơn giá hiển thị
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount).replace('₫', 'đ');
+  };
+
+  // 5. Xử lý ghi nợ thịt mới
+  const handleSubmit = async () => {
+    if (!selectedProduct) {
+      setError('Vui lòng chọn một loại thịt.');
+      return;
+    }
+    const q = parseFloat(quantity);
+    const p = parseFloat(price);
+
+    if (isNaN(q) || q <= 0) {
+      setError('Khối lượng thịt phải lớn hơn 0 (Ví dụ: 1.5).');
+      return;
+    }
+    if (isNaN(p) || p < 0) {
+      setError('Đơn giá không được để trống hoặc số âm.');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+    try {
+      const response = await api.post('/transactions', {
+        customerId,
+        note: note.trim() || null,
+        items: [
+          {
+            productId: selectedProduct.id,
+            quantity: q,
+            price: p,
+          }
+        ]
+      });
+
+      if (response.data.success) {
+        setVisible(false);
+        if (onRefresh) onRefresh(); // Tải lại chi tiết khách hàng và lịch sử nợ
+      } else {
+        setError(response.data.message || 'Lỗi ghi nợ. Vui lòng thử lại.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={() => setVisible(false)}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.centeredView}
+      >
+        <View style={styles.modalView}>
+          <Text style={styles.modalTitle}>🔴 GHI NỢ THỊT MỚI</Text>
+
+          {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
+
+          {/* Chọn loại thịt mua */}
+          <Text style={styles.label}>1. Chọn loại thịt mua:</Text>
+          <View style={styles.productsContainer}>
+            {products.length === 0 ? (
+              <ActivityIndicator color={COLORS.primary} style={{ margin: 10 }} />
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.productScroll}>
+                {products.map((p) => {
+                  const isSelected = selectedProduct?.id === p.id;
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={[
+                        styles.productBadge,
+                        isSelected && styles.productBadgeSelected
+                      ]}
+                      onPress={() => handleSelectProduct(p)}
+                    >
+                      <Text style={[
+                        styles.productBadgeText,
+                        isSelected && styles.productBadgeTextSelected
+                      ]}>
+                        {p.name}
+                      </Text>
+                      <Text style={styles.productBadgePrice}>
+                        {formatCurrency(p.defaultPrice)}/{p.unit}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+
+          <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+            {selectedProduct ? (
+              <View>
+                {/* Nhập khối lượng */}
+                <Text style={styles.label}>2. Khối lượng thịt mua (kg):</Text>
+                <View style={styles.numericRow}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, fontSize: 24, fontWeight: 'bold', textAlign: 'center' }]}
+                    placeholder="Ví dụ: 1.5"
+                    placeholderTextColor={COLORS.textLight}
+                    keyboardType="numeric"
+                    value={quantity}
+                    onChangeText={setQuantity}
+                  />
+                  <Text style={styles.unitText}>{selectedProduct.unit}</Text>
+                </View>
+
+                {/* Nhập đơn giá bán thực tế */}
+                <Text style={styles.label}>3. Giá bán thực tế lúc cân (VND/kg):</Text>
+                <TextInput
+                  style={[styles.input, { fontSize: 20, fontWeight: 'bold' }]}
+                  placeholder="Ví dụ: 130000"
+                  placeholderTextColor={COLORS.textLight}
+                  keyboardType="numeric"
+                  value={price}
+                  onChangeText={setPrice}
+                />
+
+                {/* Ghi chú thêm */}
+                <Text style={styles.label}>4. Ghi chú đơn hàng này (Có thể bỏ qua):</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
+                  placeholderTextColor={COLORS.textLight}
+                  value={note}
+                  onChangeText={setNote}
+                />
+              </View>
+            ) : (
+              <Text style={styles.selectPrompt}>Vui lòng chạm chọn một loại thịt ở danh sách phía trên trước.</Text>
+            )}
+          </ScrollView>
+
+          {/* Các nút hành động */}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton]}
+              onPress={() => setVisible(false)}
+              disabled={loading}
+            >
+              <Text style={styles.cancelButtonText}>HỦY</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.button, styles.submitButton]}
+              onPress={handleSubmit}
+              disabled={loading || !selectedProduct}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.submitButtonText}>XÁC NHẬN GHI NỢ</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+});
+
+export default DebtModal;
+
+const styles = StyleSheet.create({
+  centeredView: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+  },
+  modalView: {
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '90%',
+    ...SHADOWS.card,
+  },
+  modalTitle: {
+    fontSize: FONTS.title,
+    fontWeight: FONTS.weightBold,
+    color: COLORS.danger,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  errorText: {
+    color: COLORS.dangerDark,
+    backgroundColor: COLORS.dangerLight,
+    padding: 10,
+    borderRadius: 8,
+    fontSize: FONTS.body,
+    fontWeight: '600',
+    marginBottom: 15,
+  },
+  label: {
+    fontSize: FONTS.body,
+    fontWeight: FONTS.weightBold,
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  productsContainer: {
+    marginBottom: 20,
+  },
+  productScroll: {
+    flexDirection: 'row',
+  },
+  productBadge: {
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: COLORS.inputBg,
+    marginRight: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    minWidth: 100,
+  },
+  productBadgeSelected: {
+    backgroundColor: COLORS.dangerLight,
+    borderColor: COLORS.danger,
+  },
+  productBadgeText: {
+    fontSize: FONTS.subtitle,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  productBadgeTextSelected: {
+    color: COLORS.dangerDark,
+  },
+  productBadgePrice: {
+    fontSize: FONTS.caption,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+  },
+  selectPrompt: {
+    fontSize: FONTS.body,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginVertical: 40,
+  },
+  formScroll: {
+    maxHeight: 250,
+    marginBottom: 15,
+  },
+  numericRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  unitText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+    marginLeft: 12,
+  },
+  input: {
+    backgroundColor: COLORS.inputBg,
+    height: 56,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    fontSize: FONTS.body,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 16,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  button: {
+    flex: 1,
+    height: 56,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: COLORS.inputBg,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  cancelButtonText: {
+    color: COLORS.textSecondary,
+    fontSize: FONTS.subtitle,
+    fontWeight: 'bold',
+  },
+  submitButton: {
+    backgroundColor: COLORS.danger,
+  },
+  submitButtonText: {
+    color: '#FFFFFF',
+    fontSize: FONTS.subtitle,
+    fontWeight: 'bold',
+  },
+});
