@@ -133,14 +133,6 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
           {/* Các nút hành động */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={() => setVisible(false)}
-              disabled={loading}
-            >
-              <Text style={styles.cancelButtonText}>HỦY</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={[styles.button, styles.submitButton]}
               onPress={handleSubmit}
               disabled={loading}
@@ -150,6 +142,14 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
               ) : (
                 <Text style={styles.submitButtonText}>XÁC NHẬN THU TIỀN</Text>
               )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton]}
+              onPress={() => setVisible(false)}
+              disabled={loading}
+            >
+              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -245,19 +245,19 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'column', // Xếp chồng dọc để không bị tràn chữ
+    gap: 12,
+    marginTop: 10,
   },
   button: {
-    flex: 1,
-    height: 56,
-    borderRadius: 12,
+    width: '100%',
+    height: 58,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
   cancelButton: {
     backgroundColor: COLORS.inputBg,
-    marginRight: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
@@ -268,6 +268,11 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: COLORS.primary,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 2,
   },
   submitButtonText: {
     color: '#FFFFFF',
