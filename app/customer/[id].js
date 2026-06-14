@@ -8,7 +8,8 @@ import {
   TouchableOpacity, 
   ActivityIndicator, 
   SafeAreaView, 
-  StatusBar 
+  StatusBar,
+  Platform
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -148,69 +149,71 @@ export default function CustomerDetailScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
-      {/* HEADER: Nút quay lại & Tên khách hàng */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>⬅ SỔ NỢ CHÍNH</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {customer ? customer.name : 'Đang tải...'}
-        </Text>
-      </View>
+      <View style={styles.contentWrapper}>
+        {/* HEADER: Nút quay lại & Tên khách hàng */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Text style={styles.backButtonText}>⬅ SỔ NỢ CHÍNH</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {customer ? customer.name : 'Đang tải...'}
+          </Text>
+        </View>
 
-      {isLoading && !customer ? (
-        <ActivityIndicator size="large" color={COLORS.primaryDark} style={{ marginTop: 40 }} />
-      ) : (
-        <FlatList
-          data={history}
-          renderItem={renderHistoryItem}
-          keyExtractor={(item, index) => `${item.id}-${index}`}
-          contentContainerStyle={styles.listContent}
-          refreshing={isLoading}
-          onRefresh={handleRefreshAll}
-          ListHeaderComponent={
-            <View>
-              {/* KHUNG TỔNG NỢ CỦA KHÁCH: Thiết kế cực kỳ to, dễ nhìn */}
-              <View style={[styles.debtSummaryCard, customer?.debt > 0 ? styles.cardHasDebt : styles.cardNoDebt]}>
-                <Text style={styles.debtLabel}>SỐ TIỀN CÒN NỢ HIỆN TẠI:</Text>
-                <Text style={[styles.debtValue, customer?.debt > 0 ? styles.textDebt : styles.textPayment]}>
-                  {formatCurrency(customer?.debt || 0)}
-                </Text>
+        {isLoading && !customer ? (
+          <ActivityIndicator size="large" color={COLORS.primaryDark} style={{ marginTop: 40 }} />
+        ) : (
+          <FlatList
+            data={history}
+            renderItem={renderHistoryItem}
+            keyExtractor={(item, index) => `${item.id}-${index}`}
+            contentContainerStyle={styles.listContent}
+            refreshing={isLoading}
+            onRefresh={handleRefreshAll}
+            ListHeaderComponent={
+              <View>
+                {/* KHUNG TỔNG NỢ CỦA KHÁCH: Thiết kế cực kỳ to, dễ nhìn */}
+                <View style={[styles.debtSummaryCard, customer?.debt > 0 ? styles.cardHasDebt : styles.cardNoDebt]}>
+                  <Text style={styles.debtLabel}>SỐ TIỀN CÒN NỢ HIỆN TẠI:</Text>
+                  <Text style={[styles.debtValue, customer?.debt > 0 ? styles.textDebt : styles.textPayment]}>
+                    {formatCurrency(customer?.debt || 0)}
+                  </Text>
+                </View>
+
+                {/* Thông tin khách hàng (Liên hệ, địa chỉ, thói quen) */}
+                <View style={styles.infoSection}>
+                  {customer?.phone ? <Text style={styles.infoRow}>📞 SĐT: {customer.phone}</Text> : null}
+                  {customer?.address ? <Text style={styles.infoRow}>📍 Địa chỉ sạp: {customer.address}</Text> : null}
+                  {customer?.note ? <Text style={styles.infoRow}>💡 Ghi chú khách quen: {customer.note}</Text> : null}
+                </View>
+
+                <Text style={styles.sectionTitle}>📚 LỊCH SỬ MUA BÁN & THANH TOÁN</Text>
               </View>
-
-              {/* Thông tin khách hàng (Liên hệ, địa chỉ, thói quen) */}
-              <View style={styles.infoSection}>
-                {customer?.phone ? <Text style={styles.infoRow}>📞 SĐT: {customer.phone}</Text> : null}
-                {customer?.address ? <Text style={styles.infoRow}>📍 Địa chỉ sạp: {customer.address}</Text> : null}
-                {customer?.note ? <Text style={styles.infoRow}>💡 Ghi chú khách quen: {customer.note}</Text> : null}
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>Chưa có lịch sử mua bán hay thu tiền nào cho khách hàng này.</Text>
               </View>
+            }
+          />
+        )}
 
-              <Text style={styles.sectionTitle}>📚 LỊCH SỬ MUA BÁN & THANH TOÁN</Text>
-            </View>
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Chưa có lịch sử mua bán hay thu tiền nào cho khách hàng này.</Text>
-            </View>
-          }
-        />
-      )}
+        {/* 2 NÚT HÀNH ĐỘNG KHỔNG LỒ Ở DƯỚI ĐÁY (Một Đỏ ghi nợ - Một Xanh thu tiền) */}
+        <View style={styles.bottomBar}>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.btnDebt]} 
+            onPress={() => debtModalRef.current?.open()}
+          >
+            <Text style={styles.actionButtonText}>🔴 GHI NỢ MỚI</Text>
+          </TouchableOpacity>
 
-      {/* 2 NÚT HÀNH ĐỘNG KHỔNG LỒ Ở DƯỚI ĐÁY (Một Đỏ ghi nợ - Một Xanh thu tiền) */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity 
-          style={[styles.actionButton, styles.btnDebt]} 
-          onPress={() => debtModalRef.current?.open()}
-        >
-          <Text style={styles.actionButtonText}>🔴 GHI NỢ MỚI</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.actionButton, styles.btnPayment]} 
-          onPress={() => paymentModalRef.current?.open()}
-        >
-          <Text style={styles.actionButtonText}>🟢 THU TIỀN NỢ</Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.btnPayment]} 
+            onPress={() => paymentModalRef.current?.open()}
+          >
+            <Text style={styles.actionButtonText}>🟢 THU TIỀN NỢ</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* MODAL GHI NỢ THỊT MỚI */}
@@ -234,6 +237,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  contentWrapper: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 600,
+    alignSelf: 'center',
+    backgroundColor: COLORS.background,
+    position: 'relative',
+    borderLeftWidth: Platform.OS === 'web' ? 1 : 0,
+    borderRightWidth: Platform.OS === 'web' ? 1 : 0,
+    borderColor: COLORS.border,
   },
   header: {
     flexDirection: 'row',

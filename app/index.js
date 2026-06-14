@@ -9,7 +9,8 @@ import {
   TouchableOpacity, 
   ActivityIndicator, 
   SafeAreaView, 
-  StatusBar 
+  StatusBar,
+  Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -89,73 +90,75 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
-      {/* HEADER: Thông tin chủ buôn & Nút đăng xuất */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.merchantGreeting}>Chào chủ sạp thịt,</Text>
-          <Text style={styles.merchantName}>{auth.user?.name || 'Cô Hoa'}</Text>
-        </View>
-        <TouchableOpacity 
-          style={styles.logoutButton} 
-          onPress={() => auth.logout()}
-        >
-          <Text style={styles.logoutText}>Đăng xuất 📴</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* TỔNG TIỀN NỢ: To rõ, thu hút sự chú ý ngay */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryLabel}>💰 TỔNG TIỀN NỢ CẦN THU:</Text>
-        <Text style={styles.summaryValue}>{formatCurrency(totalDebt)}</Text>
-      </View>
-
-      {/* Ô TÌM KIẾM NHANH KHÁCH QUEN */}
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="🔍 Gõ tên hoặc SĐT khách quen..."
-          placeholderTextColor={COLORS.textLight}
-          value={search}
-          onChangeText={setSearch}
-        />
-        {search ? (
-          <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
-            <Text style={styles.clearSearchText}>✕</Text>
+      <View style={styles.contentWrapper}>
+        {/* HEADER: Thông tin chủ buôn & Nút đăng xuất */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.merchantGreeting}>Chào chủ sạp thịt,</Text>
+            <Text style={styles.merchantName}>{auth.user?.name || 'Cô Hoa'}</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.logoutButton} 
+            onPress={() => auth.logout()}
+          >
+            <Text style={styles.logoutText}>Đăng xuất 📴</Text>
           </TouchableOpacity>
-        ) : null}
-      </View>
+        </View>
 
-      <View style={styles.listHeaderContainer}>
-        <Text style={styles.listHeader}>👥 SỔ GHI NỢ KHÁCH QUEN ({filteredCustomers.length})</Text>
-      </View>
+        {/* TỔNG TIỀN NỢ: To rõ, thu hút sự chú ý ngay */}
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>💰 TỔNG TIỀN NỢ CẦN THU:</Text>
+          <Text style={styles.summaryValue}>{formatCurrency(totalDebt)}</Text>
+        </View>
 
-      {/* DANH SÁCH KHÁCH HÀNG */}
-      {isLoading ? (
-        <ActivityIndicator size="large" color={COLORS.primaryDark} style={{ marginTop: 40 }} />
-      ) : (
-        <FlatList
-          data={filteredCustomers}
-          renderItem={renderCustomerItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshing={isRefetching}
-          onRefresh={refetch}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Chưa có ai trong danh sách. Hãy nhấn nút phía dưới để thêm!</Text>
-            </View>
-          }
-        />
-      )}
+        {/* Ô TÌM KIẾM NHANH KHÁCH QUEN */}
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="🔍 Gõ tên hoặc SĐT khách quen..."
+            placeholderTextColor={COLORS.textLight}
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search ? (
+            <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
+              <Text style={styles.clearSearchText}>✕</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
 
-      {/* NÚT THÊM KHÁCH MỚI CỐ ĐỊNH Ở ĐÁY MÀN HÌNH (Rất to, dễ bấm) */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity 
-          style={styles.addCustomerButton}
-          onPress={() => modalRef.current?.open()}
-        >
-          <Text style={styles.addCustomerButtonText}>➕ THÊM KHÁCH QUEN MỚI</Text>
-        </TouchableOpacity>
+        <View style={styles.listHeaderContainer}>
+          <Text style={styles.listHeader}>👥 SỔ GHI NỢ KHÁCH QUEN ({filteredCustomers.length})</Text>
+        </View>
+
+        {/* DANH SÁCH KHÁCH HÀNG */}
+        {isLoading ? (
+          <ActivityIndicator size="large" color={COLORS.primaryDark} style={{ marginTop: 40 }} />
+        ) : (
+          <FlatList
+            data={filteredCustomers}
+            renderItem={renderCustomerItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshing={isRefetching}
+            onRefresh={refetch}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>Chưa có ai trong danh sách. Hãy nhấn nút phía dưới để thêm!</Text>
+              </View>
+            }
+          />
+        )}
+
+        {/* NÚT THÊM KHÁCH MỚI CỐ ĐỊNH Ở ĐÁY MÀN HÌNH (Rất to, dễ bấm) */}
+        <View style={styles.bottomBar}>
+          <TouchableOpacity 
+            style={styles.addCustomerButton}
+            onPress={() => modalRef.current?.open()}
+          >
+            <Text style={styles.addCustomerButtonText}>➕ THÊM KHÁCH QUEN MỚI</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* MODAL THÊM KHÁCH MỚI (Ẩn) */}
@@ -168,6 +171,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  contentWrapper: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 600,
+    alignSelf: 'center',
+    backgroundColor: COLORS.background,
+    position: 'relative',
+    borderLeftWidth: Platform.OS === 'web' ? 1 : 0,
+    borderRightWidth: Platform.OS === 'web' ? 1 : 0,
+    borderColor: COLORS.border,
   },
   header: {
     flexDirection: 'row',
