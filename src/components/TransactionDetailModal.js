@@ -13,53 +13,49 @@ import {
 import { COLORS, FONTS, SHADOWS } from '../theme';
 
 /**
- * Modal hiển thị chi tiết một giao dịch (ghi nợ hoặc thu tiền).
- * Được mở từ bên ngoài qua ref.open(item).
+ * Modal hiển thị chi tiết tất cả giao dịch trong một ngày.
  *
- * Props: không có (dữ liệu được truyền qua ref.open)
- * Ref methods:
- *   - open(item)  : mở modal với dữ liệu giao dịch
- *   - close()     : đóng modal
+ * Nhận dayGroup qua ref.open(dayGroup):
+ * {
+ *   dateKey:      string,    "10/06/2026"
+ *   date:         string,    ISO date đại diện
+ *   transactions: Array,     đơn ghi nợ trong ngày
+ *   payments:     Array,     lượt thu tiền trong ngày
+ *   totalDebt:    number,
+ *   totalPayment: number,
+ * }
  */
 const TransactionDetailModal = forwardRef((_, ref) => {
   const [visible, setVisible] = useState(false);
-  const [item, setItem] = useState(null);
+  const [dayGroup, setDayGroup] = useState(null);
 
-  // Phơi bày open/close ra ngoài component cha
+  // Phơi bày open/close ra component cha
   useImperativeHandle(ref, () => ({
-    open: (selectedItem) => {
-      setItem(selectedItem);
+    open: (group) => {
+      setDayGroup(group);
       setVisible(true);
     },
     close: () => setVisible(false),
   }));
 
-  // Định dạng tiền VNĐ
+  // ─── Helper: định dạng tiền VNĐ ────────────────────────────────────────
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
       .format(amount)
       .replace('₫', 'đ');
 
-  // Định dạng ngày giờ đầy đủ tiếng Việt
-  const formatFullDate = (dateStr) => {
+  // ─── Helper: lấy thứ trong tuần tiếng Việt đầy đủ ─────────────────────
+  const getFullWeekday = (dateStr) => {
     const d = new Date(dateStr);
-    const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-    const weekday = days[d.getDay()];
-    const date = d.getDate().toString().padStart(2, '0');
-    const month = (d.getMonth() + 1).toString().padStart(2, '0');
-    const year = d.getFullYear();
-    const hour = d.getHours().toString().padStart(2, '0');
-    const min = d.getMinutes().toString().padStart(2, '0');
-    return `${weekday}, ${date}/${month}/${year} lúc ${hour}:${min}`;
+    return ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'][d.getDay()];
   };
 
-  if (!item) return null;
+  if (!dayGroup) return null;
 
-  const isDebt = item.type === 'debt';
-  const accentColor = isDebt ? COLORS.danger : COLORS.primary;
-  const accentLight = isDebt ? COLORS.dangerLight : COLORS.primaryLight;
-  const sign = isDebt ? '+' : '-';
-  const typeLabel = isDebt ? '🔴 GHI NỢ THỊT' : '🟢 KHÁCH TRẢ TIỀN';
+  const { transactions = [], payments = [], totalDebt = 0, totalPayment = 0, dateKey } = dayGroup;
+  const net = totalDebt - totalPayment;
+  const hasDebt = totalDebt > 0;
+  const hasPayment = totalPayment > 0;
 
   return (
     <Modal
@@ -72,7 +68,7 @@ const TransactionDetailModal = forwardRef((_, ref) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.centeredView}
       >
-        {/* Lớp nền bấm ngoài để đóng modal */}
+        {/* Lớp nền bấm ngoài để đóng */}
         <TouchableOpacity
           style={styles.backdrop}
           activeOpacity={1}
@@ -80,71 +76,110 @@ const TransactionDetailModal = forwardRef((_, ref) => {
         />
 
         <View style={styles.modalView}>
-          {/* Thanh kéo nhỏ trên cùng (drag indicator) */}
+          {/* Thanh kéo (drag indicator) */}
           <View style={styles.dragBar} />
 
-          {/* Tiêu đề loại giao dịch */}
-          <Text style={[styles.typeLabel, { color: accentColor }]}>{typeLabel}</Text>
-
-          {/* Số tiền nổi bật */}
-          <View style={[styles.amountBadge, { backgroundColor: accentLight }]}>
-            <Text style={[styles.amountText, { color: accentColor }]}>
-              {sign} {formatCurrency(item.amount)}
-            </Text>
+          {/* ── NGÀY TIÊU ĐỀ ── */}
+          <View style={styles.dateHeader}>
+            <Text style={styles.weekdayText}>{getFullWeekday(dayGroup.date)}</Text>
+            <Text style={styles.dateText}>Ngày {dateKey}</Text>
           </View>
 
-          {/* Ngày giờ */}
-          <View style={styles.infoRow}>
-            <Text style={styles.infoIcon}>🗓️</Text>
-            <Text style={styles.infoValue}>{formatFullDate(item.date)}</Text>
+          {/* ── TỔNG KẾT NGÀY (debt + payment badges) ── */}
+          <View style={styles.summaryRow}>
+            {hasDebt && (
+              <View style={[styles.summaryBadge, styles.debtBadge]}>
+                <Text style={styles.summaryBadgeLabel}>🔴 Ghi nợ</Text>
+                <Text style={styles.summaryBadgeAmount}>+{formatCurrency(totalDebt)}</Text>
+              </View>
+            )}
+            {hasPayment && (
+              <View style={[styles.summaryBadge, styles.paymentBadge]}>
+                <Text style={styles.summaryBadgeLabel}>🟢 Thu tiền</Text>
+                <Text style={[styles.summaryBadgeAmount, { color: COLORS.primaryDark }]}>
+                  -{formatCurrency(totalPayment)}
+                </Text>
+              </View>
+            )}
           </View>
+
+          {/* ── NET của ngày (nếu có cả nợ lẫn thu) ── */}
+          {hasDebt && hasPayment && (
+            <View style={[styles.netRow, net > 0 ? styles.netRowDebt : styles.netRowOk]}>
+              <Text style={styles.netLabel}>Còn lại trong ngày:</Text>
+              <Text style={[styles.netAmount, { color: net > 0 ? COLORS.danger : COLORS.primary }]}>
+                {formatCurrency(Math.abs(net))}
+              </Text>
+            </View>
+          )}
 
           <ScrollView style={styles.detailScroll} showsVerticalScrollIndicator={false}>
-            {/* Danh sách mặt hàng (chỉ có ở giao dịch ghi nợ) */}
-            {isDebt && item.items && item.items.length > 0 ? (
+
+            {/* ── DANH SÁCH ĐƠN GHI NỢ ── */}
+            {transactions.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>🥩 Mặt hàng đã mua</Text>
-                {item.items.map((it, idx) => (
-                  <View key={idx} style={styles.itemCard}>
-                    {/* Tên sản phẩm */}
-                    <View style={styles.itemCardHeader}>
-                      <Text style={styles.itemName}>{it.product?.name}</Text>
-                      <Text style={styles.itemSubtotal}>
-                        {formatCurrency(parseFloat(it.quantity) * parseFloat(it.price))}
-                      </Text>
+                <Text style={styles.sectionTitle}>🥩 Đơn ghi nợ thịt</Text>
+                {transactions.map((t, tIdx) => (
+                  <View key={t.id} style={styles.transactionCard}>
+                    {/* Header đơn: số thứ tự + tổng tiền đơn */}
+                    <View style={styles.transCardHeader}>
+                      <Text style={styles.transCardNum}>Đơn #{tIdx + 1}</Text>
+                      <Text style={styles.transCardTotal}>{formatCurrency(t.amount)}</Text>
                     </View>
-                    {/* Khối lượng × Đơn giá */}
-                    <Text style={styles.itemMeta}>
-                      {parseFloat(it.quantity)} {it.product?.unit}
-                      {'  ×  '}
-                      {formatCurrency(parseFloat(it.price))}
-                    </Text>
+
+                    {/* Danh sách mặt hàng trong đơn */}
+                    {t.items && t.items.length > 0 ? (
+                      t.items.map((it, iIdx) => (
+                        <View key={iIdx} style={styles.itemRow}>
+                          {/* Tên sản phẩm + thành tiền */}
+                          <View style={styles.itemRowHeader}>
+                            <Text style={styles.itemName}>{it.product?.name}</Text>
+                            <Text style={styles.itemSubtotal}>
+                              {formatCurrency(parseFloat(it.quantity) * parseFloat(it.price))}
+                            </Text>
+                          </View>
+                          {/* Khối lượng × đơn giá */}
+                          <Text style={styles.itemMeta}>
+                            {parseFloat(it.quantity)} {it.product?.unit}
+                            {'  ×  '}
+                            {formatCurrency(parseFloat(it.price))}
+                          </Text>
+                        </View>
+                      ))
+                    ) : null}
+
+                    {/* Ghi chú đơn hàng (nếu có) */}
+                    {t.note ? (
+                      <Text style={styles.transNote}>📝 {t.note}</Text>
+                    ) : null}
                   </View>
                 ))}
               </View>
-            ) : null}
+            )}
 
-            {/* Ghi chú */}
-            {item.note ? (
+            {/* ── DANH SÁCH LƯỢT THU TIỀN ── */}
+            {payments.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>📝 Ghi chú</Text>
-                <View style={styles.noteBox}>
-                  <Text style={styles.noteText}>{item.note}</Text>
-                </View>
+                <Text style={styles.sectionTitle}>💵 Thu tiền khách trả nợ</Text>
+                {payments.map((p) => (
+                  <View key={p.id} style={styles.paymentCard}>
+                    <View style={styles.transCardHeader}>
+                      <Text style={styles.paymentLabel}>Khách đã trả</Text>
+                      <Text style={[styles.transCardTotal, { color: COLORS.primaryDark }]}>
+                        {formatCurrency(p.amount)}
+                      </Text>
+                    </View>
+                    {p.note ? (
+                      <Text style={styles.transNote}>📝 {p.note}</Text>
+                    ) : null}
+                  </View>
+                ))}
               </View>
-            ) : null}
-
-            {/* Thông báo không có ghi chú */}
-            {!item.note && (!isDebt || !item.items || item.items.length === 0) ? (
-              <Text style={styles.emptyNote}>Không có thông tin chi tiết thêm.</Text>
-            ) : null}
+            )}
           </ScrollView>
 
-          {/* Nút đóng */}
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => setVisible(false)}
-          >
+          {/* ── NÚT ĐÓNG ── */}
+          <TouchableOpacity style={styles.closeButton} onPress={() => setVisible(false)}>
             <Text style={styles.closeButtonText}>ĐÓNG</Text>
           </TouchableOpacity>
         </View>
@@ -159,7 +194,7 @@ const styles = StyleSheet.create({
   centeredView: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
   },
   backdrop: {
     position: 'absolute',
@@ -170,60 +205,107 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    paddingHorizontal: 24,
-    paddingBottom: 32,
-    paddingTop: 16,
-    maxHeight: '80%',
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    paddingTop: 14,
+    maxHeight: '85%',
     ...SHADOWS.card,
   },
-  // Thanh kéo nhỏ trên đầu
   dragBar: {
     width: 44,
     height: 4,
     borderRadius: 2,
     backgroundColor: COLORS.border,
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: 18,
   },
-  typeLabel: {
+
+  // ── Header ngày ──────────────────────────────────────────────────────────
+  dateHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  weekdayText: {
+    fontSize: FONTS.caption,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+  },
+  dateText: {
+    fontSize: FONTS.title,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+
+  // ── Badge tổng kết ngày ──────────────────────────────────────────────────
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  summaryBadge: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  debtBadge: {
+    backgroundColor: COLORS.dangerLight,
+    borderColor: '#FECACA',
+  },
+  paymentBadge: {
+    backgroundColor: COLORS.primaryLight,
+    borderColor: '#A7F3D0',
+  },
+  summaryBadgeLabel: {
+    fontSize: FONTS.caption,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+  },
+  summaryBadgeAmount: {
     fontSize: FONTS.subtitle,
     fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 14,
+    color: COLORS.danger,
   },
-  // Badge số tiền nổi bật
-  amountBadge: {
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-  amountText: {
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  // Hàng thông tin ngày giờ
-  infoRow: {
+
+  // ── Số dư net trong ngày ─────────────────────────────────────────────────
+  netRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 18,
-    gap: 8,
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 12,
   },
-  infoIcon: {
-    fontSize: 18,
+  netRowDebt: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
   },
-  infoValue: {
+  netRowOk: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  netLabel: {
     fontSize: FONTS.body,
     fontWeight: '600',
     color: COLORS.textSecondary,
-    flex: 1,
   },
+  netAmount: {
+    fontSize: FONTS.subtitle,
+    fontWeight: 'bold',
+  },
+
+  // ── Scroll nội dung ──────────────────────────────────────────────────────
   detailScroll: {
-    maxHeight: 280,
+    maxHeight: 340,
+    marginBottom: 12,
   },
   section: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: FONTS.body,
@@ -231,26 +313,51 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 10,
   },
-  // Card từng mặt hàng thịt
-  itemCard: {
-    backgroundColor: COLORS.inputBg,
+
+  // ── Card đơn ghi nợ ─────────────────────────────────────────────────────
+  transactionCard: {
+    backgroundColor: '#FFF5F5',
     borderRadius: 12,
-    padding: 14,
+    padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#FECACA',
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.danger,
   },
-  itemCardHeader: {
+  transCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
+  },
+  transCardNum: {
+    fontSize: FONTS.body,
+    fontWeight: 'bold',
+    color: COLORS.dangerDark,
+  },
+  transCardTotal: {
+    fontSize: FONTS.subtitle,
+    fontWeight: 'bold',
+    color: COLORS.danger,
+  },
+  itemRow: {
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  itemRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
   },
   itemName: {
     fontSize: FONTS.body,
     fontWeight: 'bold',
     color: COLORS.text,
     flex: 1,
+    marginRight: 8,
   },
   itemSubtotal: {
     fontSize: FONTS.body,
@@ -261,29 +368,32 @@ const styles = StyleSheet.create({
     fontSize: FONTS.caption,
     color: COLORS.textSecondary,
   },
-  // Ô ghi chú
-  noteBox: {
-    backgroundColor: COLORS.inputBg,
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  noteText: {
-    fontSize: FONTS.body,
+  transNote: {
+    marginTop: 8,
+    fontSize: FONTS.caption,
     color: COLORS.textSecondary,
     fontStyle: 'italic',
-    lineHeight: 22,
   },
-  emptyNote: {
+
+  // ── Card thu tiền ────────────────────────────────────────────────────────
+  paymentCard: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+  },
+  paymentLabel: {
     fontSize: FONTS.body,
-    color: COLORS.textLight,
-    textAlign: 'center',
-    paddingVertical: 20,
+    fontWeight: 'bold',
+    color: COLORS.primaryDark,
   },
-  // Nút đóng
+
+  // ── Nút đóng ─────────────────────────────────────────────────────────────
   closeButton: {
-    marginTop: 16,
     height: 52,
     borderRadius: 14,
     backgroundColor: COLORS.inputBg,

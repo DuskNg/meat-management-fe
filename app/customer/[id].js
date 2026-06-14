@@ -1,5 +1,5 @@
 // meat-management-fe/app/customer/[id].js
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -30,87 +30,123 @@ export default function CustomerDetailScreen() {
   const paymentModalRef = useRef(null);
   const detailModalRef = useRef(null);
 
-  // 1. Tải thông tin chi tiết khách hàng (bao gồm công nợ hiện tại)
+  // 1. Tải thông tin chi tiết khách hàng
   const {
     data: customerResponse,
     isLoading: isLoadingCustomer,
     refetch: refetchCustomer,
   } = useQuery({
     queryKey: ['customer', id],
-    queryFn: async () => {
-      const res = await api.get(`/customers/${id}`);
-      return res.data;
-    },
+    queryFn: async () => (await api.get(`/customers/${id}`)).data,
   });
 
-  // 2. Tải lịch sử các đơn nợ (Transactions) của khách hàng này
+  // 2. Tải lịch sử đơn ghi nợ
   const {
     data: transactionsResponse,
     isLoading: isLoadingTrans,
     refetch: refetchTrans,
   } = useQuery({
     queryKey: ['transactions', id],
-    queryFn: async () => {
-      const res = await api.get(`/transactions?customerId=${id}`);
-      return res.data;
-    },
+    queryFn: async () => (await api.get(`/transactions?customerId=${id}`)).data,
   });
 
-  // 3. Tải lịch sử các lượt trả tiền (Payments) của khách hàng này
+  // 3. Tải lịch sử thu tiền
   const {
     data: paymentsResponse,
     isLoading: isLoadingPayments,
     refetch: refetchPayments,
   } = useQuery({
     queryKey: ['payments', id],
-    queryFn: async () => {
-      const res = await api.get(`/payments?customerId=${id}`);
-      return res.data;
-    },
+    queryFn: async () => (await api.get(`/payments?customerId=${id}`)).data,
   });
 
   const customer = customerResponse?.data;
   const transactions = transactionsResponse?.data || [];
   const payments = paymentsResponse?.data || [];
 
-  // 4. Làm mới toàn bộ dữ liệu cùng lúc
+  // 4. Làm mới toàn bộ dữ liệu
   const handleRefreshAll = () => {
     refetchCustomer();
     refetchTrans();
     refetchPayments();
   };
 
-  // 5. Trộn và sắp xếp lịch sử nợ + thu tiền theo thứ tự thời gian mới nhất lên đầu
-  const formattedTransactions = transactions.map((t) => ({
-    id: t.id,
-    type: 'debt',
-    date: t.date,
-    amount: parseFloat(t.totalAmount),
-    note: t.note,
-    items: t.items || [],
-  }));
+  // ─── Helper: tạo date key "DD/MM/YYYY" từ ISO string ────────────────────
+  const toDateKey = (dateStr) => {
+    const d = new Date(dateStr);
+    const dd = d.getDate().toString().padStart(2, '0');
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
 
-  const formattedPayments = payments.map((p) => ({
-    id: p.id,
-    type: 'payment',
-    date: p.paidAt,
-    amount: parseFloat(p.amount),
-    note: p.note,
-  }));
+  // 5. Nhóm tất cả giao dịch theo ngày (DD/MM/YYYY)
+  //    Mỗi ngày là 1 ô tile duy nhất trên grid
+  const dayGroups = useMemo(() => {
+    const map = new Map();
 
-  const history = [...formattedTransactions, ...formattedPayments].sort(
-    (a, b) => new Date(b.date) - new Date(a.date)
-  );
+    // Xử lý đơn ghi nợ
+    transactions.forEach((t) => {
+      const key = toDateKey(t.date);
+      if (!map.has(key)) {
+        map.set(key, {
+          dateKey: key,
+          date: t.date,         // Dùng để sắp xếp và hiển thị thứ
+          transactions: [],
+          payments: [],
+          totalDebt: 0,
+          totalPayment: 0,
+        });
+      }
+      const g = map.get(key);
+      g.transactions.push({
+        id: t.id,
+        type: 'debt',
+        date: t.date,
+        amount: parseFloat(t.totalAmount),
+        note: t.note,
+        items: t.items || [],
+      });
+      g.totalDebt += parseFloat(t.totalAmount);
+    });
 
-  // ─── Các hàm định dạng hiển thị ─────────────────────────────────────────
+    // Xử lý lượt thu tiền
+    payments.forEach((p) => {
+      const key = toDateKey(p.paidAt);
+      if (!map.has(key)) {
+        map.set(key, {
+          dateKey: key,
+          date: p.paidAt,
+          transactions: [],
+          payments: [],
+          totalDebt: 0,
+          totalPayment: 0,
+        });
+      }
+      const g = map.get(key);
+      g.payments.push({
+        id: p.id,
+        type: 'payment',
+        date: p.paidAt,
+        amount: parseFloat(p.amount),
+        note: p.note,
+      });
+      g.totalPayment += parseFloat(p.amount);
+    });
 
-  // Định dạng tiền VNĐ đầy đủ (Ví dụ: 670.000 đ)
+    // Sắp xếp từ mới nhất → cũ nhất
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.date) - new Date(a.date)
+    );
+  }, [transactions, payments]);
+
+  // ─── Helper: định dạng tiền VNĐ ─────────────────────────────────────────
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
       .format(amount)
       .replace('₫', 'đ');
 
-  // Định dạng tiền rút gọn để hiện trong tile (Ví dụ: 280k / 1.5tr)
+  // ─── Helper: tiền rút gọn cho tile (280k / 1.5tr) ───────────────────────
   const formatAmountShort = (amount) => {
     if (amount >= 1_000_000) {
       const v = (amount / 1_000_000).toFixed(1).replace(/\.0$/, '');
@@ -119,25 +155,20 @@ export default function CustomerDetailScreen() {
     return `${Math.round(amount / 1_000)}k`;
   };
 
-  // Định dạng ngày/tháng ngắn để hiện trong tile (Ví dụ: 10/06)
+  // ─── Helper: ngày/tháng ngắn (10/06) ────────────────────────────────────
   const formatShortDate = (dateStr) => {
     const d = new Date(dateStr);
-    const dd = d.getDate().toString().padStart(2, '0');
-    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-    return `${dd}/${mm}`;
+    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
   };
 
-  // Lấy thứ viết tắt tiếng Việt (T2 ~ CN)
-  const getWeekday = (dateStr) => {
-    const d = new Date(dateStr);
-    return ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][d.getDay()];
-  };
+  // ─── Helper: thứ viết tắt (T2 … CN) ────────────────────────────────────
+  const getWeekday = (dateStr) =>
+    ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][new Date(dateStr).getDay()];
 
   // ─── Tính kích thước tile ────────────────────────────────────────────────
-  // Lưu ý: contentWrapper maxWidth=600, padding ngang 16px mỗi bên → tổng 32px
   const NUM_COLS = 4;
   const TILE_GAP = 8;
-  const SIDE_PAD = 16; // padding ngang của grid wrapper
+  const SIDE_PAD = 16;
   const contentWidth = Math.min(width, 600);
   const tileSize = Math.floor(
     (contentWidth - SIDE_PAD * 2 - TILE_GAP * (NUM_COLS - 1)) / NUM_COLS
@@ -150,7 +181,7 @@ export default function CustomerDetailScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
       <View style={styles.contentWrapper}>
-        {/* ── HEADER: Nút quay lại + Tên khách hàng ─────────────────────── */}
+        {/* ── HEADER ─────────────────────────────────────────────────────── */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>⬅ QUAY LẠI</Text>
@@ -160,7 +191,7 @@ export default function CustomerDetailScreen() {
           </Text>
         </View>
 
-        {/* ── NỘI DUNG CUỘN ───────────────────────────────────────────────── */}
+        {/* ── NỘI DUNG CUỘN ──────────────────────────────────────────────── */}
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={styles.scrollContent}
@@ -174,7 +205,7 @@ export default function CustomerDetailScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
-          {/* Khung tổng nợ nổi bật */}
+          {/* Thẻ tổng nợ */}
           <View style={[
             styles.debtSummaryCard,
             customer?.debt > 0 ? styles.cardHasDebt : styles.cardNoDebt,
@@ -188,14 +219,14 @@ export default function CustomerDetailScreen() {
             </Text>
           </View>
 
-          {/* Thông tin liên hệ khách hàng */}
+          {/* Thông tin liên hệ */}
           {(customer?.phone || customer?.address || customer?.note) ? (
             <View style={styles.infoSection}>
               {customer?.phone
                 ? <Text style={styles.infoRow}>📞 SĐT: {customer.phone}</Text>
                 : null}
               {customer?.address
-                ? <Text style={styles.infoRow}>📍 Địa chỉ sạp: {customer.address}</Text>
+                ? <Text style={styles.infoRow}>📍 Địa chỉ: {customer.address}</Text>
                 : null}
               {customer?.note
                 ? <Text style={styles.infoRow}>💡 Ghi chú: {customer.note}</Text>
@@ -203,18 +234,18 @@ export default function CustomerDetailScreen() {
             </View>
           ) : null}
 
-          {/* ── LỊCH SỬ GIAO DỊCH (GRID Ô VUÔNG) ──────────────────────── */}
+          {/* ── TIÊU ĐỀ LỊCH SỬ ── */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>📚 LỊCH SỬ MUA BÁN & THANH TOÁN</Text>
-            {history.length > 0 && (
+            {dayGroups.length > 0 && (
               <View style={styles.countBadge}>
-                <Text style={styles.countText}>{history.length}</Text>
+                <Text style={styles.countText}>{dayGroups.length} ngày</Text>
               </View>
             )}
           </View>
 
-          {/* Chú thích loại giao dịch */}
-          {history.length > 0 && (
+          {/* Chú thích */}
+          {dayGroups.length > 0 && (
             <View style={styles.legend}>
               <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: COLORS.danger }]} />
@@ -224,17 +255,22 @@ export default function CustomerDetailScreen() {
                 <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
                 <Text style={styles.legendText}>Thu tiền</Text>
               </View>
-              <Text style={styles.legendHint}>• Bấm vào ô để xem chi tiết</Text>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#F97316' }]} />
+                <Text style={styles.legendText}>Có cả 2</Text>
+              </View>
+              <Text style={styles.legendHint}>• Bấm ô để xem chi tiết</Text>
             </View>
           )}
 
-          {isLoading && !history.length ? (
+          {/* ── GRID Ô VUÔNG NHÓM THEO NGÀY ── */}
+          {isLoading && dayGroups.length === 0 ? (
             <ActivityIndicator
               size="large"
               color={COLORS.primaryDark}
               style={{ marginTop: 40 }}
             />
-          ) : history.length === 0 ? (
+          ) : dayGroups.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyEmoji}>📋</Text>
               <Text style={styles.emptyText}>
@@ -242,45 +278,61 @@ export default function CustomerDetailScreen() {
               </Text>
             </View>
           ) : (
-            /* ── GRID ô vuông tự xuống dòng ── */
             <View style={[styles.grid, { paddingHorizontal: SIDE_PAD }]}>
-              {history.map((item) => {
-                const isDebt = item.type === 'debt';
-                const bgColor  = isDebt ? '#FFF1F1' : '#F0FDF4';
-                const bdColor  = isDebt ? '#FECACA' : '#86EFAC';
-                const txtColor = isDebt ? COLORS.danger : COLORS.primary;
+              {dayGroups.map((group) => {
+                // Xác định màu tile dựa trên loại giao dịch trong ngày
+                const hasDebt = group.totalDebt > 0;
+                const hasPay = group.totalPayment > 0;
+                const isMixed = hasDebt && hasPay;
+
+                let bgColor, bdColor, txtColor;
+                if (isMixed) {
+                  // Có cả ghi nợ lẫn thu tiền → màu cam
+                  bgColor = '#FFF7ED';
+                  bdColor = '#FED7AA';
+                  txtColor = '#C2410C';
+                } else if (hasDebt) {
+                  bgColor = '#FFF1F1';
+                  bdColor = '#FECACA';
+                  txtColor = COLORS.danger;
+                } else {
+                  bgColor = '#F0FDF4';
+                  bdColor = '#86EFAC';
+                  txtColor = COLORS.primary;
+                }
+
+                // Số tiền hiển thị trên tile
+                // Nếu chỉ có nợ: tổng nợ; chỉ thu: tổng thu; cả 2: tổng nợ
+                const displayAmount = hasDebt ? group.totalDebt : group.totalPayment;
 
                 return (
                   <TouchableOpacity
-                    key={`${item.id}-${item.type}`}
+                    key={group.dateKey}
                     style={[
                       styles.tile,
-                      {
-                        width: tileSize,
-                        height: tileSize,
-                        backgroundColor: bgColor,
-                        borderColor: bdColor,
-                      },
+                      { width: tileSize, height: tileSize, backgroundColor: bgColor, borderColor: bdColor },
                     ]}
-                    onPress={() => detailModalRef.current?.open(item)}
+                    onPress={() => detailModalRef.current?.open(group)}
                     activeOpacity={0.7}
                   >
-                    {/* Icon loại giao dịch */}
-                    <Text style={styles.tileIcon}>
-                      {isDebt ? '🔴' : '🟢'}
-                    </Text>
                     {/* Thứ viết tắt */}
                     <Text style={[styles.tileWeekday, { color: txtColor }]}>
-                      {getWeekday(item.date)}
+                      {getWeekday(group.date)}
                     </Text>
                     {/* Ngày/Tháng */}
                     <Text style={styles.tileDate}>
-                      {formatShortDate(item.date)}
+                      {formatShortDate(group.date)}
                     </Text>
                     {/* Số tiền rút gọn */}
                     <Text style={[styles.tileAmount, { color: txtColor }]}>
-                      {formatAmountShort(item.amount)}
+                      {isMixed ? `🔴${formatAmountShort(group.totalDebt)}` : formatAmountShort(displayAmount)}
                     </Text>
+                    {/* Badge nhỏ khi có thu tiền kèm theo */}
+                    {isMixed && (
+                      <Text style={styles.tileMixedBadge}>
+                        🟢{formatAmountShort(group.totalPayment)}
+                      </Text>
+                    )}
                   </TouchableOpacity>
                 );
               })}
@@ -288,7 +340,7 @@ export default function CustomerDetailScreen() {
           )}
         </ScrollView>
 
-        {/* ── 2 NÚT GHI NỢ / THU TIỀN CỐ ĐỊNH ĐÁY MÀN HÌNH ──────────── */}
+        {/* ── 2 NÚT CỐ ĐỊNH DƯỚI ĐÁY ── */}
         <View style={styles.bottomBar}>
           <TouchableOpacity
             style={[styles.actionButton, styles.btnDebt]}
@@ -305,13 +357,8 @@ export default function CustomerDetailScreen() {
         </View>
       </View>
 
-      {/* MODAL GHI NỢ THỊT MỚI */}
       <DebtModal ref={debtModalRef} customerId={id} onRefresh={handleRefreshAll} />
-
-      {/* MODAL THU TIỀN TRẢ NỢ */}
       <PaymentModal ref={paymentModalRef} customerId={id} onRefresh={handleRefreshAll} />
-
-      {/* MODAL CHI TIẾT GIAO DỊCH */}
       <TransactionDetailModal ref={detailModalRef} />
     </SafeAreaView>
   );
@@ -332,7 +379,6 @@ const styles = StyleSheet.create({
     borderRightWidth: Platform.OS === 'web' ? 1 : 0,
     borderColor: COLORS.border,
   },
-  // ── Header ──────────────────────────────────────────────────────────────
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -362,11 +408,9 @@ const styles = StyleSheet.create({
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
   },
-  // ── Scroll ──────────────────────────────────────────────────────────────
   scrollContent: {
-    paddingBottom: 130, // Khoảng trống tránh đè lên 2 nút đáy
+    paddingBottom: 130,
   },
-  // ── Thẻ tổng nợ ─────────────────────────────────────────────────────────
   debtSummaryCard: {
     margin: 16,
     borderRadius: 16,
@@ -393,7 +437,6 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: 'bold',
   },
-  // ── Thông tin khách ──────────────────────────────────────────────────────
   infoSection: {
     backgroundColor: COLORS.card,
     marginHorizontal: 16,
@@ -408,7 +451,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     lineHeight: 22,
   },
-  // ── Tiêu đề section lịch sử ──────────────────────────────────────────────
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -436,23 +478,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.textSecondary,
   },
-  // ── Chú thích màu sắc ────────────────────────────────────────────────────
   legend: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     marginHorizontal: 16,
     marginBottom: 12,
-    gap: 10,
+    gap: 8,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
   legendDot: {
-    width: 10,
-    height: 10,
+    width: 9,
+    height: 9,
     borderRadius: 5,
   },
   legendText: {
@@ -467,11 +508,10 @@ const styles = StyleSheet.create({
   },
   // ── Grid ô vuông ─────────────────────────────────────────────────────────
   grid: {
-    flexDirection: 'row',   // Xếp ngang
-    flexWrap: 'wrap',       // Tự xuống dòng khi hết chiều rộng
-    gap: 8,                 // Khoảng cách đều nhau giữa các ô
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  // ── Ô tile hình vuông ────────────────────────────────────────────────────
   tile: {
     borderRadius: 14,
     borderWidth: 1.5,
@@ -480,13 +520,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     ...SHADOWS.card,
   },
-  tileIcon: {
-    fontSize: 13,
-  },
   tileWeekday: {
     fontSize: 11,
     fontWeight: 'bold',
-    marginTop: 2,
   },
   tileDate: {
     fontSize: 13,
@@ -494,10 +530,16 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   tileAmount: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
   },
-  // ── Trạng thái rỗng ──────────────────────────────────────────────────────
+  tileMixedBadge: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: COLORS.primaryDark,
+    marginTop: -2,
+  },
+  // ── Trạng thái rỗng ───────────────────────────────────────────────────────
   emptyContainer: {
     paddingVertical: 60,
     alignItems: 'center',
@@ -513,7 +555,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     lineHeight: 22,
   },
-  // ── Bottom action bar ────────────────────────────────────────────────────
+  // ── Bottom bar ────────────────────────────────────────────────────────────
   bottomBar: {
     flexDirection: 'row',
     backgroundColor: 'rgba(248, 250, 252, 0.97)',
@@ -541,11 +583,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  // ── Màu chữ chung ────────────────────────────────────────────────────────
-  textDebt: {
-    color: COLORS.danger,
-  },
-  textPayment: {
-    color: COLORS.primary,
-  },
+  textDebt: { color: COLORS.danger },
+  textPayment: { color: COLORS.primary },
 });
