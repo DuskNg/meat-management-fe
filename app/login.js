@@ -25,14 +25,24 @@ export default function LoginScreen() {
 
   // 1. Hàm yêu cầu gửi mã OTP về máy khách
   const handleRequestOtp = async () => {
-    if (!phone || phone.trim().length < 9) {
-      setError('Vui lòng nhập số điện thoại hợp lệ (từ 9-11 chữ số).');
+    const trimmedPhone = phone.trim();
+    // Biểu thức chính quy kiểm tra SĐT di động Việt Nam (10 số, bắt đầu bằng 0, 84 hoặc +84 và các đầu số 3, 5, 7, 8, 9)
+    const phoneRegex = /^(0|84|\+84)[35789][0-9]{8}$/;
+
+    if (!trimmedPhone) {
+      setError('Số điện thoại không được để trống.');
       return;
     }
+
+    if (!phoneRegex.test(trimmedPhone)) {
+      setError('Số điện thoại không đúng định dạng Việt Nam (Ví dụ: 0912345678).');
+      return;
+    }
+
     setError('');
     setLoading(true);
     try {
-      const response = await api.post('/auth/request-otp', { phone: phone.trim() });
+      const response = await api.post('/auth/request-otp', { phone: trimmedPhone });
       if (response.data.success) {
         setStep(2);
       } else {
