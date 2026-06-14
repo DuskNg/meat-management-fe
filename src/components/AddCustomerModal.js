@@ -79,6 +79,12 @@ const AddCustomerModal = forwardRef(({ onRefresh }, ref) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.centeredView}
       >
+        {/* Lớp nền trong suốt click ngoài để tắt modal */}
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={() => setVisible(false)}
+        />
         <View style={styles.modalView}>
           <Text style={styles.modalTitle}>➕ THÊM KHÁCH QUEN MỚI</Text>
 
@@ -131,14 +137,6 @@ const AddCustomerModal = forwardRef(({ onRefresh }, ref) => {
           {/* Các nút hành động to bản dưới chân modal */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={() => setVisible(false)}
-              disabled={loading}
-            >
-              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={[styles.button, styles.submitButton]}
               onPress={handleSubmit}
               disabled={loading}
@@ -148,6 +146,14 @@ const AddCustomerModal = forwardRef(({ onRefresh }, ref) => {
               ) : (
                 <Text style={styles.submitButtonText}>THÊM NGAY</Text>
               )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton]}
+              onPress={() => setVisible(false)}
+              disabled={loading}
+            >
+              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -214,20 +220,19 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top', // Dành cho Android
   },
   buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'column', // Xếp chồng dọc để không bị tràn chữ
+    gap: 12,
     marginTop: 10,
   },
   button: {
-    flex: 1,
-    height: 56,
-    borderRadius: 12,
+    width: '100%',
+    height: 58,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
   cancelButton: {
     backgroundColor: COLORS.inputBg,
-    marginRight: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
@@ -238,10 +243,23 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: COLORS.primary,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 2,
   },
   submitButtonText: {
     color: '#FFFFFF',
     fontSize: FONTS.subtitle,
     fontWeight: 'bold',
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
   },
 });

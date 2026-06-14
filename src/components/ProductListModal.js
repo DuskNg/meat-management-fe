@@ -163,6 +163,12 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.centeredView}
       >
+        {/* Lớp nền trong suốt click ngoài để tắt modal */}
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={() => setVisible(false)}
+        />
         <View style={styles.modalView}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>🥩 QUẢN LÝ DANH MỤC THỊT</Text>
@@ -464,5 +470,13 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: FONTS.body,
     fontWeight: 'bold',
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
   },
 });

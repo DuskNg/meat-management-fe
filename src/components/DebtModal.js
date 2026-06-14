@@ -1,12 +1,12 @@
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  Modal, 
-  TextInput, 
-  TouchableOpacity, 
-  ActivityIndicator, 
+import {
+  StyleSheet,
+  Text,
+  View,
+  Modal,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -124,6 +124,12 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.centeredView}
       >
+        {/* Lớp nền trong suốt click ngoài để tắt modal */}
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={() => setVisible(false)}
+        />
         <View style={styles.modalView}>
           <Text style={styles.modalTitle}>🔴 GHI NỢ THỊT MỚI</Text>
 
@@ -403,5 +409,13 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: FONTS.subtitle,
     fontWeight: 'bold',
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
   },
 });
