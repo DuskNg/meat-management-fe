@@ -15,8 +15,10 @@ if (Platform.OS !== 'web') {
   DateTimePicker = require('@react-native-community/datetimepicker').default;
 }
 
+// ─── Các hàm tiện ích chuyển đổi định dạng ngày ──────────────────────────────
+
 /**
- * Chuyển đối tượng Date thành chuỗi "DD/MM/YYYY"
+ * Chuyển Date object → chuỗi hiển thị "DD/MM/YYYY"
  */
 const formatDateToDisplay = (date) => {
   const d = String(date.getDate()).padStart(2, '0');
@@ -26,7 +28,7 @@ const formatDateToDisplay = (date) => {
 };
 
 /**
- * Chuyển đối tượng Date thành chuỗi "YYYY-MM-DD" (dùng cho HTML input[type=date])
+ * Chuyển Date object → chuỗi "YYYY-MM-DD" dùng cho HTML input[type=date]
  */
 const formatDateToISO = (date) => {
   const d = String(date.getDate()).padStart(2, '0');
@@ -36,7 +38,7 @@ const formatDateToISO = (date) => {
 };
 
 /**
- * Chuyển chuỗi "YYYY-MM-DD" từ HTML input thành Date object
+ * Chuyển chuỗi "YYYY-MM-DD" từ HTML input → Date object
  */
 const parseISOToDate = (isoStr) => {
   const [y, m, d] = isoStr.split('-').map(Number);
@@ -44,81 +46,165 @@ const parseISOToDate = (isoStr) => {
 };
 
 /**
- * Component chọn ngày xuyên nền tảng:
- * - Mobile (iOS/Android): hiển thị native DateTimePicker khi bấm
- * - Web: hiển thị HTML input[type="date"] native của trình duyệt
+ * Chuyển chuỗi hiển thị "DD/MM/YYYY" → Date object
+ */
+const parseDisplayToDate = (displayStr) => {
+  if (!displayStr) return new Date();
+  const parts = displayStr.split('/');
+  if (parts.length !== 3) return new Date();
+  const [d, m, y] = parts.map(Number);
+  const date = new Date(y, m - 1, d);
+  return isNaN(date.getTime()) ? new Date() : date;
+};
+
+/**
+ * Lấy tên thứ trong tuần bằng tiếng Việt
+ */
+const getWeekdayVi = (date) => {
+  const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+  return days[date.getDay()];
+};
+
+// ─── Inline CSS inject cho web (chỉ chạy 1 lần) ─────────────────────────────
+let webStyleInjected = false;
+const injectWebStyles = () => {
+  if (webStyleInjected || Platform.OS !== 'web') return;
+  webStyleInjected = true;
+  const style = document.createElement('style');
+  style.textContent = `
+    .date-picker-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 16px;
+      font-weight: 600;
+      color: #0F172A;
+      font-family: inherit;
+      cursor: pointer;
+      min-width: 0;
+    }
+    .date-picker-input::-webkit-calendar-picker-indicator {
+      opacity: 0;
+      position: absolute;
+      right: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+  `;
+  document.head.appendChild(style);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Component chọn ngày xuyên nền tảng — thiết kế đồng nhất với design system.
  *
  * Props:
- *   - value: string, định dạng "DD/MM/YYYY"
+ *   - value:    string, định dạng "DD/MM/YYYY"
  *   - onChange: function(newDateStr: string) => void
+ *   - label:    string (tuỳ chọn), nhãn hiển thị bên trên
  */
 const DatePickerInput = ({ value, onChange }) => {
-  // Trạng thái mở/đóng picker chỉ dùng trên mobile
+  // Trạng thái mở/đóng picker trên mobile
   const [showPicker, setShowPicker] = useState(false);
+  // Trạng thái hover/press để đổi màu viền
+  const [pressed, setPressed] = useState(false);
 
-  // Chuyển chuỗi hiển thị "DD/MM/YYYY" → Date object để truyền cho picker
-  const parsedDate = (() => {
-    if (!value) return new Date();
-    const parts = value.split('/');
-    if (parts.length !== 3) return new Date();
-    const [d, m, y] = parts.map(Number);
-    const date = new Date(y, m - 1, d);
-    return isNaN(date.getTime()) ? new Date() : date;
-  })();
+  // Chuyển chuỗi hiển thị thành Date object
+  const parsedDate = parseDisplayToDate(value);
 
-  // Xử lý khi người dùng chọn ngày trên mobile picker
+  // Tên thứ trong tuần bằng tiếng Việt
+  const weekday = getWeekdayVi(parsedDate);
+
+  // Xử lý khi mobile picker thay đổi
   const handleMobileChange = (event, selectedDate) => {
-    setShowPicker(false); // Đóng picker sau khi chọn
-    if (event.type === 'dismissed') return; // Người dùng bấm cancel
+    setShowPicker(false);
+    if (event.type === 'dismissed') return;
     if (selectedDate) {
       onChange(formatDateToDisplay(selectedDate));
     }
   };
 
-  // ─── Giao diện cho WEB ───────────────────────────────────────────────────
+  // ─── Giao diện Web ────────────────────────────────────────────────────────
   if (Platform.OS === 'web') {
+    injectWebStyles();
     return (
-      <View style={styles.webContainer}>
-        <Text style={styles.webCalendarIcon}>📅</Text>
-        <input
-          type="date"
-          value={formatDateToISO(parsedDate)}
-          onChange={(e) => {
-            if (e.target.value) {
-              const date = parseISOToDate(e.target.value);
-              onChange(formatDateToDisplay(date));
-            }
-          }}
-          style={{
-            flex: 1,
-            border: 'none',
-            outline: 'none',
-            background: 'transparent',
-            fontSize: FONTS.body,
-            color: COLORS.text,
-            fontFamily: 'inherit',
-            cursor: 'pointer',
-          }}
-        />
+      <View style={[styles.container, pressed && styles.containerFocused]}>
+        {/* Icon lịch bên trái */}
+        <View style={styles.iconWrapper}>
+          <Text style={styles.icon}>📅</Text>
+        </View>
+
+        {/* Phần nội dung ngày */}
+        <View style={styles.dateContent}>
+          <Text style={styles.weekdayText}>{weekday}</Text>
+          <Text style={styles.dateDisplayText}>{value || formatDateToDisplay(new Date())}</Text>
+        </View>
+
+        {/* Nhãn "Thay đổi" bên phải */}
+        <View style={styles.changeTag}>
+          <Text style={styles.changeTagText}>Đổi ngày</Text>
+        </View>
+
+        {/* HTML date input phủ toàn bộ container, ẩn giao diện mặc định */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
+          <input
+            className="date-picker-input"
+            type="date"
+            value={formatDateToISO(parsedDate)}
+            max={formatDateToISO(new Date())} // Chặn chọn ngày tương lai
+            onChange={(e) => {
+              if (e.target.value) {
+                const date = parseISOToDate(e.target.value);
+                onChange(formatDateToDisplay(date));
+              }
+            }}
+            onFocus={() => setPressed(true)}
+            onBlur={() => setPressed(false)}
+            style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              opacity: 0,
+              width: '100%',
+              height: '100%',
+              cursor: 'pointer',
+            }}
+          />
+        </View>
       </View>
     );
   }
 
-  // ─── Giao diện cho MOBILE (iOS / Android) ────────────────────────────────
+  // ─── Giao diện Mobile (iOS / Android) ────────────────────────────────────
   return (
     <View>
-      {/* Nút bấm hiển thị ngày hiện tại, bấm để mở picker */}
       <TouchableOpacity
-        style={styles.mobileButton}
+        style={[styles.container, (pressed || showPicker) && styles.containerFocused]}
         onPress={() => setShowPicker(true)}
-        activeOpacity={0.7}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        activeOpacity={0.8}
       >
-        <Text style={styles.calendarIcon}>📅</Text>
-        <Text style={styles.dateText}>{value || formatDateToDisplay(new Date())}</Text>
-        <Text style={styles.chevron}>▼</Text>
+        {/* Icon lịch */}
+        <View style={styles.iconWrapper}>
+          <Text style={styles.icon}>📅</Text>
+        </View>
+
+        {/* Nội dung ngày */}
+        <View style={styles.dateContent}>
+          <Text style={styles.weekdayText}>{weekday}</Text>
+          <Text style={styles.dateDisplayText}>{value || formatDateToDisplay(new Date())}</Text>
+        </View>
+
+        {/* Nhãn "Đổi ngày" */}
+        <View style={styles.changeTag}>
+          <Text style={styles.changeTagText}>Đổi ngày</Text>
+        </View>
       </TouchableOpacity>
 
-      {/* Native DateTimePicker xuất hiện khi showPicker = true */}
+      {/* Native calendar picker */}
       {showPicker && DateTimePicker ? (
         <DateTimePicker
           value={parsedDate}
@@ -136,47 +222,70 @@ const DatePickerInput = ({ value, onChange }) => {
 export default DatePickerInput;
 
 const styles = StyleSheet.create({
-  // Nút bấm ngày trên mobile
-  mobileButton: {
+  // Container chính — giống style input trong app
+  container: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.inputBg,
-    height: 56,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    borderWidth: 1,
+    height: 64,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
     marginBottom: 16,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  calendarIcon: {
-    fontSize: 22,
-    marginRight: 10,
-  },
-  dateText: {
-    flex: 1,
-    fontSize: FONTS.body,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  chevron: {
-    fontSize: 12,
-    color: COLORS.textLight,
+  // Viền đổi màu khi đang focus/pressed
+  containerFocused: {
+    borderColor: COLORS.danger,
+    backgroundColor: '#FFF5F5',
   },
 
-  // Container cho web input
-  webContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
-    height: 56,
+  // Vùng icon lịch bên trái
+  iconWrapper: {
+    width: 40,
+    height: 40,
     borderRadius: 10,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 16,
+    backgroundColor: '#FEE2E2', // Nền đỏ nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  webCalendarIcon: {
-    fontSize: 22,
-    marginRight: 10,
+  icon: {
+    fontSize: 20,
+  },
+
+  // Vùng hiển thị thứ + ngày
+  dateContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  weekdayText: {
+    fontSize: FONTS.caption,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginBottom: 1,
+  },
+  dateDisplayText: {
+    fontSize: FONTS.subtitle,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    letterSpacing: 0.5,
+  },
+
+  // Tag "Đổi ngày" bên phải
+  changeTag: {
+    backgroundColor: COLORS.dangerLight,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  changeTagText: {
+    fontSize: FONTS.caption,
+    fontWeight: 'bold',
+    color: COLORS.dangerDark,
   },
 });
