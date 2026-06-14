@@ -134,7 +134,6 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           <View style={styles.productsContainer}>
             {products.length === 0 ? (
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <ActivityIndicator color={COLORS.primary} style={{ margin: 10 }} />
                 <TouchableOpacity
                   style={[styles.productBadge, styles.addProductBadge]}
                   onPress={() => productModalRef.current?.open()}
@@ -218,6 +217,10 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   onChangeText={setNote}
                 />
               </View>
+            ) : products.length === 0 ? (
+              <Text style={[styles.selectPrompt, { color: COLORS.dangerDark, fontWeight: '600' }]}>
+                Hiện tại chưa có loại thịt, vui lòng thêm loại thịt.
+              </Text>
             ) : (
               <Text style={styles.selectPrompt}>Vui lòng chạm chọn một loại thịt ở danh sách phía trên trước.</Text>
             )}
