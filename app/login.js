@@ -181,7 +181,7 @@ export default function LoginScreen() {
           {step === 1 ? (
             // BƯỚC 1: NHẬP SỐ ĐIỆN THOẠI ĐỂ GỬI OTP
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Số điện thoại của bạn:</Text>
+              <Text style={styles.label}>Nhập số điện thoại của bạn:</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Ví dụ: 0912345678"
