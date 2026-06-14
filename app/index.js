@@ -18,11 +18,13 @@ import { api } from '../src/api/client';
 import { useAuthStore } from '../src/store/authStore';
 import { COLORS, FONTS, SHADOWS } from '../src/theme';
 import AddCustomerModal from '../src/components/AddCustomerModal';
+import ProductListModal from '../src/components/ProductListModal';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const auth = useAuthStore();
   const modalRef = useRef(null);
+  const productModalRef = useRef(null);
   const [search, setSearch] = useState('');
 
   // 1. Dùng React Query tải danh sách khách hàng và cache lại
@@ -150,19 +152,31 @@ export default function DashboardScreen() {
           />
         )}
 
-        {/* NÚT THÊM KHÁCH MỚI CỐ ĐỊNH Ở ĐÁY MÀN HÌNH (Rất to, dễ bấm) */}
+        {/* THANH ĐIỀU KHIỂN CỐ ĐỊNH Ở ĐÁY MÀN HÌNH */}
         <View style={styles.bottomBar}>
+          <TouchableOpacity 
+            style={styles.manageProductsButton}
+            onPress={() => productModalRef.current?.open()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.manageProductsButtonText}>🥩 QUẢN LÝ THỊT</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity 
             style={styles.addCustomerButton}
             onPress={() => modalRef.current?.open()}
+            activeOpacity={0.8}
           >
-            <Text style={styles.addCustomerButtonText}>➕ THÊM KHÁCH QUEN MỚI</Text>
+            <Text style={styles.addCustomerButtonText}>➕ THÊM KHÁCH</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* MODAL THÊM KHÁCH MỚI (Ẩn) */}
       <AddCustomerModal ref={modalRef} onRefresh={refetch} />
+
+      {/* MODAL QUẢN LÝ DANH MỤC THỊT (Ẩn) */}
+      <ProductListModal ref={productModalRef} />
     </SafeAreaView>
   );
 }
@@ -347,11 +361,35 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: 'rgba(248, 250, 252, 0.95)', // Bán trong suốt nền xám
-    padding: 20,
+    padding: 16,
     borderTopWidth: 1,
     borderColor: COLORS.border,
+    flexDirection: 'row', // Chuyển sang dạng hàng ngang
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  manageProductsButton: {
+    flex: 1,
+    backgroundColor: '#FAF8F6', // Nền màu kem lanh nhẹ nhàng, cao cấp
+    height: 60,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#7F1D1D', // Viền Bordeaux đồng màu chữ
+    shadowColor: '#7F1D1D',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  manageProductsButtonText: {
+    color: '#7F1D1D', // Màu đỏ đun Bordeaux sang trọng
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   addCustomerButton: {
+    flex: 1,
     backgroundColor: COLORS.primary,
     height: 60,
     borderRadius: 15,
@@ -365,7 +403,7 @@ const styles = StyleSheet.create({
   },
   addCustomerButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });

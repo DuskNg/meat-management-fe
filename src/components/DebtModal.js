@@ -1,5 +1,4 @@
-// meat-management-fe/src/components/DebtModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -16,6 +15,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
+import ProductListModal from './ProductListModal';
 
 const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
@@ -25,9 +25,10 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const productModalRef = useRef(null);
 
   // 1. Tải danh mục sản phẩm từ Backend
-  const { data: productsResponse } = useQuery({
+  const { data: productsResponse, refetch: refetchProducts } = useQuery({
     queryKey: ['products'],
     queryFn: async () => {
       const response = await api.get('/products');
@@ -132,7 +133,16 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           <Text style={styles.label}>1. Chọn loại thịt mua:</Text>
           <View style={styles.productsContainer}>
             {products.length === 0 ? (
-              <ActivityIndicator color={COLORS.primary} style={{ margin: 10 }} />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <ActivityIndicator color={COLORS.primary} style={{ margin: 10 }} />
+                <TouchableOpacity
+                  style={[styles.productBadge, styles.addProductBadge]}
+                  onPress={() => productModalRef.current?.open()}
+                >
+                  <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
+                  <Text style={styles.productBadgePrice}>Tạo mới</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.productScroll}>
                 {products.map((p) => {
@@ -158,6 +168,14 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                     </TouchableOpacity>
                   );
                 })}
+                {/* Nút thêm thịt mới nhanh ngay trong danh sách chọn */}
+                <TouchableOpacity
+                  style={[styles.productBadge, styles.addProductBadge]}
+                  onPress={() => productModalRef.current?.open()}
+                >
+                  <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
+                  <Text style={styles.productBadgePrice}>Tạo mới</Text>
+                </TouchableOpacity>
               </ScrollView>
             )}
           </View>
@@ -229,6 +247,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           </View>
         </View>
       </KeyboardAvoidingView>
+      {/* Modal Quản lý / Thêm thịt mới ngay khi đang ghi nợ */}
+      <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
     </Modal>
   );
 });
@@ -303,6 +323,16 @@ const styles = StyleSheet.create({
     fontSize: FONTS.caption,
     color: COLORS.textSecondary,
     marginTop: 4,
+  },
+  addProductBadge: {
+    backgroundColor: '#FAF8F6',
+    borderColor: '#7F1D1D',
+    borderStyle: 'dashed', // Viền đứt nét để thể hiện hành động thêm
+  },
+  addProductBadgeText: {
+    fontSize: FONTS.subtitle,
+    fontWeight: 'bold',
+    color: '#7F1D1D',
   },
   selectPrompt: {
     fontSize: FONTS.body,
