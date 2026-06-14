@@ -150,11 +150,33 @@ export default function LoginScreen() {
           </View>
 
           <Text style={styles.appName}>Quản Lý bán hàng</Text>
-          {error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>⚠️ {error}</Text>
-            </View>
-          ) : null}
+
+          {/* Hộp thông báo trạng thái/lỗi luôn hiển thị cố định để tránh co rút giao diện */}
+          <View style={[
+            styles.statusContainer,
+            !error && (step === 1 ? phone.trim() === '' : otp.trim() === '')
+              ? styles.statusNeutral
+              : error
+                ? styles.statusError
+                : styles.statusSuccess
+          ]}>
+            <Text style={[
+              styles.statusText,
+              !error && (step === 1 ? phone.trim() === '' : otp.trim() === '')
+                ? styles.statusTextNeutral
+                : error
+                  ? styles.statusTextError
+                  : styles.statusTextSuccess
+            ]}>
+              {!error && (step === 1 ? phone.trim() === '' : otp.trim() === '') ? (
+                step === 1 ? 'ℹ️ Nhập số điện thoại để nhận mã OTP.' : 'ℹ️ Nhập mã OTP gồm 4 chữ số.'
+              ) : error ? (
+                `⚠️ ${error}`
+              ) : (
+                step === 1 ? '✅ Số điện thoại hợp lệ!' : '✅ Mã OTP hợp lệ!'
+              )}
+            </Text>
+          </View>
 
           {step === 1 ? (
             // BƯỚC 1: NHẬP SỐ ĐIỆN THOẠI ĐỂ GỬI OTP
@@ -277,19 +299,39 @@ const styles = StyleSheet.create({
     marginBottom: 35,
     lineHeight: 20,
   },
-  errorContainer: {
-    backgroundColor: COLORS.dangerLight,
+  statusContainer: {
     padding: 14,
     borderRadius: 12,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    justifyContent: 'center',
+    minHeight: 54, // Chiều cao tối thiểu cố định để tránh bị co rút giao diện
   },
-  errorText: {
-    color: COLORS.dangerDark,
+  statusNeutral: {
+    backgroundColor: '#F1F5F9', // Màu xám nhẹ nhàng tinh tế (Slate 100)
+    borderColor: '#E2E8F0',     // Viền xám nhẹ (Slate 200)
+  },
+  statusError: {
+    backgroundColor: COLORS.dangerLight, // Nền đỏ hồng nhạt
+    borderColor: '#FECACA',              // Viền đỏ nhạt
+  },
+  statusSuccess: {
+    backgroundColor: '#D1FAE5', // Nền xanh lá nhạt dịu mát
+    borderColor: '#A7F3D0',     // Viền xanh lá nhạt
+  },
+  statusText: {
     fontSize: FONTS.body,
     fontWeight: '600',
     lineHeight: 22,
+  },
+  statusTextNeutral: {
+    color: COLORS.textSecondary,
+  },
+  statusTextError: {
+    color: COLORS.dangerDark,
+  },
+  statusTextSuccess: {
+    color: '#065F46', // Chữ xanh lục đậm sang trọng
   },
   formGroup: {
     width: '100%',
