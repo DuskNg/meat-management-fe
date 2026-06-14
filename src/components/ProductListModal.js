@@ -188,7 +188,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
         />
         <View style={styles.modalView}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>🥩 QUẢN LÝ DANH MỤC THỊT</Text>
+            <Text style={styles.modalTitle}>🥩 QUẢN LÝ DANH SÁCH THỊT</Text>
             <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
               <Text style={styles.closeHeaderText}>✕</Text>
             </TouchableOpacity>
@@ -204,7 +204,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
 
           {/* Form thêm thịt mới */}
           <View style={styles.formContainer}>
-            <Text style={styles.sectionTitle}>➕ THÊM THỊT MỚI VÀO SỔ</Text>
+            <Text style={styles.sectionTitle}>➕ THÊM THỊT MỚI</Text>
             <View style={styles.inputGroup}>
               <TextInput
                 style={styles.input}
@@ -213,7 +213,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
                 value={name}
                 onChangeText={setName}
               />
-               <TextInput
+              <TextInput
                 style={styles.input}
                 placeholder="Giá tiền (Ví dụ: 130.000)"
                 placeholderTextColor={COLORS.textLight}

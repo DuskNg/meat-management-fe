@@ -208,7 +208,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                 <Text style={styles.label}>2. Khối lượng thịt mua (kg):</Text>
                 <View style={styles.numericRow}>
                   <TextInput
-                    style={[styles.input, { flex: 1, fontSize: 24, fontWeight: 'bold', textAlign: 'center' }]}
+                    style={[styles.input, { flex: 1, minWidth: 0, fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 0 }]}
                     placeholder="Ví dụ: 1.5"
                     placeholderTextColor={COLORS.textLight}
                     keyboardType="numeric"
