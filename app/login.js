@@ -26,7 +26,7 @@ export default function LoginScreen() {
   // 1. Hàm yêu cầu gửi mã OTP về máy khách
   const handleRequestOtp = async () => {
     const trimmedPhone = phone.trim();
-    // Biểu thức chính quy kiểm tra SĐT di động Việt Nam (10 số, bắt đầu bằng 0, 84 hoặc +84 và các đầu số 3, 5, 7, 8, 9)
+    // Biểu thức chính quy kiểm tra SĐT di động Việt Nam
     const phoneRegex = /^(0|84|\+84)[35789][0-9]{8}$/;
 
     if (!trimmedPhone) {
@@ -35,7 +35,7 @@ export default function LoginScreen() {
     }
 
     if (!phoneRegex.test(trimmedPhone)) {
-      setError('Số điện thoại không đúng định dạng Việt Nam (Ví dụ: 0912345678).');
+      setError('Số điện thoại không đúng định dạng (Ví dụ: 0912345678).');
       return;
     }
 
@@ -67,7 +67,7 @@ export default function LoginScreen() {
       const response = await api.post('/auth/verify-otp', {
         phone: phone.trim(),
         code: otp.trim(),
-        name: 'Chủ buôn mới', // Tên mặc định khi tạo mới
+        name: 'Chủ buôn mới',
       });
       if (response.data.success) {
         const { user, tokens } = response.data;
@@ -92,7 +92,12 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.card}>
-          <Text style={styles.appName}>🥩 Meat Manager</Text>
+          {/* Logo ứng dụng cách điệu như một icon app cao cấp */}
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoEmoji}>🥩</Text>
+          </View>
+          
+          <Text style={styles.appName}>Quản Lý Đơn Thịt</Text>
           <Text style={styles.appDesc}>Ghi nợ sạp thịt siêu nhanh - Không lo quên sổ</Text>
 
           {error ? (
@@ -107,7 +112,7 @@ export default function LoginScreen() {
               <Text style={styles.label}>Số điện thoại của bạn:</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Nhập số điện thoại (Ví dụ: 0901234567)"
+                placeholder="Ví dụ: 0912345678"
                 placeholderTextColor={COLORS.textLight}
                 keyboardType="phone-pad"
                 value={phone}
@@ -120,6 +125,7 @@ export default function LoginScreen() {
                 style={styles.button}
                 onPress={handleRequestOtp}
                 disabled={loading}
+                activeOpacity={0.8}
               >
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
@@ -142,7 +148,7 @@ export default function LoginScreen() {
                 <Text style={styles.changePhoneText}>⬅ Nhập lại số điện thoại khác</Text>
               </TouchableOpacity>
 
-              <Text style={[styles.label, { marginTop: 15 }]}>Nhập mã gồm 4 số được gửi tới máy:</Text>
+              <Text style={styles.label}>Nhập mã gồm 4 số được gửi tới máy:</Text>
               <TextInput
                 style={[styles.input, styles.otpInput]}
                 placeholder="Nhập 4 số"
@@ -156,9 +162,10 @@ export default function LoginScreen() {
                 }}
               />
               <TouchableOpacity
-                style={[styles.button, { backgroundColor: COLORS.primary }]}
+                style={[styles.button, styles.submitButton]}
                 onPress={handleVerifyOtp}
                 disabled={loading}
+                activeOpacity={0.8}
               >
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
@@ -177,39 +184,62 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#FAF8F6', // Nền màu kem lanh nhẹ nhàng, cao cấp
   },
   scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 20,
+    padding: 24,
   },
   card: {
     backgroundColor: COLORS.card,
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 24,
+    paddingVertical: 40,
+    paddingHorizontal: 32,
+    width: '100%',
+    maxWidth: 480, // Tăng nhẹ chiều rộng để chữ không bị rớt dòng
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: '#F1EFEA', // Viền nhạt cao cấp hợp màu nền
     ...SHADOWS.card,
   },
+  logoBadge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FEE2E2', // Nền đỏ hồng nhạt cho icon
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#FCA5A5',
+  },
+  logoEmoji: {
+    fontSize: 40,
+  },
   appName: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#7F1D1D', // Màu đỏ đun Bordeaux sang trọng
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
+    letterSpacing: 0.5,
   },
   appDesc: {
-    fontSize: FONTS.body,
+    fontSize: 15,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    marginBottom: 30,
+    marginBottom: 35,
+    lineHeight: 20,
   },
   errorContainer: {
     backgroundColor: COLORS.dangerLight,
     padding: 14,
-    borderRadius: 10,
-    marginBottom: 20,
+    borderRadius: 12,
+    marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#FCA5A5',
+    borderColor: '#FECACA',
   },
   errorText: {
     color: COLORS.dangerDark,
@@ -221,21 +251,21 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   label: {
-    fontSize: FONTS.subtitle,
+    fontSize: FONTS.body,
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   input: {
-    backgroundColor: COLORS.inputBg,
+    backgroundColor: '#FBFBFB',
     height: 60,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 20,
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    fontSize: 18,
     color: COLORS.text,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: '#E4E2DD',
+    marginBottom: 24,
   },
   otpInput: {
     textAlign: 'center',
@@ -246,7 +276,7 @@ const styles = StyleSheet.create({
   button: {
     backgroundColor: COLORS.primaryDark,
     height: 60,
-    borderRadius: 12,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: COLORS.primary,
@@ -255,10 +285,14 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
+  submitButton: {
+    backgroundColor: COLORS.primary,
+  },
   buttonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
   phoneInfo: {
     fontSize: FONTS.body,
@@ -269,7 +303,7 @@ const styles = StyleSheet.create({
   changePhoneButton: {
     alignSelf: 'center',
     padding: 8,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   changePhoneText: {
     color: COLORS.primaryDark,
