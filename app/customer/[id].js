@@ -9,7 +9,8 @@ import {
   ActivityIndicator,
   SafeAreaView,
   StatusBar,
-  Platform
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -17,13 +18,16 @@ import { api } from '../../src/api/client';
 import { COLORS, FONTS, SHADOWS } from '../../src/theme';
 import DebtModal from '../../src/components/DebtModal';
 import PaymentModal from '../../src/components/PaymentModal';
+import TransactionDetailModal from '../../src/components/TransactionDetailModal';
 
 export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const { width } = useWindowDimensions();
 
   const debtModalRef = useRef(null);
   const paymentModalRef = useRef(null);
+  const detailModalRef = useRef(null);
 
   // 1. Tải thông tin chi tiết khách hàng (bao gồm công nợ hiện tại)
   const {
@@ -97,7 +101,7 @@ export default function CustomerDetailScreen() {
     (a, b) => new Date(b.date) - new Date(a.date)
   );
 
-  // Định dạng hiển thị tiền VNĐ (Ví dụ: 1.500.000 đ)
+  // Định dạng hiển thị tiền VNĐ (Ví dụ: 280.000 đ)
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('vi-VN', {
       style: 'currency',
@@ -105,41 +109,80 @@ export default function CustomerDetailScreen() {
     }).format(amount).replace('₫', 'đ');
   };
 
-  // Định dạng ngày tháng giờ Việt Nam dễ đọc
-  const formatDate = (dateStr) => {
-    const d = new Date(dateStr);
-    return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')} - Ngày ${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+  // Định dạng số tiền ngắn gọn để hiển thị trong ô tile (Ví dụ: 280k, 1.5tr)
+  const formatAmountShort = (amount) => {
+    if (amount >= 1_000_000) {
+      const val = (amount / 1_000_000).toFixed(1).replace(/\.0$/, '');
+      return `${val}tr`;
+    }
+    if (amount >= 1_000) {
+      return `${Math.round(amount / 1_000)}k`;
+    }
+    return `${Math.round(amount)}`;
   };
 
-  const renderHistoryItem = ({ item }) => {
+  // Định dạng ngày ngắn để hiển thị trong tile (Ví dụ: 10/06)
+  const formatShortDate = (dateStr) => {
+    const d = new Date(dateStr);
+    const date = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    return `${date}/${month}`;
+  };
+
+  // Lấy tên thứ ngắn gọn (T2, T3 ... CN)
+  const formatWeekday = (dateStr) => {
+    const d = new Date(dateStr);
+    const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    return days[d.getDay()];
+  };
+
+  // ─── Tính kích thước ô tile theo số cột cố định ──────────────────────────
+  // Tổng chiều rộng content = width màn hình - 2*paddingNgoài - gap giữa các cột
+  const NUM_COLS = 4;     // Số cột ô vuông
+  const OUTER_PAD = 20;  // Padding 2 bên ngoài grid
+  const TILE_GAP = 8;    // Khoảng cách giữa các tile
+  const containerWidth = Math.min(width, 600); // Giới hạn maxWidth=600 như contentWrapper
+  const tileSize =
+    (containerWidth - OUTER_PAD * 2 - TILE_GAP * (NUM_COLS - 1)) / NUM_COLS;
+
+  // ─── Render từng ô tile trong grid ───────────────────────────────────────
+  const renderTile = ({ item }) => {
     const isDebt = item.type === 'debt';
+    const bgColor = isDebt ? '#FFF1F1' : '#F0FDF4';
+    const borderColor = isDebt ? '#FECACA' : '#BBF7D0';
+    const accentColor = isDebt ? COLORS.danger : COLORS.primary;
+    const typeIcon = isDebt ? '🔴' : '🟢';
+
     return (
-      <View style={[styles.historyCard, isDebt ? styles.historyCardDebt : styles.historyCardPayment]}>
-        <View style={styles.historyCardHeader}>
-          <Text style={[styles.historyType, isDebt ? styles.textDebt : styles.textPayment]}>
-            {isDebt ? '🔴 GHI NỢ THỊT' : '🟢 KHÁCH TRẢ TIỀN'}
-          </Text>
-          <Text style={[styles.historyAmount, isDebt ? styles.textDebt : styles.textPayment]}>
-            {isDebt ? '+' : '-'} {formatCurrency(item.amount)}
-          </Text>
-        </View>
+      <TouchableOpacity
+        style={[
+          styles.tile,
+          {
+            width: tileSize,
+            height: tileSize,
+            backgroundColor: bgColor,
+            borderColor,
+          },
+        ]}
+        onPress={() => detailModalRef.current?.open(item)}
+        activeOpacity={0.75}
+      >
+        {/* Icon loại giao dịch ở góc trên trái */}
+        <Text style={styles.tileIcon}>{typeIcon}</Text>
 
-        <Text style={styles.historyDate}>{formatDate(item.date)}</Text>
+        {/* Thứ ngắn (T2, CN...) */}
+        <Text style={[styles.tileWeekday, { color: accentColor }]}>
+          {formatWeekday(item.date)}
+        </Text>
 
-        {isDebt && item.items && item.items.length > 0 ? (
-          <View style={styles.itemList}>
-            {item.items.map((it, idx) => (
-              <Text key={idx} style={styles.itemRow}>
-                • {it.product?.name}: {parseFloat(it.quantity)} {it.product?.unit} x {formatCurrency(parseFloat(it.price))}
-              </Text>
-            ))}
-          </View>
-        ) : null}
+        {/* Ngày/Tháng */}
+        <Text style={styles.tileDate}>{formatShortDate(item.date)}</Text>
 
-        {item.note ? (
-          <Text style={styles.historyNote}>📝 Ghi chú: {item.note}</Text>
-        ) : null}
-      </View>
+        {/* Số tiền ngắn gọn */}
+        <Text style={[styles.tileAmount, { color: accentColor }]}>
+          {formatAmountShort(item.amount)}
+        </Text>
+      </TouchableOpacity>
     );
   };
 
@@ -165,8 +208,10 @@ export default function CustomerDetailScreen() {
         ) : (
           <FlatList
             data={history}
-            renderItem={renderHistoryItem}
+            renderItem={renderTile}
             keyExtractor={(item, index) => `${item.id}-${index}`}
+            numColumns={NUM_COLS}             // Grid nhiều cột tự xuống dòng
+            columnWrapperStyle={styles.tileRow} // Khoảng cách dọc giữa các hàng
             contentContainerStyle={styles.listContent}
             refreshing={isLoading}
             onRefresh={handleRefreshAll}
@@ -187,11 +232,33 @@ export default function CustomerDetailScreen() {
                   {customer?.note ? <Text style={styles.infoRow}>💡 Ghi chú khách quen: {customer.note}</Text> : null}
                 </View>
 
-                <Text style={styles.sectionTitle}>📚 LỊCH SỬ MUA BÁN & THANH TOÁN</Text>
+                {/* Tiêu đề phần grid lịch sử */}
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>📚 LỊCH SỬ MUA BÁN & THANH TOÁN</Text>
+                  {history.length > 0 ? (
+                    <Text style={styles.sectionCount}>{history.length} giao dịch</Text>
+                  ) : null}
+                </View>
+
+                {/* Chú thích màu sắc ô tile */}
+                {history.length > 0 ? (
+                  <View style={styles.legend}>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: COLORS.danger }]} />
+                      <Text style={styles.legendText}>Ghi nợ</Text>
+                    </View>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
+                      <Text style={styles.legendText}>Thu tiền</Text>
+                    </View>
+                    <Text style={styles.legendHint}>Bấm vào ô để xem chi tiết</Text>
+                  </View>
+                ) : null}
               </View>
             }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
+                <Text style={styles.emptyEmoji}>📋</Text>
                 <Text style={styles.emptyText}>Chưa có lịch sử mua bán hay thu tiền nào cho khách hàng này.</Text>
               </View>
             }
@@ -229,6 +296,9 @@ export default function CustomerDetailScreen() {
         customerId={id}
         onRefresh={handleRefreshAll}
       />
+
+      {/* MODAL CHI TIẾT GIAO DỊCH */}
+      <TransactionDetailModal ref={detailModalRef} />
     </SafeAreaView>
   );
 }
@@ -319,80 +389,106 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     lineHeight: 22,
   },
+  // Tiêu đề section lịch sử
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    marginTop: 25,
+    marginBottom: 10,
+  },
   sectionTitle: {
     fontSize: FONTS.subtitle,
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
-    marginHorizontal: 20,
-    marginTop: 25,
-    marginBottom: 15,
+    flex: 1,
   },
-  listContent: {
-    paddingBottom: 120, // Tránh đè lên 2 nút khổng lồ ở đáy
-  },
-  historyCard: {
-    backgroundColor: COLORS.card,
-    marginHorizontal: 20,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+  sectionCount: {
+    fontSize: FONTS.caption,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    backgroundColor: COLORS.inputBg,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
     borderWidth: 1,
-    ...SHADOWS.card,
-  },
-  historyCardDebt: {
-    borderColor: '#FECACA',
-    borderLeftWidth: 5,
-    borderLeftColor: COLORS.danger,
-  },
-  historyCardPayment: {
     borderColor: COLORS.border,
-    borderLeftWidth: 5,
-    borderLeftColor: COLORS.primary,
   },
-  historyCardHeader: {
+  // Chú thích màu sắc
+  legend: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginHorizontal: 20,
+    marginBottom: 14,
+    gap: 12,
+    flexWrap: 'wrap',
   },
-  historyType: {
-    fontSize: FONTS.body,
-    fontWeight: FONTS.weightBold,
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
-  historyAmount: {
-    fontSize: FONTS.subtitle,
-    fontWeight: 'bold',
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
-  historyDate: {
+  legendText: {
+    fontSize: FONTS.caption,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  legendHint: {
     fontSize: FONTS.caption,
     color: COLORS.textLight,
-    marginBottom: 10,
-  },
-  itemList: {
-    backgroundColor: COLORS.inputBg,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  itemRow: {
-    fontSize: FONTS.body,
-    color: COLORS.textSecondary,
-    marginBottom: 4,
-  },
-  historyNote: {
-    fontSize: FONTS.body,
-    color: COLORS.textSecondary,
     fontStyle: 'italic',
   },
-  textDebt: {
-    color: COLORS.danger,
+  // Grid tile layout
+  listContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 130, // Tránh đè lên 2 nút khổng lồ ở đáy
   },
-  textPayment: {
-    color: COLORS.primary,
+  tileRow: {
+    gap: 8,           // Khoảng cách ngang giữa các tile
+    marginBottom: 8,  // Khoảng cách dọc giữa các hàng
   },
+  // Ô tile hình vuông
+  tile: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 8,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    ...SHADOWS.card,
+  },
+  tileIcon: {
+    fontSize: 14,
+  },
+  tileWeekday: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  tileDate: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.text,
+    lineHeight: 18,
+  },
+  tileAmount: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  // Trạng thái rỗng
   emptyContainer: {
     paddingVertical: 60,
     alignItems: 'center',
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
   },
   emptyText: {
     fontSize: FONTS.body,
@@ -401,6 +497,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     lineHeight: 22,
   },
+  // Bottom action bar
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -431,5 +528,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  // Màu chữ
+  textDebt: {
+    color: COLORS.danger,
+  },
+  textPayment: {
+    color: COLORS.primary,
   },
 });
