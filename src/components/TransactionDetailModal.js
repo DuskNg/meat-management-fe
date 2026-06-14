@@ -25,7 +25,7 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
  *   totalPayment: number,
  * }
  */
-const TransactionDetailModal = forwardRef((_, ref) => {
+const TransactionDetailModal = forwardRef(({ onEditTransaction, onEditPayment }, ref) => {
   const [visible, setVisible] = useState(false);
   const [dayGroup, setDayGroup] = useState(null);
 
@@ -121,9 +121,20 @@ const TransactionDetailModal = forwardRef((_, ref) => {
                 <Text style={styles.sectionTitle}>🥩 Đơn ghi nợ thịt</Text>
                 {transactions.map((t, tIdx) => (
                   <View key={t.id} style={styles.transactionCard}>
-                    {/* Header đơn: số thứ tự + tổng tiền đơn */}
+                    {/* Header đơn: số thứ tự + nút sửa + tổng tiền đơn */}
                     <View style={styles.transCardHeader}>
-                      <Text style={styles.transCardNum}>Đơn #{tIdx + 1}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={styles.transCardNum}>Đơn #{tIdx + 1}</Text>
+                        <TouchableOpacity
+                          style={styles.editCardBtn}
+                          onPress={() => {
+                            setVisible(false);
+                            if (onEditTransaction) onEditTransaction(t);
+                          }}
+                        >
+                          <Text style={styles.editCardText}>✏️ Sửa</Text>
+                        </TouchableOpacity>
+                      </View>
                       <Text style={styles.transCardTotal}>{formatCurrency(t.amount)}</Text>
                     </View>
 
@@ -164,7 +175,18 @@ const TransactionDetailModal = forwardRef((_, ref) => {
                 {payments.map((p) => (
                   <View key={p.id} style={styles.paymentCard}>
                     <View style={styles.transCardHeader}>
-                      <Text style={styles.paymentLabel}>Khách đã trả</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={styles.paymentLabel}>Khách đã trả</Text>
+                        <TouchableOpacity
+                          style={styles.editCardBtn}
+                          onPress={() => {
+                            setVisible(false);
+                            if (onEditPayment) onEditPayment(p);
+                          }}
+                        >
+                          <Text style={styles.editCardText}>✏️ Sửa</Text>
+                        </TouchableOpacity>
+                      </View>
                       <Text style={[styles.transCardTotal, { color: COLORS.primaryDark }]}>
                         {formatCurrency(p.amount)}
                       </Text>
@@ -404,6 +426,19 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     fontSize: FONTS.body,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  editCardBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  editCardText: {
+    fontSize: 12,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
   },

@@ -1,4 +1,4 @@
-// meat-management-fe/src/components/DebtModal.js
+// meat-management-fe/src/components/EditDebtModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
@@ -18,13 +18,14 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import ProductListModal from './ProductListModal';
 import DatePickerInput from './DatePickerInput';
 
-const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
-  // ─── Helper: lấy ngày hôm nay dạng DD/MM/YYYY ──────────────────────────
-  const getTodayFormatted = () => {
-    const today = new Date();
-    const d = String(today.getDate()).padStart(2, '0');
-    const m = String(today.getMonth() + 1).padStart(2, '0');
-    const y = today.getFullYear();
+const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
+  // ─── Helper: Chuyển ISO date string/Date object sang DD/MM/YYYY ───────────
+  const formatDateToDisplay = (dateInput) => {
+    if (!dateInput) return '';
+    const date = new Date(dateInput);
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
     return `${d}/${m}/${y}`;
   };
 
@@ -65,8 +66,9 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // ─── State ──────────────────────────────────────────────────────────────
   const [visible, setVisible] = useState(false);
+  const [transactionId, setTransactionId] = useState(null);
 
-  // Giỏ hàng: danh sách mặt hàng đã thêm vào đơn
+  // Giỏ hàng chứa danh sách mặt hàng đang sửa đổi
   const [cartItems, setCartItems] = useState([]);
 
   // Mặt hàng đang được nhập hiện tại
@@ -74,15 +76,15 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [currentQuantity, setCurrentQuantity] = useState('');
   const [currentPrice, setCurrentPrice] = useState('');
 
-  // Thông tin chung cho cả đơn hàng
-  const [dateStr, setDateStr] = useState(getTodayFormatted());
+  // Thông tin chung của cả hóa đơn
+  const [dateStr, setDateStr] = useState('');
   const [note, setNote] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const productModalRef = useRef(null);
 
-  // ─── Tải danh mục sản phẩm (chỉ khi modal đang mở) ───────────────────
+  // ─── Tải danh mục sản phẩm (chỉ khi modal hiển thị) ────────────────────
   const { data: productsResponse, refetch: refetchProducts } = useQuery({
     queryKey: ['products'],
     queryFn: async () => {
@@ -94,17 +96,40 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   const products = productsResponse?.data || [];
 
-  // ─── Phơi bày open/close ra component cha ─────────────────────────────
+  // ─── Phơi bày open/close ra ngoài cho component cha ───────────────────
   useImperativeHandle(ref, () => ({
-    open: () => {
-      setVisible(true);
-      setCartItems([]);
+    open: (transaction) => {
+      if (!transaction) return;
+      setTransactionId(transaction.id);
+      
+      // Chuyển danh sách items của transaction hiện tại vào giỏ hàng
+      const initialCart = (transaction.items || []).map((it) => {
+        // Tìm sản phẩm tương ứng trong danh mục để lấy thông tin đầy đủ
+        const prod = products.find((p) => p.id === it.productId) || {
+          id: it.productId,
+          name: it.product?.name || 'Sản phẩm đã bị xóa',
+          unit: it.product?.unit || 'kg',
+          defaultPrice: parseFloat(it.price),
+        };
+        return {
+          tempId: it.id || Math.random(),
+          product: prod,
+          quantity: parseFloat(it.quantity),
+          price: parseFloat(it.price),
+          displayQuantity: it.quantity.toString(),
+          displayPrice: formatNumberString(it.price.toString()),
+          amount: parseFloat(it.quantity) * parseFloat(it.price),
+        };
+      });
+
+      setCartItems(initialCart);
       setCurrentProduct(null);
       setCurrentQuantity('');
       setCurrentPrice('');
-      setDateStr(getTodayFormatted());
-      setNote('');
+      setDateStr(formatDateToDisplay(transaction.date));
+      setNote(transaction.note || '');
       setError('');
+      setVisible(true);
     },
     close: () => setVisible(false),
   }));
@@ -116,7 +141,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
     setError('');
   };
 
-  // ─── Thêm mặt hàng hiện tại vào giỏ hàng ─────────────────────────────
+  // ─── Thêm mặt hàng đang nhập vào giỏ hàng ────────────────────────────
   const handleAddToCart = () => {
     if (!currentProduct) {
       setError('Vui lòng chọn loại thịt trước.');
@@ -141,7 +166,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
     setCartItems((prev) => [
       ...prev,
       {
-        tempId: Date.now(),        // ID tạm thời để xóa item
+        tempId: Date.now(),
         product: currentProduct,
         quantity: q,
         price: p,
@@ -151,38 +176,36 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       },
     ]);
 
-    // Reset form về trạng thái chọn sản phẩm mới
+    // Trở lại trạng thái chờ chọn sản phẩm mới
     setCurrentProduct(null);
     setCurrentQuantity('');
     setCurrentPrice('');
     setError('');
   };
 
-  // ─── Xóa 1 mặt hàng ra khỏi giỏ hàng ─────────────────────────────────
+  // ─── Xóa một mặt hàng khỏi giỏ ───────────────────────────────────────
   const handleRemoveFromCart = (tempId) => {
     setCartItems((prev) => prev.filter((item) => item.tempId !== tempId));
   };
 
-  // ─── Xác nhận và gửi toàn bộ giỏ hàng lên API ───────────────────────
+  // ─── Lưu cập nhật đơn hàng ───────────────────────────────────────────
   const handleSubmit = async () => {
     if (cartItems.length === 0) {
-      setError('Vui lòng thêm ít nhất 1 mặt hàng vào đơn trước khi xác nhận.');
+      setError('Đơn hàng không được để trống. Vui lòng thêm ít nhất 1 mặt hàng.');
       return;
     }
     const isoDate = parseDateString(dateStr);
     if (!isoDate) {
-      setError('Ngày ghi nợ không đúng định dạng (Ví dụ: 14/06/2026).');
+      setError('Ngày ghi nợ không hợp lệ (Ví dụ: 14/06/2026).');
       return;
     }
 
     setError('');
     setLoading(true);
     try {
-      const response = await api.post('/transactions', {
-        customerId,
+      const response = await api.put(`/transactions/${transactionId}`, {
         date: isoDate,
         note: note.trim() || null,
-        // Gửi toàn bộ mặt hàng trong giỏ hàng lên cùng 1 lần
         items: cartItems.map((item) => ({
           productId: item.product.id,
           quantity: item.quantity,
@@ -194,19 +217,19 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         setVisible(false);
         if (onRefresh) onRefresh();
       } else {
-        setError(response.data.message || 'Lỗi ghi nợ. Vui lòng thử lại.');
+        setError(response.data.message || 'Lỗi cập nhật. Vui lòng thử lại.');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
+      setError(err.response?.data?.message || 'Lỗi kết nối, vui lòng kiểm tra lại.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── Tổng giỏ hàng ─────────────────────────────────────────────────────
+  // ─── Tổng số tiền giỏ hàng ───────────────────────────────────────────
   const cartTotal = cartItems.reduce((sum, item) => sum + item.amount, 0);
 
-  // Thành tiền mặt hàng đang nhập (hiển thị trực tiếp)
+  // Xem trước thành tiền mặt hàng đang gõ
   const currentSubtotal =
     parseFloat(currentQuantity || 0) * parseNumberString(currentPrice || '0');
   const displayCurrentSubtotal = isNaN(currentSubtotal) ? 0 : currentSubtotal;
@@ -222,7 +245,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.centeredView}
       >
-        {/* Lớp nền trong suốt bấm ngoài để đóng modal */}
+        {/* Nhấp ngoài để đóng */}
         <TouchableOpacity
           style={styles.backdrop}
           activeOpacity={1}
@@ -230,12 +253,12 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         />
 
         <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>🔴 GHI NỢ THỊT MỚI</Text>
+          <Text style={styles.modalTitle}>✏️ CẬP NHẬT ĐƠN GHI NỢ</Text>
 
-          {/* Thông báo lỗi */}
+          {/* Lỗi */}
           {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
-          {/* ── GIỎ HÀNG: Danh sách mặt hàng đã thêm ── */}
+          {/* ── GIỎ HÀNG GIAO DỊCH ── */}
           {cartItems.length > 0 && (
             <View style={styles.cartSection}>
               <View style={styles.cartHeader}>
@@ -256,7 +279,6 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                       </Text>
                     </Text>
                   </View>
-                  {/* Nút xóa mặt hàng khỏi giỏ */}
                   <TouchableOpacity
                     style={styles.cartRemoveBtn}
                     onPress={() => handleRemoveFromCart(item.tempId)}
@@ -268,7 +290,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
             </View>
           )}
 
-          {/* ── CHỌN LOẠI THỊT ── */}
+          {/* ── CHỌN MẶT HÀNG MỚI ── */}
           <Text style={styles.label}>
             {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua (lướt ngang để xem loại thịt):'}
           </Text>
@@ -300,7 +322,6 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                     </TouchableOpacity>
                   );
                 })}
-                {/* Nút thêm loại thịt mới nhanh */}
                 <TouchableOpacity
                   style={[styles.productBadge, styles.addProductBadge]}
                   onPress={() => productModalRef.current?.open()}
@@ -313,10 +334,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           </View>
 
           <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-            {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
             {currentProduct ? (
               <View>
-                {/* Khối lượng */}
                 <Text style={styles.label}>
                   Khối lượng ({currentProduct.unit}):
                 </Text>
@@ -335,7 +354,6 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   <Text style={styles.unitText}>{currentProduct.unit}</Text>
                 </View>
 
-                {/* Đơn giá */}
                 <Text style={styles.label}>Giá bán thực tế (VND):</Text>
                 <TextInput
                   style={[styles.input, { fontSize: 20, fontWeight: 'bold' }]}
@@ -346,7 +364,6 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   onChangeText={(text) => setCurrentPrice(formatNumberString(text))}
                 />
 
-                {/* Xem trước thành tiền mặt hàng đang nhập */}
                 {displayCurrentSubtotal > 0 && (
                   <View style={styles.previewRow}>
                     <Text style={styles.previewLabel}>Thành tiền mặt hàng này:</Text>
@@ -356,7 +373,6 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   </View>
                 )}
 
-                {/* Nút thêm vào giỏ hàng */}
                 <TouchableOpacity style={styles.addToCartBtn} onPress={handleAddToCart}>
                   <Text style={styles.addToCartText}>➕ THÊM VÀO ĐƠN</Text>
                 </TouchableOpacity>
@@ -371,7 +387,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
               </Text>
             ) : null}
 
-            {/* ── NGÀY VÀ GHI CHÚ CHUNG CHO CẢ ĐƠN ── */}
+            {/* ── NGÀY VÀ GHI CHÚ CHUNG ── */}
             {(cartItems.length > 0 || currentProduct) && (
               <View style={styles.sharedFields}>
                 <View style={styles.divider} />
@@ -381,7 +397,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                 <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
+                  placeholder="Ví dụ: Thay đổi lại đơn hàng cũ"
                   placeholderTextColor={COLORS.textLight}
                   value={note}
                   onChangeText={setNote}
@@ -390,7 +406,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
             )}
           </ScrollView>
 
-          {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}
+          {/* ── TỔNG CỘNG ── */}
           {cartItems.length > 0 && (
             <View style={styles.totalContainer}>
               <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
@@ -398,7 +414,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
             </View>
           )}
 
-          {/* ── NÚT HỦY / XÁC NHẬN ── */}
+          {/* ── NÚT HÀNH ĐỘNG ── */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={[styles.button, styles.cancelButton]}
@@ -416,22 +432,19 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
               {loading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.submitButtonText}>
-                  {cartItems.length > 0 ? `GHI NỢ (${cartItems.length})` : 'XÁC NHẬN'}
-                </Text>
+                <Text style={styles.submitButtonText}>CẬP NHẬT ĐƠN</Text>
               )}
             </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
 
-      {/* Modal quản lý danh mục thịt */}
       <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
     </Modal>
   );
 });
 
-export default DebtModal;
+export default EditDebtModal;
 
 const styles = StyleSheet.create({
   centeredView: {
@@ -469,7 +482,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // ── Giỏ hàng ────────────────────────────────────────────────────────────
   cartSection: {
     backgroundColor: '#FFF8F0',
     borderRadius: 12,
@@ -499,7 +511,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 6,
     borderTopWidth: 1,
-    borderColor: '#FED7AA',
+    borderTopColor: '#FEE2E2',
   },
   cartItemInfo: {
     flex: 1,
@@ -515,21 +527,20 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   cartRemoveBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.dangerLight,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FEE2E2',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    marginLeft: 10,
   },
   cartRemoveText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: 'bold',
-    color: COLORS.dangerDark,
+    color: COLORS.danger,
   },
 
-  // ── Chọn sản phẩm ───────────────────────────────────────────────────────
   label: {
     fontSize: FONTS.body,
     fontWeight: FONTS.weightBold,
@@ -537,20 +548,22 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   productsContainer: {
-    marginBottom: 14,
+    marginBottom: 16,
+    flexDirection: 'row',
   },
   productBadge: {
-    padding: 10,
-    borderRadius: 10,
     backgroundColor: COLORS.inputBg,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
     marginRight: 10,
-    alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
-    minWidth: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   productBadgeSelected: {
-    backgroundColor: COLORS.dangerLight,
+    backgroundColor: '#FFF5F5',
     borderColor: COLORS.danger,
   },
   productBadgeText: {
@@ -559,65 +572,66 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   productBadgeTextSelected: {
-    color: COLORS.dangerDark,
+    color: COLORS.danger,
   },
   productBadgePrice: {
-    fontSize: FONTS.caption,
+    fontSize: 11,
     color: COLORS.textSecondary,
-    marginTop: 3,
+    marginTop: 2,
   },
   addProductBadge: {
-    backgroundColor: '#FAF8F6',
-    borderColor: '#7F1D1D',
-    borderStyle: 'dashed',
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
   },
   addProductBadgeText: {
     fontSize: FONTS.body,
     fontWeight: 'bold',
-    color: '#7F1D1D',
+    color: '#C2410C',
   },
 
-  // ── Form scroll ─────────────────────────────────────────────────────────
   formScroll: {
-    maxHeight: 420,
+    maxHeight: 220,
     marginBottom: 10,
   },
   numericRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  unitText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.textSecondary,
-    marginLeft: 12,
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingRight: 16,
+    marginBottom: 16,
   },
   input: {
     backgroundColor: COLORS.inputBg,
-    height: 52,
+    height: 56,
     borderRadius: 10,
     paddingHorizontal: 16,
     fontSize: FONTS.body,
     color: COLORS.text,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 12,
+    marginBottom: 16,
   },
-
-  // Xem trước thành tiền mặt hàng đang nhập
+  unitText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+    marginLeft: 10,
+  },
   previewRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
     backgroundColor: COLORS.dangerLight,
+    padding: 12,
     borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 10,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
   previewLabel: {
-    fontSize: FONTS.caption,
+    fontSize: FONTS.body,
     fontWeight: '600',
     color: COLORS.dangerDark,
   },
@@ -626,75 +640,69 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.danger,
   },
-
-  // Nút thêm vào giỏ
   addToCartBtn: {
-    backgroundColor: '#FFF7ED',
-    borderWidth: 1.5,
-    borderColor: '#F97316',
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    height: 52,
+    height: 54,
+    borderRadius: 10,
+    backgroundColor: '#FFF5F5',
+    borderWidth: 2,
+    borderColor: COLORS.danger,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   addToCartText: {
     fontSize: FONTS.body,
     fontWeight: 'bold',
-    color: '#C2410C',
+    color: COLORS.danger,
   },
-
   selectPrompt: {
     fontSize: FONTS.body,
     color: COLORS.textSecondary,
     textAlign: 'center',
     marginVertical: 20,
+    fontStyle: 'italic',
   },
 
-  // Divider ngăn cách form nhập và phần ngày/ghi chú
+  sharedFields: {
+    marginTop: 8,
+  },
   divider: {
     height: 1,
     backgroundColor: COLORS.border,
-    marginVertical: 12,
-  },
-  sharedFields: {
-    marginTop: 4,
+    marginVertical: 14,
   },
 
-  // ── Tổng đơn hàng (bottom fixed) ────────────────────────────────────────
   totalContainer: {
-    backgroundColor: '#E6F4EA',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: COLORS.primary,
-    marginBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
+    marginBottom: 16,
   },
   totalLabel: {
     fontSize: FONTS.body,
     fontWeight: 'bold',
-    color: '#065F46',
+    color: COLORS.dangerDark,
   },
   totalValue: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.primaryDark,
+    color: COLORS.danger,
   },
 
-  // ── Buttons ─────────────────────────────────────────────────────────────
   buttonContainer: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     gap: 12,
-    marginTop: 4,
   },
   button: {
     flex: 1,
-    height: 54,
-    borderRadius: 12,
+    height: 58,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -705,25 +713,25 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: COLORS.textSecondary,
-    fontSize: 15,
+    fontSize: FONTS.subtitle,
     fontWeight: 'bold',
   },
   submitButton: {
     backgroundColor: COLORS.danger,
     shadowColor: COLORS.danger,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.2,
     shadowRadius: 6,
-    elevation: 3,
+    elevation: 2,
   },
   submitDisabled: {
-    backgroundColor: COLORS.textLight,
+    backgroundColor: COLORS.border,
     shadowOpacity: 0,
     elevation: 0,
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: FONTS.subtitle,
     fontWeight: 'bold',
   },
 });

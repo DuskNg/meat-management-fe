@@ -20,6 +20,8 @@ import { COLORS, FONTS, SHADOWS } from '../../src/theme';
 import DebtModal from '../../src/components/DebtModal';
 import PaymentModal from '../../src/components/PaymentModal';
 import TransactionDetailModal from '../../src/components/TransactionDetailModal';
+import EditDebtModal from '../../src/components/EditDebtModal';
+import EditPaymentModal from '../../src/components/EditPaymentModal';
 
 export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -29,6 +31,8 @@ export default function CustomerDetailScreen() {
   const debtModalRef = useRef(null);
   const paymentModalRef = useRef(null);
   const detailModalRef = useRef(null);
+  const editDebtModalRef = useRef(null);
+  const editPaymentModalRef = useRef(null);
 
   // 1. Tải thông tin chi tiết khách hàng
   const {
@@ -247,18 +251,6 @@ export default function CustomerDetailScreen() {
           {/* Chú thích */}
           {dayGroups.length > 0 && (
             <View style={styles.legend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: COLORS.danger }]} />
-                <Text style={styles.legendText}>Ghi nợ</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
-                <Text style={styles.legendText}>Thu tiền</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#F97316' }]} />
-                <Text style={styles.legendText}>Có cả 2</Text>
-              </View>
               <Text style={styles.legendHint}>• Bấm ô để xem chi tiết</Text>
             </View>
           )}
@@ -359,7 +351,13 @@ export default function CustomerDetailScreen() {
 
       <DebtModal ref={debtModalRef} customerId={id} onRefresh={handleRefreshAll} />
       <PaymentModal ref={paymentModalRef} customerId={id} onRefresh={handleRefreshAll} />
-      <TransactionDetailModal ref={detailModalRef} />
+      <TransactionDetailModal
+        ref={detailModalRef}
+        onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
+        onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
+      />
+      <EditDebtModal ref={editDebtModalRef} onRefresh={handleRefreshAll} />
+      <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} />
     </SafeAreaView>
   );
 }
