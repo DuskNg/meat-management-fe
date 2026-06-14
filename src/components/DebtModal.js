@@ -58,13 +58,26 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const handleSelectProduct = (product) => {
     setSelectedProduct(product);
     // Tự động điền giá mặc định của sản phẩm đó làm giá bán gợi ý
-    setPrice(product.defaultPrice.toString());
+    setPrice(formatNumberString(product.defaultPrice.toString()));
     setError('');
   };
 
   // 4. Định dạng tiền tệ cho đơn giá hiển thị
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount).replace('₫', 'đ');
+  };
+
+  // Tự động thêm phân tách hàng nghìn bằng dấu chấm khi gõ phím
+  const formatNumberString = (value) => {
+    const cleanValue = value.replace(/[^0-9]/g, '');
+    if (cleanValue === '') return '';
+    return new Intl.NumberFormat('vi-VN').format(parseInt(cleanValue, 10));
+  };
+
+  // Chuyển chuỗi định dạng trở lại số nguyên để lưu
+  const parseNumberString = (formattedValue) => {
+    const cleanValue = formattedValue.replace(/[^0-9]/g, '');
+    return cleanValue ? parseInt(cleanValue, 10) : 0;
   };
 
   // 5. Xử lý ghi nợ thịt mới
@@ -74,14 +87,17 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       return;
     }
     const q = parseFloat(quantity);
-    const p = parseFloat(price);
-
     if (isNaN(q) || q <= 0) {
       setError('Khối lượng thịt phải lớn hơn 0 (Ví dụ: 1.5).');
       return;
     }
-    if (isNaN(p) || p < 0) {
-      setError('Đơn giá không được để trống hoặc số âm.');
+    if (!price || price.trim() === '') {
+      setError('Đơn giá không được để trống.');
+      return;
+    }
+    const p = parseNumberString(price);
+    if (p < 0) {
+      setError('Đơn giá không được là số âm.');
       return;
     }
 
@@ -206,11 +222,11 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                 <Text style={styles.label}>3. Giá bán thực tế lúc cân (VND/kg):</Text>
                 <TextInput
                   style={[styles.input, { fontSize: 20, fontWeight: 'bold' }]}
-                  placeholder="Ví dụ: 130000"
+                  placeholder="Ví dụ: 130.000"
                   placeholderTextColor={COLORS.textLight}
-                  keyboardType="numeric"
+                  keyboardType="number-pad" // Chỉ hiển thị phím số trên di động
                   value={price}
-                  onChangeText={setPrice}
+                  onChangeText={(text) => setPrice(formatNumberString(text))}
                 />
 
                 {/* Ghi chú thêm */}

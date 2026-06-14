@@ -60,17 +60,34 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       .replace('₫', 'đ');
   };
 
+  // Định dạng chuỗi số nhập vào tự động thêm dấu chấm phân tách hàng nghìn
+  const formatNumberString = (value) => {
+    const cleanValue = value.replace(/[^0-9]/g, '');
+    if (cleanValue === '') return '';
+    return new Intl.NumberFormat('vi-VN').format(parseInt(cleanValue, 10));
+  };
+
+  // Chuyển chuỗi định dạng trở lại số nguyên để gửi đi
+  const parseNumberString = (formattedValue) => {
+    const cleanValue = formattedValue.replace(/[^0-9]/g, '');
+    return cleanValue ? parseInt(cleanValue, 10) : 0;
+  };
+
   // 3. Xử lý thêm loại thịt mới
   const handleAddProduct = async () => {
     const trimmedName = name.trim();
-    const defaultPrice = parseFloat(price.trim());
-
     if (!trimmedName) {
       setError('Tên loại thịt không được để trống.');
       return;
     }
-    if (isNaN(defaultPrice) || defaultPrice < 0) {
-      setError('Đơn giá mặc định phải là số từ 0 trở lên.');
+    if (!price || price.trim() === '') {
+      setError('Đơn giá không được để trống.');
+      return;
+    }
+
+    const defaultPrice = parseNumberString(price);
+    if (defaultPrice < 0) {
+      setError('Đơn giá mặc định phải từ 0 trở lên.');
       return;
     }
 
@@ -191,18 +208,18 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
             <View style={styles.inputGroup}>
               <TextInput
                 style={styles.input}
-                placeholder="Tên thịt (Ví dụ: Sườn non heo, Thịt vai...)"
+                placeholder="Tên thịt (Ví dụ: Bắp bò...)"
                 placeholderTextColor={COLORS.textLight}
                 value={name}
                 onChangeText={setName}
               />
-              <TextInput
+               <TextInput
                 style={styles.input}
-                placeholder="Giá tiền bán mặc định (Ví dụ: 130000)"
+                placeholder="Giá tiền (Ví dụ: 130.000)"
                 placeholderTextColor={COLORS.textLight}
-                keyboardType="numeric"
+                keyboardType="number-pad" // Hiển thị bàn phím số nguyên trên di động
                 value={price}
-                onChangeText={setPrice}
+                onChangeText={(text) => setPrice(formatNumberString(text))}
               />
             </View>
 

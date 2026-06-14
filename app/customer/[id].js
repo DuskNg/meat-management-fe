@@ -1,13 +1,13 @@
 // meat-management-fe/app/customer/[id].js
 import React, { useRef } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  FlatList, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  SafeAreaView, 
+import {
+  StyleSheet,
+  Text,
+  View,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  SafeAreaView,
   StatusBar,
   Platform
 } from 'react-native';
@@ -21,15 +21,15 @@ import PaymentModal from '../../src/components/PaymentModal';
 export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  
+
   const debtModalRef = useRef(null);
   const paymentModalRef = useRef(null);
 
   // 1. Tải thông tin chi tiết khách hàng (bao gồm công nợ hiện tại)
-  const { 
-    data: customerResponse, 
-    isLoading: isLoadingCustomer, 
-    refetch: refetchCustomer 
+  const {
+    data: customerResponse,
+    isLoading: isLoadingCustomer,
+    refetch: refetchCustomer
   } = useQuery({
     queryKey: ['customer', id],
     queryFn: async () => {
@@ -39,10 +39,10 @@ export default function CustomerDetailScreen() {
   });
 
   // 2. Tải lịch sử các đơn nợ (Transactions) của khách hàng này
-  const { 
-    data: transactionsResponse, 
-    isLoading: isLoadingTrans, 
-    refetch: refetchTrans 
+  const {
+    data: transactionsResponse,
+    isLoading: isLoadingTrans,
+    refetch: refetchTrans
   } = useQuery({
     queryKey: ['transactions', id],
     queryFn: async () => {
@@ -52,10 +52,10 @@ export default function CustomerDetailScreen() {
   });
 
   // 3. Tải lịch sử các lượt trả tiền (Payments) của khách hàng này
-  const { 
-    data: paymentsResponse, 
-    isLoading: isLoadingPayments, 
-    refetch: refetchPayments 
+  const {
+    data: paymentsResponse,
+    isLoading: isLoadingPayments,
+    refetch: refetchPayments
   } = useQuery({
     queryKey: ['payments', id],
     queryFn: async () => {
@@ -99,9 +99,9 @@ export default function CustomerDetailScreen() {
 
   // Định dạng hiển thị tiền VNĐ (Ví dụ: 1.500.000 đ)
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('vi-VN', { 
-      style: 'currency', 
-      currency: 'VND' 
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND'
     }).format(amount).replace('₫', 'đ');
   };
 
@@ -153,7 +153,7 @@ export default function CustomerDetailScreen() {
         {/* HEADER: Nút quay lại & Tên khách hàng */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backButtonText}>⬅ SỔ NỢ CHÍNH</Text>
+            <Text style={styles.backButtonText}>⬅ QUAY LẠI</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {customer ? customer.name : 'Đang tải...'}
@@ -200,15 +200,15 @@ export default function CustomerDetailScreen() {
 
         {/* 2 NÚT HÀNH ĐỘNG KHỔNG LỒ Ở DƯỚI ĐÁY (Một Đỏ ghi nợ - Một Xanh thu tiền) */}
         <View style={styles.bottomBar}>
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.btnDebt]} 
+          <TouchableOpacity
+            style={[styles.actionButton, styles.btnDebt]}
             onPress={() => debtModalRef.current?.open()}
           >
             <Text style={styles.actionButtonText}>🔴 GHI NỢ MỚI</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.btnPayment]} 
+          <TouchableOpacity
+            style={[styles.actionButton, styles.btnPayment]}
             onPress={() => paymentModalRef.current?.open()}
           >
             <Text style={styles.actionButtonText}>🟢 THU TIỀN NỢ</Text>
@@ -217,17 +217,17 @@ export default function CustomerDetailScreen() {
       </View>
 
       {/* MODAL GHI NỢ THỊT MỚI */}
-      <DebtModal 
-        ref={debtModalRef} 
-        customerId={id} 
-        onRefresh={handleRefreshAll} 
+      <DebtModal
+        ref={debtModalRef}
+        customerId={id}
+        onRefresh={handleRefreshAll}
       />
 
       {/* MODAL THU TIỀN TRẢ NỢ */}
-      <PaymentModal 
-        ref={paymentModalRef} 
-        customerId={id} 
-        onRefresh={handleRefreshAll} 
+      <PaymentModal
+        ref={paymentModalRef}
+        customerId={id}
+        onRefresh={handleRefreshAll}
       />
     </SafeAreaView>
   );

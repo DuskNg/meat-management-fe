@@ -35,18 +35,35 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
     }
   }));
 
+  // Tự động thêm phân tách hàng nghìn bằng dấu chấm khi gõ phím
+  const formatNumberString = (value) => {
+    const cleanValue = value.replace(/[^0-9]/g, '');
+    if (cleanValue === '') return '';
+    return new Intl.NumberFormat('vi-VN').format(parseInt(cleanValue, 10));
+  };
+
+  // Chuyển chuỗi định dạng trở lại số nguyên để lưu
+  const parseNumberString = (formattedValue) => {
+    const cleanValue = formattedValue.replace(/[^0-9]/g, '');
+    return cleanValue ? parseInt(cleanValue, 10) : 0;
+  };
+
   // 2. Gợi ý điền nhanh số tiền (giúp người bán bấm nhanh các mốc chẵn)
   const handleQuickAmount = (value) => {
-    setAmount(value.toString());
+    setAmount(formatNumberString(value.toString()));
     setError('');
   };
 
   // 3. Xử lý ghi nhận thu tiền khách trả nợ
   const handleSubmit = async () => {
-    const payAmount = parseFloat(amount);
+    if (!amount || amount.trim() === '') {
+      setError('Số tiền trả nợ không được để trống.');
+      return;
+    }
+    const payAmount = parseNumberString(amount);
 
-    if (isNaN(payAmount) || payAmount <= 0) {
-      setError('Số tiền trả nợ phải lớn hơn 0 (Ví dụ: 200000).');
+    if (payAmount <= 0) {
+      setError('Số tiền trả nợ phải lớn hơn 0 (Ví dụ: 200.000).');
       return;
     }
 
@@ -99,12 +116,12 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
             <Text style={styles.label}>1. Số tiền thu được thực tế (VND):</Text>
             <TextInput
               style={[styles.input, styles.amountInput]}
-              placeholder="Ví dụ: 500000"
+              placeholder="Ví dụ: 500.000"
               placeholderTextColor={COLORS.textLight}
-              keyboardType="numeric"
+              keyboardType="number-pad" // Hiển thị bàn phím số nguyên trên di động
               value={amount}
               onChangeText={(text) => {
-                setAmount(text);
+                setAmount(formatNumberString(text));
                 setError('');
               }}
             />
