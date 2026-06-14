@@ -1,15 +1,15 @@
 // meat-management-fe/app/login.js
 import React, { useState } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  KeyboardAvoidingView, 
-  Platform, 
-  ScrollView 
+import {
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView
 } from 'react-native';
 import { useAuthStore } from '../src/store/authStore';
 import { api } from '../src/api/client';
@@ -23,19 +23,69 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Hàm kiểm tra định dạng SĐT di động Việt Nam
+  const validatePhoneFormat = (value) => {
+    const phoneRegex = /^(0|84|\+84)[35789][0-9]{8}$/;
+    return phoneRegex.test(value);
+  };
+
+  // Hàm kiểm tra và trả về thông báo lỗi SĐT (Xác thực trực tiếp)
+  const getPhoneValidationError = (value) => {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return 'Số điện thoại không được để trống.';
+    }
+    if (!/^\+?[0-9]*$/.test(trimmed)) {
+      return 'Số điện thoại chỉ được chứa chữ số và dấu + ở đầu.';
+    }
+    const expectedLength = trimmed.startsWith('+84') ? 12 : (trimmed.startsWith('84') ? 11 : 10);
+    if (trimmed.length < expectedLength) {
+      return `Số điện thoại chưa đủ chữ số (yêu cầu ${expectedLength} chữ số).`;
+    }
+    if (trimmed.length > expectedLength) {
+      return `Số điện thoại thừa chữ số (yêu cầu ${expectedLength} chữ số).`;
+    }
+    if (!validatePhoneFormat(trimmed)) {
+      return 'Số điện thoại không đúng định dạng (Ví dụ: 0912345678).';
+    }
+    return '';
+  };
+
+  // Hàm kiểm tra và trả về thông báo lỗi OTP (Xác thực trực tiếp)
+  const getOtpValidationError = (value) => {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return 'Mã OTP không được để trống.';
+    }
+    if (!/^[0-9]*$/.test(trimmed)) {
+      return 'Mã OTP chỉ bao gồm chữ số.';
+    }
+    if (trimmed.length !== 4) {
+      return 'Mã xác thực OTP phải có đúng 4 chữ số.';
+    }
+    return '';
+  };
+
+  // Hàm xử lý khi thay đổi SĐT (Xác thực trực tiếp khi đang gõ)
+  const handlePhoneChange = (text) => {
+    setPhone(text);
+    const errorMsg = getPhoneValidationError(text);
+    setError(errorMsg);
+  };
+
+  // Hàm xử lý khi thay đổi OTP (Xác thực trực tiếp khi đang gõ)
+  const handleOtpChange = (text) => {
+    setOtp(text);
+    const errorMsg = getOtpValidationError(text);
+    setError(errorMsg);
+  };
+
   // 1. Hàm yêu cầu gửi mã OTP về máy khách
   const handleRequestOtp = async () => {
     const trimmedPhone = phone.trim();
-    // Biểu thức chính quy kiểm tra SĐT di động Việt Nam
-    const phoneRegex = /^(0|84|\+84)[35789][0-9]{8}$/;
-
-    if (!trimmedPhone) {
-      setError('Số điện thoại không được để trống.');
-      return;
-    }
-
-    if (!phoneRegex.test(trimmedPhone)) {
-      setError('Số điện thoại không đúng định dạng (Ví dụ: 0912345678).');
+    const errorMsg = getPhoneValidationError(trimmedPhone);
+    if (errorMsg) {
+      setError(errorMsg);
       return;
     }
 
@@ -57,8 +107,10 @@ export default function LoginScreen() {
 
   // 2. Hàm xác thực OTP và Đăng nhập
   const handleVerifyOtp = async () => {
-    if (!otp || otp.trim().length !== 4) {
-      setError('Mã xác thực OTP phải có đúng 4 chữ số.');
+    const trimmedOtp = otp.trim();
+    const errorMsg = getOtpValidationError(trimmedOtp);
+    if (errorMsg) {
+      setError(errorMsg);
       return;
     }
     setError('');
@@ -66,7 +118,7 @@ export default function LoginScreen() {
     try {
       const response = await api.post('/auth/verify-otp', {
         phone: phone.trim(),
-        code: otp.trim(),
+        code: trimmedOtp,
         name: 'Chủ buôn mới',
       });
       if (response.data.success) {
@@ -87,8 +139,8 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView 
-        contentContainerStyle={styles.scrollContainer} 
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.card}>
@@ -96,10 +148,8 @@ export default function LoginScreen() {
           <View style={styles.logoBadge}>
             <Text style={styles.logoEmoji}>🥩</Text>
           </View>
-          
-          <Text style={styles.appName}>Quản Lý Đơn Thịt</Text>
-          <Text style={styles.appDesc}>Ghi nợ sạp thịt siêu nhanh - Không lo quên sổ</Text>
 
+          <Text style={styles.appName}>Quản Lý bán hàng</Text>
           {error ? (
             <View style={styles.errorContainer}>
               <Text style={styles.errorText}>⚠️ {error}</Text>
@@ -116,10 +166,7 @@ export default function LoginScreen() {
                 placeholderTextColor={COLORS.textLight}
                 keyboardType="phone-pad"
                 value={phone}
-                onChangeText={(text) => {
-                  setPhone(text);
-                  setError('');
-                }}
+                onChangeText={handlePhoneChange}
               />
               <TouchableOpacity
                 style={styles.button}
@@ -140,9 +187,9 @@ export default function LoginScreen() {
               <Text style={styles.phoneInfo}>
                 Đang gửi mã về số: <Text style={{ fontWeight: 'bold', color: COLORS.text }}>{phone}</Text>
               </Text>
-              
-              <TouchableOpacity 
-                style={styles.changePhoneButton} 
+
+              <TouchableOpacity
+                style={styles.changePhoneButton}
                 onPress={() => { setStep(1); setError(''); setOtp(''); }}
               >
                 <Text style={styles.changePhoneText}>⬅ Nhập lại số điện thoại khác</Text>
@@ -156,10 +203,7 @@ export default function LoginScreen() {
                 keyboardType="number-pad"
                 maxLength={4}
                 value={otp}
-                onChangeText={(text) => {
-                  setOtp(text);
-                  setError('');
-                }}
+                onChangeText={handleOtpChange}
               />
               <TouchableOpacity
                 style={[styles.button, styles.submitButton]}
@@ -189,13 +233,13 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 24,
+    padding: 16,
   },
   card: {
     backgroundColor: COLORS.card,
     borderRadius: 24,
-    paddingVertical: 40,
-    paddingHorizontal: 32,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
     width: '100%',
     maxWidth: 480, // Tăng nhẹ chiều rộng để chữ không bị rớt dòng
     alignSelf: 'center',
