@@ -4,12 +4,13 @@ import {
   StyleSheet,
   Text,
   View,
-  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
   StatusBar,
   Platform,
+  ScrollView,
+  RefreshControl,
   useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -33,12 +34,12 @@ export default function CustomerDetailScreen() {
   const {
     data: customerResponse,
     isLoading: isLoadingCustomer,
-    refetch: refetchCustomer
+    refetch: refetchCustomer,
   } = useQuery({
     queryKey: ['customer', id],
     queryFn: async () => {
-      const response = await api.get(`/customers/${id}`);
-      return response.data;
+      const res = await api.get(`/customers/${id}`);
+      return res.data;
     },
   });
 
@@ -46,12 +47,12 @@ export default function CustomerDetailScreen() {
   const {
     data: transactionsResponse,
     isLoading: isLoadingTrans,
-    refetch: refetchTrans
+    refetch: refetchTrans,
   } = useQuery({
     queryKey: ['transactions', id],
     queryFn: async () => {
-      const response = await api.get(`/transactions?customerId=${id}`);
-      return response.data;
+      const res = await api.get(`/transactions?customerId=${id}`);
+      return res.data;
     },
   });
 
@@ -59,12 +60,12 @@ export default function CustomerDetailScreen() {
   const {
     data: paymentsResponse,
     isLoading: isLoadingPayments,
-    refetch: refetchPayments
+    refetch: refetchPayments,
   } = useQuery({
     queryKey: ['payments', id],
     queryFn: async () => {
-      const response = await api.get(`/payments?customerId=${id}`);
-      return response.data;
+      const res = await api.get(`/payments?customerId=${id}`);
+      return res.data;
     },
   });
 
@@ -72,14 +73,14 @@ export default function CustomerDetailScreen() {
   const transactions = transactionsResponse?.data || [];
   const payments = paymentsResponse?.data || [];
 
-  // 4. Đồng bộ làm mới toàn bộ dữ liệu khi kéo thả hoặc khi thao tác xong
+  // 4. Làm mới toàn bộ dữ liệu cùng lúc
   const handleRefreshAll = () => {
     refetchCustomer();
     refetchTrans();
     refetchPayments();
   };
 
-  // 5. Trộn (merge) hóa đơn nợ và phiếu thu tiền trả nợ thành 1 danh sách thời gian duy nhất
+  // 5. Trộn và sắp xếp lịch sử nợ + thu tiền theo thứ tự thời gian mới nhất lên đầu
   const formattedTransactions = transactions.map((t) => ({
     id: t.id,
     type: 'debt',
@@ -101,90 +102,46 @@ export default function CustomerDetailScreen() {
     (a, b) => new Date(b.date) - new Date(a.date)
   );
 
-  // Định dạng hiển thị tiền VNĐ (Ví dụ: 280.000 đ)
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('vi-VN', {
-      style: 'currency',
-      currency: 'VND'
-    }).format(amount).replace('₫', 'đ');
-  };
+  // ─── Các hàm định dạng hiển thị ─────────────────────────────────────────
 
-  // Định dạng số tiền ngắn gọn để hiển thị trong ô tile (Ví dụ: 280k, 1.5tr)
+  // Định dạng tiền VNĐ đầy đủ (Ví dụ: 670.000 đ)
+  const formatCurrency = (amount) =>
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
+      .format(amount)
+      .replace('₫', 'đ');
+
+  // Định dạng tiền rút gọn để hiện trong tile (Ví dụ: 280k / 1.5tr)
   const formatAmountShort = (amount) => {
     if (amount >= 1_000_000) {
-      const val = (amount / 1_000_000).toFixed(1).replace(/\.0$/, '');
-      return `${val}tr`;
+      const v = (amount / 1_000_000).toFixed(1).replace(/\.0$/, '');
+      return `${v}tr`;
     }
-    if (amount >= 1_000) {
-      return `${Math.round(amount / 1_000)}k`;
-    }
-    return `${Math.round(amount)}`;
+    return `${Math.round(amount / 1_000)}k`;
   };
 
-  // Định dạng ngày ngắn để hiển thị trong tile (Ví dụ: 10/06)
+  // Định dạng ngày/tháng ngắn để hiện trong tile (Ví dụ: 10/06)
   const formatShortDate = (dateStr) => {
     const d = new Date(dateStr);
-    const date = d.getDate().toString().padStart(2, '0');
-    const month = (d.getMonth() + 1).toString().padStart(2, '0');
-    return `${date}/${month}`;
+    const dd = d.getDate().toString().padStart(2, '0');
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+    return `${dd}/${mm}`;
   };
 
-  // Lấy tên thứ ngắn gọn (T2, T3 ... CN)
-  const formatWeekday = (dateStr) => {
+  // Lấy thứ viết tắt tiếng Việt (T2 ~ CN)
+  const getWeekday = (dateStr) => {
     const d = new Date(dateStr);
-    const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-    return days[d.getDay()];
+    return ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][d.getDay()];
   };
 
-  // ─── Tính kích thước ô tile theo số cột cố định ──────────────────────────
-  // Tổng chiều rộng content = width màn hình - 2*paddingNgoài - gap giữa các cột
-  const NUM_COLS = 4;     // Số cột ô vuông
-  const OUTER_PAD = 20;  // Padding 2 bên ngoài grid
-  const TILE_GAP = 8;    // Khoảng cách giữa các tile
-  const containerWidth = Math.min(width, 600); // Giới hạn maxWidth=600 như contentWrapper
-  const tileSize =
-    (containerWidth - OUTER_PAD * 2 - TILE_GAP * (NUM_COLS - 1)) / NUM_COLS;
-
-  // ─── Render từng ô tile trong grid ───────────────────────────────────────
-  const renderTile = ({ item }) => {
-    const isDebt = item.type === 'debt';
-    const bgColor = isDebt ? '#FFF1F1' : '#F0FDF4';
-    const borderColor = isDebt ? '#FECACA' : '#BBF7D0';
-    const accentColor = isDebt ? COLORS.danger : COLORS.primary;
-    const typeIcon = isDebt ? '🔴' : '🟢';
-
-    return (
-      <TouchableOpacity
-        style={[
-          styles.tile,
-          {
-            width: tileSize,
-            height: tileSize,
-            backgroundColor: bgColor,
-            borderColor,
-          },
-        ]}
-        onPress={() => detailModalRef.current?.open(item)}
-        activeOpacity={0.75}
-      >
-        {/* Icon loại giao dịch ở góc trên trái */}
-        <Text style={styles.tileIcon}>{typeIcon}</Text>
-
-        {/* Thứ ngắn (T2, CN...) */}
-        <Text style={[styles.tileWeekday, { color: accentColor }]}>
-          {formatWeekday(item.date)}
-        </Text>
-
-        {/* Ngày/Tháng */}
-        <Text style={styles.tileDate}>{formatShortDate(item.date)}</Text>
-
-        {/* Số tiền ngắn gọn */}
-        <Text style={[styles.tileAmount, { color: accentColor }]}>
-          {formatAmountShort(item.amount)}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
+  // ─── Tính kích thước tile ────────────────────────────────────────────────
+  // Lưu ý: contentWrapper maxWidth=600, padding ngang 16px mỗi bên → tổng 32px
+  const NUM_COLS = 4;
+  const TILE_GAP = 8;
+  const SIDE_PAD = 16; // padding ngang của grid wrapper
+  const contentWidth = Math.min(width, 600);
+  const tileSize = Math.floor(
+    (contentWidth - SIDE_PAD * 2 - TILE_GAP * (NUM_COLS - 1)) / NUM_COLS
+  );
 
   const isLoading = isLoadingCustomer || isLoadingTrans || isLoadingPayments;
 
@@ -193,7 +150,7 @@ export default function CustomerDetailScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
       <View style={styles.contentWrapper}>
-        {/* HEADER: Nút quay lại & Tên khách hàng */}
+        {/* ── HEADER: Nút quay lại + Tên khách hàng ─────────────────────── */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>⬅ QUAY LẠI</Text>
@@ -203,69 +160,135 @@ export default function CustomerDetailScreen() {
           </Text>
         </View>
 
-        {isLoading && !customer ? (
-          <ActivityIndicator size="large" color={COLORS.primaryDark} style={{ marginTop: 40 }} />
-        ) : (
-          <FlatList
-            data={history}
-            renderItem={renderTile}
-            keyExtractor={(item, index) => `${item.id}-${index}`}
-            numColumns={NUM_COLS}             // Grid nhiều cột tự xuống dòng
-            columnWrapperStyle={styles.tileRow} // Khoảng cách dọc giữa các hàng
-            contentContainerStyle={styles.listContent}
-            refreshing={isLoading}
-            onRefresh={handleRefreshAll}
-            ListHeaderComponent={
-              <View>
-                {/* KHUNG TỔNG NỢ CỦA KHÁCH: Thiết kế cực kỳ to, dễ nhìn */}
-                <View style={[styles.debtSummaryCard, customer?.debt > 0 ? styles.cardHasDebt : styles.cardNoDebt]}>
-                  <Text style={styles.debtLabel}>SỐ TIỀN CÒN NỢ HIỆN TẠI:</Text>
-                  <Text style={[styles.debtValue, customer?.debt > 0 ? styles.textDebt : styles.textPayment]}>
-                    {formatCurrency(customer?.debt || 0)}
-                  </Text>
-                </View>
+        {/* ── NỘI DUNG CUỘN ───────────────────────────────────────────────── */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoading}
+              onRefresh={handleRefreshAll}
+              colors={[COLORS.primaryDark]}
+              tintColor={COLORS.primaryDark}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Khung tổng nợ nổi bật */}
+          <View style={[
+            styles.debtSummaryCard,
+            customer?.debt > 0 ? styles.cardHasDebt : styles.cardNoDebt,
+          ]}>
+            <Text style={styles.debtLabel}>SỐ TIỀN CÒN NỢ HIỆN TẠI:</Text>
+            <Text style={[
+              styles.debtValue,
+              customer?.debt > 0 ? styles.textDebt : styles.textPayment,
+            ]}>
+              {formatCurrency(customer?.debt || 0)}
+            </Text>
+          </View>
 
-                {/* Thông tin khách hàng (Liên hệ, địa chỉ, thói quen) */}
-                <View style={styles.infoSection}>
-                  {customer?.phone ? <Text style={styles.infoRow}>📞 SĐT: {customer.phone}</Text> : null}
-                  {customer?.address ? <Text style={styles.infoRow}>📍 Địa chỉ sạp: {customer.address}</Text> : null}
-                  {customer?.note ? <Text style={styles.infoRow}>💡 Ghi chú khách quen: {customer.note}</Text> : null}
-                </View>
+          {/* Thông tin liên hệ khách hàng */}
+          {(customer?.phone || customer?.address || customer?.note) ? (
+            <View style={styles.infoSection}>
+              {customer?.phone
+                ? <Text style={styles.infoRow}>📞 SĐT: {customer.phone}</Text>
+                : null}
+              {customer?.address
+                ? <Text style={styles.infoRow}>📍 Địa chỉ sạp: {customer.address}</Text>
+                : null}
+              {customer?.note
+                ? <Text style={styles.infoRow}>💡 Ghi chú: {customer.note}</Text>
+                : null}
+            </View>
+          ) : null}
 
-                {/* Tiêu đề phần grid lịch sử */}
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>📚 LỊCH SỬ MUA BÁN & THANH TOÁN</Text>
-                  {history.length > 0 ? (
-                    <Text style={styles.sectionCount}>{history.length} giao dịch</Text>
-                  ) : null}
-                </View>
-
-                {/* Chú thích màu sắc ô tile */}
-                {history.length > 0 ? (
-                  <View style={styles.legend}>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: COLORS.danger }]} />
-                      <Text style={styles.legendText}>Ghi nợ</Text>
-                    </View>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
-                      <Text style={styles.legendText}>Thu tiền</Text>
-                    </View>
-                    <Text style={styles.legendHint}>Bấm vào ô để xem chi tiết</Text>
-                  </View>
-                ) : null}
+          {/* ── LỊCH SỬ GIAO DỊCH (GRID Ô VUÔNG) ──────────────────────── */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>📚 LỊCH SỬ MUA BÁN & THANH TOÁN</Text>
+            {history.length > 0 && (
+              <View style={styles.countBadge}>
+                <Text style={styles.countText}>{history.length}</Text>
               </View>
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyEmoji}>📋</Text>
-                <Text style={styles.emptyText}>Chưa có lịch sử mua bán hay thu tiền nào cho khách hàng này.</Text>
-              </View>
-            }
-          />
-        )}
+            )}
+          </View>
 
-        {/* 2 NÚT HÀNH ĐỘNG KHỔNG LỒ Ở DƯỚI ĐÁY (Một Đỏ ghi nợ - Một Xanh thu tiền) */}
+          {/* Chú thích loại giao dịch */}
+          {history.length > 0 && (
+            <View style={styles.legend}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: COLORS.danger }]} />
+                <Text style={styles.legendText}>Ghi nợ</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
+                <Text style={styles.legendText}>Thu tiền</Text>
+              </View>
+              <Text style={styles.legendHint}>• Bấm vào ô để xem chi tiết</Text>
+            </View>
+          )}
+
+          {isLoading && !history.length ? (
+            <ActivityIndicator
+              size="large"
+              color={COLORS.primaryDark}
+              style={{ marginTop: 40 }}
+            />
+          ) : history.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyEmoji}>📋</Text>
+              <Text style={styles.emptyText}>
+                Chưa có lịch sử mua bán hay thu tiền nào.
+              </Text>
+            </View>
+          ) : (
+            /* ── GRID ô vuông tự xuống dòng ── */
+            <View style={[styles.grid, { paddingHorizontal: SIDE_PAD }]}>
+              {history.map((item) => {
+                const isDebt = item.type === 'debt';
+                const bgColor  = isDebt ? '#FFF1F1' : '#F0FDF4';
+                const bdColor  = isDebt ? '#FECACA' : '#86EFAC';
+                const txtColor = isDebt ? COLORS.danger : COLORS.primary;
+
+                return (
+                  <TouchableOpacity
+                    key={`${item.id}-${item.type}`}
+                    style={[
+                      styles.tile,
+                      {
+                        width: tileSize,
+                        height: tileSize,
+                        backgroundColor: bgColor,
+                        borderColor: bdColor,
+                      },
+                    ]}
+                    onPress={() => detailModalRef.current?.open(item)}
+                    activeOpacity={0.7}
+                  >
+                    {/* Icon loại giao dịch */}
+                    <Text style={styles.tileIcon}>
+                      {isDebt ? '🔴' : '🟢'}
+                    </Text>
+                    {/* Thứ viết tắt */}
+                    <Text style={[styles.tileWeekday, { color: txtColor }]}>
+                      {getWeekday(item.date)}
+                    </Text>
+                    {/* Ngày/Tháng */}
+                    <Text style={styles.tileDate}>
+                      {formatShortDate(item.date)}
+                    </Text>
+                    {/* Số tiền rút gọn */}
+                    <Text style={[styles.tileAmount, { color: txtColor }]}>
+                      {formatAmountShort(item.amount)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+
+        {/* ── 2 NÚT GHI NỢ / THU TIỀN CỐ ĐỊNH ĐÁY MÀN HÌNH ──────────── */}
         <View style={styles.bottomBar}>
           <TouchableOpacity
             style={[styles.actionButton, styles.btnDebt]}
@@ -273,7 +296,6 @@ export default function CustomerDetailScreen() {
           >
             <Text style={styles.actionButtonText}>🔴 GHI NỢ MỚI</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.actionButton, styles.btnPayment]}
             onPress={() => paymentModalRef.current?.open()}
@@ -284,18 +306,10 @@ export default function CustomerDetailScreen() {
       </View>
 
       {/* MODAL GHI NỢ THỊT MỚI */}
-      <DebtModal
-        ref={debtModalRef}
-        customerId={id}
-        onRefresh={handleRefreshAll}
-      />
+      <DebtModal ref={debtModalRef} customerId={id} onRefresh={handleRefreshAll} />
 
       {/* MODAL THU TIỀN TRẢ NỢ */}
-      <PaymentModal
-        ref={paymentModalRef}
-        customerId={id}
-        onRefresh={handleRefreshAll}
-      />
+      <PaymentModal ref={paymentModalRef} customerId={id} onRefresh={handleRefreshAll} />
 
       {/* MODAL CHI TIẾT GIAO DỊCH */}
       <TransactionDetailModal ref={detailModalRef} />
@@ -314,17 +328,16 @@ const styles = StyleSheet.create({
     maxWidth: 600,
     alignSelf: 'center',
     backgroundColor: COLORS.background,
-    position: 'relative',
     borderLeftWidth: Platform.OS === 'web' ? 1 : 0,
     borderRightWidth: Platform.OS === 'web' ? 1 : 0,
     borderColor: COLORS.border,
   },
+  // ── Header ──────────────────────────────────────────────────────────────
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 15,
-    paddingBottom: 15,
+    paddingVertical: 15,
     backgroundColor: COLORS.card,
     borderBottomWidth: 1,
     borderColor: COLORS.border,
@@ -349,8 +362,13 @@ const styles = StyleSheet.create({
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
   },
+  // ── Scroll ──────────────────────────────────────────────────────────────
+  scrollContent: {
+    paddingBottom: 130, // Khoảng trống tránh đè lên 2 nút đáy
+  },
+  // ── Thẻ tổng nợ ─────────────────────────────────────────────────────────
   debtSummaryCard: {
-    margin: 20,
+    margin: 16,
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
@@ -363,7 +381,7 @@ const styles = StyleSheet.create({
   },
   cardNoDebt: {
     backgroundColor: COLORS.primaryLight,
-    borderColor: COLORS.primaryLight,
+    borderColor: '#A7F3D0',
   },
   debtLabel: {
     fontSize: FONTS.body,
@@ -375,9 +393,10 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: 'bold',
   },
+  // ── Thông tin khách ──────────────────────────────────────────────────────
   infoSection: {
     backgroundColor: COLORS.card,
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
@@ -386,43 +405,45 @@ const styles = StyleSheet.create({
   infoRow: {
     fontSize: FONTS.body,
     color: COLORS.text,
-    marginBottom: 8,
+    marginBottom: 6,
     lineHeight: 22,
   },
-  // Tiêu đề section lịch sử
+  // ── Tiêu đề section lịch sử ──────────────────────────────────────────────
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 20,
-    marginTop: 25,
+    marginHorizontal: 16,
+    marginTop: 22,
     marginBottom: 10,
+    gap: 10,
   },
   sectionTitle: {
+    flex: 1,
     fontSize: FONTS.subtitle,
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
-    flex: 1,
   },
-  sectionCount: {
-    fontSize: FONTS.caption,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
+  countBadge: {
     backgroundColor: COLORS.inputBg,
+    borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 20,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  // Chú thích màu sắc
+  countText: {
+    fontSize: FONTS.caption,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  // ── Chú thích màu sắc ────────────────────────────────────────────────────
   legend: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 14,
-    gap: 12,
     flexWrap: 'wrap',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    gap: 10,
   },
   legendItem: {
     flexDirection: 'row',
@@ -436,24 +457,21 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: FONTS.caption,
-    color: COLORS.textSecondary,
     fontWeight: '600',
+    color: COLORS.textSecondary,
   },
   legendHint: {
     fontSize: FONTS.caption,
     color: COLORS.textLight,
     fontStyle: 'italic',
   },
-  // Grid tile layout
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 130, // Tránh đè lên 2 nút khổng lồ ở đáy
+  // ── Grid ô vuông ─────────────────────────────────────────────────────────
+  grid: {
+    flexDirection: 'row',   // Xếp ngang
+    flexWrap: 'wrap',       // Tự xuống dòng khi hết chiều rộng
+    gap: 8,                 // Khoảng cách đều nhau giữa các ô
   },
-  tileRow: {
-    gap: 8,           // Khoảng cách ngang giữa các tile
-    marginBottom: 8,  // Khoảng cách dọc giữa các hàng
-  },
-  // Ô tile hình vuông
+  // ── Ô tile hình vuông ────────────────────────────────────────────────────
   tile: {
     borderRadius: 14,
     borderWidth: 1.5,
@@ -463,7 +481,7 @@ const styles = StyleSheet.create({
     ...SHADOWS.card,
   },
   tileIcon: {
-    fontSize: 14,
+    fontSize: 13,
   },
   tileWeekday: {
     fontSize: 11,
@@ -474,14 +492,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: COLORS.text,
-    lineHeight: 18,
   },
   tileAmount: {
     fontSize: 12,
     fontWeight: 'bold',
-    marginTop: 2,
   },
-  // Trạng thái rỗng
+  // ── Trạng thái rỗng ──────────────────────────────────────────────────────
   emptyContainer: {
     paddingVertical: 60,
     alignItems: 'center',
@@ -497,15 +513,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     lineHeight: 22,
   },
-  // Bottom action bar
+  // ── Bottom action bar ────────────────────────────────────────────────────
   bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
-    backgroundColor: 'rgba(248, 250, 252, 0.95)',
-    padding: 20,
+    backgroundColor: 'rgba(248, 250, 252, 0.97)',
+    padding: 16,
     borderTopWidth: 1,
     borderColor: COLORS.border,
   },
@@ -529,7 +541,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  // Màu chữ
+  // ── Màu chữ chung ────────────────────────────────────────────────────────
   textDebt: {
     color: COLORS.danger,
   },
