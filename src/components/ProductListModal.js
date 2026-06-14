@@ -263,6 +263,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
             <FlatList
               data={products}
               keyExtractor={(item) => item.id}
+              style={{ flex: 1 }} // Cho phép danh sách co giãn chiếm trọn không gian trống còn lại
               contentContainerStyle={styles.listContent}
               renderItem={({ item }) => (
                 <View style={styles.productItem}>
@@ -309,10 +310,10 @@ const styles = StyleSheet.create({
   },
   modalView: {
     backgroundColor: COLORS.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '90%',
+    height: '100%', // Chiều cao chiếm trọn màn hình (full height)
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 30, // Tránh tai thỏ và thanh trạng thái trên di động
     ...SHADOWS.card,
   },
   modalHeader: {
