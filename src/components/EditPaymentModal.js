@@ -4,14 +4,12 @@ import {
   StyleSheet,
   Text,
   View,
-  Modal,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
+import SmoothModal from './SmoothModal';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import DatePickerInput from './DatePickerInput';
@@ -129,98 +127,82 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   return (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={visible}
-      onRequestClose={() => setVisible(false)}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.centeredView}
-      >
-        {/* Lớp nền trong suốt click ngoài để tắt modal */}
-        <TouchableOpacity
-          style={styles.backdrop}
-          activeOpacity={1}
-          onPress={() => setVisible(false)}
-        />
-        <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>✏️ SỬA LƯỢT THU TIỀN</Text>
+    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <View style={styles.modalView}>
+        <Text style={styles.modalTitle}>✏️ SỬA LƯỢT THU TIỀN</Text>
 
-          {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
+        {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
-          <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-            {/* Nhập số tiền thu được */}
-            <Text style={styles.label}>1. Số tiền thu được thực tế (VND):</Text>
-            <TextInput
-              style={[styles.input, styles.amountInput]}
-              placeholder="Ví dụ: 500.000"
-              placeholderTextColor={COLORS.textLight}
-              keyboardType="number-pad"
-              value={amount}
-              onChangeText={(text) => {
-                setAmount(formatNumberString(text));
-                setError('');
-              }}
-            />
+        <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+          {/* Nhập số tiền thu được */}
+          <Text style={styles.label}>1. Số tiền khách đã trả (VND):</Text>
+          <TextInput
+            style={[styles.input, styles.amountInput]}
+            placeholder="Ví dụ: 500.000"
+            placeholderTextColor={COLORS.textLight}
+            keyboardType="number-pad"
+            value={amount}
+            onChangeText={(text) => {
+              setAmount(formatNumberString(text));
+              setError('');
+            }}
+          />
 
-            {/* Các nút bấm điền nhanh số tiền chẵn */}
-            <Text style={styles.subLabel}>Bấm chọn nhanh số tiền chẵn:</Text>
-            <View style={styles.quickAmountContainer}>
-              {[50000, 100000, 200000, 500000, 1000000].map((val) => (
-                <TouchableOpacity
-                  key={val}
-                  style={styles.quickAmountButton}
-                  onPress={() => handleQuickAmount(val)}
-                >
-                  <Text style={styles.quickAmountText}>
-                    {val >= 1000000 ? `${val / 1000000} Triệu` : `${val / 1000}k`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Ngày thu tiền */}
-            <Text style={[styles.label, { marginTop: 10 }]}>2. Ngày thu tiền:</Text>
-            <DatePickerInput value={dateStr} onChange={setDateStr} />
-
-            {/* Ghi chú phương thức */}
-            <Text style={[styles.label, { marginTop: 5 }]}>3. Cách thanh toán / Ghi chú (Có thể bỏ qua):</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ví dụ: Chuyển khoản Vietcombank / Tiền mặt"
-              placeholderTextColor={COLORS.textLight}
-              value={note}
-              onChangeText={setNote}
-            />
-          </ScrollView>
-
-          {/* Các nút hành động */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.button, styles.submitButton]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.submitButtonText}>XÁC NHẬN CẬP NHẬT</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={() => setVisible(false)}
-              disabled={loading}
-            >
-              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
-            </TouchableOpacity>
+          {/* Các nút bấm điền nhanh số tiền chẵn */}
+          <Text style={styles.subLabel}>Bấm chọn nhanh số tiền chẵn:</Text>
+          <View style={styles.quickAmountContainer}>
+            {[50000, 100000, 200000, 500000, 1000000].map((val) => (
+              <TouchableOpacity
+                key={val}
+                style={styles.quickAmountButton}
+                onPress={() => handleQuickAmount(val)}
+              >
+                <Text style={styles.quickAmountText}>
+                  {val >= 1000000 ? `${val / 1000000} Triệu` : `${val / 1000}k`}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
+
+          {/* Ngày thu tiền */}
+          <Text style={[styles.label, { marginTop: 10 }]}>2. Ngày thu tiền:</Text>
+          <DatePickerInput value={dateStr} onChange={setDateStr} />
+
+          {/* Ghi chú phương thức */}
+          <Text style={[styles.label, { marginTop: 5 }]}>3. Cách thanh toán / Ghi chú (Có thể bỏ qua):</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ví dụ: Chuyển khoản Vietcombank / Tiền mặt"
+            placeholderTextColor={COLORS.textLight}
+            value={note}
+            onChangeText={setNote}
+          />
+        </ScrollView>
+
+        {/* Các nút hành động */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.submitButton]}
+            onPress={handleSubmit}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.submitButtonText}>XÁC NHẬN CẬP NHẬT</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.cancelButton]}
+            onPress={() => setVisible(false)}
+            disabled={loading}
+          >
+            <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+          </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </View>
+    </SmoothModal>
   );
 });
 
@@ -238,7 +220,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     maxHeight: '90%',
-    ...SHADOWS.card,
   },
   modalTitle: {
     fontSize: FONTS.title,

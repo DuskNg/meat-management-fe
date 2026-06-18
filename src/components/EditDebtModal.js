@@ -4,14 +4,12 @@ import {
   StyleSheet,
   Text,
   View,
-  Modal,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
+import SmoothModal from './SmoothModal';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
@@ -102,8 +100,9 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
       if (!transaction) return;
       setTransactionId(transaction.id);
       
-      // Chuyển danh sách items của transaction hiện tại vào giỏ hàng
-      const initialCart = (transaction.items || []).map((it) => {
+      // Nhóm và cộng dồn các mặt hàng cùng loại thịt từ lịch sử
+      const mergedMap = {};
+      (transaction.items || []).forEach((it) => {
         // Tìm sản phẩm tương ứng trong danh mục để lấy thông tin đầy đủ
         const prod = products.find((p) => p.id === it.productId) || {
           id: it.productId,
@@ -111,16 +110,30 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
           unit: it.product?.unit || 'kg',
           defaultPrice: parseFloat(it.price),
         };
-        return {
-          tempId: it.id || Math.random(),
-          product: prod,
-          quantity: parseFloat(it.quantity),
-          price: parseFloat(it.price),
-          displayQuantity: it.quantity.toString(),
-          displayPrice: formatNumberString(it.price.toString()),
-          amount: parseFloat(it.quantity) * parseFloat(it.price),
-        };
+        const key = prod.id;
+        const qty = parseFloat(it.quantity);
+        const priceVal = parseFloat(it.price);
+        if (mergedMap[key]) {
+          // Nếu đã tồn tại loại thịt này, cộng dồn số lượng và cập nhật đơn giá mới nhất
+          mergedMap[key].quantity += qty;
+          mergedMap[key].amount = mergedMap[key].quantity * priceVal;
+          mergedMap[key].displayQuantity = mergedMap[key].quantity.toString();
+          mergedMap[key].price = priceVal;
+          mergedMap[key].displayPrice = formatNumberString(priceVal.toString());
+        } else {
+          // Nếu chưa tồn tại, khởi tạo phần tử mới
+          mergedMap[key] = {
+            tempId: it.id || Math.random(),
+            product: prod,
+            quantity: qty,
+            price: priceVal,
+            displayQuantity: it.quantity.toString(),
+            displayPrice: formatNumberString(priceVal.toString()),
+            amount: qty * priceVal,
+          };
+        }
       });
+      const initialCart = Object.values(mergedMap);
 
       setCartItems(initialCart);
       setCurrentProduct(null);
@@ -163,18 +176,38 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
 
     // Thêm vào giỏ hàng
-    setCartItems((prev) => [
-      ...prev,
-      {
-        tempId: Date.now(),
-        product: currentProduct,
-        quantity: q,
-        price: p,
-        displayQuantity: currentQuantity,
-        displayPrice: currentPrice,
-        amount: q * p,
-      },
-    ]);
+    setCartItems((prev) => {
+      // Kiểm tra xem loại thịt đã tồn tại trong giỏ hàng chưa
+      const existingIndex = prev.findIndex((item) => item.product.id === currentProduct.id);
+      if (existingIndex > -1) {
+        // Nếu đã tồn tại, cộng dồn khối lượng và cập nhật đơn giá mới nhất
+        const updated = [...prev];
+        const existingItem = updated[existingIndex];
+        const newQuantity = existingItem.quantity + q;
+        updated[existingIndex] = {
+          ...existingItem,
+          quantity: newQuantity,
+          price: p,
+          displayQuantity: newQuantity.toString(),
+          displayPrice: currentPrice,
+          amount: newQuantity * p,
+        };
+        return updated;
+      }
+      // Nếu chưa có, thêm mặt hàng mới vào giỏ hàng
+      return [
+        ...prev,
+        {
+          tempId: Date.now(),
+          product: currentProduct,
+          quantity: q,
+          price: p,
+          displayQuantity: currentQuantity,
+          displayPrice: currentPrice,
+          amount: q * p,
+        },
+      ];
+    });
 
     // Trở lại trạng thái chờ chọn sản phẩm mới
     setCurrentProduct(null);
@@ -235,24 +268,8 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
   const displayCurrentSubtotal = isNaN(currentSubtotal) ? 0 : currentSubtotal;
 
   return (
-    <Modal
-      animationType="slide"
-      transparent
-      visible={visible}
-      onRequestClose={() => setVisible(false)}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.centeredView}
-      >
-        {/* Nhấp ngoài để đóng */}
-        <TouchableOpacity
-          style={styles.backdrop}
-          activeOpacity={1}
-          onPress={() => setVisible(false)}
-        />
-
-        <View style={styles.modalView}>
+    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <View style={styles.modalView}>
           <Text style={styles.modalTitle}>✏️ CẬP NHẬT ĐƠN GHI NỢ</Text>
 
           {/* Lỗi */}
@@ -305,6 +322,13 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
               </TouchableOpacity>
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <TouchableOpacity
+                  style={[styles.productBadge, styles.addProductBadge]}
+                  onPress={() => productModalRef.current?.open()}
+                >
+                  <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
+                  <Text style={styles.productBadgePrice}>Tạo mới</Text>
+                </TouchableOpacity>
                 {products.map((p) => {
                   const isSelected = currentProduct?.id === p.id;
                   return (
@@ -322,13 +346,6 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
                     </TouchableOpacity>
                   );
                 })}
-                <TouchableOpacity
-                  style={[styles.productBadge, styles.addProductBadge]}
-                  onPress={() => productModalRef.current?.open()}
-                >
-                  <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
-                  <Text style={styles.productBadgePrice}>Tạo mới</Text>
-                </TouchableOpacity>
               </ScrollView>
             )}
           </View>
@@ -392,7 +409,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
               <View style={styles.sharedFields}>
                 <View style={styles.divider} />
                 <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
-                <DatePickerInput value={dateStr} onChange={setDateStr} />
+                <DatePickerInput value={dateStr} onChange={setDateStr} allowFuture={true} />
 
                 <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
                 <TextInput
@@ -436,11 +453,10 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
               )}
             </TouchableOpacity>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+      </View>
 
       <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
-    </Modal>
+    </SmoothModal>
   );
 });
 
@@ -462,8 +478,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
+    height: '90%',
     maxHeight: '96%',
-    ...SHADOWS.card,
   },
   modalTitle: {
     fontSize: FONTS.title,
@@ -590,7 +606,7 @@ const styles = StyleSheet.create({
   },
 
   formScroll: {
-    maxHeight: 220,
+    flex: 1,
     marginBottom: 10,
   },
   numericRow: {

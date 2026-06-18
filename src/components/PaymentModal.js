@@ -4,14 +4,12 @@ import {
   StyleSheet,
   Text,
   View,
-  Modal,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform
 } from 'react-native';
+import SmoothModal from './SmoothModal';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 
@@ -21,12 +19,23 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Số nợ tối đa của tháng để giới hạn số tiền trả nợ
+  const [maxAmount, setMaxAmount] = useState(null);
+
+  // Định dạng hiển thị tiền VNĐ
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND'
+    }).format(value).replace('₫', 'đ');
+  };
 
   // 1. Phơi bày các hàm điều khiển Modal ra ngoài component cha (Customer Detail)
   useImperativeHandle(ref, () => ({
-    open: () => {
+    open: (defaultAmount = '') => {
       setVisible(true);
-      setAmount('');
+      setAmount(defaultAmount ? formatNumberString(defaultAmount.toString()) : '');
+      setMaxAmount(defaultAmount ? parseFloat(defaultAmount) : null); // Thiết lập giới hạn thanh toán tối đa theo nợ tháng
       setNote('');
       setError('');
     },
@@ -50,6 +59,12 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // 2. Gợi ý điền nhanh số tiền (giúp người bán bấm nhanh các mốc chẵn)
   const handleQuickAmount = (value) => {
+    // Nếu số tiền chọn nhanh lớn hơn nợ tối đa của tháng, tự động gán bằng nợ tối đa và báo lỗi nhẹ
+    if (maxAmount !== null && value > maxAmount) {
+      setAmount(formatNumberString(maxAmount.toString()));
+      setError(`Số tiền đã tự động điều chỉnh về mức nợ tối đa của tháng: ${formatCurrency(maxAmount)}`);
+      return;
+    }
     setAmount(formatNumberString(value.toString()));
     setError('');
   };
@@ -64,6 +79,12 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
     if (payAmount <= 0) {
       setError('Số tiền trả nợ phải lớn hơn 0 (Ví dụ: 200.000).');
+      return;
+    }
+
+    // Validate không cho phép vượt quá tổng nợ của tháng
+    if (maxAmount !== null && payAmount > maxAmount) {
+      setError(`Số tiền trả nợ không được vượt quá tổng nợ của tháng là ${formatCurrency(maxAmount)}.`);
       return;
     }
 
@@ -90,94 +111,78 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   };
 
   return (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={visible}
-      onRequestClose={() => setVisible(false)}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.centeredView}
-      >
-        {/* Lớp nền trong suốt click ngoài để tắt modal */}
-        <TouchableOpacity
-          style={styles.backdrop}
-          activeOpacity={1}
-          onPress={() => setVisible(false)}
-        />
-        <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>🟢 THU TIỀN KHÁCH TRẢ NỢ</Text>
+    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <View style={styles.modalView}>
+        <Text style={styles.modalTitle}>🟢 THU TIỀN KHÁCH TRẢ NỢ</Text>
 
-          {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
+        {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
-          <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-            {/* Nhập số tiền thu được */}
-            <Text style={styles.label}>1. Số tiền thu được thực tế (VND):</Text>
-            <TextInput
-              style={[styles.input, styles.amountInput]}
-              placeholder="Ví dụ: 500.000"
-              placeholderTextColor={COLORS.textLight}
-              keyboardType="number-pad" // Hiển thị bàn phím số nguyên trên di động
-              value={amount}
-              onChangeText={(text) => {
-                setAmount(formatNumberString(text));
-                setError('');
-              }}
-            />
+        <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+          {/* Nhập số tiền thu được */}
+          <Text style={styles.label}>1. Số tiền khách đã trả (VND):</Text>
+          <TextInput
+            style={[styles.input, styles.amountInput]}
+            placeholder="Ví dụ: 500.000"
+            placeholderTextColor={COLORS.textLight}
+            keyboardType="number-pad" // Hiển thị bàn phím số nguyên trên di động
+            value={amount}
+            onChangeText={(text) => {
+              setAmount(formatNumberString(text));
+              setError('');
+            }}
+          />
 
-            {/* Các nút bấm điền nhanh số tiền chẵn */}
-            <Text style={styles.subLabel}>Bấm chọn nhanh số tiền chẵn:</Text>
-            <View style={styles.quickAmountContainer}>
-              {[50000, 100000, 200000, 500000, 1000000].map((val) => (
-                <TouchableOpacity
-                  key={val}
-                  style={styles.quickAmountButton}
-                  onPress={() => handleQuickAmount(val)}
-                >
-                  <Text style={styles.quickAmountText}>
-                    {val >= 1000000 ? `${val / 1000000} Triệu` : `${val / 1000}k`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Ghi chú phương thức */}
-            <Text style={[styles.label, { marginTop: 15 }]}>2. Cách thanh toán / Ghi chú (Có thể bỏ qua):</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ví dụ: Chuyển khoản Vietcombank / Tiền mặt"
-              placeholderTextColor={COLORS.textLight}
-              value={note}
-              onChangeText={setNote}
-            />
-          </ScrollView>
-
-          {/* Các nút hành động */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.button, styles.submitButton]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.submitButtonText}>XÁC NHẬN THU TIỀN</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={() => setVisible(false)}
-              disabled={loading}
-            >
-              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
-            </TouchableOpacity>
+          {/* Các nút bấm điền nhanh số tiền chẵn */}
+          <Text style={styles.subLabel}>Bấm chọn nhanh số tiền chẵn:</Text>
+          <View style={styles.quickAmountContainer}>
+            {[50000, 100000, 200000, 500000, 1000000].map((val) => (
+              <TouchableOpacity
+                key={val}
+                style={styles.quickAmountButton}
+                onPress={() => handleQuickAmount(val)}
+              >
+                <Text style={styles.quickAmountText}>
+                  {val >= 1000000 ? `${val / 1000000} Triệu` : `${val / 1000}k`}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
+
+          {/* Ghi chú phương thức */}
+          <Text style={[styles.label, { marginTop: 15 }]}>2. Cách thanh toán / Ghi chú (Có thể bỏ qua):</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ví dụ: Chuyển khoản Vietcombank / Tiền mặt"
+            placeholderTextColor={COLORS.textLight}
+            value={note}
+            onChangeText={setNote}
+          />
+        </ScrollView>
+
+        {/* Các nút hành động */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.submitButton]}
+            onPress={handleSubmit}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.submitButtonText}>XÁC NHẬN THU TIỀN</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.cancelButton]}
+            onPress={() => setVisible(false)}
+            disabled={loading}
+          >
+            <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+          </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </View>
+    </SmoothModal>
   );
 });
 
@@ -195,7 +200,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     maxHeight: '90%',
-    ...SHADOWS.card,
   },
   modalTitle: {
     fontSize: FONTS.title,

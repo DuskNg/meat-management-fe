@@ -4,14 +4,13 @@ import {
   StyleSheet,
   Text,
   View,
-  Modal,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import SmoothModal from './SmoothModal';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
@@ -80,6 +79,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errorField, setErrorField] = useState(''); // Lưu trường bị lỗi để đổi viền đỏ ('quantity', 'price', 'date')
   const productModalRef = useRef(null);
 
   // ─── Tải danh mục sản phẩm (chỉ khi modal đang mở) ───────────────────
@@ -105,6 +105,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setDateStr(getTodayFormatted());
       setNote('');
       setError('');
+      setErrorField('');
     },
     close: () => setVisible(false),
   }));
@@ -114,48 +115,74 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
     setCurrentProduct(product);
     setCurrentPrice(formatNumberString(product.defaultPrice.toString()));
     setError('');
+    setErrorField('');
   };
 
   // ─── Thêm mặt hàng hiện tại vào giỏ hàng ─────────────────────────────
   const handleAddToCart = () => {
     if (!currentProduct) {
       setError('Vui lòng chọn loại thịt trước.');
+      setErrorField('product');
       return;
     }
     const q = parseFloat(currentQuantity);
     if (isNaN(q) || q <= 0) {
       setError('Khối lượng phải lớn hơn 0 (Ví dụ: 1.5).');
+      setErrorField('quantity');
       return;
     }
     if (!currentPrice || currentPrice.trim() === '') {
       setError('Vui lòng nhập đơn giá.');
+      setErrorField('price');
       return;
     }
     const p = parseNumberString(currentPrice);
     if (p <= 0) {
       setError('Đơn giá phải lớn hơn 0.');
+      setErrorField('price');
       return;
     }
 
     // Thêm vào giỏ hàng
-    setCartItems((prev) => [
-      ...prev,
-      {
-        tempId: Date.now(),        // ID tạm thời để xóa item
-        product: currentProduct,
-        quantity: q,
-        price: p,
-        displayQuantity: currentQuantity,
-        displayPrice: currentPrice,
-        amount: q * p,
-      },
-    ]);
+    setCartItems((prev) => {
+      // Kiểm tra xem loại thịt đã tồn tại trong giỏ hàng hay chưa
+      const existingIndex = prev.findIndex((item) => item.product.id === currentProduct.id);
+      if (existingIndex > -1) {
+        // Nếu đã tồn tại, cộng dồn khối lượng và cập nhật giá mới nhất
+        const updated = [...prev];
+        const existingItem = updated[existingIndex];
+        const newQuantity = existingItem.quantity + q;
+        updated[existingIndex] = {
+          ...existingItem,
+          quantity: newQuantity,
+          price: p,
+          displayQuantity: newQuantity.toString(),
+          displayPrice: currentPrice,
+          amount: newQuantity * p,
+        };
+        return updated;
+      }
+      // Nếu chưa có, thêm mới vào giỏ hàng
+      return [
+        ...prev,
+        {
+          tempId: Date.now(),        // ID tạm thời để xóa item
+          product: currentProduct,
+          quantity: q,
+          price: p,
+          displayQuantity: currentQuantity,
+          displayPrice: currentPrice,
+          amount: q * p,
+        },
+      ];
+    });
 
     // Reset form về trạng thái chọn sản phẩm mới
     setCurrentProduct(null);
     setCurrentQuantity('');
     setCurrentPrice('');
     setError('');
+    setErrorField('');
   };
 
   // ─── Xóa 1 mặt hàng ra khỏi giỏ hàng ─────────────────────────────────
@@ -167,15 +194,18 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const handleSubmit = async () => {
     if (cartItems.length === 0) {
       setError('Vui lòng thêm ít nhất 1 mặt hàng vào đơn trước khi xác nhận.');
+      setErrorField('cart');
       return;
     }
     const isoDate = parseDateString(dateStr);
     if (!isoDate) {
       setError('Ngày ghi nợ không đúng định dạng (Ví dụ: 14/06/2026).');
+      setErrorField('date');
       return;
     }
 
     setError('');
+    setErrorField('');
     setLoading(true);
     try {
       const response = await api.post('/transactions', {
@@ -212,47 +242,58 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const displayCurrentSubtotal = isNaN(currentSubtotal) ? 0 : currentSubtotal;
 
   return (
-    <Modal
-      animationType="slide"
-      transparent
-      visible={visible}
-      onRequestClose={() => setVisible(false)}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.centeredView}
-      >
-        {/* Lớp nền trong suốt bấm ngoài để đóng modal */}
-        <TouchableOpacity
-          style={styles.backdrop}
-          activeOpacity={1}
-          onPress={() => setVisible(false)}
-        />
-
-        <View style={styles.modalView}>
+    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <View style={styles.modalView}>
+        <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>🔴 GHI NỢ THỊT MỚI</Text>
+          <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
+            <Text style={styles.closeHeaderText}>✕</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Thông báo lỗi */}
-          {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
+        {/* Thông báo lỗi chung */}
+        {error && !['date', 'product', 'quantity', 'price'].includes(errorField) ? (
+          <Text style={styles.errorText}>⚠️ {error}</Text>
+        ) : null}
 
-          {/* ── GIỎ HÀNG: Danh sách mặt hàng đã thêm ── */}
-          {cartItems.length > 0 && (
-            <View style={styles.cartSection}>
-              <View style={styles.cartHeader}>
-                <Text style={styles.cartTitle}>
-                  🛒 Đơn hàng ({cartItems.length} mặt hàng)
-                </Text>
-                <Text style={styles.cartTotalText}>{formatCurrency(cartTotal)}</Text>
-              </View>
+        {/* ── NGÀY GHI NỢ ĐƯA LÊN TRÊN CÙNG ĐẦU TIÊN ── */}
+        <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
+        <DatePickerInput
+          value={dateStr}
+          onChange={(val) => {
+            setDateStr(val);
+            if (errorField === 'date') {
+              setError('');
+              setErrorField('');
+            }
+          }}
+          allowFuture={true}
+          hasError={errorField === 'date'}
+        />
+        {errorField === 'date' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
+
+        <View style={styles.divider} />
+
+        {/* ── GIỎ HÀNG: Danh sách mặt hàng đã thêm ── */}
+        {cartItems.length > 0 && (
+          <View style={styles.cartSection}>
+            <View style={styles.cartHeader}>
+              <Text style={styles.cartTitle}>
+                🛒 Đơn hàng ({cartItems.length} mặt hàng)
+              </Text>
+              <Text style={styles.cartTotalText}>{formatCurrency(cartTotal)}</Text>
+            </View>
+            <ScrollView style={styles.cartItemsScroll} nestedScrollEnabled={true}>
               {cartItems.map((item) => (
                 <View key={item.tempId} style={styles.cartItem}>
                   <View style={styles.cartItemInfo}>
-                    <Text style={styles.cartItemName}>{item.product.name}</Text>
-                    <Text style={styles.cartItemMeta}>
-                      {item.quantity} {item.product.unit} × {item.displayPrice}đ
-                      {'  =  '}
-                      <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>
-                        {formatCurrency(item.amount)}
+                    <Text style={styles.cartItemText}>
+                      <Text style={styles.cartItemName}>{item.product.name}</Text>
+                      <Text style={styles.cartItemMeta}>
+                        {` - ${item.quantity} ${item.product.unit} × ${item.displayPrice}đ = `}
+                        <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>
+                          {formatCurrency(item.amount)}
+                        </Text>
                       </Text>
                     </Text>
                   </View>
@@ -265,15 +306,26 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   </TouchableOpacity>
                 </View>
               ))}
-            </View>
-          )}
+            </ScrollView>
+          </View>
+        )}
 
-          {/* ── CHỌN LOẠI THỊT ── */}
-          <Text style={styles.label}>
-            {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua (lướt ngang để xem loại thịt):'}
-          </Text>
-          <View style={styles.productsContainer}>
-            {products.length === 0 ? (
+        {/* ── CHỌN LOẠI THỊT ── */}
+        <Text style={styles.label}>
+          {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua (lướt ngang để xem loại thịt):'}
+        </Text>
+        <View style={styles.productsContainer}>
+          {products.length === 0 ? (
+            <TouchableOpacity
+              style={[styles.productBadge, styles.addProductBadge]}
+              onPress={() => productModalRef.current?.open()}
+            >
+              <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
+              <Text style={styles.productBadgePrice}>Tạo mới</Text>
+            </TouchableOpacity>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {/* Nút thêm loại thịt mới nhanh */}
               <TouchableOpacity
                 style={[styles.productBadge, styles.addProductBadge]}
                 onPress={() => productModalRef.current?.open()}
@@ -281,153 +333,159 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                 <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
                 <Text style={styles.productBadgePrice}>Tạo mới</Text>
               </TouchableOpacity>
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {products.map((p) => {
-                  const isSelected = currentProduct?.id === p.id;
-                  return (
-                    <TouchableOpacity
-                      key={p.id}
-                      style={[styles.productBadge, isSelected && styles.productBadgeSelected]}
-                      onPress={() => handleSelectProduct(p)}
-                    >
-                      <Text style={[styles.productBadgeText, isSelected && styles.productBadgeTextSelected]}>
-                        {p.name}
-                      </Text>
-                      <Text style={styles.productBadgePrice}>
-                        {formatCurrency(p.defaultPrice)}/{p.unit}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                {/* Nút thêm loại thịt mới nhanh */}
-                <TouchableOpacity
-                  style={[styles.productBadge, styles.addProductBadge]}
-                  onPress={() => productModalRef.current?.open()}
-                >
-                  <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
-                  <Text style={styles.productBadgePrice}>Tạo mới</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            )}
-          </View>
-
-          <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-            {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
-            {currentProduct ? (
-              <View>
-                {/* Khối lượng */}
-                <Text style={styles.label}>
-                  Khối lượng ({currentProduct.unit}):
-                </Text>
-                <View style={styles.numericRow}>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      { flex: 1, minWidth: 0, fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 0 },
-                    ]}
-                    placeholder="Ví dụ: 1.5"
-                    placeholderTextColor={COLORS.textLight}
-                    keyboardType="numeric"
-                    value={currentQuantity}
-                    onChangeText={setCurrentQuantity}
-                  />
-                  <Text style={styles.unitText}>{currentProduct.unit}</Text>
-                </View>
-
-                {/* Đơn giá */}
-                <Text style={styles.label}>Giá bán thực tế (VND):</Text>
-                <TextInput
-                  style={[styles.input, { fontSize: 20, fontWeight: 'bold' }]}
-                  placeholder="Ví dụ: 130.000"
-                  placeholderTextColor={COLORS.textLight}
-                  keyboardType="number-pad"
-                  value={currentPrice}
-                  onChangeText={(text) => setCurrentPrice(formatNumberString(text))}
-                />
-
-                {/* Xem trước thành tiền mặt hàng đang nhập */}
-                {displayCurrentSubtotal > 0 && (
-                  <View style={styles.previewRow}>
-                    <Text style={styles.previewLabel}>Thành tiền mặt hàng này:</Text>
-                    <Text style={styles.previewValue}>
-                      {formatCurrency(displayCurrentSubtotal)}
+              {products.map((p) => {
+                const isSelected = currentProduct?.id === p.id;
+                return (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[styles.productBadge, isSelected && styles.productBadgeSelected]}
+                    onPress={() => handleSelectProduct(p)}
+                  >
+                    <Text style={[styles.productBadgeText, isSelected && styles.productBadgeTextSelected]}>
+                      {p.name}
                     </Text>
-                  </View>
-                )}
+                    <Text style={styles.productBadgePrice}>
+                      {formatCurrency(p.defaultPrice)}/{p.unit}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+        {errorField === 'product' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 
-                {/* Nút thêm vào giỏ hàng */}
-                <TouchableOpacity style={styles.addToCartBtn} onPress={handleAddToCart}>
-                  <Text style={styles.addToCartText}>➕ THÊM VÀO ĐƠN</Text>
-                </TouchableOpacity>
-              </View>
-            ) : products.length === 0 ? (
-              <Text style={[styles.selectPrompt, { color: COLORS.dangerDark, fontWeight: '600' }]}>
-                Hiện tại chưa có loại thịt, vui lòng thêm loại thịt.
+        <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+          {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
+          {currentProduct ? (
+            <View>
+              {/* Khối lượng */}
+              <Text style={styles.label}>
+                Khối lượng ({currentProduct.unit}):
               </Text>
-            ) : cartItems.length === 0 ? (
-              <Text style={styles.selectPrompt}>
-                Vui lòng chạm chọn loại thịt ở danh sách phía trên.
-              </Text>
-            ) : null}
-
-            {/* ── NGÀY VÀ GHI CHÚ CHUNG CHO CẢ ĐƠN ── */}
-            {(cartItems.length > 0 || currentProduct) && (
-              <View style={styles.sharedFields}>
-                <View style={styles.divider} />
-                <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
-                <DatePickerInput value={dateStr} onChange={setDateStr} />
-
-                <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
+              <View style={styles.numericRow}>
                 <TextInput
-                  style={styles.input}
-                  placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
+                  style={[
+                    styles.input,
+                    { flex: 1, minWidth: 0, fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 0 },
+                    errorField === 'quantity' && styles.inputError
+                  ]}
+                  placeholder="Ví dụ: 1.5"
                   placeholderTextColor={COLORS.textLight}
-                  value={note}
-                  onChangeText={setNote}
+                  keyboardType="numeric"
+                  value={currentQuantity}
+                  onChangeText={(text) => {
+                    setCurrentQuantity(text);
+                    if (errorField === 'quantity') {
+                      setError('');
+                      setErrorField('');
+                    }
+                  }}
                 />
+                <Text style={styles.unitText}>{currentProduct.unit}</Text>
               </View>
-            )}
-          </ScrollView>
+              {errorField === 'quantity' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 
-          {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}
-          {cartItems.length > 0 && (
-            <View style={styles.totalContainer}>
-              <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
-              <Text style={styles.totalValue}>{formatCurrency(cartTotal)}</Text>
+              {/* Đơn giá */}
+              <Text style={styles.label}>Giá bán thực tế tại thời điểm này (VND):</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { fontSize: 16, fontWeight: 'bold' },
+                  errorField === 'price' && styles.inputError
+                ]}
+                placeholder="Ví dụ: 130.000"
+                placeholderTextColor={COLORS.textLight}
+                keyboardType="number-pad"
+                value={currentPrice}
+                onChangeText={(text) => {
+                  setCurrentPrice(formatNumberString(text));
+                  if (errorField === 'price') {
+                    setError('');
+                    setErrorField('');
+                  }
+                }}
+              />
+              {errorField === 'price' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
+
+              {/* Xem trước thành tiền mặt hàng đang nhập */}
+              {displayCurrentSubtotal > 0 && (
+                <View style={styles.previewRow}>
+                  <Text style={styles.previewLabel}>Thành tiền mặt hàng này:</Text>
+                  <Text style={styles.previewValue}>
+                    {formatCurrency(displayCurrentSubtotal)}
+                  </Text>
+                </View>
+              )}
+
+              {/* Nút thêm vào giỏ hàng */}
+              <TouchableOpacity style={styles.addToCartBtn} onPress={handleAddToCart}>
+                <Text style={styles.addToCartText}>➕ THÊM VÀO ĐƠN</Text>
+              </TouchableOpacity>
+            </View>
+          ) : products.length === 0 ? (
+            <Text style={[styles.selectPrompt, { color: COLORS.dangerDark, fontWeight: '600' }]}>
+              Hiện tại chưa có loại thịt, vui lòng thêm loại thịt.
+            </Text>
+          ) : cartItems.length === 0 ? (
+            <Text style={styles.selectPrompt}>
+              Vui lòng chạm chọn loại thịt ở danh sách phía trên.
+            </Text>
+          ) : null}
+
+          {/* ── GHI CHÚ CHUNG CHO CẢ ĐƠN ── */}
+          {(cartItems.length > 0 || currentProduct) && (
+            <View style={styles.sharedFields}>
+              <View style={styles.divider} />
+              <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
+                placeholderTextColor={COLORS.textLight}
+                value={note}
+                onChangeText={setNote}
+              />
             </View>
           )}
+        </ScrollView>
 
-          {/* ── NÚT HỦY / XÁC NHẬN ── */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={() => setVisible(false)}
-              disabled={loading}
-            >
-              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.submitButton, cartItems.length === 0 && styles.submitDisabled]}
-              onPress={handleSubmit}
-              disabled={loading || cartItems.length === 0}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.submitButtonText}>
-                  {cartItems.length > 0 ? `GHI NỢ (${cartItems.length})` : 'XÁC NHẬN'}
-                </Text>
-              )}
-            </TouchableOpacity>
+        {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}
+        {cartItems.length > 0 && (
+          <View style={styles.totalContainer}>
+            <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
+            <Text style={styles.totalValue}>{formatCurrency(cartTotal)}</Text>
           </View>
+        )}
+
+        {/* ── NÚT HỦY / XÁC NHẬN ── */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.cancelButton]}
+            onPress={() => setVisible(false)}
+            disabled={loading}
+          >
+            <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.submitButton, cartItems.length === 0 && styles.submitDisabled]}
+            onPress={handleSubmit}
+            disabled={loading || cartItems.length === 0}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.submitButtonText}>
+                {cartItems.length > 0 ? `GHI NỢ (${cartItems.length})` : 'XÁC NHẬN'}
+              </Text>
+            )}
+          </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* Modal quản lý danh mục thịt */}
       <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
-    </Modal>
+    </SmoothModal>
   );
 });
 
@@ -446,18 +504,32 @@ const styles = StyleSheet.create({
   },
   modalView: {
     backgroundColor: COLORS.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '96%',
-    ...SHADOWS.card,
+    height: '100%', // Kéo full height
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 30, // Tránh tai thỏ và thanh trạng thái trên di động
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingBottom: 8,
   },
   modalTitle: {
-    fontSize: FONTS.title,
-    fontWeight: FONTS.weightBold,
-    color: COLORS.danger,
-    textAlign: 'center',
-    marginBottom: 16,
+    fontSize: FONTS.subtitle,
+    fontWeight: 'bold',
+    color: '#7F1D1D',
+  },
+  closeHeaderButton: {
+    padding: 6,
+  },
+  closeHeaderText: {
+    fontSize: 20,
+    color: COLORS.textSecondary,
+    fontWeight: 'bold',
   },
   errorText: {
     color: COLORS.dangerDark,
@@ -469,92 +541,99 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // ── Giỏ hàng ────────────────────────────────────────────────────────────
+  // ── Giỏ hàng (đã thu gọn padding/margin) ──────────────────────────────────
   cartSection: {
     backgroundColor: '#FFF8F0',
-    borderRadius: 12,
-    borderWidth: 1.5,
+    borderRadius: 10,
+    borderWidth: 1.2,
     borderColor: '#FED7AA',
-    padding: 12,
-    marginBottom: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+  },
+  cartItemsScroll: {
+    maxHeight: 115, // Hiển thị tối đa khoảng 3 dòng, nhiều hơn sẽ cuộn dọc
   },
   cartHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   cartTitle: {
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#92400E',
   },
   cartTotalText: {
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: 'bold',
     color: COLORS.danger,
   },
   cartItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 4,
     borderTopWidth: 1,
     borderColor: '#FED7AA',
   },
   cartItemInfo: {
     flex: 1,
   },
+  cartItemText: {
+    fontSize: 14,
+    color: COLORS.text,
+  },
   cartItemName: {
-    fontSize: FONTS.body,
     fontWeight: 'bold',
     color: COLORS.text,
   },
   cartItemMeta: {
-    fontSize: FONTS.caption,
+    fontSize: 12,
     color: COLORS.textSecondary,
-    marginTop: 2,
   },
   cartRemoveBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: COLORS.dangerLight,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,
   },
   cartRemoveText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
     color: COLORS.dangerDark,
   },
 
-  // ── Chọn sản phẩm ───────────────────────────────────────────────────────
+  // ── Chọn sản phẩm (thu gọn chiều cao và margin) ──────────────────────────
   label: {
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   productsContainer: {
-    marginBottom: 14,
+    marginBottom: 10,
   },
   productBadge: {
-    padding: 10,
-    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
     backgroundColor: COLORS.inputBg,
-    marginRight: 10,
+    marginRight: 8,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: COLORS.border,
-    minWidth: 90,
+    minWidth: 80,
   },
   productBadgeSelected: {
     backgroundColor: COLORS.dangerLight,
     borderColor: COLORS.danger,
   },
   productBadgeText: {
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: 'bold',
     color: COLORS.text,
   },
@@ -562,9 +641,9 @@ const styles = StyleSheet.create({
     color: COLORS.dangerDark,
   },
   productBadgePrice: {
-    fontSize: FONTS.caption,
+    fontSize: 11,
     color: COLORS.textSecondary,
-    marginTop: 3,
+    marginTop: 2,
   },
   addProductBadge: {
     backgroundColor: '#FAF8F6',
@@ -572,49 +651,61 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   addProductBadgeText: {
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#7F1D1D',
   },
 
   // ── Form scroll ─────────────────────────────────────────────────────────
   formScroll: {
-    maxHeight: 420,
+    flex: 1,
     marginBottom: 10,
   },
   numericRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   unitText: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
-    marginLeft: 12,
+    marginLeft: 8,
   },
   input: {
     backgroundColor: COLORS.inputBg,
-    height: 52,
+    height: 44,
     borderRadius: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     fontSize: FONTS.body,
     color: COLORS.text,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  inputError: {
+    borderColor: COLORS.danger,
+    backgroundColor: '#FFF5F5',
+  },
+  fieldErrorText: {
+    color: COLORS.dangerDark,
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: -4,
+    marginBottom: 10,
+    paddingLeft: 4,
   },
 
-  // Xem trước thành tiền mặt hàng đang nhập
+  // Xem trước thành tiền mặt hàng đang nhập (thu gọn padding/margin)
   previewRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: COLORS.dangerLight,
     borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginBottom: 8,
   },
   previewLabel: {
     fontSize: FONTS.caption,
@@ -627,14 +718,14 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
 
-  // Nút thêm vào giỏ
+  // Nút thêm vào giỏ (giảm height từ 52 xuống 44)
   addToCartBtn: {
     backgroundColor: '#FFF7ED',
     borderWidth: 1.5,
     borderColor: '#F97316',
     borderStyle: 'dashed',
-    borderRadius: 12,
-    height: 52,
+    borderRadius: 10,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
@@ -656,45 +747,46 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: COLORS.border,
-    marginVertical: 12,
+    marginVertical: 8,
   },
   sharedFields: {
     marginTop: 4,
   },
 
-  // ── Tổng đơn hàng (bottom fixed) ────────────────────────────────────────
+  // ── Tổng đơn hàng (đã thu gọn kích thước và padding) ────────────────────
   totalContainer: {
     backgroundColor: '#E6F4EA',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1.2,
     borderColor: COLORS.primary,
-    marginBottom: 12,
+    marginBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   totalLabel: {
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#065F46',
   },
   totalValue: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.primaryDark,
   },
 
-  // ── Buttons ─────────────────────────────────────────────────────────────
+  // ── Các nút hành động (đã giảm height và margin) ────────────────────────
   buttonContainer: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 4,
+    marginTop: 2,
   },
   button: {
     flex: 1,
-    height: 54,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -705,7 +797,7 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: COLORS.textSecondary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   submitButton: {
@@ -723,7 +815,7 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
   },
 });

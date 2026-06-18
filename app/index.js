@@ -1,14 +1,14 @@
 // meat-management-fe/app/index.js
 import React, { useState, useRef } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  FlatList, 
-  TextInput, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  SafeAreaView, 
+import {
+  StyleSheet,
+  Text,
+  View,
+  FlatList,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  SafeAreaView,
   StatusBar,
   Platform
 } from 'react-native';
@@ -19,12 +19,14 @@ import { useAuthStore } from '../src/store/authStore';
 import { COLORS, FONTS, SHADOWS } from '../src/theme';
 import AddCustomerModal from '../src/components/AddCustomerModal';
 import ProductListModal from '../src/components/ProductListModal';
+import ProfileModal from '../src/components/ProfileModal';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const auth = useAuthStore();
   const modalRef = useRef(null);
   const productModalRef = useRef(null);
+  const profileModalRef = useRef(null);
   const [search, setSearch] = useState('');
 
   // 1. Dùng React Query tải danh sách khách hàng và cache lại
@@ -50,9 +52,9 @@ export default function DashboardScreen() {
 
   // Định dạng hiển thị tiền VNĐ (Ví dụ: 1.500.000 đ)
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('vi-VN', { 
-      style: 'currency', 
-      currency: 'VND' 
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND'
     }).format(amount).replace('₫', 'đ');
   };
 
@@ -66,7 +68,7 @@ export default function DashboardScreen() {
         <View style={styles.cardInfo}>
           <Text style={styles.customerName}>{item.name}</Text>
           {item.phone ? (
-            <Text style={styles.customerPhone}>📞 {item.phone}</Text>
+            <Text style={styles.customerPhone}>{item.phone}</Text>
           ) : (
             <Text style={styles.customerPhone}>Không có số điện thoại</Text>
           )}
@@ -93,17 +95,30 @@ export default function DashboardScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
       <View style={styles.contentWrapper}>
-        {/* HEADER: Thông tin chủ buôn & Nút đăng xuất */}
+        {/* HEADER: Thiết kế mới sang trọng, gồm Avatar, Thông tin chủ sạp và Nút Đăng xuất */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.merchantGreeting}>Chào chủ sạp thịt,</Text>
-            <Text style={styles.merchantName}>{auth.user?.name || 'Cô Hoa'}</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.logoutButton} 
-            onPress={() => auth.logout()}
+          <TouchableOpacity
+            style={styles.merchantProfileCard}
+            onPress={() => profileModalRef.current?.open()}
+            activeOpacity={0.7}
           >
-            <Text style={styles.logoutText}>Đăng xuất 📴</Text>
+            <View style={styles.avatarContainer}>
+              <Text style={styles.avatarText}>
+                {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.merchantDetails}>
+              <Text style={styles.merchantGreeting}>Chủ sạp thịt quản lý 👋</Text>
+              <Text style={styles.merchantName}>{auth.user?.name || 'Cô Hoa'}</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.logoutButtonNew}
+            onPress={() => auth.logout()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.logoutTextNew}>Thoát 🚪</Text>
           </TouchableOpacity>
         </View>
 
@@ -154,7 +169,7 @@ export default function DashboardScreen() {
 
         {/* THANH ĐIỀU KHIỂN CỐ ĐỊNH Ở ĐÁY MÀN HÌNH */}
         <View style={styles.bottomBar}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.manageProductsButton}
             onPress={() => productModalRef.current?.open()}
             activeOpacity={0.8}
@@ -162,7 +177,7 @@ export default function DashboardScreen() {
             <Text style={styles.manageProductsButtonText}>🥩 QUẢN LÝ THỊT</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.addCustomerButton}
             onPress={() => modalRef.current?.open()}
             activeOpacity={0.8}
@@ -174,6 +189,9 @@ export default function DashboardScreen() {
 
       {/* MODAL THÊM KHÁCH MỚI (Ẩn) */}
       <AddCustomerModal ref={modalRef} onRefresh={refetch} />
+
+      {/* MODAL HỒ SƠ CHỦ TÀI KHOẢN (Ẩn) */}
+      <ProfileModal ref={profileModalRef} />
 
       {/* MODAL QUẢN LÝ DANH MỤC THỊT (Ẩn) */}
       <ProductListModal ref={productModalRef} />
@@ -202,33 +220,61 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 15,
-    paddingBottom: 10,
+    paddingTop: 16,
+    paddingBottom: 16,
     backgroundColor: COLORS.card,
     borderBottomWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#F1F5F9', // Viền siêu mỏng nhạt màu
+    ...SHADOWS.card,
+  },
+  merchantProfileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  avatarContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ECFDF5', // Màu xanh bạc hà nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  avatarText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#047857', // Xanh lá đậm sang trọng
+  },
+  merchantDetails: {
+    flexDirection: 'column',
   },
   merchantGreeting: {
-    fontSize: FONTS.caption,
+    fontSize: 12,
     color: COLORS.textSecondary,
+    marginBottom: 2,
   },
   merchantName: {
-    fontSize: FONTS.title,
-    fontWeight: FONTS.weightBold,
+    fontSize: 18,
+    fontWeight: 'bold',
     color: COLORS.text,
   },
-  logoutButton: {
+  logoutButtonNew: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF1F1', // Nền đỏ hồng pastel siêu nhạt
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: COLORS.inputBg,
+    paddingHorizontal: 14,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#FEE2E2',
   },
-  logoutText: {
-    fontSize: FONTS.caption,
+  logoutTextNew: {
+    fontSize: 14,
     fontWeight: 'bold',
-    color: COLORS.textSecondary,
+    color: '#EF4444',
   },
   summaryCard: {
     backgroundColor: COLORS.dangerLight,

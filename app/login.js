@@ -206,16 +206,9 @@ export default function LoginScreen() {
           ) : (
             // BƯỚC 2: NHẬP MÃ OTP ĐỂ ĐĂNG NHẬP
             <View style={styles.formGroup}>
-              <Text style={styles.phoneInfo}>
+              <Text style={[styles.phoneInfo, { marginBottom: 24 }]}>
                 Đang gửi mã về số: <Text style={{ fontWeight: 'bold', color: COLORS.text }}>{phone}</Text>
               </Text>
-
-              <TouchableOpacity
-                style={styles.changePhoneButton}
-                onPress={() => { setStep(1); setError(''); setOtp(''); }}
-              >
-                <Text style={styles.changePhoneText}>⬅ Nhập lại số điện thoại khác</Text>
-              </TouchableOpacity>
 
               <Text style={styles.label}>Nhập mã gồm 4 số được gửi tới máy:</Text>
               <TextInput
@@ -238,6 +231,15 @@ export default function LoginScreen() {
                 ) : (
                   <Text style={styles.buttonText}>ĐĂNG NHẬP NGAY</Text>
                 )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, styles.backButton]}
+                onPress={() => { setStep(1); setError(''); setOtp(''); }}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.backButtonText}>QUAY LẠI NHẬP SĐT</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -396,5 +398,17 @@ const styles = StyleSheet.create({
     fontSize: FONTS.body,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  backButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryDark,
+    marginTop: 12,
+  },
+  backButtonText: {
+    color: COLORS.primaryDark,
+    fontSize: 18,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
 });

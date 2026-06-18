@@ -4,12 +4,12 @@ import {
   StyleSheet,
   Text,
   View,
-  Modal,
   TouchableOpacity,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
+  ActivityIndicator,
 } from 'react-native';
+import SmoothModal from './SmoothModal';
+import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 
 /**
@@ -25,18 +25,49 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
  *   totalPayment: number,
  * }
  */
-const TransactionDetailModal = forwardRef(({ onEditTransaction, onEditPayment }, ref) => {
+const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransaction, onEditPayment }, ref) => {
   const [visible, setVisible] = useState(false);
   const [dayGroup, setDayGroup] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   // Phơi bày open/close ra component cha
   useImperativeHandle(ref, () => ({
     open: (group) => {
       setDayGroup(group);
       setVisible(true);
+      setError('');
+      setLoading(false);
     },
     close: () => setVisible(false),
   }));
+
+  const handleMarkAsPaid = async () => {
+    if (!dayGroup || !customerId) return;
+    setLoading(true);
+    setError('');
+    try {
+      // Lấy số nợ còn lại thực tế của ngày sau khi đã phân bổ theo FIFO
+      const remainingDebt = dayGroup.remainingDebt !== undefined ? dayGroup.remainingDebt : (dayGroup.totalDebt - dayGroup.totalPayment);
+      const response = await api.post('/payments', {
+        customerId,
+        amount: remainingDebt,
+        paidAt: dayGroup.date, // Ghi nhận thanh toán vào đúng ngày của giao dịch
+        note: `Thanh toán nợ ngày ${dayGroup.dateKey}`,
+      });
+
+      if (response.data.success) {
+        setVisible(false);
+        if (onRefresh) onRefresh();
+      } else {
+        setError(response.data.message || 'Lỗi thanh toán. Vui lòng thử lại.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ─── Helper: định dạng tiền VNĐ ────────────────────────────────────────
   const formatCurrency = (amount) =>
@@ -53,160 +84,202 @@ const TransactionDetailModal = forwardRef(({ onEditTransaction, onEditPayment },
   if (!dayGroup) return null;
 
   const { transactions = [], payments = [], totalDebt = 0, totalPayment = 0, dateKey } = dayGroup;
-  const net = totalDebt - totalPayment;
+  // Số nợ còn lại của ngày sau phân bổ FIFO
+  const remainingDebt = dayGroup.remainingDebt !== undefined ? dayGroup.remainingDebt : (totalDebt - totalPayment);
   const hasDebt = totalDebt > 0;
   const hasPayment = totalPayment > 0;
 
+  // Tính số tiền đã thanh toán (khấu trừ) cho ngày này
+  const paidAmount = totalDebt - remainingDebt;
+  const hasPaidAmount = paidAmount > 0;
+
   return (
-    <Modal
-      animationType="slide"
-      transparent
-      visible={visible}
-      onRequestClose={() => setVisible(false)}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.centeredView}
-      >
-        {/* Lớp nền bấm ngoài để đóng */}
-        <TouchableOpacity
-          style={styles.backdrop}
-          activeOpacity={1}
-          onPress={() => setVisible(false)}
-        />
+    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <View style={styles.modalView}>
+        {/* Thanh kéo (drag indicator) */}
+        <View style={styles.dragBar} />
 
-        <View style={styles.modalView}>
-          {/* Thanh kéo (drag indicator) */}
-          <View style={styles.dragBar} />
+        {/* ── NGÀY TIÊU ĐỀ ── */}
+        <View style={styles.dateHeader}>
+          <Text style={styles.weekdayText}>{getFullWeekday(dayGroup.date)}</Text>
+          <Text style={styles.dateText}>Ngày {dateKey}</Text>
+        </View>
 
-          {/* ── NGÀY TIÊU ĐỀ ── */}
-          <View style={styles.dateHeader}>
-            <Text style={styles.weekdayText}>{getFullWeekday(dayGroup.date)}</Text>
-            <Text style={styles.dateText}>Ngày {dateKey}</Text>
-          </View>
+        {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
-          {/* ── TỔNG KẾT NGÀY (debt + payment badges) ── */}
-          <View style={styles.summaryRow}>
-            {hasDebt && (
-              <View style={[styles.summaryBadge, styles.debtBadge]}>
-                <Text style={styles.summaryBadgeLabel}>🔴 Ghi nợ</Text>
-                <Text style={styles.summaryBadgeAmount}>+{formatCurrency(totalDebt)}</Text>
+        {/* ── TỔNG KẾT NGÀY (debt + payment badges) ── */}
+        <View style={styles.summaryRow}>
+          {hasDebt && (
+            <View style={[styles.summaryBadge, styles.debtBadge]}>
+              <Text style={styles.summaryBadgeLabel}>🔴 Ghi nợ</Text>
+              <Text style={styles.summaryBadgeAmount}>+{formatCurrency(totalDebt)}</Text>
+            </View>
+          )}
+          {hasDebt ? (
+            hasPaidAmount ? (
+              <View style={[styles.summaryBadge, styles.paymentBadge]}>
+                <Text style={styles.summaryBadgeLabel}>🟢 Đã thanh toán</Text>
+                <Text style={[styles.summaryBadgeAmount, { color: COLORS.primaryDark }]}>
+                  -{formatCurrency(paidAmount)}
+                </Text>
               </View>
-            )}
-            {hasPayment && (
+            ) : null
+          ) : (
+            hasPayment ? (
               <View style={[styles.summaryBadge, styles.paymentBadge]}>
                 <Text style={styles.summaryBadgeLabel}>🟢 Thu tiền</Text>
                 <Text style={[styles.summaryBadgeAmount, { color: COLORS.primaryDark }]}>
                   -{formatCurrency(totalPayment)}
                 </Text>
               </View>
-            )}
-          </View>
-
-          {/* ── NET của ngày (nếu có cả nợ lẫn thu) ── */}
-          {hasDebt && hasPayment && (
-            <View style={[styles.netRow, net > 0 ? styles.netRowDebt : styles.netRowOk]}>
-              <Text style={styles.netLabel}>Còn lại trong ngày:</Text>
-              <Text style={[styles.netAmount, { color: net > 0 ? COLORS.danger : COLORS.primary }]}>
-                {formatCurrency(Math.abs(net))}
-              </Text>
-            </View>
+            ) : null
           )}
+        </View>
 
-          <ScrollView style={styles.detailScroll} showsVerticalScrollIndicator={false}>
+        {/* ── HIỂN THỊ NỢ CÒN LẠI CỦA NGÀY (nếu có phát sinh nợ và có phân bổ thanh toán) ── */}
+        {hasDebt && (remainingDebt < totalDebt) && (
+          <View style={[styles.netRow, remainingDebt > 0 ? styles.netRowDebt : styles.netRowOk]}>
+            <Text style={styles.netLabel}>Còn lại chưa thanh toán:</Text>
+            <Text style={[styles.netAmount, { color: remainingDebt > 0 ? COLORS.danger : COLORS.primary }]}>
+              {formatCurrency(remainingDebt)}
+            </Text>
+          </View>
+        )}
 
-            {/* ── DANH SÁCH ĐƠN GHI NỢ ── */}
-            {transactions.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>🥩 Đơn ghi nợ thịt</Text>
-                {transactions.map((t, tIdx) => (
-                  <View key={t.id} style={styles.transactionCard}>
-                    {/* Header đơn: số thứ tự + nút sửa + tổng tiền đơn */}
-                    <View style={styles.transCardHeader}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={styles.transCardNum}>Đơn #{tIdx + 1}</Text>
-                        <TouchableOpacity
-                          style={styles.editCardBtn}
-                          onPress={() => {
-                            setVisible(false);
-                            if (onEditTransaction) onEditTransaction(t);
-                          }}
-                        >
-                          <Text style={styles.editCardText}>✏️ Sửa</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={styles.transCardTotal}>{formatCurrency(t.amount)}</Text>
+        <ScrollView style={styles.detailScroll} showsVerticalScrollIndicator={false}>
+
+          {/* ── DANH SÁCH ĐƠN GHI NỢ ── */}
+          {transactions.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>🥩 Đơn ghi nợ thịt</Text>
+              {transactions.map((t, tIdx) => (
+                <View key={t.id} style={styles.transactionCard}>
+                  {/* Header đơn: số thứ tự + nút sửa + tổng tiền đơn */}
+                  <View style={styles.transCardHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={styles.transCardNum}>Đơn #{tIdx + 1}</Text>
+                      <TouchableOpacity
+                        style={styles.editCardBtn}
+                        onPress={() => {
+                          setVisible(false);
+                          if (onEditTransaction) onEditTransaction(t);
+                        }}
+                      >
+                        <Text style={styles.editCardText}>✏️ Sửa</Text>
+                      </TouchableOpacity>
                     </View>
+                    <Text style={styles.transCardTotal}>{formatCurrency(t.amount)}</Text>
+                  </View>
 
-                    {/* Danh sách mặt hàng trong đơn */}
-                    {t.items && t.items.length > 0 ? (
-                      t.items.map((it, iIdx) => (
+                  {/* Danh sách mặt hàng trong đơn */}
+                  {t.items && t.items.length > 0 ? (
+                    (() => {
+                      // Nhóm và cộng dồn các mặt hàng cùng loại thịt để hiển thị gộp
+                      const displayItemsMap = {};
+                      t.items.forEach((it) => {
+                        const key = it.productId;
+                        const qty = parseFloat(it.quantity);
+                        const priceVal = parseFloat(it.price);
+                        if (displayItemsMap[key]) {
+                          // Cộng dồn khối lượng
+                          displayItemsMap[key].quantity += qty;
+                          // Cập nhật đơn giá mới nhất
+                          displayItemsMap[key].price = priceVal;
+                        } else {
+                          // Khởi tạo phần tử mới
+                          displayItemsMap[key] = {
+                            ...it,
+                            quantity: qty,
+                            price: priceVal,
+                          };
+                        }
+                      });
+                      return Object.values(displayItemsMap).map((it, iIdx) => (
                         <View key={iIdx} style={styles.itemRow}>
                           {/* Tên sản phẩm + thành tiền */}
                           <View style={styles.itemRowHeader}>
                             <Text style={styles.itemName}>{it.product?.name}</Text>
                             <Text style={styles.itemSubtotal}>
-                              {formatCurrency(parseFloat(it.quantity) * parseFloat(it.price))}
+                              {formatCurrency(it.quantity * it.price)}
                             </Text>
                           </View>
                           {/* Khối lượng × đơn giá */}
                           <Text style={styles.itemMeta}>
-                            {parseFloat(it.quantity)} {it.product?.unit}
+                            {it.quantity} {it.product?.unit}
                             {'  ×  '}
-                            {formatCurrency(parseFloat(it.price))}
+                            {formatCurrency(it.price)}
                           </Text>
                         </View>
-                      ))
-                    ) : null}
+                      ));
+                    })()
+                  ) : null}
 
-                    {/* Ghi chú đơn hàng (nếu có) */}
-                    {t.note ? (
-                      <Text style={styles.transNote}>📝 {t.note}</Text>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            )}
+                  {/* Ghi chú đơn hàng (nếu có) */}
+                  {t.note ? (
+                    <Text style={styles.transNote}>📝 {t.note}</Text>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          )}
 
-            {/* ── DANH SÁCH LƯỢT THU TIỀN ── */}
-            {payments.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>💵 Thu tiền khách trả nợ</Text>
-                {payments.map((p) => (
-                  <View key={p.id} style={styles.paymentCard}>
-                    <View style={styles.transCardHeader}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={styles.paymentLabel}>Khách đã trả</Text>
-                        <TouchableOpacity
-                          style={styles.editCardBtn}
-                          onPress={() => {
-                            setVisible(false);
-                            if (onEditPayment) onEditPayment(p);
-                          }}
-                        >
-                          <Text style={styles.editCardText}>✏️ Sửa</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={[styles.transCardTotal, { color: COLORS.primaryDark }]}>
-                        {formatCurrency(p.amount)}
-                      </Text>
+          {/* ── DANH SÁCH LƯỢT THU TIỀN ── */}
+          {payments.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>💵 Thu tiền khách trả nợ</Text>
+              {payments.map((p) => (
+                <View key={p.id} style={styles.paymentCard}>
+                  <View style={styles.transCardHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={styles.paymentLabel}>Khách đã trả</Text>
+                      <TouchableOpacity
+                        style={styles.editCardBtn}
+                        onPress={() => {
+                          setVisible(false);
+                          if (onEditPayment) onEditPayment(p);
+                        }}
+                      >
+                        <Text style={styles.editCardText}>✏️ Sửa</Text>
+                      </TouchableOpacity>
                     </View>
-                    {p.note ? (
-                      <Text style={styles.transNote}>📝 {p.note}</Text>
-                    ) : null}
+                    <Text style={[styles.transCardTotal, { color: COLORS.primaryDark }]}>
+                      {formatCurrency(p.amount)}
+                    </Text>
                   </View>
-                ))}
-              </View>
-            )}
-          </ScrollView>
+                  {p.note ? (
+                    <Text style={styles.transNote}>📝 {p.note}</Text>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
 
-          {/* ── NÚT ĐÓNG ── */}
-          <TouchableOpacity style={styles.closeButton} onPress={() => setVisible(false)}>
+        {/* ── NÚT HÀNH ĐỘNG ── */}
+        <View style={styles.buttonContainer}>
+          {remainingDebt > 0 && (
+            <TouchableOpacity
+              style={[styles.button, styles.payButton]}
+              onPress={handleMarkAsPaid}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.payButtonText}>🟢 ĐÃ TRẢ ĐỦ</Text>
+              )}
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[styles.button, styles.closeButton]}
+            onPress={() => setVisible(false)}
+            disabled={loading}
+          >
             <Text style={styles.closeButtonText}>ĐÓNG</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </View>
+    </SmoothModal>
   );
 });
 
@@ -231,7 +304,6 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     paddingTop: 14,
     maxHeight: '85%',
-    ...SHADOWS.card,
   },
   dragBar: {
     width: 44,
@@ -414,20 +486,51 @@ const styles = StyleSheet.create({
     color: COLORS.primaryDark,
   },
 
-  // ── Nút đóng ─────────────────────────────────────────────────────────────
-  closeButton: {
+  errorText: {
+    color: COLORS.dangerDark,
+    backgroundColor: COLORS.dangerLight,
+    padding: 10,
+    borderRadius: 8,
+    fontSize: FONTS.body,
+    fontWeight: '600',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  // ── Buttons ──────────────────────────────────────────────────────────────
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 10,
+  },
+  button: {
+    flex: 1,
     height: 52,
     borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButton: {
     backgroundColor: COLORS.inputBg,
     borderWidth: 1,
     borderColor: COLORS.border,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   closeButtonText: {
     fontSize: FONTS.body,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
+  },
+  payButton: {
+    backgroundColor: COLORS.primary,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  payButtonText: {
+    fontSize: FONTS.body,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   editCardBtn: {
     backgroundColor: '#FFFFFF',

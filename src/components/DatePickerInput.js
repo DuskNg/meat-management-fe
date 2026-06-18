@@ -106,7 +106,7 @@ const injectWebStyles = () => {
  *   - onChange: function(newDateStr: string) => void
  *   - label:    string (tuỳ chọn), nhãn hiển thị bên trên
  */
-const DatePickerInput = ({ value, onChange }) => {
+const DatePickerInput = ({ value, onChange, allowFuture = false }) => {
   // Trạng thái mở/đóng picker trên mobile
   const [showPicker, setShowPicker] = useState(false);
   // Trạng thái hover/press để đổi màu viền
@@ -117,6 +117,9 @@ const DatePickerInput = ({ value, onChange }) => {
 
   // Tên thứ trong tuần bằng tiếng Việt
   const weekday = getWeekdayVi(parsedDate);
+
+  // Giới hạn ngày tối đa (mặc định chặn chọn ngày tương lai nếu allowFuture = false)
+  const maxDate = allowFuture ? null : new Date();
 
   // Xử lý khi mobile picker thay đổi
   const handleMobileChange = (event, selectedDate) => {
@@ -154,7 +157,7 @@ const DatePickerInput = ({ value, onChange }) => {
             className="date-picker-input"
             type="date"
             value={formatDateToISO(parsedDate)}
-            max={formatDateToISO(new Date())} // Chặn chọn ngày tương lai
+            max={maxDate ? formatDateToISO(maxDate) : undefined} // Giới hạn ngày tối đa nếu có
             onChange={(e) => {
               if (e.target.value) {
                 const date = parseISOToDate(e.target.value);
@@ -210,7 +213,7 @@ const DatePickerInput = ({ value, onChange }) => {
           value={parsedDate}
           mode="date"
           display="default"
-          maximumDate={new Date()} // Không cho chọn ngày tương lai
+          maximumDate={maxDate || undefined} // Giới hạn ngày tối đa nếu có
           onChange={handleMobileChange}
           locale="vi-VN"
         />
@@ -222,17 +225,17 @@ const DatePickerInput = ({ value, onChange }) => {
 export default DatePickerInput;
 
 const styles = StyleSheet.create({
-  // Container chính — giống style input trong app
+  // Container chính — giống style input trong app (đã thu gọn chiều cao)
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.inputBg,
-    height: 64,
+    height: 48,
     borderRadius: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     borderWidth: 1.5,
     borderColor: COLORS.border,
-    marginBottom: 16,
+    marginBottom: 8,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -242,49 +245,49 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5F5',
   },
 
-  // Vùng icon lịch bên trái
+  // Vùng icon lịch bên trái (thu nhỏ kích thước)
   iconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     backgroundColor: '#FEE2E2', // Nền đỏ nhạt
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 8,
   },
   icon: {
-    fontSize: 20,
+    fontSize: 16,
   },
 
-  // Vùng hiển thị thứ + ngày
+  // Vùng hiển thị thứ + ngày (thu gọn font size)
   dateContent: {
     flex: 1,
     justifyContent: 'center',
   },
   weekdayText: {
-    fontSize: FONTS.caption,
+    fontSize: 11,
     fontWeight: '600',
     color: COLORS.textSecondary,
-    marginBottom: 1,
+    marginBottom: 0,
   },
   dateDisplayText: {
-    fontSize: FONTS.subtitle,
+    fontSize: 15,
     fontWeight: 'bold',
     color: COLORS.text,
     letterSpacing: 0.5,
   },
 
-  // Tag "Đổi ngày" bên phải
+  // Tag "Đổi ngày" bên phải (thu nhỏ padding và text)
   changeTag: {
     backgroundColor: COLORS.dangerLight,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderWidth: 1,
     borderColor: '#FECACA',
   },
   changeTagText: {
-    fontSize: FONTS.caption,
+    fontSize: 11,
     fontWeight: 'bold',
     color: COLORS.dangerDark,
   },

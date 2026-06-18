@@ -4,16 +4,15 @@ import {
   StyleSheet,
   Text,
   View,
-  Modal,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   FlatList,
-  Alert
+  Alert,
+  Platform,
+  ScrollView,
 } from 'react-native';
+import SmoothModal from './SmoothModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
@@ -170,23 +169,8 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   return (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={visible}
-      onRequestClose={() => setVisible(false)}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.centeredView}
-      >
-        {/* Lớp nền trong suốt click ngoài để tắt modal */}
-        <TouchableOpacity
-          style={styles.backdrop}
-          activeOpacity={1}
-          onPress={() => setVisible(false)}
-        />
-        <View style={styles.modalView}>
+    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <View style={styles.modalView}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>🥩 QUẢN LÝ DANH SÁCH THỊT</Text>
             <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
@@ -294,9 +278,8 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
           >
             <Text style={styles.closeButtonText}>ĐÓNG LẠI</Text>
           </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </View>
+    </SmoothModal>
   );
 });
 
@@ -314,7 +297,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 20,
     paddingTop: Platform.OS === 'ios' ? 50 : 30, // Tránh tai thỏ và thanh trạng thái trên di động
-    ...SHADOWS.card,
   },
   modalHeader: {
     flexDirection: 'row',

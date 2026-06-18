@@ -4,16 +4,14 @@ import {
   StyleSheet, 
   Text, 
   View, 
-  Modal, 
   TextInput, 
   TouchableOpacity, 
   ActivityIndicator, 
   ScrollView,
-  KeyboardAvoidingView,
-  Platform
 } from 'react-native';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
+import SmoothModal from './SmoothModal';
 
 const AddCustomerModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
@@ -69,96 +67,80 @@ const AddCustomerModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   return (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={visible}
-      onRequestClose={() => setVisible(false)}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.centeredView}
-      >
-        {/* Lớp nền trong suốt click ngoài để tắt modal */}
-        <TouchableOpacity
-          style={styles.backdrop}
-          activeOpacity={1}
-          onPress={() => setVisible(false)}
-        />
-        <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>➕ THÊM KHÁCH QUEN MỚI</Text>
+    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <View style={styles.modalView}>
+        <Text style={styles.modalTitle}>➕ THÊM KHÁCH QUEN MỚI</Text>
 
-          {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
+        {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
-          <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>Tên khách hàng (Bắt buộc):</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ví dụ: Chị Lan bán phở"
-              placeholderTextColor={COLORS.textLight}
-              value={name}
-              onChangeText={(text) => {
-                setName(text);
-                setError('');
-              }}
-            />
+        <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+          <Text style={styles.label}>Tên khách hàng (Bắt buộc):</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ví dụ: Chị Lan bán phở"
+            placeholderTextColor={COLORS.textLight}
+            value={name}
+            onChangeText={(text) => {
+              setName(text);
+              setError('');
+            }}
+          />
 
-            <Text style={styles.label}>Số điện thoại liên hệ (Có thể bỏ qua):</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ví dụ: 0912345678"
-              placeholderTextColor={COLORS.textLight}
-              keyboardType="phone-pad"
-              value={phone}
-              onChangeText={setPhone}
-            />
+          <Text style={styles.label}>Số điện thoại liên hệ (Có thể bỏ qua):</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ví dụ: 0912345678"
+            placeholderTextColor={COLORS.textLight}
+            keyboardType="phone-pad"
+            value={phone}
+            onChangeText={setPhone}
+          />
 
-            <Text style={styles.label}>Địa chỉ / Số sạp hàng (Có thể bỏ qua):</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ví dụ: Sạp 12, Chợ Đầu Mối"
-              placeholderTextColor={COLORS.textLight}
-              value={address}
-              onChangeText={setAddress}
-            />
+          <Text style={styles.label}>Địa chỉ / Số sạp hàng (Có thể bỏ qua):</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ví dụ: Sạp 12, Chợ Đầu Mối"
+            placeholderTextColor={COLORS.textLight}
+            value={address}
+            onChangeText={setAddress}
+          />
 
-            <Text style={styles.label}>Ghi chú thói quen mua hàng (Có thể bỏ qua):</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Ví dụ: Chỉ lấy sườn non buổi sáng, thanh toán cuối tuần"
-              placeholderTextColor={COLORS.textLight}
-              multiline={true}
-              numberOfLines={3}
-              value={note}
-              onChangeText={setNote}
-            />
-          </ScrollView>
+          <Text style={styles.label}>Ghi chú thói quen mua hàng (Có thể bỏ qua):</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Ví dụ: Chỉ lấy sườn non buổi sáng, thanh toán cuối tuần"
+            placeholderTextColor={COLORS.textLight}
+            multiline={true}
+            numberOfLines={3}
+            value={note}
+            onChangeText={setNote}
+          />
+        </ScrollView>
 
-          {/* Các nút hành động to bản dưới chân modal */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.button, styles.submitButton]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.submitButtonText}>THÊM NGAY</Text>
-              )}
-            </TouchableOpacity>
+        {/* Các nút hành động to bản dưới chân modal */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.submitButton]}
+            onPress={handleSubmit}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.submitButtonText}>THÊM NGAY</Text>
+            )}
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={() => setVisible(false)}
-              disabled={loading}
-            >
-              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={[styles.button, styles.cancelButton]}
+            onPress={() => setVisible(false)}
+            disabled={loading}
+          >
+            <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+          </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </View>
+    </SmoothModal>
   );
 });
 
@@ -176,7 +158,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     maxHeight: '90%',
-    ...SHADOWS.card,
   },
   modalTitle: {
     fontSize: FONTS.title,
