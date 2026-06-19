@@ -189,23 +189,24 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
           {/* Form thêm thịt mới */}
           <View style={styles.formContainer}>
             <Text style={styles.sectionTitle}>➕ THÊM THỊT MỚI</Text>
-            <View style={styles.inputGroup}>
-              <TextInput
-                style={styles.input}
-                placeholder="Tên thịt (Ví dụ: Bắp bò...)"
-                placeholderTextColor={COLORS.textLight}
-                value={name}
-                onChangeText={setName}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Giá tiền (Ví dụ: 130.000)"
-                placeholderTextColor={COLORS.textLight}
-                keyboardType="number-pad" // Hiển thị bàn phím số nguyên trên di động
-                value={price}
-                onChangeText={(text) => setPrice(formatNumberString(text))}
-              />
-            </View>
+            <Text style={styles.label}>Tên loại thịt:</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ví dụ: Bắp bò, Sườn non..."
+              placeholderTextColor={COLORS.textLight}
+              value={name}
+              onChangeText={setName}
+            />
+
+            <Text style={styles.label}>Giá tiền mặc định (VND):</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ví dụ: 130.000"
+              placeholderTextColor={COLORS.textLight}
+              keyboardType="number-pad" // Hiển thị bàn phím số nguyên trên di động
+              value={price}
+              onChangeText={(text) => setPrice(formatNumberString(text))}
+            />
 
             {/* Chọn đơn vị tính */}
             <Text style={styles.label}>Đơn vị tính:</Text>
@@ -359,21 +360,22 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   inputGroup: {
+    flexDirection: 'row',
     marginBottom: 10,
   },
   input: {
     backgroundColor: '#FFFFFF',
-    height: 50,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    fontSize: FONTS.body,
+    height: 42,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 14,
     color: COLORS.text,
     borderWidth: 1.5,
     borderColor: '#E4E2DD',
     marginBottom: 10,
   },
   label: {
-    fontSize: FONTS.caption,
+    fontSize: 14,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
     marginBottom: 6,
@@ -383,9 +385,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   unitBadge: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 6,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#E4E2DD',
@@ -396,7 +398,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   unitBadgeText: {
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: '600',
     color: COLORS.textSecondary,
   },
@@ -405,8 +407,8 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: COLORS.primary,
-    height: 52,
-    borderRadius: 10,
+    height: 44,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -422,7 +424,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -430,26 +432,26 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   productNameText: {
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: 'bold',
     color: COLORS.text,
   },
   productPriceText: {
-    fontSize: FONTS.caption,
+    fontSize: 12,
     color: COLORS.textSecondary,
     marginTop: 2,
   },
   deleteButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
     backgroundColor: COLORS.dangerLight,
     borderWidth: 1,
     borderColor: '#FECACA',
   },
   deleteButtonText: {
     color: COLORS.dangerDark,
-    fontSize: FONTS.caption,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   emptyText: {
@@ -460,8 +462,8 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     backgroundColor: COLORS.inputBg,
-    height: 52,
-    borderRadius: 10,
+    height: 44,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,

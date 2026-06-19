@@ -501,7 +501,7 @@ export default function CustomerDetailScreen() {
                 {monthGroups.map((month) => {
                   // Xác định trạng thái nợ của tháng để hiển thị màu sắc phù hợp
                   const hasDebt = month.remainingDebt > 0;
-                  
+
                   let bgColor, bdColor, txtColor, statusLabel;
                   if (!hasDebt) {
                     // Đã thanh toán hết nợ: màu xanh lá nhạt
@@ -545,12 +545,12 @@ export default function CustomerDetailScreen() {
                       >
                         {statusLabel}
                       </Text>
-                      
+
                       {/* Nhãn hiển thị tháng */}
                       <Text style={styles.monthTileName} numberOfLines={1} adjustsFontSizeToFit>
                         {shortMonthLabel}
                       </Text>
-                      
+
                       {/* Dư nợ còn lại trong tháng */}
                       <Text style={[styles.monthTileAmount, { color: txtColor }]} numberOfLines={1}>
                         {hasDebt ? formatAmountShort(month.remainingDebt) : '0đ'}

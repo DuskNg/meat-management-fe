@@ -26,7 +26,7 @@ const MonthDetailDrawer = forwardRef(({
 
   // Chiều rộng của sidebar (chiếm 85% màn hình trên mobile hoặc tối đa 400px trên web)
   const drawerWidth = Math.min(width * 0.85, 400);
-  
+
   // Giá trị animation dịch chuyển ngang từ phải sang trái
   const slideAnim = useRef(new Animated.Value(drawerWidth)).current;
 
@@ -106,7 +106,7 @@ const MonthDetailDrawer = forwardRef(({
           {/* Báo cáo tài chính tháng */}
           <View style={styles.summaryCard}>
             <Text style={styles.summaryTitle}>📊 TỔNG HỢP TRONG THÁNG</Text>
-            
+
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Mua nợ:</Text>
               <Text style={styles.summaryValue}>{formatCurrency(month.totalDebt)}</Text>

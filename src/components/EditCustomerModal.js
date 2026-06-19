@@ -167,15 +167,15 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 24,
+    padding: 20, // Giảm padding từ 24 xuống 20
     maxHeight: '90%',
   },
   modalTitle: {
-    fontSize: FONTS.title,
+    fontSize: 19, // Giảm cỡ chữ tiêu đề từ title (22) xuống 19
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 15, // Giảm margin-bottom từ 20 xuống 15
   },
   errorText: {
     color: COLORS.dangerDark,
@@ -190,36 +190,36 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   label: {
-    fontSize: FONTS.subtitle,
+    fontSize: 14, // Giảm cỡ chữ nhãn từ subtitle (18) xuống 14
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
-    marginBottom: 8,
+    marginBottom: 6, // Giảm margin-bottom từ 8 xuống 6
   },
   input: {
     backgroundColor: COLORS.inputBg,
-    height: 56,
+    height: 44, // Giảm chiều cao từ 56 xuống 44
     borderRadius: 10,
     paddingHorizontal: 16,
-    fontSize: FONTS.body,
+    fontSize: 14, // Giảm cỡ chữ nhập liệu từ body (16) xuống 14
     color: COLORS.text,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 16,
+    marginBottom: 12, // Giảm margin-bottom từ 16 xuống 12
   },
   textArea: {
-    height: 90,
+    height: 68, // Giảm chiều cao từ 90 xuống 68
     paddingTop: 12,
-    textAlignVertical: 'top',
+    textAlignVertical: 'top', // Dành cho Android
   },
   buttonContainer: {
-    flexDirection: 'column',
-    gap: 12,
-    marginTop: 10,
+    flexDirection: 'row', // Chuyển thành row hiển thị nằm ngang cùng hàng
+    gap: 10, // Khoảng cách giữa các nút
+    marginTop: 12,
   },
   button: {
-    width: '100%',
-    height: 58,
-    borderRadius: 14,
+    flex: 1, // Chia sẻ đều không gian ngang
+    height: 46, // Giảm chiều cao từ 58 xuống 46
+    borderRadius: 10, // Bo nhẹ góc nút
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: COLORS.textSecondary,
-    fontSize: FONTS.subtitle,
+    fontSize: 15, // Giảm cỡ chữ nút Hủy từ subtitle (18) xuống 15
     fontWeight: 'bold',
   },
   submitButton: {
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: FONTS.subtitle,
+    fontSize: 15, // Giảm cỡ chữ nút Lưu từ subtitle (18) xuống 15
     fontWeight: 'bold',
   },
   backdrop: {
