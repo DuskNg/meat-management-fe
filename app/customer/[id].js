@@ -30,6 +30,7 @@ import TransactionDetailModal from '../../src/components/TransactionDetailModal'
 import EditDebtModal from '../../src/components/EditDebtModal';
 import EditPaymentModal from '../../src/components/EditPaymentModal';
 import EditCustomerModal from '../../src/components/EditCustomerModal';
+import MonthDetailDrawer from '../../src/components/MonthDetailDrawer';
 
 export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -42,51 +43,10 @@ export default function CustomerDetailScreen() {
   const editDebtModalRef = useRef(null);
   const editPaymentModalRef = useRef(null);
   const editCustomerModalRef = useRef(null);
+  const monthDrawerRef = useRef(null); // Ref điều khiển Sidebar chi tiết tháng
   const scrollViewRef = useRef(null); // Ref để điều khiển cuộn của ScrollView
-  const monthLayouts = useRef({}); // Lưu trữ tọa độ y của các tháng để cuộn
 
-  // Trạng thái các tháng được mở rộng (mặc định không mở rộng tháng nào)
-  const [expandedMonths, setExpandedMonths] = useState({});
 
-  const toggleMonth = (monthKey) => {
-    // Cấu hình hiệu ứng Spring nảy nhẹ giúp các ô vuông hiển thị sinh động và mượt mà hơn (chỉ chạy trên Mobile)
-    if (Platform.OS !== 'web' && LayoutAnimation) {
-      LayoutAnimation.configureNext({
-        duration: 350,
-        create: {
-          type: LayoutAnimation.Types.easeInEaseOut,
-          property: LayoutAnimation.Properties.scaleXY,
-        },
-        update: {
-          type: LayoutAnimation.Types.spring,
-          springDamping: 0.75, // Độ nảy vừa phải, êm ái
-        },
-        delete: {
-          type: LayoutAnimation.Types.easeInEaseOut,
-          property: LayoutAnimation.Properties.opacity,
-        }
-      });
-    }
-
-    setExpandedMonths((prev) => {
-      const nextState = {
-        ...prev,
-        [monthKey]: !prev[monthKey],
-      };
-
-      // Nếu tháng được mở rộng, tiến hành cuộn đến vị trí của tháng đó
-      if (nextState[monthKey]) {
-        setTimeout(() => {
-          const yPos = monthLayouts.current[monthKey];
-          if (yPos !== undefined && scrollViewRef.current) {
-            scrollViewRef.current.scrollTo({ y: Math.max(0, yPos - 10), animated: true });
-          }
-        }, 150); // Chờ giao diện hiển thị phần mở rộng trước khi cuộn
-      }
-
-      return nextState;
-    });
-  };
 
   // Xử lý quay lại an toàn khi tải lại trang trực tiếp
   const handleBack = () => {
@@ -379,19 +339,20 @@ export default function CustomerDetailScreen() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
   };
 
-  // ─── Helper: thứ viết rõ (Thứ 2 … Chủ Nhật) ───────────────────────────
+  // ─── Helper: thứ viết rõ (Thứ 2 … C.Nhật) ───────────────────────────
   const getWeekday = (dateStr) =>
-    ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][new Date(dateStr).getDay()];
+    ['C.Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][new Date(dateStr).getDay()];
 
-  // ─── Tính kích thước tile chính xác để hiển thị khít 4 ô trên 1 hàng ───
-  const NUM_COLS = 4;
+  // ─── Tính kích thước tile chính xác để hiển thị khít 3 ô trên 1 hàng ───
+  const NUM_COLS = 3;
   const TILE_GAP = 8;
   const SIDE_PAD = 16; // Dùng làm padding cho danh sách ngoài trong JSX render
   const CONTAINER_PADDING = 4; // Padding của container tháng bên trong
   const REAL_SIDE_PAD = SIDE_PAD + CONTAINER_PADDING; // Tổng padding thực tế mỗi bên
   const contentWidth = Math.min(width, 600);
+  // Trừ đi 12px đệm an toàn để tránh rớt cột do thanh cuộn (scrollbar) hoặc làm tròn pixel
   const tileSize = Math.floor(
-    (contentWidth - REAL_SIDE_PAD * 2 - TILE_GAP * (NUM_COLS - 1)) / NUM_COLS
+    (contentWidth - 12 - REAL_SIDE_PAD * 2 - TILE_GAP * (NUM_COLS - 1)) / NUM_COLS
   );
 
   const isLoading = isLoadingCustomer || isLoadingTrans || isLoadingPayments;
@@ -453,8 +414,12 @@ export default function CustomerDetailScreen() {
           {(customer?.phone || customer?.address || customer?.note) ? (
             <View style={styles.infoSection}>
               {customer?.phone ? (
-                <View style={styles.phoneSectionContainer}>
-                  <Text style={[styles.phoneText, { marginBottom: 10 }]}>📞 SĐT: {customer.phone}</Text>
+                // Hàng chứa SĐT và các nút gọi, zalo ngang hàng (bỏ border/padding nếu không có thông tin phía sau)
+                <View style={[
+                  styles.phoneSectionContainer,
+                  !(customer?.address || customer?.note) && { borderBottomWidth: 0, paddingBottom: 0 }
+                ]}>
+                  <Text style={styles.phoneText} numberOfLines={1}>📞 {customer.phone}</Text>
                   <View style={styles.phoneContactActions}>
                     <TouchableOpacity
                       style={[styles.contactActionBtn, styles.callBtn]}
@@ -470,26 +435,24 @@ export default function CustomerDetailScreen() {
                     >
                       <Text style={[styles.contactActionText, styles.zaloBtnText]}>Zalo 💬</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.contactActionBtn, styles.editBtn]}
-                      onPress={() => editCustomerModalRef.current?.open(customer)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.contactActionText, styles.editBtnText]}>Sửa ✏️</Text>
-                    </TouchableOpacity>
                   </View>
                 </View>
               ) : null}
               {customer?.address ? (
-                <View style={styles.addressRowContainer}>
-                  <Text style={styles.addressText} numberOfLines={2}>📍 Địa chỉ: {customer.address}</Text>
-                  <TouchableOpacity
-                    style={styles.mapBtn}
-                    onPress={() => handleOpenMap(customer.address)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.mapBtnText}>Tìm trên bản đồ 🗺️</Text>
-                  </TouchableOpacity>
+                // Hiển thị địa chỉ và nút Tìm trên bản đồ dưới dạng nút lồng inline (bỏ border/padding nếu không có ghi chú phía sau)
+                <View style={[
+                  styles.addressSectionContainer,
+                  !customer?.note && { borderBottomWidth: 0, paddingBottom: 0 }
+                ]}>
+                  <Text style={styles.addressText}>
+                    📍{customer.address}{' '}
+                    <Text
+                      style={styles.inlineMapBtn}
+                      onPress={() => handleOpenMap(customer.address)}
+                    >
+                      {' '}Tìm trên bản đồ 🗺️{' '}
+                    </Text>
+                  </Text>
                 </View>
               ) : null}
               {customer?.note
@@ -533,137 +496,69 @@ export default function CustomerDetailScreen() {
               </Text>
             </View>
           ) : (
-            <View style={{ paddingHorizontal: SIDE_PAD }}>
-              {monthGroups.map((month) => {
-                const isExpanded = !!expandedMonths[month.monthKey];
-                return (
-                  <View
-                    key={month.monthKey}
-                    style={styles.monthSection}
-                    onLayout={(event) => {
-                      const { y } = event.nativeEvent.layout;
-                      monthLayouts.current[month.monthKey] = y;
-                    }}
-                  >
-                    {/* Tiêu đề tháng dạng nút bấm để đóng/mở */}
+            <View style={{ paddingHorizontal: SIDE_PAD + CONTAINER_PADDING }}>
+              <View style={styles.monthGrid}>
+                {monthGroups.map((month) => {
+                  // Xác định trạng thái nợ của tháng để hiển thị màu sắc phù hợp
+                  const hasDebt = month.remainingDebt > 0;
+                  
+                  let bgColor, bdColor, txtColor, statusLabel;
+                  if (!hasDebt) {
+                    // Đã thanh toán hết nợ: màu xanh lá nhạt
+                    bgColor = '#F0FDF4';
+                    bdColor = '#86EFAC';
+                    txtColor = COLORS.primary;
+                    statusLabel = 'Hết nợ ✅';
+                  } else {
+                    // Còn nợ chưa thanh toán: màu đỏ nhạt
+                    bgColor = '#FFF1F1';
+                    bdColor = '#FECACA';
+                    txtColor = COLORS.danger;
+                    statusLabel = 'Còn nợ ⚠️';
+                  }
+
+                  // Định dạng tháng hiển thị rút gọn (Tháng MM/YY)
+                  const [mm, yyyy] = month.monthKey.split('/');
+                  const shortYear = yyyy.substring(2);
+                  const shortMonthLabel = `Tháng ${mm}/${shortYear}`;
+
+                  return (
                     <TouchableOpacity
-                      style={styles.monthHeader}
-                      onPress={() => toggleMonth(month.monthKey)}
+                      key={month.monthKey}
+                      style={[
+                        styles.monthTile,
+                        {
+                          width: tileSize,
+                          height: tileSize - 14, // Giảm bớt chiều cao theo yêu cầu người dùng
+                          backgroundColor: bgColor,
+                          borderColor: bdColor,
+                        },
+                      ]}
+                      onPress={() => monthDrawerRef.current?.open(month)}
                       activeOpacity={0.7}
                     >
-                      <View style={styles.monthHeaderLeft}>
-                        <View style={[
-                          styles.monthStatusDot,
-                          { backgroundColor: month.remainingDebt === 0 ? COLORS.primary : COLORS.danger }
-                        ]} />
-                        <Text style={styles.monthTitle}>{month.monthLabel}</Text>
-                      </View>
-
-                      <View style={styles.monthHeaderRight}>
-                        <Text style={styles.viewDetailText}>
-                          {isExpanded ? 'Thu gọn' : 'Xem chi tiết'}
-                        </Text>
-                        <Text style={styles.monthChevronRight}>
-                          {isExpanded ? '▼' : '▶'}
-                        </Text>
-                      </View>
+                      {/* Trạng thái nợ */}
+                      <Text
+                        style={[styles.monthTileStatus, { color: txtColor }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                      >
+                        {statusLabel}
+                      </Text>
+                      
+                      {/* Nhãn hiển thị tháng */}
+                      <Text style={styles.monthTileName} numberOfLines={1} adjustsFontSizeToFit>
+                        {shortMonthLabel}
+                      </Text>
+                      
+                      {/* Dư nợ còn lại trong tháng */}
+                      <Text style={[styles.monthTileAmount, { color: txtColor }]} numberOfLines={1}>
+                        {hasDebt ? formatAmountShort(month.remainingDebt) : '0đ'}
+                      </Text>
                     </TouchableOpacity>
-
-                    {/* Danh sách ngày của tháng */}
-                    {isExpanded && (
-                      <View style={styles.monthExpandedContainer}>
-                        {/* Dòng hiển thị tổng nợ và nút thanh toán nhanh */}
-                        <View style={styles.monthSummaryRow}>
-                          <View style={styles.monthDebtSummaryContainer}>
-                            <Text style={styles.monthDebtSummaryText}>Còn nợ trong tháng:</Text>
-                            <Text style={styles.monthDebtSummaryValue}>
-                              {formatCurrency(month.remainingDebt)}
-                            </Text>
-                          </View>
-                          {month.remainingDebt > 0 && (
-                            <TouchableOpacity
-                              style={styles.monthPaymentBtn}
-                              onPress={() => paymentModalRef.current?.open(month.remainingDebt)}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={styles.monthPaymentBtnText}>Đã trả 💵</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                        <View style={styles.monthGrid}>
-                          {month.days.map((group) => {
-                            // Xác định trạng thái thanh toán của ngày để hiển thị màu và nội dung phù hợp
-                            const hasDebt = group.totalDebt > 0;
-                            const hasPay = group.totalPayment > 0;
-
-                            // 1. Đã thanh toán hết nợ: có nợ và nợ còn lại thực tế bằng 0
-                            const isFullyPaid = hasDebt && group.remainingDebt === 0;
-                            // 2. Trả nợ một phần: có nợ, nợ còn lại lớn hơn 0 nhưng đã được trừ bớt
-                            const isPartiallyPaid = hasDebt && group.remainingDebt > 0 && group.remainingDebt < group.totalDebt;
-                            // 3. Chưa thanh toán: có nợ và nợ còn lại bằng nợ ban đầu
-                            const isUnpaidDebt = hasDebt && group.remainingDebt === group.totalDebt;
-                            // 4. Chỉ thu nợ cũ: không phát sinh nợ mới, chỉ có lượt thu tiền nợ cũ
-                            const isPaymentOnly = !hasDebt && hasPay;
-
-                            let bgColor, bdColor, txtColor;
-                            if (isFullyPaid || isPaymentOnly) {
-                              // Màu xanh lá: Đã thanh toán hết hoặc chỉ thu nợ cũ
-                              bgColor = '#F0FDF4';
-                              bdColor = '#86EFAC';
-                              txtColor = COLORS.primary;
-                            } else if (isPartiallyPaid) {
-                              // Màu cam: Trả nợ một phần
-                              bgColor = '#FFF7ED';
-                              bdColor = '#FED7AA';
-                              txtColor = '#C2410C';
-                            } else {
-                              // Màu đỏ: Chỉ ghi nợ và chưa trả
-                              bgColor = '#FFF1F1';
-                              bdColor = '#FECACA';
-                              txtColor = COLORS.danger;
-                            }
-
-                            return (
-                              <TouchableOpacity
-                                key={group.dateKey}
-                                style={[
-                                  styles.tile,
-                                  { width: tileSize, height: tileSize, backgroundColor: bgColor, borderColor: bdColor },
-                                ]}
-                                onPress={() => detailModalRef.current?.open(group)}
-                                activeOpacity={0.7}
-                              >
-                                {/* Thứ viết rõ */}
-                                <Text
-                                  style={[styles.tileWeekday, { color: txtColor }]}
-                                  numberOfLines={1}
-                                  adjustsFontSizeToFit
-                                >
-                                  {getWeekday(group.date)}
-                                </Text>
-                                {/* Ngày/Tháng */}
-                                <Text style={styles.tileDate}>
-                                  {formatShortDate(group.date)}
-                                </Text>
-                                {/* Số tiền rút gọn hoặc trạng thái */}
-                                {isFullyPaid ? (
-                                  <Text style={[styles.tileAmount, { color: txtColor }]}>
-                                    0đ
-                                  </Text>
-                                ) : (
-                                  <Text style={[styles.tileAmount, { color: txtColor }]}>
-                                    {formatAmountShort(hasDebt ? group.remainingDebt : group.totalPayment)}
-                                  </Text>
-                                )}
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
+                  );
+                })}
+              </View>
             </View>
           )}
         </ScrollView>
@@ -691,6 +586,15 @@ export default function CustomerDetailScreen() {
       <EditDebtModal ref={editDebtModalRef} onRefresh={handleRefreshAll} />
       <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} />
       <EditCustomerModal ref={editCustomerModalRef} onRefresh={handleRefreshAll} />
+      <MonthDetailDrawer
+        ref={monthDrawerRef}
+        formatCurrency={formatCurrency}
+        formatShortDate={formatShortDate}
+        formatAmountShort={formatAmountShort}
+        getWeekday={getWeekday}
+        paymentModalRef={paymentModalRef}
+        detailModalRef={detailModalRef}
+      />
     </SafeAreaView>
   );
 }
@@ -756,10 +660,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#047857',
   },
+  // Container SĐT: Hiển thị ngang hàng SĐT và các nút hành động (giảm padding để gọn hơn)
   phoneSectionContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     borderBottomWidth: 1,
     borderColor: COLORS.border,
-    paddingBottom: 12,
+    paddingBottom: 10,
   },
   phoneRowContainer: {
     flexDirection: 'row',
@@ -767,11 +675,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  // Chữ hiển thị số điện thoại (đậm, to rõ hơn)
   phoneText: {
-    fontSize: FONTS.body + 1, // Tăng thêm 1
+    fontSize: FONTS.body + 1,
     color: COLORS.text,
-    fontWeight: '500',
-    flex: 1,
+    fontWeight: 'bold',
+    marginRight: 8,
   },
   phoneActionBtn: {
     paddingVertical: 6,
@@ -794,12 +703,13 @@ const styles = StyleSheet.create({
   },
   phoneContactActions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
+  // Nút hành động liên lạc (Gọi, Zalo) thiết kế nhỏ gọn pill (tăng nhẹ kích thước theo yêu cầu)
   contactActionBtn: {
-    flex: 1,
-    height: 44,
-    borderRadius: 10,
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 17,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -819,8 +729,9 @@ const styles = StyleSheet.create({
   zaloBtnText: {
     color: '#0068FF',
   },
+  // Chữ trên nút hành động (tăng nhẹ cỡ chữ)
   contactActionText: {
-    fontSize: 15, // Tăng từ 14
+    fontSize: 13,
     fontWeight: 'bold',
   },
   scrollContent: {
@@ -852,11 +763,12 @@ const styles = StyleSheet.create({
     fontSize: 35, // Tăng từ 34
     fontWeight: 'bold',
   },
+  // Khung thông tin khách hàng (giảm padding từ 16 xuống 12)
   infoSection: {
     backgroundColor: COLORS.card,
     marginHorizontal: 16,
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
@@ -989,36 +901,31 @@ const styles = StyleSheet.create({
   btnDebt: {
     backgroundColor: COLORS.danger,
   },
-  addressRowContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
+  // Container cho phần hiển thị địa chỉ
+  addressSectionContainer: {
+    marginTop: 10,
     borderBottomWidth: 1,
     borderColor: COLORS.border,
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
+  // Style cho chữ địa chỉ
   addressText: {
     fontSize: FONTS.body + 1, // Tăng thêm 1
     color: COLORS.text,
-    flex: 1,
-    marginRight: 10,
     lineHeight: 22,
   },
-  mapBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+  // Style cho nút bản đồ lồng inline chạy theo đuôi text địa chỉ
+  inlineMapBtn: {
+    color: '#1D4ED8',
+    fontWeight: 'bold',
+    fontSize: 12,
     backgroundColor: '#EFF6FF',
     borderColor: '#BFDBFE',
     borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  mapBtnText: {
-    fontSize: FONTS.caption + 1, // Tăng thêm 1
-    fontWeight: 'bold',
-    color: '#1D4ED8',
+    borderRadius: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    overflow: 'hidden', // Cực kỳ quan trọng để hiển thị border radius trên iOS
   },
   monthExpandedContainer: {
     paddingHorizontal: 4,
@@ -1129,5 +1036,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  monthTile: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 6, // Giảm nhẹ padding để tăng diện tích hiển thị hàng ngang
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    ...SHADOWS.card,
+  },
+  monthTileStatus: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  monthTileName: {
+    fontSize: 12, // Giảm nhẹ cỡ chữ để "Tháng MM/YY" nằm trọn vẹn trên 1 hàng
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  monthTileAmount: {
+    fontSize: 17,
+    fontWeight: 'bold',
   },
 });

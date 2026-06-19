@@ -337,14 +337,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 100, // Chừa khoảng trống tránh đè lên nút bottomBar
   },
+  // Card khách hàng (giảm padding từ 16 xuống 12, giảm margin bottom từ 12 xuống 8)
   customerCard: {
     backgroundColor: COLORS.card,
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOWS.card,
@@ -353,14 +354,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 10,
   },
+  // Tên khách hàng (giảm cỡ chữ và margin bottom)
   customerName: {
-    fontSize: FONTS.title,
+    fontSize: FONTS.subtitle, // Giảm từ title (22) xuống subtitle (18)
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
-    marginBottom: 4,
+    marginBottom: 2,
   },
+  // SĐT khách hàng (giảm cỡ chữ xuống caption)
   customerPhone: {
-    fontSize: FONTS.body,
+    fontSize: FONTS.caption, // Giảm từ body (16) xuống caption (14)
     color: COLORS.textSecondary,
   },
   cardDebt: {
@@ -373,23 +376,27 @@ const styles = StyleSheet.create({
     fontSize: FONTS.caption,
     color: COLORS.textSecondary,
   },
+  // Giá trị nợ (giảm size chữ)
   debtTextValue: {
-    fontSize: FONTS.subtitle,
+    fontSize: 16, // Giảm từ subtitle (18) xuống 16
     fontWeight: 'bold',
     color: COLORS.danger,
   },
+  // Khung báo hết nợ (giảm padding dọc và ngang)
   noDebtTag: {
     backgroundColor: COLORS.primaryLight,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 8,
   },
   debtTextValueNoCurrency: {
     fontSize: FONTS.body,
     fontWeight: 'bold',
   },
+  // Chữ báo hết nợ (giảm cỡ chữ)
   noDebtText: {
     color: COLORS.primary,
+    fontSize: 14,
   },
   emptyContainer: {
     paddingVertical: 40,
