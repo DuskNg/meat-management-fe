@@ -80,7 +80,7 @@ export default function LoginScreen() {
     setError(errorMsg);
   };
 
-  // 1. Hàm yêu cầu gửi mã OTP về máy khách
+  // 1. Hàm xử lý đăng nhập trực tiếp bằng SĐT (Tạm thời bỏ qua xác thực OTP)
   const handleRequestOtp = async () => {
     const trimmedPhone = phone.trim();
     const errorMsg = getPhoneValidationError(trimmedPhone);
@@ -94,9 +94,16 @@ export default function LoginScreen() {
     try {
       const response = await api.post('/auth/request-otp', { phone: trimmedPhone });
       if (response.data.success) {
-        setStep(2);
+        const { user, tokens } = response.data;
+        if (user && tokens) {
+          // Đăng nhập trực tiếp nếu Backend trả về thông tin người dùng và tokens
+          await auth.login(user, tokens);
+        } else {
+          // Trường hợp dự phòng nếu API cũ vẫn yêu cầu mã OTP
+          setStep(2);
+        }
       } else {
-        setError(response.data.message || 'Không thể gửi mã OTP. Vui lòng kiểm tra lại.');
+        setError(response.data.message || 'Không thể đăng nhập. Vui lòng kiểm tra lại.');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Lỗi kết nối mạng. Bạn hãy kiểm tra cục Wifi hoặc 3G/4G.');
@@ -105,7 +112,7 @@ export default function LoginScreen() {
     }
   };
 
-  // 2. Hàm xác thực OTP và Đăng nhập
+  // 2. Hàm xác thực OTP và Đăng nhập (Tạm thời không dùng đến)
   const handleVerifyOtp = async () => {
     const trimmedOtp = otp.trim();
     const errorMsg = getOtpValidationError(trimmedOtp);
@@ -154,7 +161,7 @@ export default function LoginScreen() {
           {/* Hộp thông báo trạng thái/lỗi luôn hiển thị cố định để tránh co rút giao diện */}
           <View style={[
             styles.statusContainer,
-            !error && (step === 1 ? phone.trim() === '' : otp.trim() === '')
+            !error && phone.trim() === ''
               ? styles.statusNeutral
               : error
                 ? styles.statusError
@@ -162,24 +169,24 @@ export default function LoginScreen() {
           ]}>
             <Text style={[
               styles.statusText,
-              !error && (step === 1 ? phone.trim() === '' : otp.trim() === '')
+              !error && phone.trim() === ''
                 ? styles.statusTextNeutral
                 : error
                   ? styles.statusTextError
                   : styles.statusTextSuccess
             ]}>
-              {!error && (step === 1 ? phone.trim() === '' : otp.trim() === '') ? (
-                step === 1 ? 'ℹ️ Nhập số điện thoại để nhận mã OTP.' : 'ℹ️ Nhập mã OTP gồm 4 chữ số.'
+              {!error && phone.trim() === '' ? (
+                'ℹ️ Nhập số điện thoại để đăng nhập.'
               ) : error ? (
                 `⚠️ ${error}`
               ) : (
-                step === 1 ? '✅ Số điện thoại hợp lệ!' : '✅ Mã OTP hợp lệ!'
+                '✅ Số điện thoại hợp lệ!'
               )}
             </Text>
           </View>
 
           {step === 1 ? (
-            // BƯỚC 1: NHẬP SỐ ĐIỆN THOẠI ĐỂ GỬI OTP
+            // BƯỚC 1: NHẬP SỐ ĐIỆN THOẠI ĐỂ ĐĂNG NHẬP TRỰC TIẾP
             <View style={styles.formGroup}>
               <Text style={styles.label}>Nhập số điện thoại của bạn:</Text>
               <TextInput
@@ -199,12 +206,13 @@ export default function LoginScreen() {
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={styles.buttonText}>NHẬN MÃ OTP XÁC THỰC</Text>
+                  <Text style={styles.buttonText}>ĐĂNG NHẬP</Text>
                 )}
               </TouchableOpacity>
             </View>
           ) : (
-            // BƯỚC 2: NHẬP MÃ OTP ĐỂ ĐĂNG NHẬP
+            // BƯỚC 2: NHẬP MÃ OTP ĐỂ ĐĂNG NHẬP (TẠM THỜI ẨN / COMMENT)
+            /* 
             <View style={styles.formGroup}>
               <Text style={[styles.phoneInfo, { marginBottom: 24 }]}>
                 Đang gửi mã về số: <Text style={{ fontWeight: 'bold', color: COLORS.text }}>{phone}</Text>
@@ -242,6 +250,8 @@ export default function LoginScreen() {
                 <Text style={styles.backButtonText}>QUAY LẠI NHẬP SĐT</Text>
               </TouchableOpacity>
             </View>
+            */
+            null
           )}
         </View>
       </ScrollView>
