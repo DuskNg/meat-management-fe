@@ -2,9 +2,8 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
-// Cấu hình URL máy chủ Backend (Mặc định kết nối localhost trên Simulator/Web)
-// Bác có thể thay đổi thành IP mạng LAN của máy tính (ví dụ: http://192.168.1.x:3000) khi chạy trên thiết bị thật
-const API_HOST = 'http://127.0.0.1:3000';
+// Cấu hình URL máy chủ Backend (Ưu tiên đọc từ biến môi trường của Vercel/Expo, mặc định localhost)
+const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 
 export const api = axios.create({
   baseURL: `${API_HOST}/api/v1`,
