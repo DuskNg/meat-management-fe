@@ -474,6 +474,10 @@ export default function CustomerDetailScreen() {
                 <Text style={styles.legendText}>Đã tất toán</Text>
               </View>
               <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#F97316' }]} />
+                <Text style={styles.legendText}>Trả nhưng còn thiếu</Text>
+              </View>
+              <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: COLORS.danger }]} />
                 <Text style={styles.legendText}>Còn nợ</Text>
               </View>
