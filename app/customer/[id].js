@@ -588,6 +588,7 @@ export default function CustomerDetailScreen() {
       <EditCustomerModal ref={editCustomerModalRef} onRefresh={handleRefreshAll} />
       <MonthDetailDrawer
         ref={monthDrawerRef}
+        monthGroups={monthGroups}
         formatCurrency={formatCurrency}
         formatShortDate={formatShortDate}
         formatAmountShort={formatAmountShort}

@@ -13,6 +13,7 @@ import {
 import { COLORS, FONTS, SHADOWS } from '../theme';
 
 const MonthDetailDrawer = forwardRef(({
+  monthGroups,
   formatCurrency,
   formatShortDate,
   formatAmountShort,
@@ -58,6 +59,16 @@ const MonthDetailDrawer = forwardRef(({
       setMonth(null);
     });
   };
+
+  // Cập nhật lại dữ liệu tháng chi tiết khi danh sách monthGroups của màn hình cha thay đổi (ví dụ khi thu nợ)
+  useEffect(() => {
+    if (visible && month && monthGroups) {
+      const updatedMonth = monthGroups.find((m) => m.monthKey === month.monthKey);
+      if (updatedMonth) {
+        setMonth(updatedMonth);
+      }
+    }
+  }, [monthGroups, visible]);
 
   if (!visible || !month) return null;
 

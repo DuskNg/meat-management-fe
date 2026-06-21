@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    
+    <!-- Ngăn chặn tự động thu phóng (auto-zoom) khi bấm vào ô nhập liệu trên điện thoại -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no" />
+    
+    <title>meat-management-fe</title>
+    
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+
+    <!-- CSS toàn cục để ép kiểu font chữ của các ô nhập liệu tối thiểu là 16px trên Web, chống zoom của iOS Safari -->
+    <style>
+      input, textarea, select {
+        font-size: 16px !important;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Sử dụng chế độ render tĩnh của Expo Router để hỗ trợ chạy khi không có JavaScript -->
+    <noscript>
+      Bạn cần bật JavaScript để chạy ứng dụng này.
+    </noscript>
+    <!-- Thẻ div gốc của ứng dụng Expo -->
+    <div id="root"></div>
+  </body>
+</html>
