@@ -472,15 +472,11 @@ export default function CustomerDetailScreen() {
               <View style={styles.legendRow}>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
-                  <Text style={styles.legendText}>Đã tất toán</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#F97316' }]} />
-                  <Text style={styles.legendText}>Trả thiếu</Text>
+                  <Text style={styles.legendText}>Hết nợ</Text>
                 </View>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: COLORS.danger }]} />
-                  <Text style={styles.legendText}>Chưa trả</Text>
+                  <Text style={styles.legendText}>Còn nợ</Text>
                 </View>
               </View>
               <Text style={styles.legendHint}>• Bấm vào ô để xem chi tiết</Text>
