@@ -156,17 +156,19 @@ const MonthDetailDrawer = forwardRef(({
 
           {/* Chú thích trạng thái giao dịch */}
           <View style={styles.legend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
-              <Text style={styles.legendText}>Đã tất toán</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#F97316' }]} />
-              <Text style={styles.legendText}>Trả nhưng còn thiếu</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: COLORS.danger }]} />
-              <Text style={styles.legendText}>Còn nợ</Text>
+            <View style={styles.legendRow}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
+                <Text style={styles.legendText}>Đã tất toán</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#F97316' }]} />
+                <Text style={styles.legendText}>Trả thiếu</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: COLORS.danger }]} />
+                <Text style={styles.legendText}>Chưa trả</Text>
+              </View>
             </View>
             <Text style={styles.legendHint}>• Bấm vào ô để xem chi tiết</Text>
           </View>
@@ -406,11 +408,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   legend: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    gap: 6,
+  },
+  legendRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    marginBottom: 12,
-    gap: 8,
+    flexWrap: 'nowrap',
+    gap: 12,
   },
   legendItem: {
     flexDirection: 'row',
