@@ -159,7 +159,7 @@ const MonthDetailDrawer = forwardRef(({
             <View style={styles.legendRow}>
               <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
-                <Text style={styles.legendText}>Đã tất toán</Text>
+                <Text style={styles.legendText}>Đã trả hết</Text>
               </View>
               <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: '#F97316' }]} />

@@ -125,9 +125,10 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setErrorField('product');
       return;
     }
-    const q = parseFloat(currentQuantity);
+    const cleanQty = currentQuantity.trim().replace(',', '.');
+    const q = parseFloat(cleanQty);
     if (isNaN(q) || q <= 0) {
-      setError('Khối lượng phải lớn hơn 0 (Ví dụ: 1.5).');
+      setError('Khối lượng phải lớn hơn 0 (Ví dụ: 1.5 hoặc 1,5).');
       setErrorField('quantity');
       return;
     }
@@ -238,7 +239,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // Thành tiền mặt hàng đang nhập (hiển thị trực tiếp)
   const currentSubtotal =
-    parseFloat(currentQuantity || 0) * parseNumberString(currentPrice || '0');
+    parseFloat((currentQuantity || '0').toString().replace(',', '.')) * parseNumberString(currentPrice || '0');
   const displayCurrentSubtotal = isNaN(currentSubtotal) ? 0 : currentSubtotal;
 
   return (
@@ -372,7 +373,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   ]}
                   placeholder="Ví dụ: 1.5"
                   placeholderTextColor={COLORS.textLight}
-                  keyboardType="numeric"
+                  keyboardType="decimal-pad"
                   value={currentQuantity}
                   onChangeText={(text) => {
                     setCurrentQuantity(text);
