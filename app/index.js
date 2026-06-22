@@ -278,37 +278,42 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     backgroundColor: COLORS.dangerLight,
-    margin: 20,
-    borderRadius: 16,
-    padding: 20,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 10,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#FECACA',
     ...SHADOWS.card,
   },
   summaryLabel: {
-    fontSize: FONTS.body,
-    fontWeight: FONTS.weightBold,
+    fontSize: 13,
+    fontWeight: 'bold',
     color: COLORS.dangerDark,
-    marginBottom: 6,
   },
   summaryValue: {
-    fontSize: 32,
+    fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.danger,
   },
   searchContainer: {
-    marginHorizontal: 20,
-    marginBottom: 15,
+    marginHorizontal: 16,
+    marginBottom: 10,
     position: 'relative',
     justifyContent: 'center',
   },
   searchInput: {
     backgroundColor: COLORS.card,
-    height: 56,
-    borderRadius: 12,
-    paddingLeft: 16,
-    paddingRight: 45,
-    fontSize: FONTS.body,
+    height: 44, // Giảm chiều cao từ 56 xuống 44
+    borderRadius: 10,
+    paddingLeft: 14,
+    paddingRight: 40,
+    fontSize: 14,
     color: COLORS.text,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -325,27 +330,28 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   listHeaderContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    paddingHorizontal: 16,
+    marginBottom: 6,
   },
   listHeader: {
-    fontSize: FONTS.subtitle,
-    fontWeight: FONTS.weightBold,
+    fontSize: 15,
+    fontWeight: 'bold',
     color: COLORS.text,
   },
   listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 100, // Chừa khoảng trống tránh đè lên nút bottomBar
+    paddingHorizontal: 16,
+    paddingBottom: 85, // Giảm khoảng trống đệm đáy do bottomBar nhỏ hơn
   },
-  // Card khách hàng (giảm padding từ 16 xuống 12, giảm margin bottom từ 12 xuống 8)
+  // Card khách hàng (giảm padding dọc xuống 6 để danh sách hiển thị khít và xem được nhiều hơn)
   customerCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOWS.card,
@@ -414,7 +420,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: 'rgba(248, 250, 252, 0.95)', // Bán trong suốt nền xám
-    padding: 16,
+    paddingVertical: 10, // Giảm từ 16 xuống 10
+    paddingHorizontal: 16,
     borderTopWidth: 1,
     borderColor: COLORS.border,
     flexDirection: 'row', // Chuyển sang dạng hàng ngang
@@ -424,8 +431,8 @@ const styles = StyleSheet.create({
   manageProductsButton: {
     flex: 1,
     backgroundColor: '#FAF8F6', // Nền màu kem lanh nhẹ nhàng, cao cấp
-    height: 60,
-    borderRadius: 15,
+    height: 46, // Giảm từ 60 xuống 46
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
@@ -438,14 +445,14 @@ const styles = StyleSheet.create({
   },
   manageProductsButtonText: {
     color: '#7F1D1D', // Màu đỏ đun Bordeaux sang trọng
-    fontSize: 16,
+    fontSize: 14, // Giảm từ 16 xuống 14
     fontWeight: 'bold',
   },
   addCustomerButton: {
     flex: 1,
     backgroundColor: COLORS.primary,
-    height: 60,
-    borderRadius: 15,
+    height: 46, // Giảm từ 60 xuống 46
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: COLORS.primary,
@@ -456,7 +463,7 @@ const styles = StyleSheet.create({
   },
   addCustomerButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14, // Giảm từ 16 xuống 14
     fontWeight: 'bold',
   },
 });
