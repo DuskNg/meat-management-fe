@@ -184,17 +184,31 @@ export default function CustomerDetailScreen() {
   const handleZalo = (phoneNumber) => {
     if (phoneNumber) {
       // Bỏ các ký tự không phải số
-      let cleanPhone = phoneNumber.replace(/[^0-9+]/g, '');
-      // Chuyển đổi mã quốc gia +84 hoặc 84 về đầu số 0 chuẩn Zalo
-      if (cleanPhone.startsWith('+84')) {
-        cleanPhone = '0' + cleanPhone.slice(3);
-      } else if (cleanPhone.startsWith('84') && cleanPhone.length > 10) {
-        cleanPhone = '0' + cleanPhone.slice(2);
+      let cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+
+      // Định dạng số điện thoại chuẩn Zalo App (84xxxxxxxxx)
+      let appPhone = cleanPhone;
+      if (appPhone.startsWith('0')) {
+        appPhone = '84' + appPhone.slice(1);
+      } else if (!appPhone.startsWith('84')) {
+        appPhone = '84' + appPhone;
       }
 
-      const zaloUrl = `https://zalo.me/${cleanPhone}`;
-      Linking.openURL(zaloUrl).catch(() => {
-        alert('Không thể mở ứng dụng Zalo.');
+      // Định dạng số điện thoại chuẩn Web (0xxxxxxxxx)
+      let webPhone = cleanPhone;
+      if (webPhone.startsWith('84')) {
+        webPhone = '0' + webPhone.slice(2);
+      }
+
+      // Thử mở bằng giao thức zalo:// để gọi trực tiếp ứng dụng Zalo
+      const zaloAppUrl = `zalo://conversation?phone=${appPhone}`;
+      const zaloWebUrl = `https://zalo.me/${webPhone}`;
+
+      Linking.openURL(zaloAppUrl).catch(() => {
+        // Dự phòng: Nếu không mở được app trực tiếp, chuyển hướng sang trang web Zalo
+        Linking.openURL(zaloWebUrl).catch(() => {
+          alert('Không thể mở ứng dụng Zalo.');
+        });
       });
     }
   };
