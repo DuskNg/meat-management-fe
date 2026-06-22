@@ -6,6 +6,7 @@ import * as SecureStore from 'expo-secure-store';
 const ACCESS_TOKEN_KEY = 'meat_manager_access_token';
 const REFRESH_TOKEN_KEY = 'meat_manager_refresh_token';
 const USER_INFO_KEY = 'meat_manager_user_info';
+const SAVED_PHONE_KEY = 'meat_manager_saved_phone'; // Khóa lưu số điện thoại đăng nhập gần nhất
 
 // Hàm helper để tương thích lưu trữ trên cả Web và thiết bị di động (Native)
 const isWeb = Platform.OS === 'web';
@@ -40,6 +41,7 @@ export const useAuthStore = create((set) => ({
   refreshToken: null,
   isAuthenticated: false,
   isInitialized: false, // Để kiểm soát xem đã tải xong trạng thái từ bộ nhớ chưa
+  savedPhone: '', // Số điện thoại đã lưu từ lần đăng nhập gần nhất
 
   // 1. Lưu thông tin đăng nhập và Tokens sau khi xác thực thành công
   login: async (user, tokens) => {
@@ -47,12 +49,18 @@ export const useAuthStore = create((set) => ({
       await setStorageItem(ACCESS_TOKEN_KEY, tokens.accessToken);
       await setStorageItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
       await setStorageItem(USER_INFO_KEY, JSON.stringify(user));
+      
+      // Lưu số điện thoại mới nhất vừa đăng nhập thành công
+      if (user && user.phone) {
+        await setStorageItem(SAVED_PHONE_KEY, user.phone);
+      }
 
       set({
         user,
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         isAuthenticated: true,
+        savedPhone: user?.phone || '',
       });
     } catch (error) {
       console.error('Lỗi khi lưu thông tin đăng nhập:', error);
@@ -83,6 +91,7 @@ export const useAuthStore = create((set) => ({
       const accessToken = await getStorageItem(ACCESS_TOKEN_KEY);
       const refreshToken = await getStorageItem(REFRESH_TOKEN_KEY);
       const userInfoStr = await getStorageItem(USER_INFO_KEY);
+      const savedPhone = await getStorageItem(SAVED_PHONE_KEY) || '';
 
       if (accessToken && refreshToken && userInfoStr) {
         const user = JSON.parse(userInfoStr);
@@ -92,9 +101,13 @@ export const useAuthStore = create((set) => ({
           refreshToken,
           isAuthenticated: true,
           isInitialized: true,
+          savedPhone,
         });
       } else {
-        set({ isInitialized: true });
+        set({ 
+          isInitialized: true,
+          savedPhone,
+        });
       }
     } catch (error) {
       console.error('Lỗi khi nạp lại trạng thái đăng nhập:', error);

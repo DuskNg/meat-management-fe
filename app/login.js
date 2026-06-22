@@ -23,6 +23,13 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Tự động điền số điện thoại từ lần đăng nhập gần nhất
+  React.useEffect(() => {
+    if (auth.savedPhone) {
+      setPhone(auth.savedPhone);
+    }
+  }, [auth.savedPhone]);
+
   // Hàm kiểm tra định dạng SĐT di động Việt Nam
   const validatePhoneFormat = (value) => {
     const phoneRegex = /^(0|84|\+84)[35789][0-9]{8}$/;
