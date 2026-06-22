@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Platform,
   StyleSheet,
+  Modal,
 } from 'react-native';
 import { COLORS, FONTS } from '../theme';
 
@@ -146,8 +147,10 @@ const DatePickerInput = ({
   minDate = null,
   maxDate = null,
 }) => {
-  // Trạng thái mở/đóng picker trên mobile
+  // Trạng thái mở/đóng picker trên mobile (cho lịch native thông thường)
   const [showPicker, setShowPicker] = useState(false);
+  // Trạng thái mở/đóng picker lưới lịch Grid custom (cho tháng bị giới hạn)
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
   // Trạng thái hover/press để đổi màu viền
   const [pressed, setPressed] = useState(false);
 
@@ -161,7 +164,31 @@ const DatePickerInput = ({
   const parsedMinDate = convertToDateObj(minDate);
   const parsedMaxDate = convertToDateObj(maxDate) || (allowFuture ? null : new Date());
 
-  // Xử lý khi mobile picker thay đổi
+  // Kiểm tra xem có giới hạn trong phạm vi duy nhất 1 tháng hay không
+  const isSingleMonthLimit = parsedMinDate && parsedMaxDate &&
+    parsedMinDate.getMonth() === parsedMaxDate.getMonth() &&
+    parsedMinDate.getFullYear() === parsedMaxDate.getFullYear();
+
+  // Tính toán lưới lịch Grid custom cho tháng đó
+  const year = parsedDate.getFullYear();
+  const month = parsedDate.getMonth();
+  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0: CN, 1: T2, ..., 6: T7
+  const totalDays = new Date(year, month + 1, 0).getDate();
+  
+  // startOffset để căn ngày mùng 1 vào đúng thứ trong tuần (T2 ở đầu, CN ở cuối)
+  const startOffset = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
+
+  const cells = [];
+  // Thêm các ô trống đầu tháng
+  for (let i = 0; i < startOffset; i++) {
+    cells.push({ day: null, key: `empty-${i}` });
+  }
+  // Thêm các ngày của tháng
+  for (let d = 1; d <= totalDays; d++) {
+    cells.push({ day: d, key: `day-${d}` });
+  }
+
+  // Xử lý khi mobile picker thay đổi (cho trường hợp lịch native)
   const handleMobileChange = (event, selectedDate) => {
     setShowPicker(false);
     if (event.type === 'dismissed') return;
@@ -170,15 +197,32 @@ const DatePickerInput = ({
     }
   };
 
-  // ─── Giao diện Web ────────────────────────────────────────────────────────
-  if (Platform.OS === 'web') {
-    injectWebStyles();
+  // Xử lý sự kiện nhấn vào trường chọn ngày
+  const handlePressInput = () => {
+    if (disabled) return;
+    if (isSingleMonthLimit) {
+      setShowCustomPicker(true);
+    } else {
+      if (Platform.OS !== 'web') {
+        setShowPicker(true);
+      }
+    }
+  };
+
+  const renderInputBody = () => {
     return (
-      <View style={[
-        styles.container,
-        disabled && styles.containerDisabled,
-        pressed && !disabled && styles.containerFocused
-      ]}>
+      <TouchableOpacity
+        style={[
+          styles.container,
+          disabled && styles.containerDisabled,
+          (pressed || showPicker || showCustomPicker) && !disabled && styles.containerFocused
+        ]}
+        onPress={handlePressInput}
+        onPressIn={() => !disabled && setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        activeOpacity={disabled ? 1 : 0.8}
+        disabled={disabled || (Platform.OS === 'web' && !isSingleMonthLimit)}
+      >
         {/* Icon lịch bên trái */}
         <View style={styles.iconWrapper}>
           <Text style={styles.icon}>📅</Text>
@@ -190,7 +234,7 @@ const DatePickerInput = ({
           <Text style={styles.dateDisplayText}>{value || formatDateToDisplay(new Date())}</Text>
         </View>
 
-        {/* Nhãn "Thay đổi" bên phải */}
+        {/* Nhãn "Đổi ngày" / "Cố định" */}
         {disabled ? (
           <View style={[styles.changeTag, styles.disabledTag]}>
             <Text style={[styles.changeTagText, styles.disabledTagText]}>Cố định 🔒</Text>
@@ -201,80 +245,131 @@ const DatePickerInput = ({
           </View>
         )}
 
-        {/* HTML date input phủ toàn bộ container, ẩn giao diện mặc định */}
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
-          <input
-            className="date-picker-input"
-            type="date"
-            disabled={disabled}
-            value={formatDateToISO(parsedDate)}
-            min={parsedMinDate ? formatDateToISO(parsedMinDate) : undefined}
-            max={parsedMaxDate ? formatDateToISO(parsedMaxDate) : undefined}
-            onChange={(e) => {
-              if (e.target.value) {
-                const date = parseISOToDate(e.target.value);
-                // Kiểm tra giới hạn (đề phòng một số trình duyệt không hỗ trợ min/max thuộc tính)
-                if (parsedMinDate && date < parsedMinDate) return;
-                if (parsedMaxDate && date > parsedMaxDate) return;
-                onChange(formatDateToDisplay(date));
-              }
-            }}
-            onFocus={() => !disabled && setPressed(true)}
-            onBlur={() => setPressed(false)}
-            style={{
-              position: 'absolute',
-              top: 0, left: 0, right: 0, bottom: 0,
-              opacity: 0,
-              width: '100%',
-              height: '100%',
-              cursor: disabled ? 'not-allowed' : 'pointer',
-            }}
-          />
-        </View>
-      </View>
-    );
-  }
-
-  // ─── Giao diện Mobile (iOS / Android) ────────────────────────────────────
-  return (
-    <View>
-      <TouchableOpacity
-        style={[
-          styles.container,
-          disabled && styles.containerDisabled,
-          (pressed || showPicker) && !disabled && styles.containerFocused
-        ]}
-        onPress={() => !disabled && setShowPicker(true)}
-        onPressIn={() => !disabled && setPressed(true)}
-        onPressOut={() => setPressed(false)}
-        activeOpacity={disabled ? 1 : 0.8}
-        disabled={disabled}
-      >
-        {/* Icon lịch */}
-        <View style={styles.iconWrapper}>
-          <Text style={styles.icon}>📅</Text>
-        </View>
-
-        {/* Nội dung ngày */}
-        <View style={styles.dateContent}>
-          <Text style={styles.weekdayText}>{weekday}</Text>
-          <Text style={styles.dateDisplayText}>{value || formatDateToDisplay(new Date())}</Text>
-        </View>
-
-        {/* Nhãn "Đổi ngày" */}
-        {disabled ? (
-          <View style={[styles.changeTag, styles.disabledTag]}>
-            <Text style={[styles.changeTagText, styles.disabledTagText]}>Cố định 🔒</Text>
-          </View>
-        ) : (
-          <View style={styles.changeTag}>
-            <Text style={styles.changeTagText}>Đổi ngày</Text>
+        {/* HTML date input cho Web (chỉ khi không có giới hạn 1 tháng cụ thể) */}
+        {Platform.OS === 'web' && !isSingleMonthLimit && (
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
+            <input
+              className="date-picker-input"
+              type="date"
+              disabled={disabled}
+              value={formatDateToISO(parsedDate)}
+              min={parsedMinDate ? formatDateToISO(parsedMinDate) : undefined}
+              max={parsedMaxDate ? formatDateToISO(parsedMaxDate) : undefined}
+              onChange={(e) => {
+                if (e.target.value) {
+                  const date = parseISOToDate(e.target.value);
+                  if (parsedMinDate && date < parsedMinDate) return;
+                  if (parsedMaxDate && date > parsedMaxDate) return;
+                  onChange(formatDateToDisplay(date));
+                }
+              }}
+              onFocus={() => !disabled && setPressed(true)}
+              onBlur={() => setPressed(false)}
+              style={{
+                position: 'absolute',
+                top: 0, left: 0, right: 0, bottom: 0,
+                opacity: 0,
+                width: '100%',
+                height: '100%',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+            />
           </View>
         )}
       </TouchableOpacity>
+    );
+  };
 
-      {/* Native calendar picker */}
-      {showPicker && DateTimePicker ? (
+  return (
+    <View>
+      {renderInputBody()}
+
+      {/* Lịch Grid chọn ngày custom tự chế (Chỉ khi giới hạn 1 tháng duy nhất) */}
+      {isSingleMonthLimit && (
+        <Modal
+          visible={showCustomPicker}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowCustomPicker(false)}
+        >
+          <TouchableOpacity
+            style={styles.customBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowCustomPicker(false)}
+          >
+            <TouchableOpacity
+              style={styles.customModalView}
+              activeOpacity={1}
+            >
+              {/* Header */}
+              <View style={styles.customModalHeader}>
+                <Text style={styles.customModalTitle}>Chọn ngày trong {value.substring(3)}</Text>
+                <TouchableOpacity
+                  style={styles.customCloseBtn}
+                  onPress={() => setShowCustomPicker(false)}
+                >
+                  <Text style={styles.customCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Lịch grid */}
+              <View style={styles.calendarGrid}>
+                {/* Thứ trong tuần */}
+                <View style={styles.weekdayRow}>
+                  {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((w) => (
+                    <Text key={w} style={styles.weekdayGridText}>{w}</Text>
+                  ))}
+                </View>
+
+                {/* Lưới các ô ngày */}
+                <View style={styles.daysGrid}>
+                  {cells.map((cell) => {
+                    if (!cell.day) {
+                      return <View key={cell.key} style={styles.gridCellEmpty} />;
+                    }
+
+                    const isSelected = parsedDate.getDate() === cell.day;
+                    const cellDate = new Date(year, month, cell.day);
+
+                    // Kiểm tra xem ngày có nằm ngoài giới hạn min/max hay không (dự phòng)
+                    let isCellDisabled = false;
+                    if (parsedMinDate && cellDate < parsedMinDate) isCellDisabled = true;
+                    if (parsedMaxDate && cellDate > parsedMaxDate) isCellDisabled = true;
+
+                    return (
+                      <TouchableOpacity
+                        key={cell.key}
+                        style={[
+                          styles.gridCellDay,
+                          isSelected && styles.gridCellSelected,
+                          isCellDisabled && styles.gridCellDisabled
+                        ]}
+                        disabled={isCellDisabled}
+                        onPress={() => {
+                          onChange(formatDateToDisplay(cellDate));
+                          setShowCustomPicker(false);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[
+                          styles.gridCellText,
+                          isSelected && styles.gridCellTextSelected,
+                          isCellDisabled && styles.gridCellTextDisabled
+                        ]}>
+                          {cell.day}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Native calendar picker (Chỉ khi không giới hạn tháng duy nhất) */}
+      {!isSingleMonthLimit && showPicker && DateTimePicker && (
         <DateTimePicker
           value={parsedDate}
           mode="date"
@@ -284,7 +379,7 @@ const DatePickerInput = ({
           onChange={handleMobileChange}
           locale="vi-VN"
         />
-      ) : null}
+      )}
     </View>
   );
 };
@@ -370,5 +465,91 @@ const styles = StyleSheet.create({
   },
   disabledTagText: {
     color: '#64748B',
+  },
+  // Modal chọn ngày Grid custom tự chế
+  customBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  customModalView: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    width: 320,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
+  },
+  customModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingBottom: 8,
+  },
+  customModalTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  customCloseBtn: {
+    padding: 4,
+  },
+  customCloseText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    fontWeight: 'bold',
+  },
+  calendarGrid: {
+    width: '100%',
+  },
+  weekdayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  weekdayGridText: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  gridCellEmpty: {
+    width: '14.28%',
+    height: 40,
+  },
+  gridCellDay: {
+    width: '14.28%',
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gridCellSelected: {
+    backgroundColor: COLORS.danger,
+    borderRadius: 20,
+  },
+  gridCellDisabled: {
+    opacity: 0.3,
+  },
+  gridCellText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  gridCellTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  gridCellTextDisabled: {
+    color: COLORS.textLight,
   },
 });
