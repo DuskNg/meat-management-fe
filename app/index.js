@@ -97,9 +97,9 @@ export default function DashboardScreen() {
   const renderCustomerItem = ({ item }) => {
     const hasDebt = item.debt > 0;
     return (
-      <View style={styles.customerCardContainer}>
+      <View style={styles.customerCard}>
         <TouchableOpacity
-          style={styles.customerCardMain}
+          style={styles.customerCardClickable}
           onPress={() => router.push(`/customer/${item.id}`)}
           activeOpacity={0.7}
         >
@@ -389,40 +389,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 85, // Giảm khoảng trống đệm đáy do bottomBar nhỏ hơn
   },
-  // Container bọc ngoài thẻ khách hàng và nút xóa
-  customerCardContainer: {
+  // Thẻ khách hàng chứa cả thông tin nhấp và nút xóa bên trong
+  customerCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 6,
-    gap: 8,
-  },
-  // Thẻ thông tin khách hàng chính (đã chuyển sang flex: 1 để nhường không gian cho nút xóa)
-  customerCardMain: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    borderRadius: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOWS.card,
   },
+  // Vùng thông tin khách hàng có thể click (nằm bên trái nút xóa)
+  customerCardClickable: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingLeft: 12,
+    paddingRight: 8,
+  },
   // Nút xóa khách hàng trực tiếp trên trang chủ
   customerDeleteBtn: {
-    paddingVertical: 6, // Giảm đệm dọc
-    paddingHorizontal: 12, // Giảm đệm ngang cho chữ Xóa
-    borderRadius: 8, // Bo tròn nhẹ dạng chữ nhật bo góc
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 6,
     backgroundColor: '#FFF1F1', // Màu nền đỏ nhạt pastel
     borderColor: '#FECACA', // Viền đỏ nhạt
     borderWidth: 1,
+    marginRight: 10, // Lề phải bên trong card
     justifyContent: 'center',
     alignItems: 'center',
   },
   customerDeleteBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     color: COLORS.danger, // Chữ màu đỏ nguy hiểm
   },
