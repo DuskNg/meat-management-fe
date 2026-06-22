@@ -76,6 +76,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   // Thông tin chung cho cả đơn hàng
   const [dateStr, setDateStr] = useState(getTodayFormatted());
   const [disableDate, setDisableDate] = useState(false);
+  const [minDate, setMinDate] = useState(null);
+  const [maxDate, setMaxDate] = useState(null);
   const [note, setNote] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -109,6 +111,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       let initialDateStr = getTodayFormatted();
       let shouldDisableDate = false;
       let initialNote = '';
+      let initialMinDate = null;
+      let initialMaxDate = null;
 
       // Phân tích tham số để hỗ trợ cả cách gọi cũ (scannedItems) và cách gọi cấu hình mới (options)
       if (scannedItemsOrOptions && Array.isArray(scannedItemsOrOptions)) {
@@ -117,16 +121,22 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           if (options.initialDate) initialDateStr = options.initialDate;
           if (options.disableDate !== undefined) shouldDisableDate = options.disableDate;
           if (options.note) initialNote = options.note;
+          if (options.minDate) initialMinDate = options.minDate;
+          if (options.maxDate) initialMaxDate = options.maxDate;
         }
       } else if (scannedItemsOrOptions && typeof scannedItemsOrOptions === 'object') {
         if (scannedItemsOrOptions.initialDate) initialDateStr = scannedItemsOrOptions.initialDate;
         if (scannedItemsOrOptions.disableDate !== undefined) shouldDisableDate = scannedItemsOrOptions.disableDate;
         if (scannedItemsOrOptions.note) initialNote = scannedItemsOrOptions.note;
         if (scannedItemsOrOptions.items) items = scannedItemsOrOptions.items;
+        if (scannedItemsOrOptions.minDate) initialMinDate = scannedItemsOrOptions.minDate;
+        if (scannedItemsOrOptions.maxDate) initialMaxDate = scannedItemsOrOptions.maxDate;
       }
 
       setDateStr(initialDateStr);
       setDisableDate(shouldDisableDate);
+      setMinDate(initialMinDate);
+      setMaxDate(initialMaxDate);
       setNote(initialNote || (items ? 'Đơn ghi nợ tự động tạo từ ảnh chụp tích kê' : ''));
 
       if (items && Array.isArray(items)) {
@@ -246,6 +256,27 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       return;
     }
 
+    // So sánh ngày giới hạn nếu có
+    if (minDate || maxDate) {
+      const selectedTime = new Date(isoDate).getTime();
+      if (minDate) {
+        const minIso = parseDateString(minDate);
+        if (minIso && selectedTime < new Date(minIso).getTime()) {
+          setError(`Ngày ghi nợ phải từ ngày ${minDate}.`);
+          setErrorField('date');
+          return;
+        }
+      }
+      if (maxDate) {
+        const maxIso = parseDateString(maxDate);
+        if (maxIso && selectedTime > new Date(maxIso).getTime()) {
+          setError(`Ngày ghi nợ tối đa là ngày ${maxDate}.`);
+          setErrorField('date');
+          return;
+        }
+      }
+    }
+
     setError('');
     setErrorField('');
     setLoading(true);
@@ -312,6 +343,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           allowFuture={true}
           hasError={errorField === 'date'}
           disabled={disableDate}
+          minDate={minDate}
+          maxDate={maxDate}
         />
         {errorField === 'date' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 

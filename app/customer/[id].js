@@ -1010,9 +1010,14 @@ const styles = StyleSheet.create({
     paddingBottom: 130,
   },
   debtSummaryCard: {
-    margin: 16,
-    borderRadius: 16,
-    padding: 24,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 10,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
     ...SHADOWS.card,
@@ -1026,13 +1031,12 @@ const styles = StyleSheet.create({
     borderColor: '#A7F3D0',
   },
   debtLabel: {
-    fontSize: FONTS.body + 1, // Tăng thêm 1
-    fontWeight: FONTS.weightBold,
+    fontSize: 13,
+    fontWeight: 'bold',
     color: COLORS.textSecondary,
-    marginBottom: 8,
   },
   debtValue: {
-    fontSize: 35, // Tăng từ 34
+    fontSize: 20,
     fontWeight: 'bold',
   },
   // Khung thông tin khách hàng (giảm padding từ 16 xuống 12)
@@ -1164,14 +1168,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     backgroundColor: 'rgba(248, 250, 252, 0.97)',
-    padding: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderTopWidth: 1,
     borderColor: COLORS.border,
   },
   actionButton: {
     flex: 1,
-    height: 60,
-    borderRadius: 15,
+    height: 46,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     ...SHADOWS.card,
@@ -1262,7 +1267,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     color: '#FFFFFF',
-    fontSize: 19, // Tăng từ 18
+    fontSize: 14,
     fontWeight: 'bold',
   },
   textDebt: { color: COLORS.danger },

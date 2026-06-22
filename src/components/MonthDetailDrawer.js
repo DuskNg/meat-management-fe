@@ -173,10 +173,17 @@ const MonthDetailDrawer = forwardRef(({
                     initialDate = `${dd}/${mm}/${yyyy}`;
                   }
 
-                  // Mở DebtModal để ghi nợ mới, tự động khóa ngày
+                  // Tính ngày đầu tiên và ngày cuối cùng của tháng đó để giới hạn chọn ngày
+                  const firstDay = `01/${mm}/${yyyy}`;
+                  const lastDayNum = new Date(targetYear, targetMonth + 1, 0).getDate();
+                  const lastDay = `${String(lastDayNum).padStart(2, '0')}/${mm}/${yyyy}`;
+
+                  // Mở DebtModal để ghi nợ mới, giới hạn chọn ngày trong tháng
                   debtModalRef?.current?.open({
                     initialDate,
-                    disableDate: true,
+                    disableDate: false, // Vẫn cho phép bấm đổi ngày
+                    minDate: firstDay,
+                    maxDate: lastDay,
                     note: `Ghi nợ tự động trong Tháng ${mm}/${yyyy}`
                   });
                 }}

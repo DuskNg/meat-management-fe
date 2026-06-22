@@ -65,6 +65,38 @@ const getWeekdayVi = (date) => {
   return days[date.getDay()];
 };
 
+/**
+ * Chuyển đổi linh hoạt giá trị ngày bất kỳ thành đối tượng Date
+ */
+const convertToDateObj = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return val;
+  if (typeof val !== 'string') return null;
+  
+  // Dạng YYYY-MM-DD
+  if (val.includes('-')) {
+    const parts = val.split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      return new Date(y, m - 1, d);
+    }
+  }
+  // Dạng DD/MM/YYYY
+  if (val.includes('/')) {
+    const parts = val.split('/');
+    if (parts.length === 3) {
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const y = parseInt(parts[2], 10);
+      return new Date(y, m - 1, d);
+    }
+  }
+  const parsed = new Date(val);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
 // ─── Inline CSS inject cho web (chỉ chạy 1 lần) ─────────────────────────────
 let webStyleInjected = false;
 const injectWebStyles = () => {
@@ -106,7 +138,14 @@ const injectWebStyles = () => {
  *   - onChange: function(newDateStr: string) => void
  *   - label:    string (tuỳ chọn), nhãn hiển thị bên trên
  */
-const DatePickerInput = ({ value, onChange, allowFuture = false, disabled = false }) => {
+const DatePickerInput = ({
+  value,
+  onChange,
+  allowFuture = false,
+  disabled = false,
+  minDate = null,
+  maxDate = null,
+}) => {
   // Trạng thái mở/đóng picker trên mobile
   const [showPicker, setShowPicker] = useState(false);
   // Trạng thái hover/press để đổi màu viền
@@ -118,8 +157,9 @@ const DatePickerInput = ({ value, onChange, allowFuture = false, disabled = fals
   // Tên thứ trong tuần bằng tiếng Việt
   const weekday = getWeekdayVi(parsedDate);
 
-  // Giới hạn ngày tối đa (mặc định chặn chọn ngày tương lai nếu allowFuture = false)
-  const maxDate = allowFuture ? null : new Date();
+  // Chuẩn hóa minDate và maxDate sang đối tượng Date
+  const parsedMinDate = convertToDateObj(minDate);
+  const parsedMaxDate = convertToDateObj(maxDate) || (allowFuture ? null : new Date());
 
   // Xử lý khi mobile picker thay đổi
   const handleMobileChange = (event, selectedDate) => {
@@ -168,10 +208,14 @@ const DatePickerInput = ({ value, onChange, allowFuture = false, disabled = fals
             type="date"
             disabled={disabled}
             value={formatDateToISO(parsedDate)}
-            max={maxDate ? formatDateToISO(maxDate) : undefined} // Giới hạn ngày tối đa nếu có
+            min={parsedMinDate ? formatDateToISO(parsedMinDate) : undefined}
+            max={parsedMaxDate ? formatDateToISO(parsedMaxDate) : undefined}
             onChange={(e) => {
               if (e.target.value) {
                 const date = parseISOToDate(e.target.value);
+                // Kiểm tra giới hạn (đề phòng một số trình duyệt không hỗ trợ min/max thuộc tính)
+                if (parsedMinDate && date < parsedMinDate) return;
+                if (parsedMaxDate && date > parsedMaxDate) return;
                 onChange(formatDateToDisplay(date));
               }
             }}
@@ -235,7 +279,8 @@ const DatePickerInput = ({ value, onChange, allowFuture = false, disabled = fals
           value={parsedDate}
           mode="date"
           display="default"
-          maximumDate={maxDate || undefined} // Giới hạn ngày tối đa nếu có
+          minimumDate={parsedMinDate || undefined}
+          maximumDate={parsedMaxDate || undefined}
           onChange={handleMobileChange}
           locale="vi-VN"
         />
