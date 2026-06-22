@@ -59,7 +59,7 @@ const EditCustomerModal = forwardRef(({ onRefresh }, ref) => {
     try {
       const response = await api.put(`/customers/${customer.id}`, {
         name: name.trim(),
-        phone: phone.trim() || null,
+        phone: phone.replace(/\s+/g, '') || null,
         address: address.trim() || null,
         note: note.trim() || null,
       });
@@ -104,7 +104,7 @@ const EditCustomerModal = forwardRef(({ onRefresh }, ref) => {
               placeholderTextColor={COLORS.textLight}
               keyboardType="phone-pad"
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={(text) => setPhone(text.replace(/\s+/g, ''))}
             />
 
             <Text style={styles.label}>Địa chỉ / Số sạp hàng (Có thể bỏ qua):</Text>

@@ -33,6 +33,7 @@ import EditPaymentModal from '../../src/components/EditPaymentModal';
 import EditCustomerModal from '../../src/components/EditCustomerModal';
 import MonthDetailDrawer from '../../src/components/MonthDetailDrawer';
 import ScanTicketModal from '../../src/components/ScanTicketModal';
+import PopupModal from '../../src/components/PopupModal';
 
 export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -48,6 +49,7 @@ export default function CustomerDetailScreen() {
   const monthDrawerRef = useRef(null); // Ref điều khiển Sidebar chi tiết tháng
   const scrollViewRef = useRef(null); // Ref để điều khiển cuộn của ScrollView
   const scanTicketModalRef = useRef(null); // Ref điều khiển Modal kết quả quét tích kê
+  const popupModalRef = useRef(null); // Ref điều khiển Popup thông báo dùng chung
 
   const [scanning, setScanning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -77,11 +79,19 @@ export default function CustomerDetailScreen() {
               // Mở modal kết quả quét tích kê đơn giản để người dùng chỉnh sửa và xác nhận
               scanTicketModalRef.current?.open(scannedItems);
             } else {
-              alert(response.data.message || 'Không thể nhận diện tích kê.');
+              popupModalRef.current?.show({
+                title: 'Thất bại',
+                message: response.data.message || 'Không thể nhận diện tích kê.',
+                type: 'error'
+              });
             }
           } catch (err) {
             console.error(err);
-            alert(err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ quét tích kê.');
+            popupModalRef.current?.show({
+              title: 'Lỗi kết nối',
+              message: err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ quét tích kê.',
+              type: 'error'
+            });
           } finally {
             setScanning(false);
           }
@@ -90,7 +100,11 @@ export default function CustomerDetailScreen() {
       };
       input.click();
     } else {
-      alert('Chức năng quét tích kê hiện hỗ trợ trên giao diện Web.');
+      popupModalRef.current?.show({
+        title: 'Thông báo',
+        message: 'Chức năng quét tích kê hiện hỗ trợ trên giao diện Web.',
+        type: 'info'
+      });
     }
   };
 
@@ -99,7 +113,11 @@ export default function CustomerDetailScreen() {
   // Xử lý thu âm và chuyển đổi ghi nợ bằng giọng nói tiếng Việt qua Gemini API
   const handleToggleRecording = async () => {
     if (Platform.OS !== 'web') {
-      alert('Chức năng ghi nợ giọng nói hiện hỗ trợ trên giao diện Web.');
+      popupModalRef.current?.show({
+        title: 'Thông báo',
+        message: 'Chức năng ghi nợ giọng nói hiện hỗ trợ trên giao diện Web.',
+        type: 'info'
+      });
       return;
     }
 
@@ -142,11 +160,19 @@ export default function CustomerDetailScreen() {
                 const { date, items, note } = response.data.data;
                 scanTicketModalRef.current?.open(items, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI', note, date);
               } else {
-                alert(response.data.message || 'Không thể dịch giọng nói.');
+                popupModalRef.current?.show({
+                  title: 'Thất bại',
+                  message: response.data.message || 'Không thể dịch giọng nói.',
+                  type: 'error'
+                });
               }
             } catch (err) {
               console.error(err);
-              alert(err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.');
+              popupModalRef.current?.show({
+                title: 'Lỗi kết nối',
+                message: err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.',
+                type: 'error'
+              });
             } finally {
               setScanning(false);
             }
@@ -158,7 +184,11 @@ export default function CustomerDetailScreen() {
         setIsRecording(true);
       } catch (err) {
         console.error(err);
-        alert('Không thể truy cập Micro. Vui lòng cấp quyền micro cho trình duyệt.');
+        popupModalRef.current?.show({
+          title: 'Lỗi thiết bị',
+          message: 'Không thể truy cập Micro. Vui lòng cấp quyền micro cho trình duyệt.',
+          type: 'error'
+        });
       }
     }
   };
@@ -172,23 +202,16 @@ export default function CustomerDetailScreen() {
     }
   };
 
-  // Xử lý xác nhận xóa khách hàng trước khi thực hiện
+  // Xử lý xác nhận xóa khách hàng trước khi thực hiện qua PopupModal
   const confirmDeleteCustomer = () => {
-    if (Platform.OS === 'web') {
-      const confirm = window.confirm('Bạn có chắc chắn muốn xóa khách hàng này không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.');
-      if (confirm) {
-        handleDeleteCustomer();
-      }
-    } else {
-      Alert.alert(
-        'Xác nhận xóa',
-        'Bạn có chắc chắn muốn xóa khách hàng này không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.',
-        [
-          { text: 'Hủy bỏ', style: 'cancel' },
-          { text: 'Xóa ngay', style: 'destructive', onPress: handleDeleteCustomer }
-        ]
-      );
-    }
+    popupModalRef.current?.show({
+      title: 'Xác nhận xóa',
+      message: 'Bạn có chắc chắn muốn xóa khách hàng này không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.',
+      type: 'confirm',
+      confirmText: 'Xóa ngay',
+      cancelText: 'Hủy bỏ',
+      onConfirm: handleDeleteCustomer,
+    });
   };
 
   // Gửi yêu cầu xóa khách hàng đến API backend
@@ -196,14 +219,28 @@ export default function CustomerDetailScreen() {
     try {
       const response = await api.delete(`/customers/${id}`);
       if (response.data.success) {
-        alert('Đã xóa khách hàng thành công.');
-        router.replace('/'); // Trở về trang chủ
+        popupModalRef.current?.show({
+          title: 'Thành công',
+          message: 'Đã xóa khách hàng thành công.',
+          type: 'success',
+          onConfirm: () => {
+            router.replace('/'); // Trở về trang chủ
+          }
+        });
       } else {
-        alert(response.data.message || 'Không thể xóa khách hàng.');
+        popupModalRef.current?.show({
+          title: 'Thất bại',
+          message: response.data.message || 'Không thể xóa khách hàng.',
+          type: 'error'
+        });
       }
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ để xóa khách hàng.');
+      popupModalRef.current?.show({
+        title: 'Lỗi kết nối',
+        message: err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ để xóa khách hàng.',
+        type: 'error'
+      });
     }
   };
 
@@ -211,7 +248,11 @@ export default function CustomerDetailScreen() {
   const handleCall = (phoneNumber) => {
     if (phoneNumber) {
       Linking.openURL(`tel:${phoneNumber}`).catch(() => {
-        alert('Thiết bị của bạn không hỗ trợ tính năng gọi điện.');
+        popupModalRef.current?.show({
+          title: 'Thông báo',
+          message: 'Thiết bị của bạn không hỗ trợ tính năng gọi điện.',
+          type: 'warning'
+        });
       });
     }
   };
@@ -243,7 +284,11 @@ export default function CustomerDetailScreen() {
       Linking.openURL(zaloAppUrl).catch(() => {
         // Dự phòng: Nếu không mở được app trực tiếp, chuyển hướng sang trang web Zalo
         Linking.openURL(zaloWebUrl).catch(() => {
-          alert('Không thể mở ứng dụng Zalo.');
+          popupModalRef.current?.show({
+            title: 'Thông báo',
+            message: 'Không thể mở ứng dụng Zalo.',
+            type: 'warning'
+          });
         });
       });
     }
@@ -852,6 +897,7 @@ export default function CustomerDetailScreen() {
         detailModalRef={detailModalRef}
         debtModalRef={debtModalRef}
       />
+      <PopupModal ref={popupModalRef} />
     </SafeAreaView>
   );
 }

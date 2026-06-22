@@ -8,7 +8,7 @@ import {
   StyleSheet,
   Modal,
 } from 'react-native';
-import { COLORS, FONTS } from '../theme';
+import { COLORS, FONTS, SHADOWS } from '../theme';
 
 // Import DateTimePicker chỉ cho mobile (iOS / Android)
 let DateTimePicker = null;

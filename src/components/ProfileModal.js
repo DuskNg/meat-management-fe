@@ -97,7 +97,7 @@ const ProfileModal = forwardRef((props, ref) => {
     try {
       const response = await api.put('/auth/profile', {
         name: name.trim(),
-        phone: phone.trim(),
+        phone: phone.replace(/\s+/g, ''),
       });
 
       if (response.data.success) {
@@ -161,7 +161,7 @@ const ProfileModal = forwardRef((props, ref) => {
                   keyboardType="phone-pad"
                   value={phone}
                   onChangeText={(text) => {
-                    setPhone(text);
+                    setPhone(text.replace(/\s+/g, ''));
                     setError('');
                   }}
                 />

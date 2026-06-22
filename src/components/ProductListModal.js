@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/ProductListModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,6 +16,7 @@ import SmoothModal from './SmoothModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
+import PopupModal from './PopupModal';
 
 const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
@@ -26,6 +27,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
   const [editingProduct, setEditingProduct] = useState(null); // Quản lý trạng thái đang sửa mặt hàng thịt
+  const popupModalRef = useRef(null);
 
   // 1. Tải danh mục thịt từ Backend bằng React Query
   const { data: productsResponse, refetch, isLoading } = useQuery({
@@ -184,57 +186,41 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // 4. Xóa mềm (Deactivate) loại thịt
+  // 4. Xóa mềm (Deactivate) loại thịt qua PopupModal
   const handleDeleteProduct = async (productId, productName) => {
-    const confirmDelete = () => {
-      Alert.alert(
-        'Xác nhận ẩn',
-        `Bạn có chắc chắn muốn ẩn loại thịt "${productName}" khỏi danh mục bán hàng?`,
-        [
-          { text: 'HỦY', style: 'cancel' },
-          {
-            text: 'ẨN ĐI',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                const response = await api.delete(`/products/${productId}`);
-                if (response.data.success) {
-                  queryClient.invalidateQueries({ queryKey: ['products'] });
-                  if (onRefresh) onRefresh();
-                } else {
-                  Alert.alert('Lỗi', response.data.message || 'Không thể ẩn thịt.');
-                }
-              } catch (err) {
-                Alert.alert('Lỗi', 'Lỗi kết nối mạng, vui lòng thử lại.');
-              }
-            }
-          }
-        ]
-      );
-    };
-
-    // Trên Web, Alert.alert có thể không có nút bấm đầy đủ trên một số trình duyệt, sử dụng confirm gốc
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Bạn có chắc chắn muốn ẩn loại thịt "${productName}" khỏi danh mục bán hàng?`)) {
+    popupModalRef.current?.show({
+      title: 'Xác nhận ẩn',
+      message: `Bạn có chắc chắn muốn ẩn loại thịt "${productName}" khỏi danh mục bán hàng?`,
+      type: 'confirm',
+      confirmText: 'Ẩn đi',
+      cancelText: 'Hủy',
+      onConfirm: async () => {
         try {
           const response = await api.delete(`/products/${productId}`);
           if (response.data.success) {
             queryClient.invalidateQueries({ queryKey: ['products'] });
             if (onRefresh) onRefresh();
           } else {
-            alert(response.data.message || 'Không thể ẩn thịt.');
+            popupModalRef.current?.show({
+              title: 'Lỗi',
+              message: response.data.message || 'Không thể ẩn thịt.',
+              type: 'error',
+            });
           }
         } catch (err) {
-          alert('Lỗi kết nối mạng, vui lòng thử lại.');
+          popupModalRef.current?.show({
+            title: 'Lỗi',
+            message: 'Lỗi kết nối mạng, vui lòng thử lại.',
+            type: 'error',
+          });
         }
       }
-    } else {
-      confirmDelete();
-    }
+    });
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>🥩 QUẢN LÝ DANH SÁCH THỊT</Text>
@@ -391,7 +377,9 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
           <Text style={[styles.closeButtonText, { fontSize: 14 }]}>ĐÓNG LẠI</Text>
         </TouchableOpacity>
       </View>
-    </SmoothModal>
+      </SmoothModal>
+      <PopupModal ref={popupModalRef} />
+    </>
   );
 });
 

@@ -21,6 +21,8 @@ import { COLORS, FONTS, SHADOWS } from '../src/theme';
 import AddCustomerModal from '../src/components/AddCustomerModal';
 import ProductListModal from '../src/components/ProductListModal';
 import ProfileModal from '../src/components/ProfileModal';
+import EditCustomerModal from '../src/components/EditCustomerModal';
+import PopupModal from '../src/components/PopupModal';
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -28,7 +30,10 @@ export default function DashboardScreen() {
   const modalRef = useRef(null);
   const productModalRef = useRef(null);
   const profileModalRef = useRef(null);
+  const editCustomerModalRef = useRef(null);
+  const popupModalRef = useRef(null);
   const [search, setSearch] = useState('');
+  const [activeMenuId, setActiveMenuId] = useState(null);
 
   // 1. Dùng React Query tải danh sách khách hàng và cache lại
   const { data: customersResponse, isLoading, refetch, isRefetching } = useQuery({
@@ -39,23 +44,16 @@ export default function DashboardScreen() {
     },
   });
 
-  // Xử lý xác nhận xóa khách hàng trực tiếp trên trang chủ
+  // Xử lý xác nhận xóa khách hàng trực tiếp trên trang chủ qua PopupModal
   const confirmDeleteCustomer = (customerId, customerName) => {
-    if (Platform.OS === 'web') {
-      const confirm = window.confirm(`Bạn có chắc chắn muốn xóa khách hàng "${customerName}" không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.`);
-      if (confirm) {
-        handleDeleteCustomer(customerId);
-      }
-    } else {
-      Alert.alert(
-        'Xác nhận xóa',
-        `Bạn có chắc chắn muốn xóa khách hàng "${customerName}" không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.`,
-        [
-          { text: 'Hủy bỏ', style: 'cancel' },
-          { text: 'Xóa ngay', style: 'destructive', onPress: () => handleDeleteCustomer(customerId) }
-        ]
-      );
-    }
+    popupModalRef.current?.show({
+      title: 'Xác nhận xóa',
+      message: `Bạn có chắc chắn muốn xóa khách hàng "${customerName}" không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.`,
+      type: 'confirm',
+      confirmText: 'Xóa ngay',
+      cancelText: 'Hủy bỏ',
+      onConfirm: () => handleDeleteCustomer(customerId),
+    });
   };
 
   // Gửi yêu cầu xóa khách hàng lên backend và làm mới danh sách
@@ -63,14 +61,26 @@ export default function DashboardScreen() {
     try {
       const response = await api.delete(`/customers/${customerId}`);
       if (response.data.success) {
-        alert('Đã xóa khách hàng thành công.');
-        refetch(); // Làm mới danh sách
+        popupModalRef.current?.show({
+          title: 'Thành công',
+          message: 'Đã xóa khách hàng thành công.',
+          type: 'success',
+          onConfirm: () => refetch(),
+        });
       } else {
-        alert(response.data.message || 'Không thể xóa khách hàng.');
+        popupModalRef.current?.show({
+          title: 'Thất bại',
+          message: response.data.message || 'Không thể xóa khách hàng.',
+          type: 'error',
+        });
       }
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ để xóa khách hàng.');
+      popupModalRef.current?.show({
+        title: 'Lỗi kết nối',
+        message: err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ để xóa khách hàng.',
+        type: 'error',
+      });
     }
   };
 
@@ -97,7 +107,7 @@ export default function DashboardScreen() {
   const renderCustomerItem = ({ item }) => {
     const hasDebt = item.debt > 0;
     return (
-      <View style={styles.customerCard}>
+      <View style={[styles.customerCard, activeMenuId === item.id && { zIndex: 10, elevation: 10 }]}>
         <TouchableOpacity
           style={styles.customerCardClickable}
           onPress={() => router.push(`/customer/${item.id}`)}
@@ -124,21 +134,66 @@ export default function DashboardScreen() {
               </View>
             )}
 
-            <TouchableOpacity
-              style={styles.customerDeleteBtn}
-              onPress={(e) => {
-                if (e && e.stopPropagation) {
-                  e.stopPropagation();
-                }
-                confirmDeleteCustomer(item.id, item.name);
-              }}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.customerDeleteBtnText}>Xóa</Text>
-            </TouchableOpacity>
+            <View style={styles.actionMenuContainer}>
+              <TouchableOpacity
+                style={styles.threeDotsBtn}
+                onPress={(e) => {
+                  if (e && e.stopPropagation) {
+                    e.stopPropagation();
+                  }
+                  setActiveMenuId(activeMenuId === item.id ? null : item.id);
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.threeDotsText}>⋮</Text>
+              </TouchableOpacity>
+
+              {activeMenuId === item.id && (
+                <View style={styles.dropdownMenu}>
+                  <TouchableOpacity
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      if (e && e.stopPropagation) {
+                        e.stopPropagation();
+                      }
+                      setActiveMenuId(null);
+                      editCustomerModalRef.current?.open(item);
+                    }}
+                  >
+                    <Text style={styles.dropdownItemText}>✏️ Sửa</Text>
+                  </TouchableOpacity>
+                  <View style={styles.menuDivider} />
+                  <TouchableOpacity
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      if (e && e.stopPropagation) {
+                        e.stopPropagation();
+                      }
+                      setActiveMenuId(null);
+                      confirmDeleteCustomer(item.id, item.name);
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, styles.deleteText]}>🗑️ Xóa</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           </View>
         </TouchableOpacity>
       </View>
+    );
+  };
+
+  const CustomCellRenderer = (cellProps) => {
+    const isMenuOpen = activeMenuId === cellProps.item?.id;
+    return (
+      <View
+        {...cellProps}
+        style={[
+          cellProps.style,
+          { zIndex: isMenuOpen ? 999 : 1, elevation: isMenuOpen ? 999 : 1 }
+        ]}
+      />
     );
   };
 
@@ -211,6 +266,7 @@ export default function DashboardScreen() {
             contentContainerStyle={styles.listContent}
             refreshing={isRefetching}
             onRefresh={refetch}
+            CellRendererComponent={CustomCellRenderer}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>Chưa có ai trong danh sách. Hãy nhấn nút phía dưới để thêm!</Text>
@@ -242,11 +298,17 @@ export default function DashboardScreen() {
       {/* MODAL THÊM KHÁCH MỚI (Ẩn) */}
       <AddCustomerModal ref={modalRef} onRefresh={refetch} />
 
+      {/* MODAL SỬA KHÁCH HÀNG (Ẩn) */}
+      <EditCustomerModal ref={editCustomerModalRef} onRefresh={refetch} />
+
       {/* MODAL HỒ SƠ CHỦ TÀI KHOẢN (Ẩn) */}
       <ProfileModal ref={profileModalRef} />
 
       {/* MODAL QUẢN LÝ DANH MỤC THỊT (Ẩn) */}
       <ProductListModal ref={productModalRef} />
+
+      {/* POPUP THÔNG BÁO DÙNG CHUNG (Ẩn) */}
+      <PopupModal ref={popupModalRef} />
     </SafeAreaView>
   );
 }
@@ -411,21 +473,54 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  // Nút xóa khách hàng trực tiếp trên trang chủ
-  customerDeleteBtn: {
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    backgroundColor: '#FFF1F1', // Màu nền đỏ nhạt pastel
-    borderColor: '#FECACA', // Viền đỏ nhạt
-    borderWidth: 1,
+  actionMenuContainer: {
+    position: 'relative',
+    zIndex: 100,
+  },
+  threeDotsBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9', // Nền xám Slate 100 nhẹ nhàng
     justifyContent: 'center',
     alignItems: 'center',
   },
-  customerDeleteBtnText: {
-    fontSize: 12,
+  threeDotsText: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.danger, // Chữ màu đỏ nguy hiểm
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 36,
+    right: 0,
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    width: 110,
+    zIndex: 999,
+    overflow: 'hidden',
+    ...SHADOWS.card,
+  },
+  dropdownItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  deleteText: {
+    color: COLORS.danger,
   },
   cardInfo: {
     flex: 1,
