@@ -21,6 +21,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [error, setError] = useState('');
   // Số nợ tối đa của tháng để giới hạn số tiền trả nợ
   const [maxAmount, setMaxAmount] = useState(null);
+  const [targetMonthKey, setTargetMonthKey] = useState(null); // Lưu trữ tháng cụ thể được chọn trả nợ
 
   // Định dạng hiển thị tiền VNĐ
   const formatCurrency = (value) => {
@@ -32,10 +33,11 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // 1. Phơi bày các hàm điều khiển Modal ra ngoài component cha (Customer Detail)
   useImperativeHandle(ref, () => ({
-    open: (defaultAmount = '') => {
+    open: (defaultAmount = '', monthKey = null) => {
       setVisible(true);
       setAmount(defaultAmount ? formatNumberString(defaultAmount.toString()) : '');
       setMaxAmount(defaultAmount ? parseFloat(defaultAmount) : null); // Thiết lập giới hạn thanh toán tối đa theo nợ tháng
+      setTargetMonthKey(monthKey); // Lưu lại khóa tháng cụ thể (ví dụ: "07/2026")
       setNote('');
       setError('');
     },
@@ -91,10 +93,17 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
     setError('');
     setLoading(true);
     try {
+      // Nếu có chọn tháng cụ thể, tự động thêm tiền tố đặc thù để khấu trừ đúng tháng đó
+      let finalNote = note.trim();
+      if (targetMonthKey) {
+        const prefix = `Thanh toán nợ Tháng ${targetMonthKey}`;
+        finalNote = finalNote ? `${prefix} - ${finalNote}` : prefix;
+      }
+
       const response = await api.post('/payments', {
         customerId,
         amount: payAmount,
-        note: note.trim() || null,
+        note: finalNote || null,
       });
 
       if (response.data.success) {

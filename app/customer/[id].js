@@ -290,18 +290,28 @@ export default function CustomerDetailScreen() {
   // 5. Nhóm tất cả giao dịch theo ngày (DD/MM/YYYY) và thực hiện phân bổ thanh toán FIFO
   //    Mỗi ngày là 1 ô tile duy nhất trên grid
   const dayGroups = useMemo(() => {
-    // 1. Phân loại các đợt thanh toán (thanh toán cụ thể ngày vs thanh toán chung)
+    // 1. Phân loại các đợt thanh toán (thanh toán cụ thể ngày vs thanh toán cụ thể tháng vs thanh toán chung)
     const specificPaymentsByDate = {}; // key: "DD/MM/YYYY" -> Mảng lượt trả nợ riêng ngày đó
+    const specificPaymentsByMonth = {}; // key: "MM/YYYY" -> Mảng lượt trả nợ riêng tháng đó
     let generalPaidPool = 0;
 
     payments.forEach((p) => {
-      const match = p.note && p.note.trim().match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
-      if (match) {
-        const dateKey = `${match[1]}/${match[2]}/${match[3]}`;
+      const trimNote = (p.note || '').trim();
+      const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
+      const monthMatch = trimNote.match(/^Thanh toán nợ Tháng (\d{2})\/(\d{4})/);
+
+      if (dateMatch) {
+        const dateKey = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
         if (!specificPaymentsByDate[dateKey]) {
           specificPaymentsByDate[dateKey] = [];
         }
         specificPaymentsByDate[dateKey].push(p);
+      } else if (monthMatch) {
+        const monthKey = `${monthMatch[1]}/${monthMatch[2]}`;
+        if (!specificPaymentsByMonth[monthKey]) {
+          specificPaymentsByMonth[monthKey] = [];
+        }
+        specificPaymentsByMonth[monthKey].push(p);
       } else {
         generalPaidPool += parseFloat(p.amount || 0);
       }
@@ -337,6 +347,40 @@ export default function CustomerDetailScreen() {
       // Nếu người bán ghi nhận thu thừa so với ngày đó, phần dư dồn vào quỹ trả nợ chung
       if (dayPaidPool > 0) {
         generalPaidPool += dayPaidPool;
+      }
+    });
+
+    // 3.5. Khấu trừ các lượt trả nợ đích danh cho từng Tháng (trừ đúng các đơn nợ trong tháng đó)
+    Object.keys(specificPaymentsByMonth).forEach((monthKey) => {
+      const monthPays = specificPaymentsByMonth[monthKey];
+      let monthPaidPool = monthPays.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+
+      // Lấy toàn bộ đơn nợ trong tháng này, xếp từ cũ đến mới để khấu trừ
+      const monthTransactions = transactions
+        .filter((t) => {
+          const d = new Date(t.date);
+          const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+          const yyyy = d.getFullYear();
+          return `${mm}/${yyyy}` === monthKey;
+        })
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      monthTransactions.forEach((t) => {
+        const amt = remainingDebtMap[t.id];
+        if (amt > 0) {
+          if (monthPaidPool >= amt) {
+            remainingDebtMap[t.id] = 0;
+            monthPaidPool -= amt;
+          } else if (monthPaidPool > 0) {
+            remainingDebtMap[t.id] = amt - monthPaidPool;
+            monthPaidPool = 0;
+          }
+        }
+      });
+
+      // Nếu trả thừa so với tổng nợ tháng đó, phần dư dồn vào quỹ trả nợ chung
+      if (monthPaidPool > 0) {
+        generalPaidPool += monthPaidPool;
       }
     });
 

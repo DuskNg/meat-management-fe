@@ -142,7 +142,7 @@ const MonthDetailDrawer = forwardRef(({
               <TouchableOpacity
                 style={styles.paymentBtn}
                 onPress={() => {
-                  paymentModalRef?.current?.open(month.remainingDebt);
+                  paymentModalRef?.current?.open(month.remainingDebt, month.monthKey);
                 }}
                 activeOpacity={0.7}
               >
