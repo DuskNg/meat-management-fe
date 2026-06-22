@@ -747,6 +747,17 @@ export default function CustomerDetailScreen() {
         {/* ── NÚT CỐ ĐỊNH DƯỚI ĐÁY ── */}
         <View style={styles.bottomBar}>
           <TouchableOpacity
+            style={[styles.actionButton, styles.btnScanTicket]}
+            onPress={handleScanTicket}
+            disabled={isRecording || scanning}
+          >
+            {scanning ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.actionButtonText}>📷 QUÉT TÍCH KÊ</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[
               styles.actionButton,
               isRecording ? styles.btnRecording : styles.btnVoice
