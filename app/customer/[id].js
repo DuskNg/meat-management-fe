@@ -485,8 +485,15 @@ export default function CustomerDetailScreen() {
       groups[monthKey].days.push(group);
       groups[monthKey].totalDebt += group.totalDebt;
       groups[monthKey].remainingDebt += group.remainingDebt;
-      groups[monthKey].totalPayment += group.totalPayment;
     });
+
+    // Sau khi tính xong totalDebt và remainingDebt cho từng tháng,
+    // ta tính số tiền Đã trả của tháng bằng: Mua nợ - Còn nợ (totalDebt - remainingDebt)
+    // Điều này tránh việc tiền trả bị dồn hết vào tháng có ngày thực hiện giao dịch trả tiền.
+    Object.values(groups).forEach((m) => {
+      m.totalPayment = Math.max(0, m.totalDebt - m.remainingDebt);
+    });
+
     return Object.values(groups);
   }, [dayGroups]);
 
