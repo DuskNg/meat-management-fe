@@ -112,7 +112,7 @@ export default function DashboardScreen() {
             )}
           </View>
 
-          <View style={styles.cardDebt}>
+          <View style={styles.cardDebtContainer}>
             {hasDebt ? (
               <View style={styles.debtTag}>
                 <Text style={styles.debtTextLabel}>Còn Nợ:</Text>
@@ -123,15 +123,20 @@ export default function DashboardScreen() {
                 <Text style={[styles.debtTextValue, styles.noDebtText]}>Hết nợ</Text>
               </View>
             )}
-          </View>
-        </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.customerDeleteBtn}
-          onPress={() => confirmDeleteCustomer(item.id, item.name)}
-          activeOpacity={0.6}
-        >
-          <Text style={styles.customerDeleteBtnText}>Xóa</Text>
+            <TouchableOpacity
+              style={styles.customerDeleteBtn}
+              onPress={(e) => {
+                if (e && e.stopPropagation) {
+                  e.stopPropagation();
+                }
+                confirmDeleteCustomer(item.id, item.name);
+              }}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.customerDeleteBtnText}>Xóa</Text>
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </View>
     );
@@ -393,22 +398,18 @@ const styles = StyleSheet.create({
   customerCard: {
     backgroundColor: COLORS.card,
     borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 6,
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOWS.card,
   },
-  // Vùng thông tin khách hàng có thể click (nằm bên trái nút xóa)
+  // Vùng thông tin khách hàng có thể click
   customerCardClickable: {
-    flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 8,
-    paddingLeft: 12,
-    paddingRight: 8,
+    paddingHorizontal: 12,
   },
   // Nút xóa khách hàng trực tiếp trên trang chủ
   customerDeleteBtn: {
@@ -418,7 +419,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF1F1', // Màu nền đỏ nhạt pastel
     borderColor: '#FECACA', // Viền đỏ nhạt
     borderWidth: 1,
-    marginRight: 10, // Lề phải bên trong card
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -443,8 +443,10 @@ const styles = StyleSheet.create({
     fontSize: FONTS.caption, // Giảm từ body (16) xuống caption (14)
     color: COLORS.textSecondary,
   },
-  cardDebt: {
-    alignItems: 'flex-end',
+  cardDebtContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   debtTag: {
     alignItems: 'flex-end',
