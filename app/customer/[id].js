@@ -111,7 +111,7 @@ export default function CustomerDetailScreen() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioChunksRef.current = [];
-        
+
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
 
@@ -125,11 +125,11 @@ export default function CustomerDetailScreen() {
           stream.getTracks().forEach((track) => track.stop());
 
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          
+
           const reader = new FileReader();
           reader.onloadend = async () => {
             const base64Audio = reader.result;
-            
+
             setScanning(true);
             try {
               const response = await api.post('/transactions/voice-to-text', {
@@ -746,7 +746,7 @@ export default function CustomerDetailScreen() {
 
         {/* ── NÚT CỐ ĐỊNH DƯỚI ĐÁY ── */}
         <View style={styles.bottomBar}>
-          <TouchableOpacity
+          {/* <TouchableOpacity
             style={[styles.actionButton, styles.btnScanTicket]}
             onPress={handleScanTicket}
             disabled={isRecording || scanning}
@@ -756,7 +756,7 @@ export default function CustomerDetailScreen() {
             ) : (
               <Text style={styles.actionButtonText}>📷 QUÉT TÍCH KÊ</Text>
             )}
-          </TouchableOpacity>
+          </TouchableOpacity> */}
           <TouchableOpacity
             style={[
               styles.actionButton,
