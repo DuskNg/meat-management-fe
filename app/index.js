@@ -131,7 +131,7 @@ export default function DashboardScreen() {
           onPress={() => confirmDeleteCustomer(item.id, item.name)}
           activeOpacity={0.6}
         >
-          <Text style={styles.customerDeleteBtnText}>🗑️</Text>
+          <Text style={styles.customerDeleteBtnText}>Xóa</Text>
         </TouchableOpacity>
       </View>
     );
@@ -412,9 +412,9 @@ const styles = StyleSheet.create({
   },
   // Nút xóa khách hàng trực tiếp trên trang chủ
   customerDeleteBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    paddingVertical: 6, // Giảm đệm dọc
+    paddingHorizontal: 12, // Giảm đệm ngang cho chữ Xóa
+    borderRadius: 8, // Bo tròn nhẹ dạng chữ nhật bo góc
     backgroundColor: '#FFF1F1', // Màu nền đỏ nhạt pastel
     borderColor: '#FECACA', // Viền đỏ nhạt
     borderWidth: 1,
@@ -422,7 +422,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   customerDeleteBtnText: {
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: COLORS.danger, // Chữ màu đỏ nguy hiểm
   },
   cardInfo: {
     flex: 1,
