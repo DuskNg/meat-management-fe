@@ -31,6 +31,7 @@ import EditDebtModal from '../../src/components/EditDebtModal';
 import EditPaymentModal from '../../src/components/EditPaymentModal';
 import EditCustomerModal from '../../src/components/EditCustomerModal';
 import MonthDetailDrawer from '../../src/components/MonthDetailDrawer';
+import ScanTicketModal from '../../src/components/ScanTicketModal';
 
 export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -45,8 +46,121 @@ export default function CustomerDetailScreen() {
   const editCustomerModalRef = useRef(null);
   const monthDrawerRef = useRef(null); // Ref điều khiển Sidebar chi tiết tháng
   const scrollViewRef = useRef(null); // Ref để điều khiển cuộn của ScrollView
+  const scanTicketModalRef = useRef(null); // Ref điều khiển Modal kết quả quét tích kê
+
+  const [scanning, setScanning] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
+  // Xử lý quét tích kê nhận diện chữ từ ảnh chụp qua Gemini API
+  const handleScanTicket = () => {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.capture = 'environment'; // Ưu tiên mở camera trên điện thoại
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setScanning(true);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          try {
+            const base64Data = reader.result;
+            // Gửi ảnh chụp tích kê lên server backend với thời gian chờ tối đa 120 giây
+            const response = await api.post('/transactions/scan-ticket', { image: base64Data }, { timeout: 120000 });
+            if (response.data.success) {
+              const scannedItems = response.data.data;
+              // Mở modal kết quả quét tích kê đơn giản để người dùng chỉnh sửa và xác nhận
+              scanTicketModalRef.current?.open(scannedItems);
+            } else {
+              alert(response.data.message || 'Không thể nhận diện tích kê.');
+            }
+          } catch (err) {
+            console.error(err);
+            alert(err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ quét tích kê.');
+          } finally {
+            setScanning(false);
+          }
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    } else {
+      alert('Chức năng quét tích kê hiện hỗ trợ trên giao diện Web.');
+    }
+  };
 
 
+
+  // Xử lý thu âm và chuyển đổi ghi nợ bằng giọng nói tiếng Việt qua Gemini API
+  const handleToggleRecording = async () => {
+    if (Platform.OS !== 'web') {
+      alert('Chức năng ghi nợ giọng nói hiện hỗ trợ trên giao diện Web.');
+      return;
+    }
+
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunksRef.current = [];
+        
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach((track) => track.stop());
+
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64Audio = reader.result;
+            
+            setScanning(true);
+            try {
+              const response = await api.post('/transactions/voice-to-text', {
+                audio: base64Audio,
+                mimeType: 'audio/webm'
+              }, { timeout: 120000 });
+
+              if (response.data.success) {
+                const { date, items, note } = response.data.data;
+                scanTicketModalRef.current?.open(items, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI', note, date);
+              } else {
+                alert(response.data.message || 'Không thể dịch giọng nói.');
+              }
+            } catch (err) {
+              console.error(err);
+              alert(err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.');
+            } finally {
+              setScanning(false);
+            }
+          };
+          reader.readAsDataURL(audioBlob);
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        console.error(err);
+        alert('Không thể truy cập Micro. Vui lòng cấp quyền micro cho trình duyệt.');
+      }
+    }
+  };
 
   // Xử lý quay lại an toàn khi tải lại trang trực tiếp
   const handleBack = () => {
@@ -568,8 +682,25 @@ export default function CustomerDetailScreen() {
         {/* ── NÚT CỐ ĐỊNH DƯỚI ĐÁY ── */}
         <View style={styles.bottomBar}>
           <TouchableOpacity
+            style={[
+              styles.actionButton,
+              isRecording ? styles.btnRecording : styles.btnVoice
+            ]}
+            onPress={handleToggleRecording}
+            disabled={scanning}
+          >
+            {scanning ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : isRecording ? (
+              <Text style={styles.actionButtonText}>🔴 ĐANG GHI... (BẤM DỪNG)</Text>
+            ) : (
+              <Text style={styles.actionButtonText}>🎤 NÓI GHI NỢ</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.actionButton, styles.btnDebt]}
             onPress={() => debtModalRef.current?.open()}
+            disabled={isRecording || scanning}
           >
             <Text style={styles.actionButtonText}>🔴 GHI NỢ MỚI</Text>
           </TouchableOpacity>
@@ -578,6 +709,7 @@ export default function CustomerDetailScreen() {
 
       <DebtModal ref={debtModalRef} customerId={id} onRefresh={handleRefreshAll} />
       <PaymentModal ref={paymentModalRef} customerId={id} onRefresh={handleRefreshAll} />
+      <ScanTicketModal ref={scanTicketModalRef} customerId={id} onRefresh={handleRefreshAll} />
       <TransactionDetailModal
         ref={detailModalRef}
         customerId={id}
@@ -893,6 +1025,7 @@ const styles = StyleSheet.create({
   // ── Bottom bar ────────────────────────────────────────────────────────────
   bottomBar: {
     flexDirection: 'row',
+    gap: 12,
     backgroundColor: 'rgba(248, 250, 252, 0.97)',
     padding: 16,
     borderTopWidth: 1,
@@ -908,6 +1041,15 @@ const styles = StyleSheet.create({
   },
   btnDebt: {
     backgroundColor: COLORS.danger,
+  },
+  btnScanTicket: {
+    backgroundColor: '#2563EB', // Màu xanh dương Premium
+  },
+  btnVoice: {
+    backgroundColor: '#4F46E5', // Màu xanh dương pha tím Indigo cao cấp
+  },
+  btnRecording: {
+    backgroundColor: COLORS.dangerDark, // Màu đỏ ghi âm cảnh báo đang ghi âm
   },
   // Container cho phần hiển thị địa chỉ
   addressSectionContainer: {

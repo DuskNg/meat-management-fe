@@ -3,11 +3,11 @@ import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
 // Cấu hình URL máy chủ Backend (Ưu tiên đọc từ biến môi trường của Vercel/Expo, mặc định localhost)
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3000';
+const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 export const api = axios.create({
   baseURL: `${API_HOST}/api/v1`,
-  timeout: 15000, // Hết hạn kết nối sau 15 giây
+  timeout: 60000, // Hết hạn kết nối mặc định sau 60 giây (60000ms) để hỗ trợ gọi AI
 });
 
 // 1. Request Interceptor: Tự động đính kèm Access Token vào mọi yêu cầu

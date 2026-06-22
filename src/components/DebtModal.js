@@ -96,16 +96,34 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // ─── Phơi bày open/close ra component cha ─────────────────────────────
   useImperativeHandle(ref, () => ({
-    open: () => {
+    open: (scannedItems) => {
       setVisible(true);
-      setCartItems([]);
       setCurrentProduct(null);
       setCurrentQuantity('');
       setCurrentPrice('');
       setDateStr(getTodayFormatted());
-      setNote('');
+      setNote(scannedItems ? 'Đơn ghi nợ tự động tạo từ ảnh chụp tích kê' : '');
       setError('');
       setErrorField('');
+
+      if (scannedItems && Array.isArray(scannedItems)) {
+        const itemsForCart = scannedItems.map((item, idx) => {
+          const qty = parseFloat(item.quantity) || 0;
+          const prc = parseInt(item.price, 10) || 0;
+          return {
+            tempId: Date.now() + idx + Math.random(),
+            product: item.product,
+            quantity: qty,
+            price: prc,
+            displayQuantity: qty.toString(),
+            displayPrice: formatNumberString(prc.toString()),
+            amount: qty * prc,
+          };
+        });
+        setCartItems(itemsForCart);
+      } else {
+        setCartItems([]);
+      }
     },
     close: () => setVisible(false),
   }));
