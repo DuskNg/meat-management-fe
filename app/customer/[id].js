@@ -850,6 +850,7 @@ export default function CustomerDetailScreen() {
         getWeekday={getWeekday}
         paymentModalRef={paymentModalRef}
         detailModalRef={detailModalRef}
+        debtModalRef={debtModalRef}
       />
     </SafeAreaView>
   );

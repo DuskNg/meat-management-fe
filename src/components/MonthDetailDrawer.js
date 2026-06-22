@@ -20,6 +20,7 @@ const MonthDetailDrawer = forwardRef(({
   getWeekday,
   paymentModalRef,
   detailModalRef,
+  debtModalRef,
 }, ref) => {
   const { width, height } = useWindowDimensions();
   const [visible, setVisible] = useState(false);
@@ -137,18 +138,53 @@ const MonthDetailDrawer = forwardRef(({
               </Text>
             </View>
 
-            {/* Nút thanh toán nhanh cho tháng */}
-            {month.remainingDebt > 0 && (
+            {/* Hàng chứa các nút hành động của tháng: Ghi nợ mới & Thu tiền nếu còn nợ */}
+            <View style={styles.monthActionsRow}>
+              {month.remainingDebt > 0 && (
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.paymentBtnInline]}
+                  onPress={() => {
+                    paymentModalRef?.current?.open(month.remainingDebt, month.monthKey);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.paymentBtnTextInline}>Thu tiền 💵</Text>
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity
-                style={styles.paymentBtn}
+                style={[
+                  styles.actionBtn,
+                  styles.debtBtnInline,
+                  month.remainingDebt <= 0 && { flex: 1 } // Chiếm toàn bộ chiều rộng nếu không có nút Thu tiền
+                ]}
                 onPress={() => {
-                  paymentModalRef?.current?.open(month.remainingDebt, month.monthKey);
+                  // Phân tích tháng dạng MM/YYYY
+                  const [mm, yyyy] = month.monthKey.split('/');
+                  const targetMonth = parseInt(mm, 10) - 1;
+                  const targetYear = parseInt(yyyy, 10);
+
+                  const today = new Date();
+                  let initialDate = `01/${mm}/${yyyy}`;
+
+                  // Mặc định là ngày hôm nay nếu tháng được chọn là tháng hiện tại
+                  if (today.getMonth() === targetMonth && today.getFullYear() === targetYear) {
+                    const dd = String(today.getDate()).padStart(2, '0');
+                    initialDate = `${dd}/${mm}/${yyyy}`;
+                  }
+
+                  // Mở DebtModal để ghi nợ mới, tự động khóa ngày
+                  debtModalRef?.current?.open({
+                    initialDate,
+                    disableDate: true,
+                    note: `Ghi nợ tự động trong Tháng ${mm}/${yyyy}`
+                  });
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.paymentBtnText}>Đã trả (Thu tiền 💵)</Text>
+                <Text style={styles.debtBtnTextInline}>Ghi nợ mới 🔴</Text>
               </TouchableOpacity>
-            )}
+            </View>
           </View>
 
           {/* Tiêu đề danh sách ngày */}
@@ -360,20 +396,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  paymentBtn: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-    borderWidth: 1,
-    borderRadius: 10,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+  monthActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
     marginTop: 12,
   },
-  paymentBtnText: {
+  actionBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  paymentBtnInline: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  paymentBtnTextInline: {
     color: '#047857',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 13,
+  },
+  debtBtnInline: {
+    backgroundColor: '#FFF1F1',
+    borderColor: '#FECACA',
+  },
+  debtBtnTextInline: {
+    color: COLORS.danger,
+    fontWeight: 'bold',
+    fontSize: 13,
   },
   sectionTitle: {
     fontSize: 15,

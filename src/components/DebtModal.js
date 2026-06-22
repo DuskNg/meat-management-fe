@@ -75,6 +75,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // Thông tin chung cho cả đơn hàng
   const [dateStr, setDateStr] = useState(getTodayFormatted());
+  const [disableDate, setDisableDate] = useState(false);
   const [note, setNote] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -96,18 +97,40 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // ─── Phơi bày open/close ra component cha ─────────────────────────────
   useImperativeHandle(ref, () => ({
-    open: (scannedItems) => {
+    open: (scannedItemsOrOptions, options) => {
       setVisible(true);
       setCurrentProduct(null);
       setCurrentQuantity('');
       setCurrentPrice('');
-      setDateStr(getTodayFormatted());
-      setNote(scannedItems ? 'Đơn ghi nợ tự động tạo từ ảnh chụp tích kê' : '');
       setError('');
       setErrorField('');
 
-      if (scannedItems && Array.isArray(scannedItems)) {
-        const itemsForCart = scannedItems.map((item, idx) => {
+      let items = null;
+      let initialDateStr = getTodayFormatted();
+      let shouldDisableDate = false;
+      let initialNote = '';
+
+      // Phân tích tham số để hỗ trợ cả cách gọi cũ (scannedItems) và cách gọi cấu hình mới (options)
+      if (scannedItemsOrOptions && Array.isArray(scannedItemsOrOptions)) {
+        items = scannedItemsOrOptions;
+        if (options) {
+          if (options.initialDate) initialDateStr = options.initialDate;
+          if (options.disableDate !== undefined) shouldDisableDate = options.disableDate;
+          if (options.note) initialNote = options.note;
+        }
+      } else if (scannedItemsOrOptions && typeof scannedItemsOrOptions === 'object') {
+        if (scannedItemsOrOptions.initialDate) initialDateStr = scannedItemsOrOptions.initialDate;
+        if (scannedItemsOrOptions.disableDate !== undefined) shouldDisableDate = scannedItemsOrOptions.disableDate;
+        if (scannedItemsOrOptions.note) initialNote = scannedItemsOrOptions.note;
+        if (scannedItemsOrOptions.items) items = scannedItemsOrOptions.items;
+      }
+
+      setDateStr(initialDateStr);
+      setDisableDate(shouldDisableDate);
+      setNote(initialNote || (items ? 'Đơn ghi nợ tự động tạo từ ảnh chụp tích kê' : ''));
+
+      if (items && Array.isArray(items)) {
+        const itemsForCart = items.map((item, idx) => {
           const qty = parseFloat(item.quantity) || 0;
           const prc = parseInt(item.price, 10) || 0;
           return {
@@ -288,6 +311,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           }}
           allowFuture={true}
           hasError={errorField === 'date'}
+          disabled={disableDate}
         />
         {errorField === 'date' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 

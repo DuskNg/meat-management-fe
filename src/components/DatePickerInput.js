@@ -106,7 +106,7 @@ const injectWebStyles = () => {
  *   - onChange: function(newDateStr: string) => void
  *   - label:    string (tuỳ chọn), nhãn hiển thị bên trên
  */
-const DatePickerInput = ({ value, onChange, allowFuture = false }) => {
+const DatePickerInput = ({ value, onChange, allowFuture = false, disabled = false }) => {
   // Trạng thái mở/đóng picker trên mobile
   const [showPicker, setShowPicker] = useState(false);
   // Trạng thái hover/press để đổi màu viền
@@ -134,7 +134,11 @@ const DatePickerInput = ({ value, onChange, allowFuture = false }) => {
   if (Platform.OS === 'web') {
     injectWebStyles();
     return (
-      <View style={[styles.container, pressed && styles.containerFocused]}>
+      <View style={[
+        styles.container,
+        disabled && styles.containerDisabled,
+        pressed && !disabled && styles.containerFocused
+      ]}>
         {/* Icon lịch bên trái */}
         <View style={styles.iconWrapper}>
           <Text style={styles.icon}>📅</Text>
@@ -147,15 +151,22 @@ const DatePickerInput = ({ value, onChange, allowFuture = false }) => {
         </View>
 
         {/* Nhãn "Thay đổi" bên phải */}
-        <View style={styles.changeTag}>
-          <Text style={styles.changeTagText}>Đổi ngày</Text>
-        </View>
+        {disabled ? (
+          <View style={[styles.changeTag, styles.disabledTag]}>
+            <Text style={[styles.changeTagText, styles.disabledTagText]}>Cố định 🔒</Text>
+          </View>
+        ) : (
+          <View style={styles.changeTag}>
+            <Text style={styles.changeTagText}>Đổi ngày</Text>
+          </View>
+        )}
 
         {/* HTML date input phủ toàn bộ container, ẩn giao diện mặc định */}
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
           <input
             className="date-picker-input"
             type="date"
+            disabled={disabled}
             value={formatDateToISO(parsedDate)}
             max={maxDate ? formatDateToISO(maxDate) : undefined} // Giới hạn ngày tối đa nếu có
             onChange={(e) => {
@@ -164,7 +175,7 @@ const DatePickerInput = ({ value, onChange, allowFuture = false }) => {
                 onChange(formatDateToDisplay(date));
               }
             }}
-            onFocus={() => setPressed(true)}
+            onFocus={() => !disabled && setPressed(true)}
             onBlur={() => setPressed(false)}
             style={{
               position: 'absolute',
@@ -172,7 +183,7 @@ const DatePickerInput = ({ value, onChange, allowFuture = false }) => {
               opacity: 0,
               width: '100%',
               height: '100%',
-              cursor: 'pointer',
+              cursor: disabled ? 'not-allowed' : 'pointer',
             }}
           />
         </View>
@@ -184,11 +195,16 @@ const DatePickerInput = ({ value, onChange, allowFuture = false }) => {
   return (
     <View>
       <TouchableOpacity
-        style={[styles.container, (pressed || showPicker) && styles.containerFocused]}
-        onPress={() => setShowPicker(true)}
-        onPressIn={() => setPressed(true)}
+        style={[
+          styles.container,
+          disabled && styles.containerDisabled,
+          (pressed || showPicker) && !disabled && styles.containerFocused
+        ]}
+        onPress={() => !disabled && setShowPicker(true)}
+        onPressIn={() => !disabled && setPressed(true)}
         onPressOut={() => setPressed(false)}
-        activeOpacity={0.8}
+        activeOpacity={disabled ? 1 : 0.8}
+        disabled={disabled}
       >
         {/* Icon lịch */}
         <View style={styles.iconWrapper}>
@@ -202,9 +218,15 @@ const DatePickerInput = ({ value, onChange, allowFuture = false }) => {
         </View>
 
         {/* Nhãn "Đổi ngày" */}
-        <View style={styles.changeTag}>
-          <Text style={styles.changeTagText}>Đổi ngày</Text>
-        </View>
+        {disabled ? (
+          <View style={[styles.changeTag, styles.disabledTag]}>
+            <Text style={[styles.changeTagText, styles.disabledTagText]}>Cố định 🔒</Text>
+          </View>
+        ) : (
+          <View style={styles.changeTag}>
+            <Text style={styles.changeTagText}>Đổi ngày</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       {/* Native calendar picker */}
@@ -243,6 +265,11 @@ const styles = StyleSheet.create({
   containerFocused: {
     borderColor: COLORS.danger,
     backgroundColor: '#FFF5F5',
+  },
+  // Style cho trạng thái disabled
+  containerDisabled: {
+    backgroundColor: '#F1F5F9', // Xám nhạt Slate 100
+    borderColor: '#E2E8F0', // Viền xám nhạt Slate 200
   },
 
   // Vùng icon lịch bên trái (thu nhỏ kích thước)
@@ -290,5 +317,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold',
     color: COLORS.dangerDark,
+  },
+  // Tag cố định khi disabled
+  disabledTag: {
+    backgroundColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
+  },
+  disabledTagText: {
+    color: '#64748B',
   },
 });

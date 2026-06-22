@@ -236,160 +236,160 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>🥩 QUẢN LÝ DANH SÁCH THỊT</Text>
-            <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
-              <Text style={styles.closeHeaderText}>✕</Text>
-            </TouchableOpacity>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>🥩 QUẢN LÝ DANH SÁCH THỊT</Text>
+          <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
+            <Text style={styles.closeHeaderText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        {error ? (
+          <View style={[styles.alertBox, error.startsWith('✅') ? styles.alertSuccess : styles.alertError]}>
+            <Text style={error.startsWith('✅') ? styles.alertTextSuccess : styles.alertTextError}>
+              {error}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Form thêm hoặc cập nhật thịt mới */}
+        <View style={styles.formContainer}>
+          <Text style={styles.sectionTitle}>
+            {editingProduct ? '✏️ CẬP NHẬT THÔNG TIN THỊT' : '➕ THÊM THỊT MỚI'}
+          </Text>
+
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
+            <View style={{ flex: 1.2 }}>
+              <Text style={styles.label}>Tên loại thịt:</Text>
+              <TextInput
+                style={[styles.input, { marginBottom: 0 }]}
+                placeholder="Ví dụ: Bắp bò..."
+                placeholderTextColor={COLORS.textLight}
+                value={name}
+                onChangeText={setName}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Đơn giá (VND):</Text>
+              <TextInput
+                style={[styles.input, { marginBottom: 0 }]}
+                placeholder="Ví dụ: 130.000"
+                placeholderTextColor={COLORS.textLight}
+                keyboardType="number-pad"
+                value={price}
+                onChangeText={(text) => setPrice(formatNumberString(text))}
+              />
+            </View>
           </View>
 
-          {error ? (
-            <View style={[styles.alertBox, error.startsWith('✅') ? styles.alertSuccess : styles.alertError]}>
-              <Text style={error.startsWith('✅') ? styles.alertTextSuccess : styles.alertTextError}>
-                {error}
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Form thêm hoặc cập nhật thịt mới */}
-          <View style={styles.formContainer}>
-            <Text style={styles.sectionTitle}>
-              {editingProduct ? '✏️ CẬP NHẬT THÔNG TIN THỊT' : '➕ THÊM THỊT MỚI'}
-            </Text>
-            
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
-              <View style={{ flex: 1.2 }}>
-                <Text style={styles.label}>Tên loại thịt:</Text>
-                <TextInput
-                  style={[styles.input, { marginBottom: 0 }]}
-                  placeholder="Ví dụ: Bắp bò..."
-                  placeholderTextColor={COLORS.textLight}
-                  value={name}
-                  onChangeText={setName}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Đơn giá (VND):</Text>
-                <TextInput
-                  style={[styles.input, { marginBottom: 0 }]}
-                  placeholder="Ví dụ: 130.000"
-                  placeholderTextColor={COLORS.textLight}
-                  keyboardType="number-pad"
-                  value={price}
-                  onChangeText={(text) => setPrice(formatNumberString(text))}
-                />
+          {/* Chọn đơn vị tính và các nút bấm hành động */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={[styles.label, { marginBottom: 0 }]}>ĐVT:</Text>
+              <View style={[styles.unitContainer, { marginBottom: 0, gap: 4 }]}>
+                {['kg', 'lạng', 'cái'].map((u) => {
+                  const isSelected = unit === u;
+                  return (
+                    <TouchableOpacity
+                      key={u}
+                      style={[styles.unitBadge, isSelected && styles.unitBadgeSelected]}
+                      onPress={() => setUnit(u)}
+                    >
+                      <Text style={[styles.unitBadgeText, isSelected && styles.unitBadgeTextSelected]}>
+                        {u}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 
-            {/* Chọn đơn vị tính và các nút bấm hành động */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={[styles.label, { marginBottom: 0 }]}>ĐVT:</Text>
-                <View style={[styles.unitContainer, { marginBottom: 0, gap: 4 }]}>
-                  {['kg', 'lạng', 'cái'].map((u) => {
-                    const isSelected = unit === u;
-                    return (
-                      <TouchableOpacity
-                        key={u}
-                        style={[styles.unitBadge, isSelected && styles.unitBadgeSelected]}
-                        onPress={() => setUnit(u)}
-                      >
-                        <Text style={[styles.unitBadgeText, isSelected && styles.unitBadgeTextSelected]}>
-                          {u}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {editingProduct ? (
-                  <>
-                    <TouchableOpacity
-                      style={[styles.saveButton, { height: 36, paddingHorizontal: 12, backgroundColor: COLORS.primary }]}
-                      onPress={handleUpdateProduct}
-                      disabled={loading}
-                    >
-                      {loading ? (
-                        <ActivityIndicator color="#FFFFFF" size="small" />
-                      ) : (
-                        <Text style={[styles.saveButtonText, { fontSize: 13 }]}>LƯU 💾</Text>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.closeButton, { height: 36, paddingHorizontal: 12, marginTop: 0, backgroundColor: COLORS.inputBg }]}
-                      onPress={handleCancelEdit}
-                    >
-                      <Text style={[styles.closeButtonText, { fontSize: 13 }]}>HỦY</Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {editingProduct ? (
+                <>
                   <TouchableOpacity
-                    style={[styles.saveButton, { height: 36, paddingHorizontal: 12 }]}
-                    onPress={handleAddProduct}
+                    style={[styles.saveButton, { height: 36, paddingHorizontal: 12, backgroundColor: COLORS.primary }]}
+                    onPress={handleUpdateProduct}
                     disabled={loading}
                   >
                     {loading ? (
                       <ActivityIndicator color="#FFFFFF" size="small" />
                     ) : (
-                      <Text style={[styles.saveButtonText, { fontSize: 13 }]}>THÊM 💾</Text>
+                      <Text style={[styles.saveButtonText, { fontSize: 13 }]}>LƯU 💾</Text>
                     )}
                   </TouchableOpacity>
-                )}
-              </View>
+                  <TouchableOpacity
+                    style={[styles.closeButton, { height: 36, paddingHorizontal: 12, marginTop: 0, backgroundColor: COLORS.inputBg }]}
+                    onPress={handleCancelEdit}
+                  >
+                    <Text style={[styles.closeButtonText, { fontSize: 13 }]}>HỦY</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.saveButton, { height: 36, paddingHorizontal: 12 }]}
+                  onPress={handleAddProduct}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={[styles.saveButtonText, { fontSize: 13 }]}>THÊM 💾</Text>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           </View>
+        </View>
 
-          {/* Danh sách thịt hiện có */}
-          <Text style={styles.sectionTitle}>📋 DANH SÁCH THỊT ĐANG BÁN ({products.length})</Text>
-          {isLoading ? (
-            <ActivityIndicator color={COLORS.primary} style={{ margin: 20 }} />
-          ) : (
-            <FlatList
-              data={products}
-              keyExtractor={(item) => item.id}
-              style={{ flex: 1 }} // Cho phép danh sách co giãn chiếm trọn không gian trống còn lại
-              contentContainerStyle={styles.listContent}
-              renderItem={({ item }) => (
-                <View style={styles.productItem}>
-                  <View style={styles.productDetails}>
-                    <Text style={styles.productNameText}>{item.name}</Text>
-                    <Text style={styles.productPriceText}>
-                      {formatCurrency(item.defaultPrice)} / {item.unit}
-                    </Text>
-                  </View>
-                  
-                  {/* Cụm nút hành động bên cạnh mặt hàng: Sửa và Ẩn */}
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TouchableOpacity
-                      style={styles.editButton}
-                      onPress={() => handleStartEdit(item)}
-                    >
-                      <Text style={styles.editButtonText}>✏️ Sửa</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.deleteButton}
-                      onPress={() => handleDeleteProduct(item.id, item.name)}
-                    >
-                      <Text style={styles.deleteButtonText}>🗑️ Ẩn</Text>
-                    </TouchableOpacity>
-                  </View>
+        {/* Danh sách thịt hiện có */}
+        <Text style={styles.sectionTitle}>📋 DANH SÁCH THỊT ĐANG BÁN ({products.length})</Text>
+        {isLoading ? (
+          <ActivityIndicator color={COLORS.primary} style={{ margin: 20 }} />
+        ) : (
+          <FlatList
+            data={products}
+            keyExtractor={(item) => item.id}
+            style={{ flex: 1 }} // Cho phép danh sách co giãn chiếm trọn không gian trống còn lại
+            contentContainerStyle={styles.listContent}
+            renderItem={({ item }) => (
+              <View style={styles.productItem}>
+                <View style={styles.productDetails}>
+                  <Text style={styles.productNameText}>{item.name}</Text>
+                  <Text style={styles.productPriceText}>
+                    {formatCurrency(item.defaultPrice)} / {item.unit}
+                  </Text>
                 </View>
-              )}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>Chưa có loại thịt nào. Hãy thêm ở form trên!</Text>
-              }
-            />
-          )}
 
-          {/* Nút đóng chân modal (được thu nhỏ lại) */}
-          <TouchableOpacity
-            style={[styles.closeButton, { height: 38, marginTop: 8 }]}
-            onPress={() => setVisible(false)}
-          >
-            <Text style={[styles.closeButtonText, { fontSize: 14 }]}>ĐÓNG LẠI</Text>
-          </TouchableOpacity>
+                {/* Cụm nút hành động bên cạnh mặt hàng: Sửa và Ẩn */}
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() => handleStartEdit(item)}
+                  >
+                    <Text style={styles.editButtonText}>✏️ Sửa</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => handleDeleteProduct(item.id, item.name)}
+                  >
+                    <Text style={styles.deleteButtonText}>🗑️ Xóa</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>Chưa có loại thịt nào. Hãy thêm ở form trên!</Text>
+            }
+          />
+        )}
+
+        {/* Nút đóng chân modal (được thu nhỏ lại) */}
+        <TouchableOpacity
+          style={[styles.closeButton, { height: 38, marginTop: 8 }]}
+          onPress={() => setVisible(false)}
+        >
+          <Text style={[styles.closeButtonText, { fontSize: 14 }]}>ĐÓNG LẠI</Text>
+        </TouchableOpacity>
       </View>
     </SmoothModal>
   );
