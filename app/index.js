@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
   SafeAreaView,
   StatusBar,
-  Platform
+  Platform,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -38,6 +39,41 @@ export default function DashboardScreen() {
     },
   });
 
+  // Xử lý xác nhận xóa khách hàng trực tiếp trên trang chủ
+  const confirmDeleteCustomer = (customerId, customerName) => {
+    if (Platform.OS === 'web') {
+      const confirm = window.confirm(`Bạn có chắc chắn muốn xóa khách hàng "${customerName}" không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.`);
+      if (confirm) {
+        handleDeleteCustomer(customerId);
+      }
+    } else {
+      Alert.alert(
+        'Xác nhận xóa',
+        `Bạn có chắc chắn muốn xóa khách hàng "${customerName}" không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.`,
+        [
+          { text: 'Hủy bỏ', style: 'cancel' },
+          { text: 'Xóa ngay', style: 'destructive', onPress: () => handleDeleteCustomer(customerId) }
+        ]
+      );
+    }
+  };
+
+  // Gửi yêu cầu xóa khách hàng lên backend và làm mới danh sách
+  const handleDeleteCustomer = async (customerId) => {
+    try {
+      const response = await api.delete(`/customers/${customerId}`);
+      if (response.data.success) {
+        alert('Đã xóa khách hàng thành công.');
+        refetch(); // Làm mới danh sách
+      } else {
+        alert(response.data.message || 'Không thể xóa khách hàng.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ để xóa khách hàng.');
+    }
+  };
+
   const customers = customersResponse?.data || [];
 
   // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
@@ -61,32 +97,43 @@ export default function DashboardScreen() {
   const renderCustomerItem = ({ item }) => {
     const hasDebt = item.debt > 0;
     return (
-      <TouchableOpacity
-        style={styles.customerCard}
-        onPress={() => router.push(`/customer/${item.id}`)}
-      >
-        <View style={styles.cardInfo}>
-          <Text style={styles.customerName}>{item.name}</Text>
-          {item.phone ? (
-            <Text style={styles.customerPhone}>{item.phone}</Text>
-          ) : (
-            <Text style={styles.customerPhone}>Không có số điện thoại</Text>
-          )}
-        </View>
+      <View style={styles.customerCardContainer}>
+        <TouchableOpacity
+          style={styles.customerCardMain}
+          onPress={() => router.push(`/customer/${item.id}`)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.cardInfo}>
+            <Text style={styles.customerName}>{item.name}</Text>
+            {item.phone ? (
+              <Text style={styles.customerPhone}>{item.phone}</Text>
+            ) : (
+              <Text style={styles.customerPhone}>Không có số điện thoại</Text>
+            )}
+          </View>
 
-        <View style={styles.cardDebt}>
-          {hasDebt ? (
-            <View style={styles.debtTag}>
-              <Text style={styles.debtTextLabel}>Còn Nợ:</Text>
-              <Text style={styles.debtTextValue}>{formatCurrency(item.debt)}</Text>
-            </View>
-          ) : (
-            <View style={[styles.debtTag, styles.noDebtTag]}>
-              <Text style={[styles.debtTextValue, styles.noDebtText]}>Hết nợ</Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
+          <View style={styles.cardDebt}>
+            {hasDebt ? (
+              <View style={styles.debtTag}>
+                <Text style={styles.debtTextLabel}>Còn Nợ:</Text>
+                <Text style={styles.debtTextValue}>{formatCurrency(item.debt)}</Text>
+              </View>
+            ) : (
+              <View style={[styles.debtTag, styles.noDebtTag]}>
+                <Text style={[styles.debtTextValue, styles.noDebtText]}>Hết nợ</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.customerDeleteBtn}
+          onPress={() => confirmDeleteCustomer(item.id, item.name)}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.customerDeleteBtnText}>🗑️</Text>
+        </TouchableOpacity>
+      </View>
     );
   };
 
@@ -124,7 +171,7 @@ export default function DashboardScreen() {
 
         {/* TỔNG TIỀN NỢ: To rõ, thu hút sự chú ý ngay */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>💰 TỔNG TIỀN NỢ CẦN THU:</Text>
+          <Text style={styles.summaryLabel}>💰 TỔNG TIỀN NỢ:</Text>
           <Text style={styles.summaryValue}>{formatCurrency(totalDebt)}</Text>
         </View>
 
@@ -342,8 +389,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 85, // Giảm khoảng trống đệm đáy do bottomBar nhỏ hơn
   },
-  // Card khách hàng (giảm padding dọc xuống 6 để danh sách hiển thị khít và xem được nhiều hơn)
-  customerCard: {
+  // Container bọc ngoài thẻ khách hàng và nút xóa
+  customerCardContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 8,
+  },
+  // Thẻ thông tin khách hàng chính (đã chuyển sang flex: 1 để nhường không gian cho nút xóa)
+  customerCardMain: {
+    flex: 1,
     backgroundColor: COLORS.card,
     borderRadius: 10,
     paddingVertical: 6,
@@ -351,10 +406,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOWS.card,
+  },
+  // Nút xóa khách hàng trực tiếp trên trang chủ
+  customerDeleteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFF1F1', // Màu nền đỏ nhạt pastel
+    borderColor: '#FECACA', // Viền đỏ nhạt
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  customerDeleteBtnText: {
+    fontSize: 14,
   },
   cardInfo: {
     flex: 1,

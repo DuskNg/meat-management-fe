@@ -25,6 +25,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
+  const [editingProduct, setEditingProduct] = useState(null); // Quản lý trạng thái đang sửa mặt hàng thịt
 
   // 1. Tải danh mục thịt từ Backend bằng React Query
   const { data: productsResponse, refetch, isLoading } = useQuery({
@@ -46,6 +47,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       setPrice('');
       setUnit('kg');
       setError('');
+      setEditingProduct(null);
     },
     close: () => {
       setVisible(false);
@@ -70,6 +72,69 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const parseNumberString = (formattedValue) => {
     const cleanValue = formattedValue.replace(/[^0-9]/g, '');
     return cleanValue ? parseInt(cleanValue, 10) : 0;
+  };
+
+  // Kích hoạt trạng thái chỉnh sửa thịt
+  const handleStartEdit = (product) => {
+    setEditingProduct(product);
+    setName(product.name);
+    setPrice(formatNumberString(String(product.defaultPrice)));
+    setUnit(product.unit);
+    setError('');
+  };
+
+  // Hủy bỏ trạng thái chỉnh sửa
+  const handleCancelEdit = () => {
+    setEditingProduct(null);
+    setName('');
+    setPrice('');
+    setUnit('kg');
+    setError('');
+  };
+
+  // Gửi yêu cầu cập nhật thông tin sản phẩm thịt lên backend
+  const handleUpdateProduct = async () => {
+    if (!editingProduct) return;
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError('Tên loại thịt không được để trống.');
+      return;
+    }
+    if (!price || price.trim() === '') {
+      setError('Đơn giá không được để trống.');
+      return;
+    }
+
+    const defaultPrice = parseNumberString(price);
+    if (defaultPrice < 0) {
+      setError('Đơn giá mặc định phải từ 0 trở lên.');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+    try {
+      const response = await api.put(`/products/${editingProduct.id}`, {
+        name: trimmedName,
+        defaultPrice,
+        unit,
+      });
+
+      if (response.data.success) {
+        handleCancelEdit();
+        // Làm mới cache React Query
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+        if (onRefresh) onRefresh();
+        setError('✅ Đã cập nhật thịt thành công!');
+        setTimeout(() => setError(''), 3000);
+      } else {
+        setError(response.data.message || 'Lỗi cập nhật sản phẩm.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // 3. Xử lý thêm loại thịt mới
@@ -186,58 +251,94 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
             </View>
           ) : null}
 
-          {/* Form thêm thịt mới */}
+          {/* Form thêm hoặc cập nhật thịt mới */}
           <View style={styles.formContainer}>
-            <Text style={styles.sectionTitle}>➕ THÊM THỊT MỚI</Text>
-            <Text style={styles.label}>Tên loại thịt:</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ví dụ: Bắp bò, Sườn non..."
-              placeholderTextColor={COLORS.textLight}
-              value={name}
-              onChangeText={setName}
-            />
-
-            <Text style={styles.label}>Giá tiền mặc định (VND):</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ví dụ: 130.000"
-              placeholderTextColor={COLORS.textLight}
-              keyboardType="number-pad" // Hiển thị bàn phím số nguyên trên di động
-              value={price}
-              onChangeText={(text) => setPrice(formatNumberString(text))}
-            />
-
-            {/* Chọn đơn vị tính */}
-            <Text style={styles.label}>Đơn vị tính:</Text>
-            <View style={styles.unitContainer}>
-              {['kg', 'lạng', 'cái', 'gói'].map((u) => {
-                const isSelected = unit === u;
-                return (
-                  <TouchableOpacity
-                    key={u}
-                    style={[styles.unitBadge, isSelected && styles.unitBadgeSelected]}
-                    onPress={() => setUnit(u)}
-                  >
-                    <Text style={[styles.unitBadgeText, isSelected && styles.unitBadgeTextSelected]}>
-                      {u}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+            <Text style={styles.sectionTitle}>
+              {editingProduct ? '✏️ CẬP NHẬT THÔNG TIN THỊT' : '➕ THÊM THỊT MỚI'}
+            </Text>
+            
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
+              <View style={{ flex: 1.2 }}>
+                <Text style={styles.label}>Tên loại thịt:</Text>
+                <TextInput
+                  style={[styles.input, { marginBottom: 0 }]}
+                  placeholder="Ví dụ: Bắp bò..."
+                  placeholderTextColor={COLORS.textLight}
+                  value={name}
+                  onChangeText={setName}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Đơn giá (VND):</Text>
+                <TextInput
+                  style={[styles.input, { marginBottom: 0 }]}
+                  placeholder="Ví dụ: 130.000"
+                  placeholderTextColor={COLORS.textLight}
+                  keyboardType="number-pad"
+                  value={price}
+                  onChangeText={(text) => setPrice(formatNumberString(text))}
+                />
+              </View>
             </View>
 
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={handleAddProduct}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.saveButtonText}>THÊM VÀO DANH MỤC 💾</Text>
-              )}
-            </TouchableOpacity>
+            {/* Chọn đơn vị tính và các nút bấm hành động */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={[styles.label, { marginBottom: 0 }]}>ĐVT:</Text>
+                <View style={[styles.unitContainer, { marginBottom: 0, gap: 4 }]}>
+                  {['kg', 'lạng', 'cái'].map((u) => {
+                    const isSelected = unit === u;
+                    return (
+                      <TouchableOpacity
+                        key={u}
+                        style={[styles.unitBadge, isSelected && styles.unitBadgeSelected]}
+                        onPress={() => setUnit(u)}
+                      >
+                        <Text style={[styles.unitBadgeText, isSelected && styles.unitBadgeTextSelected]}>
+                          {u}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {editingProduct ? (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.saveButton, { height: 36, paddingHorizontal: 12, backgroundColor: COLORS.primary }]}
+                      onPress={handleUpdateProduct}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <Text style={[styles.saveButtonText, { fontSize: 13 }]}>LƯU 💾</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.closeButton, { height: 36, paddingHorizontal: 12, marginTop: 0, backgroundColor: COLORS.inputBg }]}
+                      onPress={handleCancelEdit}
+                    >
+                      <Text style={[styles.closeButtonText, { fontSize: 13 }]}>HỦY</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.saveButton, { height: 36, paddingHorizontal: 12 }]}
+                    onPress={handleAddProduct}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={[styles.saveButtonText, { fontSize: 13 }]}>THÊM 💾</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
           </View>
 
           {/* Danh sách thịt hiện có */}
@@ -258,12 +359,22 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
                       {formatCurrency(item.defaultPrice)} / {item.unit}
                     </Text>
                   </View>
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => handleDeleteProduct(item.id, item.name)}
-                  >
-                    <Text style={styles.deleteButtonText}>🗑️ Ẩn đi</Text>
-                  </TouchableOpacity>
+                  
+                  {/* Cụm nút hành động bên cạnh mặt hàng: Sửa và Ẩn */}
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => handleStartEdit(item)}
+                    >
+                      <Text style={styles.editButtonText}>✏️ Sửa</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleDeleteProduct(item.id, item.name)}
+                    >
+                      <Text style={styles.deleteButtonText}>🗑️ Ẩn</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
               ListEmptyComponent={
@@ -272,12 +383,12 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
             />
           )}
 
-          {/* Nút đóng chân modal */}
+          {/* Nút đóng chân modal (được thu nhỏ lại) */}
           <TouchableOpacity
-            style={styles.closeButton}
+            style={[styles.closeButton, { height: 38, marginTop: 8 }]}
             onPress={() => setVisible(false)}
           >
-            <Text style={styles.closeButtonText}>ĐÓNG LẠI</Text>
+            <Text style={[styles.closeButtonText, { fontSize: 14 }]}>ĐÓNG LẠI</Text>
           </TouchableOpacity>
       </View>
     </SmoothModal>
@@ -375,30 +486,30 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   label: {
-    fontSize: 14,
+    fontSize: 12, // Giảm từ 14 xuống 12
     fontWeight: 'bold',
     color: COLORS.textSecondary,
-    marginBottom: 6,
+    marginBottom: 4, // Giảm từ 6 xuống 4
   },
   unitContainer: {
     flexDirection: 'row',
-    marginBottom: 14,
+    marginBottom: 0,
   },
   unitBadge: {
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: 6,
+    paddingVertical: 3, // Giảm từ 5 xuống 3
+    paddingHorizontal: 8, // Giảm từ 12 xuống 8
+    borderRadius: 5,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#E4E2DD',
-    marginRight: 8,
+    marginRight: 4, // Giảm từ 8 xuống 4
   },
   unitBadgeSelected: {
     backgroundColor: COLORS.primaryLight,
     borderColor: COLORS.primary,
   },
   unitBadgeText: {
-    fontSize: 14,
+    fontSize: 12, // Giảm từ 14 xuống 12
     fontWeight: '600',
     color: COLORS.textSecondary,
   },
@@ -414,7 +525,7 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: '#FFFFFF',
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   listContent: {
@@ -424,7 +535,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6, // Giảm từ 8 xuống 6
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -440,6 +551,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textSecondary,
     marginTop: 2,
+  },
+  editButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    backgroundColor: '#ECFDF5', // Màu xanh lá nhẹ
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  editButtonText: {
+    color: '#047857', // Chữ màu xanh lục đậm
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   deleteButton: {
     paddingVertical: 4,
@@ -470,7 +594,7 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     color: COLORS.textSecondary,
-    fontSize: FONTS.body,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   backdrop: {
