@@ -72,8 +72,8 @@ const MonthDetailDrawer = forwardRef(({
 
   if (!visible || !month) return null;
 
-  // ─── Tính kích thước tile ngày bên trong drawer (chia làm 3 cột, trừ 16px an toàn để tránh rớt dòng do thanh cuộn) ───
-  const NUM_COLS = 3;
+  // ─── Tính kích thước tile ngày bên trong drawer (chia làm 4 cột, trừ 16px an toàn để tránh rớt dòng do thanh cuộn) ───
+  const NUM_COLS = 4;
   const TILE_GAP = 8;
   const DRAWER_PADDING = 16;
   const tileSize = Math.max(0, Math.floor(
@@ -224,18 +224,18 @@ const MonthDetailDrawer = forwardRef(({
                   activeOpacity={0.7}
                 >
                   {/* Thứ viết tắt */}
-                  <Text style={[styles.tileWeekday, { color: txtColor }]} numberOfLines={1}>
+                  <Text style={[styles.tileWeekday, { color: txtColor }]} numberOfLines={1} adjustsFontSizeToFit>
                     {getWeekday(group.date)}
                   </Text>
                   {/* Ngày/Tháng */}
-                  <Text style={styles.tileDate}>
+                  <Text style={styles.tileDate} numberOfLines={1} adjustsFontSizeToFit>
                     {formatShortDate(group.date)}
                   </Text>
                   {/* Số tiền rút gọn hoặc trạng thái */}
                   {isFullyPaid ? (
-                    <Text style={[styles.tileAmount, { color: txtColor }]}>0đ</Text>
+                    <Text style={[styles.tileAmount, { color: txtColor }]} numberOfLines={1} adjustsFontSizeToFit>0đ</Text>
                   ) : (
-                    <Text style={[styles.tileAmount, { color: txtColor }]}>
+                    <Text style={[styles.tileAmount, { color: txtColor }]} numberOfLines={1} adjustsFontSizeToFit>
                       {formatAmountShort(hasDebt ? group.remainingDebt : group.totalPayment)}
                     </Text>
                   )}
@@ -389,22 +389,22 @@ const styles = StyleSheet.create({
   tile: {
     borderRadius: 12,
     borderWidth: 1.5,
-    padding: 6,
+    padding: 4, // Giảm từ 6 để vừa vặn hơn trên hàng ngang 4 cột
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     ...SHADOWS.card,
   },
   tileWeekday: {
-    fontSize: 12,
+    fontSize: 11, // Giảm từ 12 để tránh bị quấn dòng
     fontWeight: 'bold',
   },
   tileDate: {
-    fontSize: 12,
+    fontSize: 11, // Giảm từ 12 để vừa khít ô vuông nhỏ
     fontWeight: '700',
     color: COLORS.text,
   },
   tileAmount: {
-    fontSize: 14,
+    fontSize: 12, // Giảm từ 14 để tiền rút gọn hiển thị gọn gàng
     fontWeight: 'bold',
   },
   legend: {
