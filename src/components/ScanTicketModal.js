@@ -120,6 +120,22 @@ const ScanTicketModal = forwardRef(({ customerId, onRefresh }, ref) => {
     close: () => setVisible(false),
   }));
 
+  // --- Xử lý đổi tên sản phẩm ---
+  const handleProductNameChange = (tempId, text) => {
+    setScannedItems((prev) =>
+      prev.map((item) => {
+        if (item.tempId !== tempId) return item;
+        return {
+          ...item,
+          product: {
+            ...item.product,
+            name: text,
+          },
+        };
+      })
+    );
+  };
+
   // --- Xử lý đổi số lượng ---
   const handleQuantityChange = (tempId, text) => {
     setScannedItems((prev) =>
@@ -193,6 +209,7 @@ const ScanTicketModal = forwardRef(({ customerId, onRefresh }, ref) => {
         note: note.trim() || null,
         items: scannedItems.map((item) => ({
           productId: item.product.id,
+          productName: item.product.name,
           quantity: item.quantity,
           price: item.price,
         })),
@@ -226,6 +243,14 @@ const ScanTicketModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
+        {modalTitleText.includes('GIỌNG NÓI') && (
+          <View style={styles.voiceWarningBox}>
+            <Text style={styles.voiceWarningText}>
+              💡 AI đã tự động phân tích giọng nói của bạn. Hãy kiểm tra lại tên thịt, số cân và giá bán xem đã đúng ý chưa trước khi bấm lưu nợ nhé!
+            </Text>
+          </View>
+        )}
+
         {/* --- CẤU HÌNH NGÀY GHI NỢ --- */}
         <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
         <DatePickerInput
@@ -251,10 +276,16 @@ const ScanTicketModal = forwardRef(({ customerId, onRefresh }, ref) => {
             const subtotal = item.quantity * item.price;
             return (
               <View key={item.tempId} style={styles.itemRow}>
-                {/* Tên sản phẩm */}
-                <Text style={styles.productName} numberOfLines={1}>
-                  {item.product.name}
-                </Text>
+                {/* Tên sản phẩm (Có thể chỉnh sửa nếu AI nghe sai) */}
+                <View style={styles.productNameContainer}>
+                  <TextInput
+                    style={styles.productNameInput}
+                    value={item.product.name}
+                    onChangeText={(txt) => handleProductNameChange(item.tempId, txt)}
+                    placeholder="Tên thịt"
+                    placeholderTextColor={COLORS.textLight}
+                  />
+                </View>
 
                 {/* Input nhập khối lượng */}
                 <View style={styles.inputContainer}>
@@ -559,5 +590,38 @@ const styles = StyleSheet.create({
   submitButtonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
+  },
+  voiceWarningBox: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 15,
+  },
+  voiceWarningText: {
+    fontSize: 13,
+    color: '#B45309',
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  productNameContainer: {
+    flex: 1.6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 6,
+    height: 36,
+  },
+  productNameInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    padding: 0,
+    outlineStyle: 'none',
   },
 });
