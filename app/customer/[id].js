@@ -14,6 +14,7 @@ import {
   Linking,
   UIManager,
   LayoutAnimation,
+  Alert,
 } from 'react-native';
 
 // Kích hoạt LayoutAnimation trên Android
@@ -168,6 +169,41 @@ export default function CustomerDetailScreen() {
       router.back();
     } else {
       router.replace('/');
+    }
+  };
+
+  // Xử lý xác nhận xóa khách hàng trước khi thực hiện
+  const confirmDeleteCustomer = () => {
+    if (Platform.OS === 'web') {
+      const confirm = window.confirm('Bạn có chắc chắn muốn xóa khách hàng này không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.');
+      if (confirm) {
+        handleDeleteCustomer();
+      }
+    } else {
+      Alert.alert(
+        'Xác nhận xóa',
+        'Bạn có chắc chắn muốn xóa khách hàng này không? Mọi lịch sử giao dịch liên quan sẽ không thể truy cập trực tiếp nữa.',
+        [
+          { text: 'Hủy bỏ', style: 'cancel' },
+          { text: 'Xóa ngay', style: 'destructive', onPress: handleDeleteCustomer }
+        ]
+      );
+    }
+  };
+
+  // Gửi yêu cầu xóa khách hàng đến API backend
+  const handleDeleteCustomer = async () => {
+    try {
+      const response = await api.delete(`/customers/${id}`);
+      if (response.data.success) {
+        alert('Đã xóa khách hàng thành công.');
+        router.replace('/'); // Trở về trang chủ
+      } else {
+        alert(response.data.message || 'Không thể xóa khách hàng.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ để xóa khách hàng.');
     }
   };
 
@@ -550,13 +586,22 @@ export default function CustomerDetailScreen() {
             {customer ? customer.name : 'Đang tải...'}
           </Text>
           {customer ? (
-            <TouchableOpacity
-              style={styles.editCustomerButton}
-              onPress={() => editCustomerModalRef.current?.open(customer)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.editCustomerText}>Sửa thông tin ✏️</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <TouchableOpacity
+                style={styles.editCustomerButton}
+                onPress={() => editCustomerModalRef.current?.open(customer)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.editCustomerText}>Sửa ✏️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteCustomerButton}
+                onPress={confirmDeleteCustomer}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteCustomerText}>Xóa 🗑️</Text>
+              </TouchableOpacity>
+            </View>
           ) : null}
         </View>
 
@@ -870,6 +915,21 @@ const styles = StyleSheet.create({
     fontSize: 15, // Tăng từ 14
     fontWeight: 'bold',
     color: '#047857',
+  },
+  deleteCustomerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF1F1', // Màu đỏ nhạt pastel
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FECACA', // Viền đỏ nhạt
+  },
+  deleteCustomerText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.danger, // Màu chữ đỏ
   },
   // Container SĐT: Hiển thị ngang hàng SĐT và các nút hành động (giảm padding để gọn hơn)
   phoneSectionContainer: {
