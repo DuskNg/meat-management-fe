@@ -25,6 +25,12 @@ import EditCustomerModal from '../src/components/EditCustomerModal';
 import PopupModal from '../src/components/PopupModal';
 import ScanTicketModal from '../src/components/ScanTicketModal';
 import ExportDebtModal from '../src/components/ExportDebtModal';
+import DebtModal from '../src/components/DebtModal';
+import PaymentModal from '../src/components/PaymentModal';
+import TransactionDetailModal from '../src/components/TransactionDetailModal';
+import EditDebtModal from '../src/components/EditDebtModal';
+import EditPaymentModal from '../src/components/EditPaymentModal';
+import CustomerDebtHistoryModal from '../src/components/CustomerDebtHistoryModal';
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -36,8 +42,16 @@ export default function DashboardScreen() {
   const popupModalRef = useRef(null);
   const scanTicketModalRef = useRef(null);
   const exportDebtModalRef = useRef(null);
+  const customerDebtHistoryModalRef = useRef(null);
+  const debtModalRef = useRef(null);
+  const paymentModalRef = useRef(null);
+  const detailModalRef = useRef(null);
+  const editDebtModalRef = useRef(null);
+  const editPaymentModalRef = useRef(null);
+
   const [search, setSearch] = useState('');
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -227,6 +241,20 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.cardDebtContainer}>
+            <TouchableOpacity
+              style={styles.viewDebtBtn}
+              onPress={(e) => {
+                if (e && e.stopPropagation) {
+                  e.stopPropagation();
+                }
+                setSelectedCustomerId(item.id);
+                customerDebtHistoryModalRef.current?.open(item);
+              }}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.viewDebtBtnText}>👁️ Xem nợ</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.exportDebtBtn}
               onPress={(e) => {
@@ -446,6 +474,28 @@ export default function DashboardScreen() {
 
       {/* MODAL XUẤT CÔNG NỢ DẠNG ẢNH (Ẩn) */}
       <ExportDebtModal ref={exportDebtModalRef} />
+
+      {/* MODAL XEM CHI TIẾT LỊCH SỬ NỢ THEO THÁNG/NGÀY (Ẩn) */}
+      <CustomerDebtHistoryModal
+        ref={customerDebtHistoryModalRef}
+        paymentModalRef={paymentModalRef}
+        detailModalRef={detailModalRef}
+        debtModalRef={debtModalRef}
+        onRefresh={refetch}
+      />
+
+      {/* CÁC SUB-MODAL PHỤC VỤ LỊCH SỬ NỢ */}
+      <DebtModal ref={debtModalRef} customerId={selectedCustomerId} onRefresh={refetch} />
+      <PaymentModal ref={paymentModalRef} customerId={selectedCustomerId} onRefresh={refetch} />
+      <TransactionDetailModal
+        ref={detailModalRef}
+        customerId={selectedCustomerId}
+        onRefresh={refetch}
+        onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
+        onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
+      />
+      <EditDebtModal ref={editDebtModalRef} onRefresh={refetch} />
+      <EditPaymentModal ref={editPaymentModalRef} onRefresh={refetch} />
     </SafeAreaView>
   );
 }
@@ -650,6 +700,23 @@ const styles = StyleSheet.create({
     zIndex: 999,
     overflow: 'hidden',
     ...SHADOWS.card,
+  },
+  // Nút xem chi tiết nợ của khách hàng
+  viewDebtBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF', // Nền xanh da trời nhẹ
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  viewDebtBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#0068FF', // Màu xanh Zalo
   },
   // Nút Xuất công nợ đặt trực tiếp trên thẻ khách hàng
   exportDebtBtn: {
