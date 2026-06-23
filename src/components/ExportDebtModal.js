@@ -482,7 +482,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             // Hiện iOS Share Sheet — sau khi người dùng đóng mới mở Zalo
             await navigator.share({
               files: [imageFile],
-              title: 'Ảnh công nợ',
+              title: `Ảnh công nợ tháng ${selectedMonth} - ${customer?.name || 'Khách'}`,
             });
             // Mở Zalo sau khi đã chia sẻ/lưu ảnh xong
             proceedZalo(targetPhone);
