@@ -169,7 +169,7 @@ export default function CustomerDetailScreen() {
             } catch (err) {
               console.error(err);
               popupModalRef.current?.show({
-                title: 'Lỗi kết nối',
+                title: err.response?.status === 400 ? 'Lỗi nhận diện' : 'Lỗi kết nối',
                 message: err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.',
                 type: 'error'
               });

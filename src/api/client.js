@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
 // Cấu hình URL máy chủ Backend (Ưu tiên đọc từ biến môi trường của Vercel/Expo, mặc định localhost)
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 
 export const api = axios.create({
   baseURL: `${API_HOST}/api/v1`,

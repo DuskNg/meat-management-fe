@@ -23,6 +23,8 @@ import ProductListModal from '../src/components/ProductListModal';
 import ProfileModal from '../src/components/ProfileModal';
 import EditCustomerModal from '../src/components/EditCustomerModal';
 import PopupModal from '../src/components/PopupModal';
+import ScanTicketModal from '../src/components/ScanTicketModal';
+import ExportDebtModal from '../src/components/ExportDebtModal';
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -32,8 +34,15 @@ export default function DashboardScreen() {
   const profileModalRef = useRef(null);
   const editCustomerModalRef = useRef(null);
   const popupModalRef = useRef(null);
+  const scanTicketModalRef = useRef(null);
+  const exportDebtModalRef = useRef(null);
   const [search, setSearch] = useState('');
   const [activeMenuId, setActiveMenuId] = useState(null);
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   // 1. Dùng React Query tải danh sách khách hàng và cache lại
   const { data: customersResponse, isLoading, refetch, isRefetching } = useQuery({
@@ -84,6 +93,90 @@ export default function DashboardScreen() {
     }
   };
 
+  // Xử lý thu âm và phân tích ghi nợ giọng nói qua backend/Gemini
+  const handleToggleRecording = async () => {
+    if (Platform.OS !== 'web') {
+      popupModalRef.current?.show({
+        title: 'Thông báo',
+        message: 'Chức năng ghi nợ giọng nói hiện hỗ trợ trên giao diện Web.',
+        type: 'info'
+      });
+      return;
+    }
+
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunksRef.current = [];
+
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach((track) => track.stop());
+
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64Audio = reader.result;
+
+            setScanning(true);
+            try {
+              const response = await api.post('/transactions/voice-to-text', {
+                audio: base64Audio,
+                mimeType: 'audio/webm'
+              }, { timeout: 120000 });
+
+              if (response.data.success) {
+                const { customerId, customerName, data } = response.data;
+                const { date, items, note } = data;
+                scanTicketModalRef.current?.open(items, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI', note, date, customerName, customerId);
+              } else {
+                popupModalRef.current?.show({
+                  title: 'Thất bại',
+                  message: response.data.message || 'Không thể dịch giọng nói.',
+                  type: 'error'
+                });
+              }
+            } catch (err) {
+              console.error(err);
+              popupModalRef.current?.show({
+                title: err.response?.status === 400 ? 'Lỗi nhận diện' : 'Lỗi kết nối',
+                message: err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.',
+                type: 'error'
+              });
+            } finally {
+              setScanning(false);
+            }
+          };
+          reader.readAsDataURL(audioBlob);
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        console.error(err);
+        popupModalRef.current?.show({
+          title: 'Lỗi thiết bị',
+          message: 'Không thể truy cập Micro. Vui lòng cấp quyền micro cho trình duyệt.',
+          type: 'error'
+        });
+      }
+    }
+  };
+
   const customers = customersResponse?.data || [];
 
   // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
@@ -107,14 +200,25 @@ export default function DashboardScreen() {
   const renderCustomerItem = ({ item }) => {
     const hasDebt = item.debt > 0;
     return (
-      <View style={[styles.customerCard, activeMenuId === item.id && { zIndex: 10, elevation: 10 }]}>
+      <View
+        style={[
+          styles.customerCard,
+          hasDebt ? styles.customerCardDebt : styles.customerCardNoDebt,
+          activeMenuId === item.id && { zIndex: 10, elevation: 10 }
+        ]}
+      >
         <TouchableOpacity
           style={styles.customerCardClickable}
           onPress={() => router.push(`/customer/${item.id}`)}
           activeOpacity={0.7}
         >
           <View style={styles.cardInfo}>
-            <Text style={styles.customerName}>{item.name}</Text>
+            <Text style={styles.customerName}>
+              {item.name}{' '}
+              <Text style={hasDebt ? styles.nameDebtText : styles.nameNoDebtText}>
+                {hasDebt ? formatCurrency(item.debt) : '0đ'}
+              </Text>
+            </Text>
             {item.phone ? (
               <Text style={styles.customerPhone}>{item.phone}</Text>
             ) : (
@@ -123,16 +227,18 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.cardDebtContainer}>
-            {hasDebt ? (
-              <View style={styles.debtTag}>
-                <Text style={styles.debtTextLabel}>Còn Nợ:</Text>
-                <Text style={styles.debtTextValue}>{formatCurrency(item.debt)}</Text>
-              </View>
-            ) : (
-              <View style={[styles.debtTag, styles.noDebtTag]}>
-                <Text style={[styles.debtTextValue, styles.noDebtText]}>Hết nợ</Text>
-              </View>
-            )}
+            <TouchableOpacity
+              style={styles.exportDebtBtn}
+              onPress={(e) => {
+                if (e && e.stopPropagation) {
+                  e.stopPropagation();
+                }
+                exportDebtModalRef.current?.open(item);
+              }}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.exportDebtBtnText}>📊 Xuất nợ</Text>
+            </TouchableOpacity>
 
             <View style={styles.actionMenuContainer}>
               <TouchableOpacity
@@ -275,6 +381,23 @@ export default function DashboardScreen() {
           />
         )}
 
+        {/* BANNER HƯỚNG DẪN GHI ÂM */}
+        {isRecording && (
+          <View style={styles.recordingBanner}>
+            <Text style={styles.recordingBannerText}>
+              🛑 Đang ghi âm... Hãy nói rõ: "Tên khách, ngày, tên thịt, số kg, giá" (ví dụ: Anh Khải ngày 23/6 1 cân bắp bò giá 28...)
+            </Text>
+          </View>
+        )}
+
+        {/* OVERLAY KHI ĐANG PHÂN TÍCH GIỌNG NÓI BẰNG AI */}
+        {scanning && (
+          <View style={styles.scanningOverlay}>
+            <ActivityIndicator size="large" color={COLORS.primaryDark} />
+            <Text style={styles.scanningText}>AI đang phân tích giọng nói...</Text>
+          </View>
+        )}
+
         {/* THANH ĐIỀU KHIỂN CỐ ĐỊNH Ở ĐÁY MÀN HÌNH */}
         <View style={styles.bottomBar}>
           <TouchableOpacity
@@ -283,6 +406,14 @@ export default function DashboardScreen() {
             activeOpacity={0.8}
           >
             <Text style={styles.manageProductsButtonText}>🥩 QUẢN LÝ THỊT</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.voiceButton, isRecording && styles.voiceButtonRecording]}
+            onPress={handleToggleRecording}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.voiceButtonText}>{isRecording ? '🛑' : '🎤'}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -309,6 +440,12 @@ export default function DashboardScreen() {
 
       {/* POPUP THÔNG BÁO DÙNG CHUNG (Ẩn) */}
       <PopupModal ref={popupModalRef} />
+
+      {/* MODAL KẾT QUẢ GHI NỢ GIỌNG NÓI (Ẩn) */}
+      <ScanTicketModal ref={scanTicketModalRef} onRefresh={refetch} />
+
+      {/* MODAL XUẤT CÔNG NỢ DẠNG ẢNH (Ẩn) */}
+      <ExportDebtModal ref={exportDebtModalRef} />
     </SafeAreaView>
   );
 }
@@ -465,6 +602,16 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...SHADOWS.card,
   },
+  // Nền đỏ nhạt pastel sang trọng cho khách nợ
+  customerCardDebt: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  // Nền xanh lá nhạt pastel tươi sáng cho khách không nợ
+  customerCardNoDebt: {
+    backgroundColor: '#F0FDF4', // Nền xanh lá sáng tươi tắn (Green 50)
+    borderColor: '#BBF7D0',     // Viền xanh lá sáng nổi bật hơn (Green 200)
+  },
   // Vùng thông tin khách hàng có thể click
   customerCardClickable: {
     flexDirection: 'row',
@@ -499,10 +646,27 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
-    width: 110,
+    width: 110, // Khôi phục lại độ rộng cũ
     zIndex: 999,
     overflow: 'hidden',
     ...SHADOWS.card,
+  },
+  // Nút Xuất công nợ đặt trực tiếp trên thẻ khách hàng
+  exportDebtBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF', // Màu trắng nổi bật trên nền thẻ pastel
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card, // Tạo độ nổi khối nhẹ
+  },
+  exportDebtBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: COLORS.primaryDark, // Màu xanh lá cây đậm thương hiệu
   },
   dropdownItem: {
     paddingVertical: 12,
@@ -532,6 +696,18 @@ const styles = StyleSheet.create({
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
     marginBottom: 2,
+  },
+  // Màu tiền nợ bên cạnh tên cho khách nợ
+  nameDebtText: {
+    color: '#DC2626',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  // Màu tiền nợ bên cạnh tên cho khách không nợ
+  nameNoDebtText: {
+    color: '#10B981',           // Xanh Emerald tươi sáng và rực rỡ hơn (Emerald 500)
+    fontWeight: 'bold',
+    fontSize: 15,
   },
   // SĐT khách hàng (giảm cỡ chữ xuống caption)
   customerPhone: {
@@ -633,5 +809,61 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14, // Giảm từ 16 xuống 14
     fontWeight: 'bold',
+  },
+  voiceButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: COLORS.primaryDark,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.primaryDark,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  voiceButtonRecording: {
+    backgroundColor: '#EF4444',
+    shadowColor: '#EF4444',
+  },
+  voiceButtonText: {
+    fontSize: 20,
+  },
+  recordingBanner: {
+    position: 'absolute',
+    bottom: 70,
+    left: 16,
+    right: 16,
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    zIndex: 999,
+  },
+  recordingBannerText: {
+    fontSize: 13,
+    color: '#B45309',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  scanningOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  scanningText: {
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.text,
   },
 });

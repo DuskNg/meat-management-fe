@@ -15,7 +15,24 @@ import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import DatePickerInput from './DatePickerInput';
 
-const ScanTicketModal = forwardRef(({ customerId, onRefresh }, ref) => {
+const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, ref) => {
+  const [customerId, setCustomerId] = useState(propCustomerId || null);
+  const [customers, setCustomers] = useState([]);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+
+  const fetchCustomers = async () => {
+    try {
+      const response = await api.get('/customers');
+      if (response.data.success) {
+        setCustomers(response.data.data);
+      }
+    } catch (err) {
+      console.error('Không thể tải danh sách khách hàng:', err);
+    }
+  };
+
   // --- Helper: lấy ngày hôm nay dạng DD/MM/YYYY ---
   const getTodayFormatted = () => {
     const today = new Date();
@@ -72,12 +89,29 @@ const ScanTicketModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // --- Phơi bày open/close ra ngoài qua forwardRef ---
   useImperativeHandle(ref, () => ({
-    open: (items, title, defaultNote, initialDate) => {
+    open: (items, title, defaultNote, initialDate, detectedCustomerName, targetCustomerId) => {
       setVisible(true);
       setModalTitleText(title || '📸 KẾT QUẢ QUÉT TÍCH KÊ');
       setNote(defaultNote || 'Đơn ghi nợ tự động tạo từ ảnh chụp tích kê');
       setError('');
       setErrorField('');
+
+      const activeCustomerId = targetCustomerId || propCustomerId || null;
+      setCustomerId(activeCustomerId);
+
+      if (!activeCustomerId) {
+        fetchCustomers();
+        setSelectedCustomer(null);
+        if (detectedCustomerName) {
+          setCustomerSearch(detectedCustomerName);
+          setShowDropdown(true);
+        } else {
+          setCustomerSearch('');
+          setShowDropdown(false);
+        }
+      } else {
+        setSelectedCustomer({ id: activeCustomerId });
+      }
 
       // Nếu có ngày khởi tạo từ AI (dạng ISO Date), chuyển về định dạng DD/MM/YYYY
       if (initialDate) {
@@ -198,13 +232,19 @@ const ScanTicketModal = forwardRef(({ customerId, onRefresh }, ref) => {
       return;
     }
 
+    const activeCustomerId = customerId || selectedCustomer?.id;
+    if (!activeCustomerId) {
+      setError('Vui lòng chọn khách hàng ghi nợ.');
+      return;
+    }
+
     setError('');
     setErrorField('');
     setLoading(true);
 
     try {
       const response = await api.post('/transactions', {
-        customerId,
+        customerId: activeCustomerId,
         date: isoDate,
         note: note.trim() || null,
         items: scannedItems.map((item) => ({
@@ -248,6 +288,63 @@ const ScanTicketModal = forwardRef(({ customerId, onRefresh }, ref) => {
             <Text style={styles.voiceWarningText}>
               💡 AI đã tự động phân tích giọng nói của bạn. Hãy kiểm tra lại tên thịt, số cân và giá bán xem đã đúng ý chưa trước khi bấm lưu nợ nhé!
             </Text>
+          </View>
+        )}
+
+        {/* --- CẤU HÌNH KHÁCH HÀNG (Nếu chưa có) --- */}
+        {!customerId && (
+          <View style={styles.selectorSection}>
+            <Text style={styles.label}>👤 Khách hàng ghi nợ:</Text>
+            <View style={styles.dropdownContainer}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="🔍 Gõ tìm tên khách hàng..."
+                placeholderTextColor={COLORS.textLight}
+                value={customerSearch}
+                onChangeText={(text) => {
+                  setCustomerSearch(text);
+                  setShowDropdown(true);
+                  if (selectedCustomer && selectedCustomer.name !== text) {
+                    setSelectedCustomer(null);
+                  }
+                }}
+                onFocus={() => setShowDropdown(true)}
+              />
+              {showDropdown && (
+                <View style={styles.dropdownListContainer}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled={true}>
+                    {customers
+                      .filter((c) =>
+                        c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+                        (c.phone && c.phone.includes(customerSearch))
+                      )
+                      .map((c) => (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            setSelectedCustomer(c);
+                            setCustomerSearch(c.name);
+                            setShowDropdown(false);
+                            setError('');
+                          }}
+                        >
+                          <Text style={styles.dropdownItemText}>{c.name}</Text>
+                          {c.phone ? <Text style={styles.dropdownItemPhone}>{c.phone}</Text> : null}
+                        </TouchableOpacity>
+                      ))}
+                    {customers.filter((c) =>
+                      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+                      (c.phone && c.phone.includes(customerSearch))
+                    ).length === 0 && (
+                      <View style={styles.dropdownEmptyItem}>
+                        <Text style={styles.dropdownEmptyText}>Không tìm thấy khách hàng</Text>
+                      </View>
+                    )}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
           </View>
         )}
 
@@ -623,5 +720,65 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     padding: 0,
     outlineStyle: 'none',
+  },
+  selectorSection: {
+    marginBottom: 12,
+    position: 'relative',
+    zIndex: 9999,
+  },
+  dropdownContainer: {
+    position: 'relative',
+  },
+  searchInput: {
+    backgroundColor: COLORS.inputBg,
+    height: 40,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  dropdownListContainer: {
+    position: 'absolute',
+    top: 44,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.card,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    maxHeight: 150,
+    zIndex: 10000,
+    ...SHADOWS.card,
+  },
+  dropdownScroll: {
+    maxHeight: 150,
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  dropdownItemPhone: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  dropdownEmptyItem: {
+    padding: 12,
+    alignItems: 'center',
+  },
+  dropdownEmptyText: {
+    fontSize: 13,
+    color: COLORS.textLight,
   },
 });
