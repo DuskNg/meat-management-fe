@@ -445,49 +445,76 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // 4. Tải ảnh về máy và tự động điều hướng sang Zalo gửi cho khách hàng
-  const handleDownloadAndZalo = () => {
-    // A. Tải ảnh về máy (sử dụng Blob Object URL để tương thích tốt với trình duyệt di động)
-    if (Platform.OS === 'web' && imageUri) {
-      try {
-        const blob = base64ToBlob(imageUri, 'image/png');
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
-        const safeMonth = selectedMonth.replace('/', '-');
-        link.download = `CongNo_${safeName}_Thang_${safeMonth}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        // Giải phóng bộ nhớ Object URL sau khi hoàn tất
-        setTimeout(() => {
-          URL.revokeObjectURL(blobUrl);
-        }, 200);
-      } catch (err) {
-        console.error('Lỗi tải file bằng Blob URL:', err);
-      }
-    }
+  // Kiểm tra thiết bị có phải iOS (iPhone/iPad) không
+  const isIOS = () => {
+    if (Platform.OS !== 'web') return false;
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  };
 
-    // B. Điều hướng tới Zalo chat bằng số điện thoại
+  // 4. Tải ảnh về máy và tự động điều hướng sang Zalo gửi cho khách hàng
+  const handleDownloadAndZalo = async () => {
     const targetPhone = customer?.phone;
 
+    // Kiểm tra SĐT trước — nếu thiếu thì mở popup nhập, không làm gì thêm
     if (!targetPhone) {
-      // Mở pop-up yêu cầu nhập số điện thoại mới
       updatePhoneModalRef.current?.open(customer, (newPhone) => {
-        // Cập nhật state cục bộ để hiển thị số điện thoại mới trên giao diện
         setCustomer(prev => ({ ...prev, phone: newPhone }));
-        // Gọi callback làm mới danh sách khách hàng ở màn hình chính
-        if (onRefresh) {
-          onRefresh();
-        }
-        // Tiếp tục tiến trình mở Zalo với số điện thoại mới
+        if (onRefresh) onRefresh();
         proceedZalo(newPhone);
       });
       return;
     }
 
+    if (Platform.OS === 'web' && imageUri) {
+      const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
+      const safeMonth = selectedMonth.replace('/', '-');
+      const fileName = `CongNo_${safeName}_Thang_${safeMonth}.png`;
+
+      try {
+        const blob = base64ToBlob(imageUri, 'image/png');
+
+        // Trên iOS Safari: dùng Web Share API để hiện Share Sheet
+        // Người dùng có thể chọn "Lưu ảnh" vào thư viện hoặc gửi thẳng qua Zalo
+        if (isIOS() && navigator.canShare) {
+          const imageFile = new File([blob], fileName, { type: 'image/png' });
+
+          if (navigator.canShare({ files: [imageFile] })) {
+            // Hiện iOS Share Sheet — sau khi người dùng đóng mới mở Zalo
+            await navigator.share({
+              files: [imageFile],
+              title: 'Ảnh công nợ',
+            });
+            // Mở Zalo sau khi đã chia sẻ/lưu ảnh xong
+            proceedZalo(targetPhone);
+            return;
+          }
+        }
+
+        // Android / Desktop: tải ảnh bằng Blob Object URL rồi mở Zalo sau 800ms
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Giải phóng bộ nhớ Object URL sau khi hoàn tất
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 200);
+
+        // Đợi một chút để trình duyệt kịp lưu file trước khi mở Zalo
+        setTimeout(() => proceedZalo(targetPhone), 800);
+        return;
+      } catch (err) {
+        // Người dùng huỷ Share Sheet hoặc lỗi — chỉ log, không mở Zalo
+        if (err?.name !== 'AbortError') {
+          console.error('Lỗi khi tải / chia sẻ ảnh:', err);
+        }
+        return;
+      }
+    }
+
+    // Không có ảnh: chỉ mở Zalo
     proceedZalo(targetPhone);
   };
 
