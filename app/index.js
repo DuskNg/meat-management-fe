@@ -213,11 +213,22 @@ export default function DashboardScreen() {
 
   const renderCustomerItem = ({ item }) => {
     const hasDebt = item.debt > 0;
+    // Lấy chữ cái đầu của tên khách hàng làm avatar
+    const firstLetter = (item.name || 'K').trim().charAt(0).toUpperCase();
+
+    // Xác định màu nền avatar ngẫu nhiên dựa trên tên để sinh động
+    const avatarBgColors = ['#FFE2E2', '#E3F2FD', '#E8F5E9', '#FFF3E0', '#F3E5F5', '#E0F7FA'];
+    const avatarTextColors = ['#D32F2F', '#1976D2', '#388E3C', '#F57C00', '#7B1FA2', '#0097A7'];
+    const charCode = item.name ? item.name.charCodeAt(0) : 0;
+    const colorIdx = charCode % avatarBgColors.length;
+    const avatarBg = avatarBgColors[colorIdx];
+    const avatarText = avatarTextColors[colorIdx];
+
     return (
       <View
         style={[
           styles.customerCard,
-          hasDebt ? styles.customerCardDebt : styles.customerCardNoDebt,
+          hasDebt ? styles.customerCardDebtStripe : styles.customerCardNoDebtStripe,
           activeMenuId === item.id && { zIndex: 10, elevation: 10 }
         ]}
       >
@@ -226,91 +237,124 @@ export default function DashboardScreen() {
           onPress={() => router.push(`/customer/${item.id}`)}
           activeOpacity={0.7}
         >
-          <View style={styles.cardInfo}>
-            <Text style={styles.customerName}>
-              {item.name}{' '}
-              <Text style={hasDebt ? styles.nameDebtText : styles.nameNoDebtText}>
-                {hasDebt ? formatCurrency(item.debt) : '0đ'}
+          {/* PHẦN TRÊN: Thông tin khách hàng và dư nợ */}
+          <View style={styles.cardHeaderSection}>
+            {/* Avatar chữ cái đại diện */}
+            <View style={[styles.customerAvatar, { backgroundColor: avatarBg }]}>
+              <Text style={[styles.customerAvatarText, { color: avatarText }]}>{firstLetter}</Text>
+            </View>
+
+            {/* Thông tin tên & số điện thoại */}
+            <View style={styles.cardInfo}>
+              <Text style={styles.customerName} numberOfLines={1}>
+                {item.name}
               </Text>
-            </Text>
-            {item.phone ? (
-              <Text style={styles.customerPhone}>{item.phone}</Text>
-            ) : (
-              <Text style={styles.customerPhone}>Không có số điện thoại</Text>
-            )}
+              <Text style={styles.customerPhone} numberOfLines={1}>
+                {item.phone ? `📞 ${item.phone}` : '📞 Không có số điện thoại'}
+              </Text>
+            </View>
+
+            {/* Trạng thái công nợ bên phải */}
+            <View style={styles.cardDebtStatusSection}>
+              {hasDebt ? (
+                <View style={styles.debtValueContainer}>
+                  <Text style={styles.debtValueAmount}>{formatCurrency(item.debt)}</Text>
+                  <Text style={styles.debtValueLabel}>còn nợ ⚠️</Text>
+                </View>
+              ) : (
+                <View style={styles.noDebtBadge}>
+                  <Text style={styles.noDebtBadgeText}>Hết nợ ✅</Text>
+                </View>
+              )}
+            </View>
           </View>
 
+          {/* Đường phân cách nét đứt nhẹ */}
+          <View style={styles.cardDivider} />
+
+          {/* PHẦN DƯỚI: Các nút hành động */}
           <View style={styles.cardDebtContainer}>
-            <TouchableOpacity
-              style={styles.viewDebtBtn}
-              onPress={(e) => {
-                if (e && e.stopPropagation) {
-                  e.stopPropagation();
-                }
-                setSelectedCustomerId(item.id);
-                customerDebtHistoryModalRef.current?.open(item);
-              }}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.viewDebtBtnText}>👁️ Xem nợ</Text>
-            </TouchableOpacity>
+            {/* Lối tắt liên hệ nhanh nếu có SĐT */}
+            <View style={styles.quickContactContainer}>
+              {item.phone ? (
+                <Text style={styles.quickContactLabel}>Khách quen</Text>
+              ) : (
+                <Text style={styles.quickContactLabel}>Chưa có SĐT</Text>
+              )}
+            </View>
 
-            <TouchableOpacity
-              style={styles.exportDebtBtn}
-              onPress={(e) => {
-                if (e && e.stopPropagation) {
-                  e.stopPropagation();
-                }
-                exportDebtModalRef.current?.open(item);
-              }}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.exportDebtBtnText}>📊 Xuất nợ</Text>
-            </TouchableOpacity>
-
-            <View style={styles.actionMenuContainer}>
+            <View style={styles.actionsRightGroup}>
               <TouchableOpacity
-                style={styles.threeDotsBtn}
+                style={styles.viewDebtBtn}
                 onPress={(e) => {
                   if (e && e.stopPropagation) {
                     e.stopPropagation();
                   }
-                  setActiveMenuId(activeMenuId === item.id ? null : item.id);
+                  setSelectedCustomerId(item.id);
+                  customerDebtHistoryModalRef.current?.open(item);
                 }}
                 activeOpacity={0.6}
               >
-                <Text style={styles.threeDotsText}>⋮</Text>
+                <Text style={styles.viewDebtBtnText}>👁️ Xem nợ</Text>
               </TouchableOpacity>
 
-              {activeMenuId === item.id && (
-                <View style={styles.dropdownMenu}>
-                  <TouchableOpacity
-                    style={styles.dropdownItem}
-                    onPress={(e) => {
-                      if (e && e.stopPropagation) {
-                        e.stopPropagation();
-                      }
-                      setActiveMenuId(null);
-                      editCustomerModalRef.current?.open(item);
-                    }}
-                  >
-                    <Text style={styles.dropdownItemText}>✏️ Sửa</Text>
-                  </TouchableOpacity>
-                  <View style={styles.menuDivider} />
-                  <TouchableOpacity
-                    style={styles.dropdownItem}
-                    onPress={(e) => {
-                      if (e && e.stopPropagation) {
-                        e.stopPropagation();
-                      }
-                      setActiveMenuId(null);
-                      confirmDeleteCustomer(item.id, item.name);
-                    }}
-                  >
-                    <Text style={[styles.dropdownItemText, styles.deleteText]}>🗑️ Xóa</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+              <TouchableOpacity
+                style={styles.exportDebtBtn}
+                onPress={(e) => {
+                  if (e && e.stopPropagation) {
+                    e.stopPropagation();
+                  }
+                  exportDebtModalRef.current?.open(item);
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.exportDebtBtnText}>📊 Xuất nợ</Text>
+              </TouchableOpacity>
+
+              <View style={styles.actionMenuContainer}>
+                <TouchableOpacity
+                  style={styles.threeDotsBtn}
+                  onPress={(e) => {
+                    if (e && e.stopPropagation) {
+                      e.stopPropagation();
+                    }
+                    setActiveMenuId(activeMenuId === item.id ? null : item.id);
+                  }}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.threeDotsText}>⋮</Text>
+                </TouchableOpacity>
+
+                {activeMenuId === item.id && (
+                  <View style={styles.dropdownMenu}>
+                    <TouchableOpacity
+                      style={styles.dropdownItem}
+                      onPress={(e) => {
+                        if (e && e.stopPropagation) {
+                          e.stopPropagation();
+                        }
+                        setActiveMenuId(null);
+                        editCustomerModalRef.current?.open(item);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>✏️ Sửa</Text>
+                    </TouchableOpacity>
+                    <View style={styles.menuDivider} />
+                    <TouchableOpacity
+                      style={styles.dropdownItem}
+                      onPress={(e) => {
+                        if (e && e.stopPropagation) {
+                          e.stopPropagation();
+                        }
+                        setActiveMenuId(null);
+                        confirmDeleteCustomer(item.id, item.name);
+                      }}
+                    >
+                      <Text style={[styles.dropdownItemText, styles.deleteText]}>🗑️ Xóa</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             </View>
           </View>
         </TouchableOpacity>
@@ -717,10 +761,141 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#0068FF', // Màu xanh Zalo
   },
+  // Thẻ khách hàng chứa cả thông tin nhấp và nút xóa bên trong
+  customerCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    ...SHADOWS.card,
+  },
+  customerCardDebtStripe: {
+    borderLeftWidth: 5,
+    borderLeftColor: COLORS.danger,
+  },
+  customerCardNoDebtStripe: {
+    borderLeftWidth: 5,
+    borderLeftColor: COLORS.primary,
+  },
+  // Vùng thông tin khách hàng có thể click
+  customerCardClickable: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  cardHeaderSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+  },
+  customerAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  customerAvatarText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  cardInfo: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  // Tên khách hàng (giảm cỡ chữ và margin bottom)
+  customerName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  // SĐT khách hàng (giảm cỡ chữ xuống caption)
+  customerPhone: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  cardDebtStatusSection: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  debtValueContainer: {
+    alignItems: 'flex-end',
+  },
+  debtValueAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.dangerDark,
+  },
+  debtValueLabel: {
+    fontSize: 10,
+    color: COLORS.textLight,
+    marginTop: 1,
+    fontWeight: '600',
+  },
+  noDebtBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  noDebtBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#047857',
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 10,
+    width: '100%',
+  },
+  cardDebtContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  quickContactContainer: {
+    justifyContent: 'center',
+  },
+  quickContactLabel: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    fontWeight: '500',
+  },
+  actionsRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  // Nút xem chi tiết nợ của khách hàng
+  viewDebtBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF', // Nền xanh da trời nhẹ
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  viewDebtBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#0068FF', // Màu xanh Zalo
+  },
   // Nút Xuất công nợ đặt trực tiếp trên thẻ khách hàng
   exportDebtBtn: {
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: 8,
     backgroundColor: '#FFFFFF', // Màu trắng nổi bật trên nền thẻ pastel
     borderWidth: 1,
@@ -733,6 +908,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
     color: COLORS.primaryDark, // Màu xanh lá cây đậm thương hiệu
+  },
+  actionMenuContainer: {
+    position: 'relative',
+    zIndex: 100,
+  },
+  threeDotsBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  threeDotsText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+    marginTop: -4,
   },
   dropdownItem: {
     paddingVertical: 12,
@@ -751,69 +945,6 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: COLORS.danger,
-  },
-  cardInfo: {
-    width: '100%',
-    marginBottom: 8,
-  },
-  // Tên khách hàng (giảm cỡ chữ và margin bottom)
-  customerName: {
-    fontSize: FONTS.subtitle, // Giảm từ title (22) xuống subtitle (18)
-    fontWeight: FONTS.weightBold,
-    color: COLORS.text,
-    marginBottom: 2,
-  },
-  // Màu tiền nợ bên cạnh tên cho khách nợ
-  nameDebtText: {
-    color: '#DC2626',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  // Màu tiền nợ bên cạnh tên cho khách không nợ
-  nameNoDebtText: {
-    color: '#10B981',           // Xanh Emerald tươi sáng và rực rỡ hơn (Emerald 500)
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  // SĐT khách hàng (giảm cỡ chữ xuống caption)
-  customerPhone: {
-    fontSize: FONTS.caption, // Giảm từ body (16) xuống caption (14)
-    color: COLORS.textSecondary,
-  },
-  cardDebtContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  debtTag: {
-    alignItems: 'flex-end',
-  },
-  debtTextLabel: {
-    fontSize: FONTS.caption,
-    color: COLORS.textSecondary,
-  },
-  // Giá trị nợ (giảm size chữ)
-  debtTextValue: {
-    fontSize: 16, // Giảm từ subtitle (18) xuống 16
-    fontWeight: 'bold',
-    color: COLORS.danger,
-  },
-  // Khung báo hết nợ (giảm padding dọc và ngang)
-  noDebtTag: {
-    backgroundColor: COLORS.primaryLight,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-  },
-  debtTextValueNoCurrency: {
-    fontSize: FONTS.body,
-    fontWeight: 'bold',
-  },
-  // Chữ báo hết nợ (giảm cỡ chữ)
-  noDebtText: {
-    color: COLORS.primary,
-    fontSize: 14,
   },
   emptyContainer: {
     paddingVertical: 40,
