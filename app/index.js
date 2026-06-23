@@ -664,10 +664,9 @@ const styles = StyleSheet.create({
   },
   // Vùng thông tin khách hàng có thể click
   customerCardClickable: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    paddingVertical: 10,
     paddingHorizontal: 12,
   },
   actionMenuContainer: {
@@ -754,8 +753,8 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
   cardInfo: {
-    flex: 1,
-    paddingRight: 10,
+    width: '100%',
+    marginBottom: 8,
   },
   // Tên khách hàng (giảm cỡ chữ và margin bottom)
   customerName: {
@@ -784,6 +783,7 @@ const styles = StyleSheet.create({
   cardDebtContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 8,
   },
   debtTag: {
