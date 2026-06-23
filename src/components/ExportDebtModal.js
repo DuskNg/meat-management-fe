@@ -434,7 +434,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       }
 
       const zaloUrl = `https://zalo.me/${webPhone}`;
-      
+
       // Mở Zalo chat của khách hàng
       Linking.openURL(zaloUrl).catch((err) => {
         console.error('Không thể mở Zalo:', err);
@@ -482,7 +482,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             // Hiện iOS Share Sheet — sau khi người dùng đóng mới mở Zalo
             await navigator.share({
               files: [imageFile],
-              title: `Ảnh công nợ tháng ${selectedMonth} - ${customer?.name || 'Khách'}`,
+              title: `Ảnh công nợ tháng ${selectedMonth}`,
             });
             // Mở Zalo sau khi đã chia sẻ/lưu ảnh xong
             proceedZalo(targetPhone);
@@ -521,121 +521,121 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   return (
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.modalView}>
-        <Text style={styles.modalTitle}>📊 XUẤT ẢNH CÔNG NỢ CHI TIẾT</Text>
+        <View style={styles.modalView}>
+          <Text style={styles.modalTitle}>📊 XUẤT ẢNH CÔNG NỢ CHI TIẾT</Text>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Đang tải lịch sử công nợ...</Text>
-          </View>
-        ) : error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>⚠️ {error}</Text>
-            <TouchableOpacity
-              style={[styles.button, styles.retryButton]}
-              onPress={() => fetchData(customer?.id, customer)}
-            >
-              <Text style={styles.retryButtonText}>TẢI LẠI DỮ LIỆU</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.customerBox}>
-              <Text style={styles.customerText}>
-                Khách hàng: <Text style={styles.boldText}>{customer?.name}</Text>
-              </Text>
-              <Text style={styles.customerText}>
-                Số điện thoại: <Text style={styles.boldText}>{customer?.phone || 'Chưa ghi nhận'}</Text>
-              </Text>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Đang tải lịch sử công nợ...</Text>
             </View>
-
-            <Text style={styles.sectionLabel}>Chọn tháng cần xuất công nợ:</Text>
-
-            {availableMonths.length === 0 ? (
-              <Text style={styles.noMonthsText}>
-                Khách hàng này chưa phát sinh giao dịch nào để xuất công nợ.
-              </Text>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.monthScroll}
-                contentContainerStyle={styles.monthScrollContent}
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>⚠️ {error}</Text>
+              <TouchableOpacity
+                style={[styles.button, styles.retryButton]}
+                onPress={() => fetchData(customer?.id, customer)}
               >
-                {availableMonths.map((m) => (
-                  <TouchableOpacity
-                    key={m}
-                    style={[styles.monthItem, selectedMonth === m && styles.activeMonthItem]}
-                    onPress={() => {
-                      setSelectedMonth(m);
-                      // Kích hoạt vẽ lại ảnh tức thì khi đổi tháng
-                      generateDebtImage(m, transactions, payments, customer);
-                    }}
-                  >
-                    <Text style={[styles.monthItemText, selectedMonth === m && styles.activeMonthItemText]}>
-                      Tháng {m}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
-
-            {/* TRẠNG THÁI ĐANG VẼ ẢNH */}
-            {generating && (
-              <View style={styles.generatingBox}>
-                <ActivityIndicator size="small" color={COLORS.primary} />
-                <Text style={styles.generatingText}>Đang vẽ ảnh công nợ...</Text>
+                <Text style={styles.retryButtonText}>TẢI LẠI DỮ LIỆU</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.customerBox}>
+                <Text style={styles.customerText}>
+                  Khách hàng: <Text style={styles.boldText}>{customer?.name}</Text>
+                </Text>
+                <Text style={styles.customerText}>
+                  Số điện thoại: <Text style={styles.boldText}>{customer?.phone || 'Chưa ghi nhận'}</Text>
+                </Text>
               </View>
-            )}
 
-            {/* PHẦN HIỂN THỊ XEM TRƯỚC VÀ NÚT TẢI */}
-            {imageUri && !generating && (
-              <View style={styles.previewBox}>
-                <View style={styles.previewHeaderRow}>
-                  <Text style={styles.sectionLabelInline}>Bảng ảnh xem trước:</Text>
-                  <TouchableOpacity
-                    style={[
-                      styles.downloadButtonInline,
-                      styles.zaloActiveColor
-                    ]}
-                    onPress={handleDownloadAndZalo}
-                  >
-                    <Text style={styles.downloadButtonInlineText}>
-                      💾 Tải & Gửi Zalo
+              <Text style={styles.sectionLabel}>Chọn tháng cần xuất công nợ:</Text>
+
+              {availableMonths.length === 0 ? (
+                <Text style={styles.noMonthsText}>
+                  Khách hàng này chưa phát sinh giao dịch nào để xuất công nợ.
+                </Text>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.monthScroll}
+                  contentContainerStyle={styles.monthScrollContent}
+                >
+                  {availableMonths.map((m) => (
+                    <TouchableOpacity
+                      key={m}
+                      style={[styles.monthItem, selectedMonth === m && styles.activeMonthItem]}
+                      onPress={() => {
+                        setSelectedMonth(m);
+                        // Kích hoạt vẽ lại ảnh tức thì khi đổi tháng
+                        generateDebtImage(m, transactions, payments, customer);
+                      }}
+                    >
+                      <Text style={[styles.monthItemText, selectedMonth === m && styles.activeMonthItemText]}>
+                        Tháng {m}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+
+              {/* TRẠNG THÁI ĐANG VẼ ẢNH */}
+              {generating && (
+                <View style={styles.generatingBox}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={styles.generatingText}>Đang vẽ ảnh công nợ...</Text>
+                </View>
+              )}
+
+              {/* PHẦN HIỂN THỊ XEM TRƯỚC VÀ NÚT TẢI */}
+              {imageUri && !generating && (
+                <View style={styles.previewBox}>
+                  <View style={styles.previewHeaderRow}>
+                    <Text style={styles.sectionLabelInline}>Bảng ảnh xem trước:</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.downloadButtonInline,
+                        styles.zaloActiveColor
+                      ]}
+                      onPress={handleDownloadAndZalo}
+                    >
+                      <Text style={styles.downloadButtonInlineText}>
+                        💾 Tải & Gửi Zalo
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.imageShadowFrame}>
+                    <Image
+                      source={{ uri: imageUri }}
+                      style={styles.previewImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  {Platform.OS !== 'web' && (
+                    <Text style={styles.helperText}>
+                      💡 Mẹo: Nhấn giữ vào ảnh trên để lưu vào Thư viện ảnh của thiết bị hoặc chụp màn hình để chia sẻ nhanh qua Zalo.
                     </Text>
-                  </TouchableOpacity>
+                  )}
                 </View>
+              )}
+            </ScrollView>
+          )}
 
-                <View style={styles.imageShadowFrame}>
-                  <Image
-                    source={{ uri: imageUri }}
-                    style={styles.previewImage}
-                    resizeMode="contain"
-                  />
-                </View>
-
-                {Platform.OS !== 'web' && (
-                  <Text style={styles.helperText}>
-                    💡 Mẹo: Nhấn giữ vào ảnh trên để lưu vào Thư viện ảnh của thiết bị hoặc chụp màn hình để chia sẻ nhanh qua Zalo.
-                  </Text>
-                )}
-              </View>
-            )}
-          </ScrollView>
-        )}
-
-        {/* Nút đóng chân Modal */}
-        <TouchableOpacity
-          style={[styles.button, styles.closeButton]}
-          onPress={() => setVisible(false)}
-          disabled={generating}
-        >
-          <Text style={styles.closeButtonText}>ĐÓNG LẠI</Text>
-        </TouchableOpacity>
-      </View>
-    </SmoothModal>
-    <UpdatePhoneModal ref={updatePhoneModalRef} onUpdateSuccess={onRefresh} />
+          {/* Nút đóng chân Modal */}
+          <TouchableOpacity
+            style={[styles.button, styles.closeButton]}
+            onPress={() => setVisible(false)}
+            disabled={generating}
+          >
+            <Text style={styles.closeButtonText}>ĐÓNG LẠI</Text>
+          </TouchableOpacity>
+        </View>
+      </SmoothModal>
+      <UpdatePhoneModal ref={updatePhoneModalRef} onUpdateSuccess={onRefresh} />
     </>
   );
 });
