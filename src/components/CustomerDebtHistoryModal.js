@@ -587,7 +587,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   scrollContainer: {
-    maxHeight: 450,
+    // Tăng chiều cao tối đa của vùng cuộn để xem được nhiều thông tin hơn
+    maxHeight: 600,
     marginBottom: 15,
   },
   monthSection: {
