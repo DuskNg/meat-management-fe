@@ -257,38 +257,27 @@ export default function CustomerDetailScreen() {
     }
   };
 
-  // Xử lý điều hướng nhắn tin Zalo cho khách hàng
+  // Xử lý điều hướng nhắn tin Zalo cho khách hàng bằng đường dẫn web chính thức (hoạt động tốt nhất trên Android/Samsung)
   const handleZalo = (phoneNumber) => {
     if (phoneNumber) {
       // Bỏ các ký tự không phải số
       let cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
 
-      // Định dạng số điện thoại chuẩn Zalo App (84xxxxxxxxx)
-      let appPhone = cleanPhone;
-      if (appPhone.startsWith('0')) {
-        appPhone = '84' + appPhone.slice(1);
-      } else if (!appPhone.startsWith('84')) {
-        appPhone = '84' + appPhone;
-      }
-
-      // Định dạng số điện thoại chuẩn Web (0xxxxxxxxx)
+      // Định dạng số điện thoại chuẩn Web/Zalo (bắt đầu bằng 0)
       let webPhone = cleanPhone;
       if (webPhone.startsWith('84')) {
         webPhone = '0' + webPhone.slice(2);
+      } else if (!webPhone.startsWith('0')) {
+        webPhone = '0' + webPhone;
       }
 
-      // Thử mở bằng giao thức zalo:// để gọi trực tiếp ứng dụng Zalo
-      const zaloAppUrl = `zalo://conversation?phone=${appPhone}`;
       const zaloWebUrl = `https://zalo.me/${webPhone}`;
 
-      Linking.openURL(zaloAppUrl).catch(() => {
-        // Dự phòng: Nếu không mở được app trực tiếp, chuyển hướng sang trang web Zalo
-        Linking.openURL(zaloWebUrl).catch(() => {
-          popupModalRef.current?.show({
-            title: 'Thông báo',
-            message: 'Không thể mở ứng dụng Zalo.',
-            type: 'warning'
-          });
+      Linking.openURL(zaloWebUrl).catch(() => {
+        popupModalRef.current?.show({
+          title: 'Thông báo',
+          message: 'Không thể mở ứng dụng Zalo. Vui lòng kiểm tra lại.',
+          type: 'warning'
         });
       });
     }

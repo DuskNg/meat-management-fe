@@ -419,13 +419,21 @@ const ExportDebtModal = forwardRef(({ }, ref) => {
       }
     }
 
-    // B. Điều hướng tới Zalo chat bằng số điện thoại
+    // B. Điều hướng tới Zalo chat bằng số điện thoại (chuẩn hóa về đầu số 0 cho Android/Samsung tương thích tốt nhất)
     if (customer?.phone) {
       const cleanPhone = customer.phone.replace(/[^0-9]/g, '');
       if (cleanPhone.length >= 9) {
-        const zaloUrl = `https://zalo.me/${cleanPhone}`;
+        let webPhone = cleanPhone;
+        if (webPhone.startsWith('84')) {
+          webPhone = '0' + webPhone.slice(2);
+        } else if (!webPhone.startsWith('0')) {
+          webPhone = '0' + webPhone;
+        }
+
+        const zaloUrl = `https://zalo.me/${webPhone}`;
         Linking.openURL(zaloUrl).catch((err) => {
           console.error('Không thể mở Zalo:', err);
+          Alert.alert('Lỗi', 'Không thể mở ứng dụng Zalo. Vui lòng kiểm tra lại.');
         });
       } else {
         Alert.alert('SĐT không hợp lệ', 'Số điện thoại của khách hàng không đúng định dạng.');
