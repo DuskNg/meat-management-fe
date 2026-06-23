@@ -274,15 +274,6 @@ export default function DashboardScreen() {
 
           {/* PHẦN DƯỚI: Các nút hành động */}
           <View style={styles.cardDebtContainer}>
-            {/* Lối tắt liên hệ nhanh nếu có SĐT */}
-            <View style={styles.quickContactContainer}>
-              {item.phone ? (
-                <Text style={styles.quickContactLabel}>Khách quen</Text>
-              ) : (
-                <Text style={styles.quickContactLabel}>Chưa có SĐT</Text>
-              )}
-            </View>
-
             <View style={styles.actionsRightGroup}>
               <TouchableOpacity
                 style={styles.viewDebtBtn}
@@ -859,7 +850,7 @@ const styles = StyleSheet.create({
   cardDebtContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     width: '100%',
   },
   quickContactContainer: {
