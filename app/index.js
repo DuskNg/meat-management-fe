@@ -790,7 +790,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    overflow: 'hidden',
     ...SHADOWS.card,
   },
   customerCardDebtStripe: {
