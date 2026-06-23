@@ -290,6 +290,20 @@ export default function DashboardScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
+                style={styles.addDebtBtn}
+                onPress={(e) => {
+                  if (e && e.stopPropagation) {
+                    e.stopPropagation();
+                  }
+                  setSelectedCustomerId(item.id);
+                  debtModalRef.current?.open();
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.addDebtBtnText}>🔴 Ghi nợ</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={styles.exportDebtBtn}
                 onPress={(e) => {
                   if (e && e.stopPropagation) {
@@ -751,6 +765,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
     color: '#0068FF', // Màu xanh Zalo
+  },
+  // Nút ghi nợ mới trực tiếp từ trang chủ
+  addDebtBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#FFF1F1', // Nền đỏ pastel nhạt
+    borderWidth: 1,
+    borderColor: '#FECACA', // Viền đỏ nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  addDebtBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: COLORS.danger, // Màu đỏ ghi nợ thương hiệu
   },
   // Thẻ khách hàng chứa cả thông tin nhấp và nút xóa bên trong
   customerCard: {
