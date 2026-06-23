@@ -32,6 +32,16 @@ import EditDebtModal from '../src/components/EditDebtModal';
 import EditPaymentModal from '../src/components/EditPaymentModal';
 import CustomerDebtHistoryModal from '../src/components/CustomerDebtHistoryModal';
 
+// Loại bỏ dấu tiếng Việt để phục vụ tìm kiếm không dấu
+const removeDiacritics = (str) => {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D');
+};
+
 export default function DashboardScreen() {
   const router = useRouter();
   const auth = useAuthStore();
@@ -196,12 +206,12 @@ export default function DashboardScreen() {
   // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
   const totalDebt = customers.reduce((sum, c) => sum + (c.debt || 0), 0);
 
-  // 3. Bộ lọc tìm kiếm nhanh theo tên hoặc SĐT khách hàng
-  const filteredCustomers = customers.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      (c.phone && c.phone.includes(search))
-  );
+  // 3. Bộ lọc tìm kiếm nhanh theo tên hoặc SĐT khách hàng (không xét dấu tiếng Việt)
+  const filteredCustomers = customers.filter((c) => {
+    const nameNorm = removeDiacritics(c.name.toLowerCase());
+    const searchNorm = removeDiacritics(search.toLowerCase());
+    return nameNorm.includes(searchNorm) || (c.phone && c.phone.includes(search));
+  });
 
   // Định dạng hiển thị tiền VNĐ (Ví dụ: 1.500.000 đ)
   const formatCurrency = (amount) => {
@@ -522,7 +532,7 @@ export default function DashboardScreen() {
       <ScanTicketModal ref={scanTicketModalRef} onRefresh={refetch} />
 
       {/* MODAL XUẤT CÔNG NỢ DẠNG ẢNH (Ẩn) */}
-      <ExportDebtModal ref={exportDebtModalRef} />
+      <ExportDebtModal ref={exportDebtModalRef} onRefresh={refetch} />
 
       {/* MODAL XEM CHI TIẾT LỊCH SỬ NỢ THEO THÁNG/NGÀY (Ẩn) */}
       <CustomerDebtHistoryModal

@@ -15,6 +15,16 @@ import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import DatePickerInput from './DatePickerInput';
 
+// Loại bỏ dấu tiếng Việt để phục vụ tìm kiếm không dấu
+const removeDiacritics = (str) => {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D');
+};
+
 const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, ref) => {
   const [customerId, setCustomerId] = useState(propCustomerId || null);
   const [customers, setCustomers] = useState([]);
@@ -271,6 +281,13 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
   // --- Tính tổng tiền tích kê ---
   const totalAmount = scannedItems.reduce((sum, item) => sum + item.quantity * item.price, 0);
 
+  // Bộ lọc khách hàng trong dropdown tìm kiếm (không xét dấu tiếng Việt)
+  const filteredDropdownCustomers = customers.filter((c) => {
+    const nameNorm = removeDiacritics(c.name.toLowerCase());
+    const searchNorm = removeDiacritics(customerSearch.toLowerCase());
+    return nameNorm.includes(searchNorm) || (c.phone && c.phone.includes(customerSearch));
+  });
+
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
@@ -313,30 +330,22 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
               {showDropdown && (
                 <View style={styles.dropdownListContainer}>
                   <ScrollView style={styles.dropdownScroll} nestedScrollEnabled={true}>
-                    {customers
-                      .filter((c) =>
-                        c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-                        (c.phone && c.phone.includes(customerSearch))
-                      )
-                      .map((c) => (
-                        <TouchableOpacity
-                          key={c.id}
-                          style={styles.dropdownItem}
-                          onPress={() => {
-                            setSelectedCustomer(c);
-                            setCustomerSearch(c.name);
-                            setShowDropdown(false);
-                            setError('');
-                          }}
-                        >
-                          <Text style={styles.dropdownItemText}>{c.name}</Text>
-                          {c.phone ? <Text style={styles.dropdownItemPhone}>{c.phone}</Text> : null}
-                        </TouchableOpacity>
-                      ))}
-                    {customers.filter((c) =>
-                      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-                      (c.phone && c.phone.includes(customerSearch))
-                    ).length === 0 && (
+                    {filteredDropdownCustomers.map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setSelectedCustomer(c);
+                          setCustomerSearch(c.name);
+                          setShowDropdown(false);
+                          setError('');
+                        }}
+                      >
+                        <Text style={styles.dropdownItemText}>{c.name}</Text>
+                        {c.phone ? <Text style={styles.dropdownItemPhone}>{c.phone}</Text> : null}
+                      </TouchableOpacity>
+                    ))}
+                    {filteredDropdownCustomers.length === 0 && (
                       <View style={styles.dropdownEmptyItem}>
                         <Text style={styles.dropdownEmptyText}>Không tìm thấy khách hàng</Text>
                       </View>

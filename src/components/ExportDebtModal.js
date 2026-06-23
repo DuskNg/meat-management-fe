@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/ExportDebtModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,8 +15,10 @@ import {
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
+import UpdatePhoneModal from './UpdatePhoneModal';
 
-const ExportDebtModal = forwardRef(({ }, ref) => {
+const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
+  const updatePhoneModalRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -401,50 +403,97 @@ const ExportDebtModal = forwardRef(({ }, ref) => {
     }
   };
 
+  // Chuyển đổi chuỗi base64 thành Blob để hỗ trợ tải ảnh trên trình duyệt di động (Android/Samsung)
+  const base64ToBlob = (base64Data, contentType = 'image/png') => {
+    const sliceSize = 512;
+    const byteCharacters = atob(base64Data.split(',')[1]);
+    const byteArrays = [];
+
+    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+      const slice = byteCharacters.slice(offset, offset + sliceSize);
+      const byteNumbers = new Array(slice.length);
+      for (let i = 0; i < slice.length; i++) {
+        byteNumbers[i] = slice.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      byteArrays.push(byteArray);
+    }
+
+    return new Blob(byteArrays, { type: contentType });
+  };
+
+  // Chuẩn hóa số điện thoại và mở Zalo
+  const proceedZalo = (phone) => {
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length >= 9) {
+      let webPhone = cleanPhone;
+      if (webPhone.startsWith('84')) {
+        webPhone = '0' + webPhone.slice(2);
+      } else if (!webPhone.startsWith('0')) {
+        webPhone = '0' + webPhone;
+      }
+
+      const zaloUrl = `https://zalo.me/${webPhone}`;
+      
+      // Mở Zalo chat của khách hàng
+      Linking.openURL(zaloUrl).catch((err) => {
+        console.error('Không thể mở Zalo:', err);
+        Alert.alert('Lỗi', 'Không thể mở ứng dụng Zalo. Vui lòng kiểm tra lại.');
+      });
+    } else {
+      Alert.alert('SĐT không hợp lệ', 'Số điện thoại của khách hàng không đúng định dạng.');
+    }
+  };
+
   // 4. Tải ảnh về máy và tự động điều hướng sang Zalo gửi cho khách hàng
   const handleDownloadAndZalo = () => {
-    // A. Tải ảnh về máy (chỉ hoạt động trên môi trường Web)
+    // A. Tải ảnh về máy (sử dụng Blob Object URL để tương thích tốt với trình duyệt di động)
     if (Platform.OS === 'web' && imageUri) {
       try {
+        const blob = base64ToBlob(imageUri, 'image/png');
+        const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = imageUri;
+        link.href = blobUrl;
         const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
         const safeMonth = selectedMonth.replace('/', '-');
         link.download = `CongNo_${safeName}_Thang_${safeMonth}.png`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        
+        // Giải phóng bộ nhớ Object URL sau khi hoàn tất
+        setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+        }, 200);
       } catch (err) {
-        console.error('Lỗi tải file:', err);
+        console.error('Lỗi tải file bằng Blob URL:', err);
       }
     }
 
-    // B. Điều hướng tới Zalo chat bằng số điện thoại (chuẩn hóa về đầu số 0 cho Android/Samsung tương thích tốt nhất)
-    if (customer?.phone) {
-      const cleanPhone = customer.phone.replace(/[^0-9]/g, '');
-      if (cleanPhone.length >= 9) {
-        let webPhone = cleanPhone;
-        if (webPhone.startsWith('84')) {
-          webPhone = '0' + webPhone.slice(2);
-        } else if (!webPhone.startsWith('0')) {
-          webPhone = '0' + webPhone;
+    // B. Điều hướng tới Zalo chat bằng số điện thoại
+    const targetPhone = customer?.phone;
+
+    if (!targetPhone) {
+      // Mở pop-up yêu cầu nhập số điện thoại mới
+      updatePhoneModalRef.current?.open(customer, (newPhone) => {
+        // Cập nhật state cục bộ để hiển thị số điện thoại mới trên giao diện
+        setCustomer(prev => ({ ...prev, phone: newPhone }));
+        // Gọi callback làm mới danh sách khách hàng ở màn hình chính
+        if (onRefresh) {
+          onRefresh();
         }
-
-        const zaloUrl = `https://zalo.me/${webPhone}`;
-        Linking.openURL(zaloUrl).catch((err) => {
-          console.error('Không thể mở Zalo:', err);
-          Alert.alert('Lỗi', 'Không thể mở ứng dụng Zalo. Vui lòng kiểm tra lại.');
-        });
-      } else {
-        Alert.alert('SĐT không hợp lệ', 'Số điện thoại của khách hàng không đúng định dạng.');
-      }
-    } else {
-      Alert.alert('Không có SĐT', 'Khách hàng này chưa có số điện thoại để mở Zalo.');
+        // Tiếp tục tiến trình mở Zalo với số điện thoại mới
+        proceedZalo(newPhone);
+      });
+      return;
     }
+
+    proceedZalo(targetPhone);
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <Text style={styles.modalTitle}>📊 XUẤT ẢNH CÔNG NỢ CHI TIẾT</Text>
 
@@ -521,16 +570,16 @@ const ExportDebtModal = forwardRef(({ }, ref) => {
                   <TouchableOpacity
                     style={[
                       styles.downloadButtonInline,
-                      customer?.phone ? styles.zaloActiveColor : styles.normalActiveColor
+                      styles.zaloActiveColor
                     ]}
                     onPress={handleDownloadAndZalo}
                   >
                     <Text style={styles.downloadButtonInlineText}>
-                      {customer?.phone ? '💾 Tải & Gửi Zalo' : '💾 Tải ảnh về máy'}
+                      💾 Tải & Gửi Zalo
                     </Text>
                   </TouchableOpacity>
                 </View>
-                
+
                 <View style={styles.imageShadowFrame}>
                   <Image
                     source={{ uri: imageUri }}
@@ -559,6 +608,8 @@ const ExportDebtModal = forwardRef(({ }, ref) => {
         </TouchableOpacity>
       </View>
     </SmoothModal>
+    <UpdatePhoneModal ref={updatePhoneModalRef} onUpdateSuccess={onRefresh} />
+    </>
   );
 });
 
