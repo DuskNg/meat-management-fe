@@ -176,7 +176,13 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           t.items.forEach(item => {
             const q = parseFloat(item.quantity);
             const p = parseFloat(item.price);
-            dayMap[dateKey].items.push(`${q}${item.product?.unit || 'kg'} ${item.product?.name || 'Thịt'} (giá ${p / 1000}k)`);
+            const name = item.product?.name || 'Thịt';
+            const isQuick = name === 'Tiền hàng' || name.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
+            if (isQuick) {
+              dayMap[dateKey].items.push(name);
+            } else {
+              dayMap[dateKey].items.push(`${q}${item.product?.unit || 'kg'} ${name} (giá ${p / 1000}k)`);
+            }
           });
         } else if (t.note) {
           dayMap[dateKey].notes.push(t.note);

@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/PaymentModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,6 +12,9 @@ import {
 import SmoothModal from './SmoothModal';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
+import PinInputModal from './PinInputModal';
+import PinSetupModal from './PinSetupModal';
+import { hasPin, isSessionValid } from '../store/pinStore';
 
 const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
@@ -22,6 +25,10 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   // Số nợ tối đa của tháng để giới hạn số tiền trả nợ
   const [maxAmount, setMaxAmount] = useState(null);
   const [targetMonthKey, setTargetMonthKey] = useState(null); // Lưu trữ tháng cụ thể được chọn trả nợ
+
+  // Refs cho 2 modal PIN
+  const pinInputRef = useRef(null);
+  const pinSetupRef = useRef(null);
 
   // Định dạng hiển thị tiền VNĐ
   const formatCurrency = (value) => {
@@ -71,7 +78,25 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
     setError('');
   };
 
-  // 3. Xử lý ghi nhận thu tiền khách trả nợ
+  // 3. Kiểm tra PIN trước khi thực hiện thao tác tài chính nhạy cảm
+  const requirePin = async (action) => {
+    const pinExists = await hasPin();
+    if (!pinExists) {
+      // Chưa có PIN → yêu cầu tạo mới
+      pinSetupRef.current?.open(action);
+      return;
+    }
+    const sessionOk = await isSessionValid();
+    if (sessionOk) {
+      // Phiên còn hạn → thực hiện ngay không cần nhập lại PIN
+      action();
+    } else {
+      // Phiên hết hạn → yêu cầu nhập PIN
+      pinInputRef.current?.open(action, 'xác nhận thu tiền');
+    }
+  };
+
+  // 4. Ghi nhận thu tiền khách trả nợ (gọi sau khi xác thực PIN thành công)
   const handleSubmit = async () => {
     if (!amount || amount.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
@@ -172,7 +197,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={[styles.button, styles.submitButton]}
-            onPress={handleSubmit}
+            onPress={() => requirePin(handleSubmit)}
             disabled={loading}
           >
             {loading ? (
@@ -191,6 +216,11 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Modal nhập PIN khi phiên hết hạn */}
+      <PinInputModal ref={pinInputRef} />
+      {/* Modal tạo PIN lần đầu */}
+      <PinSetupModal ref={pinSetupRef} />
     </SmoothModal>
   );
 });

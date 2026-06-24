@@ -204,11 +204,13 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
                             </Text>
                           </View>
                           {/* Khối lượng × đơn giá */}
-                          <Text style={styles.itemMeta}>
-                            {it.quantity} {it.product?.unit}
-                            {'  ×  '}
-                            {formatCurrency(it.price)}
-                          </Text>
+                          {!(it.product?.name === 'Tiền hàng' || (it.product?.name && it.product.name.toLowerCase().startsWith('tiền')) || t.note === 'Ghi nợ nhanh') && (
+                            <Text style={styles.itemMeta}>
+                              {it.quantity} {it.product?.unit}
+                              {'  ×  '}
+                              {formatCurrency(it.price)}
+                            </Text>
+                          )}
                         </View>
                       ));
                     })()

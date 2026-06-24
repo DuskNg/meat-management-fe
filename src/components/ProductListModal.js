@@ -39,7 +39,10 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
     enabled: visible,
   });
 
-  const products = productsResponse?.data || [];
+  // Lọc bỏ sản phẩm ảo của ghi nợ nhanh khỏi danh sách quản lý thịt đang bán
+  const products = (productsResponse?.data || []).filter(
+    (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+  );
 
   // 2. Expose các hàm mở/đóng modal ra ngoài
   useImperativeHandle(ref, () => ({

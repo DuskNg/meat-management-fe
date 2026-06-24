@@ -16,6 +16,9 @@ import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import ProductListModal from './ProductListModal';
 import DatePickerInput from './DatePickerInput';
+import PinInputModal from './PinInputModal';
+import PinSetupModal from './PinSetupModal';
+import { hasPin, isSessionValid } from '../store/pinStore';
 
 const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
   // ─── Helper: Chuyển ISO date string/Date object sang DD/MM/YYYY ───────────
@@ -83,6 +86,10 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [error, setError] = useState('');
   const productModalRef = useRef(null);
 
+  // Refs cho 2 modal PIN
+  const pinInputRef = useRef(null);
+  const pinSetupRef = useRef(null);
+
   // ─── Tải danh mục sản phẩm (chỉ khi modal hiển thị) ────────────────────
   const { data: productsResponse, refetch: refetchProducts } = useQuery({
     queryKey: ['products'],
@@ -93,7 +100,10 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
     enabled: visible,
   });
 
-  const products = productsResponse?.data || [];
+  // Lọc bỏ sản phẩm ảo của ghi nợ nhanh khỏi danh sách thịt đang bán
+  const products = (productsResponse?.data || []).filter(
+    (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+  );
 
   // ─── Phơi bày open/close ra ngoài cho component cha ───────────────────
   useImperativeHandle(ref, () => ({
@@ -223,7 +233,22 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
     setCartItems((prev) => prev.filter((item) => item.tempId !== tempId));
   };
 
-  // ─── Lưu cập nhật đơn hàng ───────────────────────────────────────────
+  // ─── Kiểm tra PIN trước khi thực hiện thao tác tài chính nhạy cảm ──────────────
+  const requirePin = async (action) => {
+    const pinExists = await hasPin();
+    if (!pinExists) {
+      pinSetupRef.current?.open(action);
+      return;
+    }
+    const sessionOk = await isSessionValid();
+    if (sessionOk) {
+      action();
+    } else {
+      pinInputRef.current?.open(action, 'cập nhật đơn ghi nợ');
+    }
+  };
+
+  // ─── Lưu cập nhật đơn hàng ──────────────────────────────────
   const handleSubmit = async () => {
     if (cartItems.length === 0) {
       setError('Đơn hàng không được để trống. Vui lòng thêm ít nhất 1 mặt hàng.');
@@ -470,7 +495,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
 
           <TouchableOpacity
             style={[styles.button, styles.submitButton, cartItems.length === 0 && styles.submitDisabled]}
-            onPress={handleSubmit}
+            onPress={() => requirePin(handleSubmit)}
             disabled={loading || cartItems.length === 0}
           >
             {loading ? (
@@ -483,6 +508,11 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
       </View>
 
       <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
+
+      {/* Modal nhập PIN khi phiên hết hạn */}
+      <PinInputModal ref={pinInputRef} />
+      {/* Modal tạo PIN lần đầu */}
+      <PinSetupModal ref={pinSetupRef} />
     </SmoothModal>
   );
 });

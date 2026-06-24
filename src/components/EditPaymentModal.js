@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/EditPaymentModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -13,6 +13,9 @@ import SmoothModal from './SmoothModal';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import DatePickerInput from './DatePickerInput';
+import PinInputModal from './PinInputModal';
+import PinSetupModal from './PinSetupModal';
+import { hasPin, isSessionValid } from '../store/pinStore';
 
 const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
   // ─── Helper: Chuyển ISO date sang DD/MM/YYYY ─────────────────────────────
@@ -64,6 +67,10 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Refs cho 2 modal PIN
+  const pinInputRef = useRef(null);
+  const pinSetupRef = useRef(null);
+
   // 1. Phơi bày các hàm điều khiển Modal ra ngoài component cha (Customer Detail)
   useImperativeHandle(ref, () => ({
     open: (payment) => {
@@ -84,6 +91,21 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
   const handleQuickAmount = (value) => {
     setAmount(formatNumberString(value.toString()));
     setError('');
+  };
+
+  // Kiểm tra PIN trước khi thực hiện thao tác tài chính nhạy cảm
+  const requirePin = async (action) => {
+    const pinExists = await hasPin();
+    if (!pinExists) {
+      pinSetupRef.current?.open(action);
+      return;
+    }
+    const sessionOk = await isSessionValid();
+    if (sessionOk) {
+      action();
+    } else {
+      pinInputRef.current?.open(action, 'sửa lượt thu tiền');
+    }
   };
 
   // Xử lý gửi cập nhật lượt thu tiền
@@ -183,7 +205,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={[styles.button, styles.submitButton]}
-            onPress={handleSubmit}
+            onPress={() => requirePin(handleSubmit)}
             disabled={loading}
           >
             {loading ? (
@@ -202,6 +224,11 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Modal nhập PIN khi phiên hết hạn */}
+      <PinInputModal ref={pinInputRef} />
+      {/* Modal tạo PIN lần đầu */}
+      <PinSetupModal ref={pinSetupRef} />
     </SmoothModal>
   );
 });
