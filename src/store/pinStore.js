@@ -2,11 +2,7 @@
 // Store quản lý mã PIN bảo vệ các thao tác tài chính nhạy cảm
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-
-// ─── Các khóa lưu trữ trong SecureStore / localStorage ──────────────────────
-const PIN_HASH_KEY = 'meat_pin_hash';               // Chuỗi hash của mã PIN 4 số
-const PIN_VERIFIED_AT_KEY = 'meat_pin_verified_at'; // Thời điểm xác thực PIN gần nhất
-const PIN_SESSION_HOURS_KEY = 'meat_pin_session_hours'; // Thời gian phiên PIN (12 hoặc 24)
+import { useAuthStore } from './authStore';
 
 // ─── Helper: tương thích đa nền tảng (Web vs Native) ─────────────────────────
 const isWeb = Platform.OS === 'web';
@@ -35,6 +31,20 @@ const deleteItem = async (key) => {
   }
 };
 
+// Lấy userId hiện tại từ authStore để quản lý PIN độc lập cho từng tài khoản
+const getUserId = () => {
+  try {
+    return useAuthStore.getState().user?.id || 'default';
+  } catch (e) {
+    return 'default';
+  }
+};
+
+// Định nghĩa các khoá lưu trữ động theo userId
+const getPinHashKey = () => `meat_pin_hash_${getUserId()}`;
+const getPinVerifiedAtKey = () => `meat_pin_verified_at_${getUserId()}`;
+const getPinSessionHoursKey = () => `meat_pin_session_hours_${getUserId()}`;
+
 // ─── Helper: băm PIN bằng chuỗi đơn giản (PIN chỉ 4 số, lưu trong thiết bị riêng) ───
 // Không cần thuật toán mạnh như bcrypt vì PIN lưu trên thiết bị của chính chủ buôn
 const hashPin = (pin) => {
@@ -56,7 +66,7 @@ const hashPin = (pin) => {
  * @returns {Promise<boolean>}
  */
 export const hasPin = async () => {
-  const hash = await getItem(PIN_HASH_KEY);
+  const hash = await getItem(getPinHashKey());
   return !!hash;
 };
 
@@ -65,7 +75,7 @@ export const hasPin = async () => {
  * @returns {Promise<number>}
  */
 export const getSessionHours = async () => {
-  const raw = await getItem(PIN_SESSION_HOURS_KEY);
+  const raw = await getItem(getPinSessionHoursKey());
   const parsed = parseInt(raw, 10);
   return (!isNaN(parsed) && parsed > 0) ? parsed : 12; // Mặc định 12 giờ
 };
@@ -75,7 +85,7 @@ export const getSessionHours = async () => {
  * @param {number} hours - Số giờ (ví dụ: 12 hoặc 24)
  */
 export const setSessionHours = async (hours) => {
-  await setItem(PIN_SESSION_HOURS_KEY, hours.toString());
+  await setItem(getPinSessionHoursKey(), hours.toString());
 };
 
 /**
@@ -83,7 +93,7 @@ export const setSessionHours = async (hours) => {
  * @returns {Promise<boolean>}
  */
 export const isSessionValid = async () => {
-  const verifiedAt = await getItem(PIN_VERIFIED_AT_KEY);
+  const verifiedAt = await getItem(getPinVerifiedAtKey());
   if (!verifiedAt) return false;
 
   const sessionHours = await getSessionHours();
@@ -100,7 +110,7 @@ export const isSessionValid = async () => {
  * @returns {Promise<boolean>}
  */
 export const verifyPin = async (pin) => {
-  const storedHash = await getItem(PIN_HASH_KEY);
+  const storedHash = await getItem(getPinHashKey());
   if (!storedHash) return false;
   return hashPin(pin) === storedHash;
 };
@@ -111,27 +121,27 @@ export const verifyPin = async (pin) => {
  */
 export const savePin = async (pin) => {
   const hashed = hashPin(pin);
-  await setItem(PIN_HASH_KEY, hashed);
+  await setItem(getPinHashKey(), hashed);
 };
 
 /**
  * Đánh dấu thời điểm xác thực PIN thành công → bắt đầu tính phiên
  */
 export const markSessionVerified = async () => {
-  await setItem(PIN_VERIFIED_AT_KEY, new Date().toISOString());
+  await setItem(getPinVerifiedAtKey(), new Date().toISOString());
 };
 
 /**
  * Xóa toàn bộ dữ liệu PIN (dùng khi reset PIN)
  */
 export const clearPin = async () => {
-  await deleteItem(PIN_HASH_KEY);
-  await deleteItem(PIN_VERIFIED_AT_KEY);
+  await deleteItem(getPinHashKey());
+  await deleteItem(getPinVerifiedAtKey());
 };
 
 /**
  * Xóa phiên PIN hiện tại (buộc nhập lại PIN lần tới, giữ nguyên PIN đã đặt)
  */
 export const clearSession = async () => {
-  await deleteItem(PIN_VERIFIED_AT_KEY);
+  await deleteItem(getPinVerifiedAtKey());
 };
