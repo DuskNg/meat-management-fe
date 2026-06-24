@@ -70,6 +70,12 @@ export const useAuthStore = create((set) => ({
   // 2. Xóa thông tin đăng nhập (khi đăng xuất)
   logout: async () => {
     try {
+      // Xoá phiên xác thực mã PIN của tài khoản hiện tại trước khi thoát
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser && currentUser.id) {
+        await deleteStorageItem(`meat_pin_verified_at_${currentUser.id}`);
+      }
+
       await deleteStorageItem(ACCESS_TOKEN_KEY);
       await deleteStorageItem(REFRESH_TOKEN_KEY);
       await deleteStorageItem(USER_INFO_KEY);

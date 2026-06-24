@@ -9,10 +9,12 @@ import {
   Animated,
   Vibration,
   Platform,
+  Alert,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { COLORS, FONTS } from '../theme';
-import { verifyPin, markSessionVerified } from '../store/pinStore';
+import { verifyPin, markSessionVerified, clearPin } from '../store/pinStore';
+import { useAuthStore } from '../store/authStore';
 
 // ─── Số lần nhập sai tối đa trước khi bị khóa tạm ───────────────────────────
 const MAX_ATTEMPTS = 5;
@@ -118,6 +120,37 @@ const PinInputModal = forwardRef((props, ref) => {
     setError('');
   }, []);
 
+  // ─── Xử lý khi bấm Quên mã PIN ───────────────────────────────────────────
+  const handleForgotPassword = () => {
+    const title = 'Quên mã PIN';
+    const message = 'Nếu quên mã PIN, bạn cần Đăng xuất tài khoản và Đăng nhập lại bằng mật khẩu để thiết lập lại mã PIN mới.\n\nBạn có muốn đăng xuất ngay không?';
+
+    const confirmAction = async () => {
+      setVisible(false);
+      // Xoá mã PIN và phiên xác thực của tài khoản hiện tại
+      await clearPin();
+      // Thực hiện đăng xuất
+      await useAuthStore.getState().logout();
+    };
+
+    if (Platform.OS === 'web') {
+      const ok = window.confirm(`${title}\n\n${message}`);
+      if (ok) {
+        confirmAction();
+      }
+    } else {
+      Alert.alert(
+        title,
+        message,
+        [
+          { text: 'Hủy bỏ', style: 'cancel' },
+          { text: 'Đăng xuất', style: 'destructive', onPress: confirmAction }
+        ],
+        { cancelable: true }
+      );
+    }
+  };
+
   // ─── Render các chấm tròn hiển thị tiến trình nhập PIN ────────────────────
   const renderDots = () => (
     <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
@@ -188,10 +221,15 @@ const PinInputModal = forwardRef((props, ref) => {
         {/* Bàn phím số */}
         {renderKeypad()}
 
-        {/* Nút hủy */}
-        <TouchableOpacity style={styles.cancelButton} onPress={() => setVisible(false)}>
-          <Text style={styles.cancelText}>Hủy bỏ</Text>
-        </TouchableOpacity>
+        {/* Hàng chứa nút Quên PIN và Hủy bỏ */}
+        <View style={styles.actionButtonsRow}>
+          <TouchableOpacity style={styles.forgotButton} onPress={handleForgotPassword}>
+            <Text style={styles.forgotText}>Quên mã PIN? 🤔</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.cancelButton} onPress={() => setVisible(false)}>
+            <Text style={styles.cancelText}>Hủy bỏ</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </SmoothModal>
   );
@@ -299,11 +337,25 @@ const styles = StyleSheet.create({
     fontSize: FONTS.subtitle,
     color: COLORS.textSecondary,
   },
-  // ─── Nút hủy ────────────────────────────────────────────────────────────
-  cancelButton: {
+  // ─── Nút hành động ở chân modal ─────────────────────────────────────────
+  actionButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
     marginTop: 24,
+  },
+  forgotButton: {
     paddingVertical: 12,
-    paddingHorizontal: 32,
+    paddingHorizontal: 16,
+  },
+  forgotText: {
+    fontSize: FONTS.body,
+    color: COLORS.danger,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
   cancelText: {
     fontSize: FONTS.body,
