@@ -206,12 +206,29 @@ export default function DashboardScreen() {
   // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
   const totalDebt = customers.reduce((sum, c) => sum + (c.debt || 0), 0);
 
-  // 3. Bộ lọc tìm kiếm nhanh theo tên hoặc SĐT khách hàng (không xét dấu tiếng Việt)
-  const filteredCustomers = customers.filter((c) => {
-    const nameNorm = removeDiacritics(c.name.toLowerCase());
-    const searchNorm = removeDiacritics(search.toLowerCase());
-    return nameNorm.includes(searchNorm) || (c.phone && c.phone.includes(search));
-  });
+  // 3. Bộ lọc tìm kiếm nhanh theo tên hoặc SĐT khách hàng (không xét dấu tiếng Việt) và sắp xếp
+  const filteredCustomers = customers
+    .filter((c) => {
+      const nameNorm = removeDiacritics(c.name.toLowerCase());
+      const searchNorm = removeDiacritics(search.toLowerCase());
+      return nameNorm.includes(searchNorm) || (c.phone && c.phone.includes(search));
+    })
+    .sort((a, b) => {
+      const debtA = a.debt || 0;
+      const debtB = b.debt || 0;
+
+      // Ưu tiên những người còn nợ lên đầu
+      if (debtA > 0 && debtB <= 0) return -1;
+      if (debtB > 0 && debtA <= 0) return 1;
+
+      // Nếu cả hai đều còn nợ, xếp theo số nợ từ lớn đến bé
+      if (debtA > 0 && debtB > 0) {
+        return debtB - debtA;
+      }
+
+      // Nếu cả hai đều không còn nợ, sắp xếp theo tên theo bảng chữ cái tiếng Việt
+      return a.name.localeCompare(b.name, 'vi');
+    });
 
   // Định dạng hiển thị tiền VNĐ (Ví dụ: 1.500.000 đ)
   const formatCurrency = (amount) => {
