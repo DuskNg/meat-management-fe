@@ -31,6 +31,7 @@ import TransactionDetailModal from '../src/components/TransactionDetailModal';
 import EditDebtModal from '../src/components/EditDebtModal';
 import EditPaymentModal from '../src/components/EditPaymentModal';
 import CustomerDebtHistoryModal from '../src/components/CustomerDebtHistoryModal';
+import DailyReportModal from '../src/components/DailyReportModal';
 
 // Loại bỏ dấu tiếng Việt để phục vụ tìm kiếm không dấu
 const removeDiacritics = (str) => {
@@ -58,6 +59,7 @@ export default function DashboardScreen() {
   const detailModalRef = useRef(null);
   const editDebtModalRef = useRef(null);
   const editPaymentModalRef = useRef(null);
+  const dailyReportModalRef = useRef(null);
 
   const [search, setSearch] = useState('');
   const [activeMenuId, setActiveMenuId] = useState(null);
@@ -445,6 +447,15 @@ export default function DashboardScreen() {
           <Text style={styles.summaryValue}>{formatCurrency(totalDebt)}</Text>
         </View>
 
+        {/* NÚT THỐNG KÊ TRONG NGÀY */}
+        <TouchableOpacity
+          style={styles.dailyReportButton}
+          onPress={() => dailyReportModalRef.current?.open()}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.dailyReportButtonText}>📈 THỐNG KÊ CÔNG NỢ TRONG NGÀY</Text>
+        </TouchableOpacity>
+
         {/* Ô TÌM KIẾM NHANH KHÁCH QUEN */}
         <View style={styles.searchContainer}>
           <TextInput
@@ -572,6 +583,7 @@ export default function DashboardScreen() {
       />
       <EditDebtModal ref={editDebtModalRef} onRefresh={refetch} />
       <EditPaymentModal ref={editPaymentModalRef} onRefresh={refetch} />
+      <DailyReportModal ref={dailyReportModalRef} onRefresh={refetch} />
     </SafeAreaView>
   );
 }
@@ -1111,5 +1123,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     color: COLORS.text,
+  },
+  dailyReportButton: {
+    backgroundColor: '#EFF6FF', // Nền xanh pastel nhẹ nhàng, sang trọng
+    borderColor: '#BFDBFE',
+    borderWidth: 1.5,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  dailyReportButtonText: {
+    color: '#1E40AF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
 });
