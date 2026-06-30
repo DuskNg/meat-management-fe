@@ -184,10 +184,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
               dayMap[dateKey].items.push(`${q}${item.product?.unit || 'kg'} ${name} (giá ${p / 1000}k)`);
             }
           });
-        } else if (t.note) {
+        }
+        if (t.note && t.note !== 'Ghi nợ nhanh') {
           dayMap[dateKey].notes.push(t.note);
-        } else {
-          dayMap[dateKey].notes.push('Mua nợ');
         }
       });
 
@@ -208,25 +207,112 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         dayMap[dateKey].paymentAmount += amt;
         totalPaymentInMonth += amt;
 
-        if (p.note) {
-          dayMap[dateKey].notes.push(`Trả nợ (${p.note})`);
-        } else {
-          dayMap[dateKey].notes.push('Thu tiền nợ');
+        if (p.note && !p.note.startsWith('Thanh toán nợ ngày')) {
+          dayMap[dateKey].notes.push(p.note);
         }
       });
 
       // Sắp xếp tăng dần theo thời gian (cũ tới mới)
       const rows = Object.values(dayMap).sort((a, b) => new Date(a.date) - new Date(b.date));
 
-      // Tính toán chiều cao canvas dựa trên số dòng phát sinh
+      // Hàm ngắt dòng cho chữ tiếng Việt trên canvas
+      const wrapText = (context, text, maxWidth) => {
+        const lines = [];
+        let currentLine = '';
+        const words = text.split(' ');
+
+        for (let i = 0; i < words.length; i++) {
+          let word = words[i];
+
+          // Nếu bản thân một từ dài hơn maxWidth, cần bẻ từ đó ra
+          while (context.measureText(word).width > maxWidth) {
+            let breakIndex = 1;
+            while (context.measureText(word.substring(0, breakIndex)).width <= maxWidth && breakIndex <= word.length) {
+              breakIndex++;
+            }
+            breakIndex--; // Lùi lại để lấy phần an toàn
+
+            const part = word.substring(0, breakIndex);
+            
+            if (currentLine) {
+              lines.push(currentLine);
+              currentLine = '';
+            }
+            lines.push(part);
+            word = word.substring(breakIndex);
+          }
+
+          if (!word) continue;
+
+          const testLine = currentLine ? currentLine + ' ' + word : word;
+          const metrics = context.measureText(testLine);
+          
+          if (metrics.width <= maxWidth) {
+            currentLine = testLine;
+          } else {
+            if (currentLine) lines.push(currentLine);
+            currentLine = word;
+          }
+        }
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        return lines;
+      };
+
       const width = 800;
       const startTableY = 160;
-      const rowHeight = 55;
-      const contentHeight = rows.length > 0 ? rows.length * rowHeight : 80;
       const footerHeight = 160;
+
+      // Tạo một canvas tạm thời để đo độ rộng chữ và tính toán chiều cao hàng
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.font = '15px Arial';
+
+      const colDateX = 50;
+      const colDescX = 125;
+      const colDebtX = width - 170; // 630
+      const colPayX = width - 50;   // 750
+      const colDescMaxWidth = colDebtX - colDescX - 25; // 505
+
+      const lineHeight = 20;
+      const paddingY = 15;
+      const minRowHeight = 55;
+
+      // Tính toán số dòng chữ mô tả và chiều cao của từng hàng
+      const rowsWithLayout = rows.map(row => {
+        let descText = '';
+        const parts = [];
+        if (row.items && row.items.length > 0) {
+          parts.push(row.items.join(', '));
+        }
+        if (row.notes && row.notes.length > 0) {
+          parts.push(row.notes.join('; '));
+        }
+        descText = parts.join(' | ');
+
+        // Sử dụng hàm wrapText để ngắt dòng chi tiết giao dịch
+        const descLines = wrapText(tempCtx, descText, colDescMaxWidth);
+
+        // Chiều cao tính toán của hàng
+        const textHeight = descLines.length * lineHeight;
+        const calculatedHeight = textHeight + paddingY * 2;
+        const rowHeight = Math.max(minRowHeight, calculatedHeight);
+
+        return {
+          ...row,
+          descLines,
+          rowHeight
+        };
+      });
+
+      const contentHeight = rowsWithLayout.length > 0
+        ? rowsWithLayout.reduce((sum, r) => sum + r.rowHeight, 0)
+        : 80;
+
       const canvasHeight = startTableY + 42 + contentHeight + footerHeight;
 
-      // Tạo canvas ảo
+      // Tạo canvas chính thức để vẽ
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = canvasHeight;
@@ -277,18 +363,18 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       ctx.fillStyle = '#FFFFFF';
       ctx.font = 'bold 15px Arial';
       ctx.textAlign = 'left';
-      ctx.fillText('Ngày', 55, startTableY + 27);
-      ctx.fillText('Nội dung / Chi tiết giao dịch trong ngày', 150, startTableY + 27);
+      ctx.fillText('Ngày', colDateX, startTableY + 27);
+      ctx.fillText('Nội dung / Chi tiết giao dịch trong ngày', colDescX, startTableY + 27);
 
       ctx.textAlign = 'right';
-      ctx.fillText('Tiền Nợ (+)', width - 215, startTableY + 27);
-      ctx.fillText('Đã Trả (-)', width - 55, startTableY + 27);
+      ctx.fillText('Tiền Nợ (+)', colDebtX, startTableY + 27);
+      ctx.fillText('Đã Trả (-)', colPayX, startTableY + 27);
 
       // ─── VẼ CÁC DÒNG GIAO DỊCH ─────────────────────
       let currentY = startTableY + 42;
       ctx.textAlign = 'left';
 
-      if (rows.length === 0) {
+      if (rowsWithLayout.length === 0) {
         ctx.fillStyle = '#F8FAFC';
         ctx.fillRect(40, currentY, width - 80, 80);
         ctx.strokeStyle = '#E2E8F0';
@@ -300,13 +386,16 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         ctx.fillText('Không có giao dịch phát sinh trong tháng này', width / 2, currentY + 48);
         currentY += 80;
       } else {
-        rows.forEach((row, idx) => {
+        rowsWithLayout.forEach((row, idx) => {
           // Tô màu nền xen kẽ để dễ đọc dòng
           ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-          ctx.fillRect(40, currentY, width - 80, rowHeight);
+          ctx.fillRect(40, currentY, width - 80, row.rowHeight);
 
           ctx.strokeStyle = '#E2E8F0';
-          ctx.strokeRect(40, currentY, width - 80, rowHeight);
+          ctx.strokeRect(40, currentY, width - 80, row.rowHeight);
+
+          // Thiết lập textBaseline là middle để căn giữa dọc dễ dàng hơn
+          ctx.textBaseline = 'middle';
 
           // Cột ngày
           ctx.fillStyle = '#0F172A';
@@ -314,42 +403,35 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           ctx.textAlign = 'left';
 
           const [day, monthStr] = row.dateKey.split('/');
-          ctx.fillText(`${day}/${monthStr}`, 55, currentY + 33);
+          ctx.fillText(`${day}/${monthStr}`, colDateX, currentY + row.rowHeight / 2);
 
-          // Cột Chi tiết mô tả
-          let descText = '';
-          const parts = [];
-          if (row.items && row.items.length > 0) {
-            parts.push(`Mua: ${row.items.join(', ')}`);
-          }
-          if (row.notes && row.notes.length > 0) {
-            parts.push(row.notes.join('; '));
-          }
-          descText = parts.join(' | ');
-
-          // Cắt ngắn chuỗi nếu nội dung chi tiết quá dài gây tràn cột
-          if (descText.length > 40) {
-            descText = descText.substring(0, 38) + '...';
-          }
+          // Cột Chi tiết mô tả - vẽ nhiều dòng
           ctx.fillStyle = '#0F172A';
-          ctx.fillText(descText, 150, currentY + 33);
+          ctx.textAlign = 'left';
+
+          // Tính toán vị trí Y xuất phát sao cho toàn bộ cụm chữ được căn giữa theo chiều dọc của hàng
+          const startTextY = currentY + row.rowHeight / 2 - ((row.descLines.length - 1) * lineHeight) / 2;
+          row.descLines.forEach((line, lineIdx) => {
+            ctx.fillText(line, colDescX, startTextY + lineIdx * lineHeight);
+          });
 
           // Cột tiền nợ
           ctx.textAlign = 'right';
           if (row.debtAmount > 0) {
             ctx.fillStyle = '#DC2626';
             ctx.font = 'bold 15px Arial';
-            ctx.fillText(formatCurrency(row.debtAmount), width - 215, currentY + 33);
+            ctx.fillText(formatCurrency(row.debtAmount), colDebtX, currentY + row.rowHeight / 2);
           }
 
           // Cột tiền trả
           if (row.paymentAmount > 0) {
             ctx.fillStyle = '#10B981';
             ctx.font = 'bold 15px Arial';
-            ctx.fillText(formatCurrency(row.paymentAmount), width - 55, currentY + 33);
+            ctx.fillText(formatCurrency(row.paymentAmount), colPayX, currentY + row.rowHeight / 2);
           }
 
-          currentY += rowHeight;
+          currentY += row.rowHeight;
+          ctx.textBaseline = 'alphabetic'; // Trả về mặc định cho các phần vẽ sau
           ctx.textAlign = 'left';
         });
       }
