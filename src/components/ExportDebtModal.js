@@ -270,10 +270,10 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       tempCtx.font = '15px Arial';
 
       const colDateX = 50;
-      const colDescX = 125;
+      const colDescX = 110;
       const colDebtX = width - 170; // 630
       const colPayX = width - 50;   // 750
-      const colDescMaxWidth = colDebtX - colDescX - 25; // 505
+      const colDescMaxWidth = 380;  // Giới hạn để mép phải tối đa của mô tả chỉ tới 490px, tránh đè lên số tiền nợ (thường bắt đầu từ khoảng 500px - 520px)
 
       const lineHeight = 20;
       const paddingY = 15;
