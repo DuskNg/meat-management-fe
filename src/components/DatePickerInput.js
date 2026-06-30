@@ -147,6 +147,11 @@ const DatePickerInput = ({
   minDate = null,
   maxDate = null,
 }) => {
+  // Tự động inject CSS cho Web để dãn rộng vùng click của bộ chọn ngày
+  if (Platform.OS === 'web') {
+    injectWebStyles();
+  }
+
   // Trạng thái mở/đóng picker trên mobile (cho lịch native thông thường)
   const [showPicker, setShowPicker] = useState(false);
   // Trạng thái mở/đóng picker lưới lịch Grid custom (cho tháng bị giới hạn)
