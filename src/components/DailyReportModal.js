@@ -201,11 +201,6 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
                           {isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`}
                         </Text>
                       ) : null}
-
-                      {/* Hiển thị thời gian cụ thể (giờ:phút) */}
-                      <Text style={styles.itemTime}>
-                        🕒 {new Date(item.time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                      </Text>
                     </View>
                   );
                 })}
