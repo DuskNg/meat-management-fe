@@ -110,6 +110,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
   // Xử lý gửi cập nhật lượt thu tiền
   const handleSubmit = async () => {
+    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (!amount || amount.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
       return;

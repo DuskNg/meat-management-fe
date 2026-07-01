@@ -39,6 +39,7 @@ const AddCustomerModal = forwardRef(({ onRefresh }, ref) => {
 
   // 2. Xử lý tạo mới khách hàng
   const handleSubmit = async () => {
+    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (!name || name.trim() === '') {
       setError('Tên khách hàng bắt buộc phải nhập.');
       return;

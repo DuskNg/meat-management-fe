@@ -37,6 +37,7 @@ const UpdatePhoneModal = forwardRef(({ onUpdateSuccess }, ref) => {
 
   // 2. Xử lý lưu số điện thoại mới lên máy chủ
   const handleSubmit = async () => {
+    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     const cleanPhone = phone.replace(/[^0-9]/g, '');
     if (!cleanPhone || cleanPhone.length < 9) {
       setError('Số điện thoại không hợp lệ. Vui lòng nhập từ 9 đến 11 chữ số.');

@@ -99,7 +99,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
 
   // Gửi yêu cầu cập nhật thông tin sản phẩm thịt lên backend
   const handleUpdateProduct = async () => {
-    if (!editingProduct) return;
+    if (loading || !editingProduct) return; // Ngăn chặn bấm đúp khi đang lưu
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError('Tên loại thịt không được để trống.');
@@ -144,6 +144,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
 
   // 3. Xử lý thêm loại thịt mới
   const handleAddProduct = async () => {
+    if (loading) return; // Ngăn chặn bấm đúp khi đang lưu
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError('Tên loại thịt không được để trống.');

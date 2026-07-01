@@ -77,6 +77,7 @@ const ProfileModal = forwardRef((props, ref) => {
 
   // 3. Xử lý cập nhật thông tin hồ sơ
   const handleSubmit = async () => {
+    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (!name || name.trim() === '') {
       setError('Tên chủ buôn không được để trống.');
       return;

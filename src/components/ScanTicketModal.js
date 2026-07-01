@@ -218,6 +218,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
 
   // --- Gửi dữ liệu nợ lên server ---
   const handleSubmit = async () => {
+    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (scannedItems.length === 0) {
       setError('Vui lòng có ít nhất 1 mặt hàng trong tích kê.');
       return;

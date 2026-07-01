@@ -250,6 +250,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
 
   // ─── Lưu cập nhật đơn hàng ──────────────────────────────────
   const handleSubmit = async () => {
+    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (cartItems.length === 0) {
       setError('Đơn hàng không được để trống. Vui lòng thêm ít nhất 1 mặt hàng.');
       return;
