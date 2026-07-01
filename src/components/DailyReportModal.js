@@ -60,6 +60,24 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     return `${dd}/${mm}/${yyyy}`;
   };
 
+  // Helper xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
+  const getPaymentTargetMonth = (p) => {
+    const trimNote = (p.note || '').trim();
+    const monthMatch = trimNote.match(/^Thanh toán nợ Tháng (\d{2})\/(\d{4})/);
+    const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
+
+    if (monthMatch) {
+      return `${monthMatch[1]}/${monthMatch[2]}`;
+    }
+    if (dateMatch) {
+      return `${dateMatch[2]}/${dateMatch[3]}`;
+    }
+    const d = new Date(p.paidAt);
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${yyyy}`;
+  };
+
   // 2. Tải toàn bộ giao dịch & thu tiền để lọc theo ngày
   const fetchDailyData = async (dateStr) => {
     setLoading(true);
@@ -76,8 +94,12 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
 
       // Lọc các giao dịch phát sinh trong ngày được chọn
       const dailyTrans = transList.filter(t => toDateKey(t.date) === dateStr);
-      // Lọc các khoản thanh toán phát sinh trong ngày được chọn
-      const dailyPays = payList.filter(p => toDateKey(p.paidAt) === dateStr);
+      
+      // Lọc các khoản thanh toán phát sinh trong ngày được chọn VÀ thuộc về tháng tương ứng
+      const selectedMonthKey = dateStr.substring(3); // "DD/MM/YYYY" -> "MM/YYYY"
+      const dailyPays = payList.filter(p => {
+        return toDateKey(p.paidAt) === dateStr && getPaymentTargetMonth(p) === selectedMonthKey;
+      });
 
       setTransactions(dailyTrans);
       setPayments(dailyPays);
