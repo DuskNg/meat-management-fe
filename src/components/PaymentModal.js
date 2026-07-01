@@ -98,6 +98,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // 4. Ghi nhận thu tiền khách trả nợ (gọi sau khi xác thực PIN thành công)
   const handleSubmit = async () => {
+    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (!amount || amount.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
       return;

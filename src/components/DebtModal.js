@@ -282,6 +282,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // ─── Xác nhận và gửi toàn bộ giỏ hàng lên API ──────────────────────────────────
   const handleSubmit = async () => {
+    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     const isoDate = parseDateString(dateStr);
     if (!isoDate) {
       setError('Ngày ghi nợ không đúng định dạng (Ví dụ: 14/06/2026).');

@@ -43,7 +43,7 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
   }));
 
   const handleMarkAsPaid = async () => {
-    if (!dayGroup || !customerId) return;
+    if (loading || !dayGroup || !customerId) return; // Ngăn chặn bấm đúp khi đang thực hiện giao dịch
     setLoading(true);
     setError('');
     try {
