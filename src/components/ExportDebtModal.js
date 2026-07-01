@@ -17,6 +17,24 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import UpdatePhoneModal from './UpdatePhoneModal';
 
+// Hàm helper để xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
+const getPaymentTargetMonth = (p) => {
+  const trimNote = (p.note || '').trim();
+  const monthMatch = trimNote.match(/^Thanh toán nợ Tháng (\d{2})\/(\d{4})/);
+  const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
+
+  if (monthMatch) {
+    return `${monthMatch[1]}/${monthMatch[2]}`;
+  }
+  if (dateMatch) {
+    return `${dateMatch[2]}/${dateMatch[3]}`;
+  }
+  const d = new Date(p.paidAt);
+  const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${mm}/${yyyy}`;
+};
+
 const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const updatePhoneModalRef = useRef(null);
   const [visible, setVisible] = useState(false);
@@ -75,10 +93,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       });
 
       payList.forEach(p => {
-        const d = new Date(p.paidAt);
-        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-        const yyyy = d.getFullYear();
-        monthsSet.add(`${mm}/${yyyy}`);
+        monthsSet.add(getPaymentTargetMonth(p));
       });
 
       // Chuyển set thành mảng và sắp xếp ngược lại (tháng mới nhất lên đầu)
@@ -144,10 +159,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       });
 
       const filteredPays = payList.filter(p => {
-        const d = new Date(p.paidAt);
-        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-        const yyyy = d.getFullYear();
-        return `${mm}/${yyyy}` === month;
+        return getPaymentTargetMonth(p) === month;
       });
 
       // Nhóm giao dịch & thanh toán theo ngày (mỗi ngày chỉ 1 mảng thôi)
@@ -475,7 +487,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       ctx.font = 'bold 17px Arial';
       ctx.fillText('Tiền nợ còn lại:', 560, currentY);
 
-      const overallDebt = cust?.debt || 0;
+      // Chỉ tính nợ còn lại của riêng tháng được chọn
+      const overallDebt = Math.max(0, totalDebtInMonth - totalPaymentInMonth);
       ctx.fillStyle = overallDebt > 0 ? '#DC2626' : '#10B981';
       ctx.font = 'bold 20px Arial';
       ctx.fillText(formatCurrency(overallDebt), 760, currentY);
