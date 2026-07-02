@@ -42,6 +42,21 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
     close: () => setVisible(false),
   }));
 
+  const formatPaymentNote = (note, paidAt) => {
+    if (!note) return 'Thu tiền nợ';
+    const trimNote = note.trim();
+    if (trimNote.startsWith('Thanh toán nợ Tháng') && !trimNote.includes('ngày')) {
+      const d = new Date(paidAt);
+      if (!isNaN(d.getTime())) {
+        const dd = d.getDate().toString().padStart(2, '0');
+        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+        const yyyy = d.getFullYear();
+        return `${trimNote} (ngày ${dd}/${mm}/${yyyy})`;
+      }
+    }
+    return trimNote;
+  };
+
   const handleMarkAsPaid = async () => {
     if (loading || !dayGroup || !customerId) return; // Ngăn chặn bấm đúp khi đang thực hiện giao dịch
     setLoading(true);
@@ -249,7 +264,7 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
                     </Text>
                   </View>
                   {p.note ? (
-                    <Text style={styles.transNote}>📝 {p.note}</Text>
+                    <Text style={styles.transNote}>📝 {formatPaymentNote(p.note, p.paidAt)}</Text>
                   ) : null}
                 </View>
               ))}

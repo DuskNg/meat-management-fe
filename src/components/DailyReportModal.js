@@ -57,7 +57,21 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     const dd = d.getDate().toString().padStart(2, '0');
     const mm = (d.getMonth() + 1).toString().padStart(2, '0');
     const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  const formatPaymentNote = (note, paidAt) => {
+    if (!note) return 'Thu tiền nợ';
+    const trimNote = note.trim();
+    if (trimNote.startsWith('Thanh toán nợ Tháng') && !trimNote.includes('ngày')) {
+      const d = new Date(paidAt);
+      if (!isNaN(d.getTime())) {
+        const dd = d.getDate().toString().padStart(2, '0');
+        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+        const yyyy = d.getFullYear();
+        return `${trimNote} (ngày ${dd}/${mm}/${yyyy})`;
+      }
+    }
+    return trimNote;
   };
 
   // Helper xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
@@ -143,7 +157,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       customerName: p.customer?.name || 'Khách ẩn danh',
       amount: parseFloat(p.amount || 0),
       note: p.note,
-      details: p.note || 'Thu tiền nợ'
+      details: formatPaymentNote(p.note, p.paidAt)
     }))
   ].sort((a, b) => new Date(b.time) - new Date(a.time)); // Mới nhất xếp trên đầu
 

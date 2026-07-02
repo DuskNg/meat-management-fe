@@ -32,7 +32,21 @@ const getPaymentTargetMonth = (p) => {
   const d = new Date(p.paidAt);
   const mm = (d.getMonth() + 1).toString().padStart(2, '0');
   const yyyy = d.getFullYear();
-  return `${mm}/${yyyy}`;
+};
+
+const formatPaymentNote = (note, paidAt) => {
+  if (!note) return 'Thu tiền nợ';
+  const trimNote = note.trim();
+  if (trimNote.startsWith('Thanh toán nợ Tháng') && !trimNote.includes('ngày')) {
+    const d = new Date(paidAt);
+    if (!isNaN(d.getTime())) {
+      const dd = d.getDate().toString().padStart(2, '0');
+      const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${trimNote} (ngày ${dd}/${mm}/${yyyy})`;
+    }
+  }
+  return trimNote;
 };
 
 const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
@@ -220,7 +234,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         totalPaymentInMonth += amt;
 
         if (p.note && !p.note.startsWith('Thanh toán nợ ngày')) {
-          dayMap[dateKey].notes.push(p.note);
+          dayMap[dateKey].notes.push(formatPaymentNote(p.note, p.paidAt));
         }
       });
 

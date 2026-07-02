@@ -119,10 +119,16 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
     setError('');
     setLoading(true);
     try {
-      // Nếu có chọn tháng cụ thể, tự động thêm tiền tố đặc thù để khấu trừ đúng tháng đó
+      // Nếu có chọn tháng cụ thể, tự động thêm tiền tố đặc thù để khấu trừ đúng tháng đó kèm ngày thanh toán cụ thể
       let finalNote = note.trim();
       if (targetMonthKey) {
-        const prefix = `Thanh toán nợ Tháng ${targetMonthKey}`;
+        const d = new Date();
+        const dd = d.getDate().toString().padStart(2, '0');
+        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+        const yyyy = d.getFullYear();
+        const dateStr = `${dd}/${mm}/${yyyy}`;
+        
+        const prefix = `Thanh toán nợ Tháng ${targetMonthKey} (ngày ${dateStr})`;
         finalNote = finalNote ? `${prefix} - ${finalNote}` : prefix;
       }
 
