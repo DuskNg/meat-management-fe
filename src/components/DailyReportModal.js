@@ -57,6 +57,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     const dd = d.getDate().toString().padStart(2, '0');
     const mm = (d.getMonth() + 1).toString().padStart(2, '0');
     const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
   };
 
   const formatPaymentNote = (note, paidAt) => {
