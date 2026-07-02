@@ -193,13 +193,12 @@ export default function CustomerDetailScreen() {
     }
   };
 
-  // Xử lý quay lại an toàn khi tải lại trang trực tiếp
+  // Xử lý quay lại trang danh sách khách hàng
   const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/');
-    }
+    router.replace({
+      pathname: '/',
+      params: { view: 'customers' }
+    });
   };
 
   // Xử lý xác nhận xóa khách hàng trước khi thực hiện qua PopupModal
@@ -242,6 +241,42 @@ export default function CustomerDetailScreen() {
         type: 'error'
       });
     }
+  };
+
+  // Xử lý chuyển đổi trạng thái nợ xấu (Bad Debt)
+  const handleToggleBadDebt = async () => {
+    if (!customer) return;
+    const nextStatus = !customer.isBadDebt;
+    
+    popupModalRef.current?.show({
+      title: nextStatus ? 'Đánh dấu nợ xấu' : 'Khôi phục hoạt động',
+      message: nextStatus 
+        ? `Bạn có chắc chắn muốn đánh dấu khách hàng "${customer.name}" là nợ xấu? Khách hàng này sẽ được chuyển vào Kho lưu trữ nợ xấu và khóa chức năng ghi nợ mới.`
+        : `Bạn có chắc chắn muốn khôi phục khách hàng "${customer.name}" hoạt động bình thường không?`,
+      type: 'confirm',
+      confirmText: 'Xác nhận',
+      cancelText: 'Hủy',
+      onConfirm: async () => {
+        try {
+          const response = await api.put(`/customers/${id}`, { isBadDebt: nextStatus });
+          if (response.data.success) {
+            popupModalRef.current?.show({
+              title: 'Thành công',
+              message: nextStatus ? 'Đã chuyển khách hàng vào kho nợ xấu.' : 'Đã khôi phục khách hàng hoạt động bình thường.',
+              type: 'success',
+              onConfirm: () => {
+                handleRefreshAll();
+              }
+            });
+          } else {
+            alert(response.data.message || 'Thao tác thất bại.');
+          }
+        } catch (err) {
+          console.error(err);
+          alert(err.response?.data?.message || 'Có lỗi xảy ra khi thực hiện thao tác.');
+        }
+      }
+    });
   };
 
   // Xử lý thực hiện cuộc gọi điện thoại cho khách hàng
@@ -653,37 +688,47 @@ export default function CustomerDetailScreen() {
 
   const isLoading = isLoadingCustomer || isLoadingTrans || isLoadingPayments;
 
+  // Tính toán avatar cho khách hàng hiển thị trên Header
+  const firstLetter = customer ? (customer.name || 'K').trim().charAt(0).toUpperCase() : 'K';
+  const avatarBgColors = ['#FFE2E2', '#E3F2FD', '#E8F5E9', '#FFF3E0', '#F3E5F5', '#E0F7FA'];
+  const avatarTextColors = ['#D32F2F', '#1976D2', '#388E3C', '#F57C00', '#7B1FA2', '#0097A7'];
+  const charCode = customer && customer.name ? customer.name.charCodeAt(0) : 0;
+  const colorIdx = charCode % avatarBgColors.length;
+  const avatarBg = avatarBgColors[colorIdx];
+  const avatarText = avatarTextColors[colorIdx];
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
       <View style={styles.contentWrapper}>
-        {/* ── HEADER: Thiết kế mới đồng bộ, đẹp mắt và trực quan hơn ── */}
+        {/* ── HEADER đơn giản: Nút Quay lại bên trái, Profile khách hàng bên phải (Avatar bên trái Tên) ── */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack} activeOpacity={0.7}>
-            <Text style={styles.backButtonText}>←</Text>
+          <TouchableOpacity
+            style={styles.backButtonNew}
+            onPress={handleBack}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.backTextNew}>← Quay lại</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {customer ? customer.name : 'Đang tải...'}
-          </Text>
+
           {customer ? (
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              <TouchableOpacity
-                style={styles.editCustomerButton}
-                onPress={() => editCustomerModalRef.current?.open(customer)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.editCustomerText}>Sửa ✏️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.deleteCustomerButton}
-                onPress={confirmDeleteCustomer}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.deleteCustomerText}>Xóa 🗑️</Text>
-              </TouchableOpacity>
+            <View style={styles.customerProfileCardRight}>
+              <View style={[styles.avatarContainerRight, { backgroundColor: avatarBg }]}>
+                <Text style={[styles.avatarTextRight, { color: avatarText }]}>
+                  {firstLetter}
+                </Text>
+              </View>
+              <View style={styles.customerDetailsRight}>
+                <Text style={styles.customerGreetingRight}>Khách hàng 👥</Text>
+                <Text style={styles.customerNameRight} numberOfLines={1}>
+                  {customer.name}
+                </Text>
+              </View>
             </View>
-          ) : null}
+          ) : (
+            <View style={styles.headerPlaceholder} />
+          )}
         </View>
 
         {/* ── NỘI DUNG CUỘN ──────────────────────────────────────────────── */}
@@ -704,12 +749,22 @@ export default function CustomerDetailScreen() {
           {/* Thẻ tổng nợ */}
           <View style={[
             styles.debtSummaryCard,
-            customer?.debt > 0 ? styles.cardHasDebt : styles.cardNoDebt,
+            customer?.isBadDebt
+              ? styles.cardBadDebt
+              : customer?.debt > 0
+              ? styles.cardHasDebt
+              : styles.cardNoDebt,
           ]}>
-            <Text style={styles.debtLabel}>SỐ TIỀN CÒN NỢ HIỆN TẠI:</Text>
+            <Text style={customer?.isBadDebt ? styles.debtLabelBad : styles.debtLabel}>
+              {customer?.isBadDebt ? '⚠️ SỐ NỢ XẤU KHOANH VÙNG:' : 'SỐ TIỀN CÒN NỢ HIỆN TẠI:'}
+            </Text>
             <Text style={[
               styles.debtValue,
-              customer?.debt > 0 ? styles.textDebt : styles.textPayment,
+              customer?.isBadDebt
+                ? styles.textBadDebt
+                : customer?.debt > 0
+                ? styles.textDebt
+                : styles.textPayment,
             ]}>
               {formatCurrency(customer?.debt || 0)}
             </Text>
@@ -763,6 +818,37 @@ export default function CustomerDetailScreen() {
               {customer?.note
                 ? <Text style={styles.infoRow}>💡 Ghi chú: {customer.note}</Text>
                 : null}
+            </View>
+          ) : null}
+
+          {/* Nhóm nút Quản trị khách hàng (Sửa/Xóa) */}
+          {customer ? (
+            <View style={styles.customerAdminActions}>
+              <TouchableOpacity
+                style={styles.editCustomerBtnNew}
+                onPress={() => editCustomerModalRef.current?.open(customer)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.editCustomerBtnTextNew}>Sửa thông tin ✏️</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={customer?.isBadDebt ? styles.restoreCustomerBtn : styles.badDebtCustomerBtn}
+                onPress={handleToggleBadDebt}
+                activeOpacity={0.7}
+              >
+                <Text style={customer?.isBadDebt ? styles.restoreCustomerBtnText : styles.badDebtCustomerBtnText}>
+                  {customer?.isBadDebt ? 'Khôi phục 🔄' : 'Nợ xấu ⚠️'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteCustomerBtnNew}
+                onPress={confirmDeleteCustomer}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deleteCustomerBtnTextNew}>Xóa 🗑️</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
 
@@ -871,42 +957,50 @@ export default function CustomerDetailScreen() {
         </ScrollView>
 
         {/* ── NÚT CỐ ĐỊNH DƯỚI ĐÁY ── */}
-        <View style={styles.bottomBar}>
-          {/* <TouchableOpacity
-            style={[styles.actionButton, styles.btnScanTicket]}
-            onPress={handleScanTicket}
-            disabled={isRecording || scanning}
-          >
-            {scanning ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.actionButtonText}>📷 QUÉT TÍCH KÊ</Text>
-            )}
-          </TouchableOpacity> */}
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              isRecording ? styles.btnRecording : styles.btnVoice
-            ]}
-            onPress={handleToggleRecording}
-            disabled={scanning}
-          >
-            {scanning ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : isRecording ? (
-              <Text style={styles.actionButtonText}>🔴 ĐANG GHI... (BẤM DỪNG)</Text>
-            ) : (
-              <Text style={styles.actionButtonText}>🎤 NÓI GHI NỢ</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.btnDebt]}
-            onPress={() => debtModalRef.current?.open()}
-            disabled={isRecording || scanning}
-          >
-            <Text style={styles.actionButtonText}>🔴 GHI NỢ MỚI</Text>
-          </TouchableOpacity>
-        </View>
+        {customer?.isBadDebt ? (
+          <View style={styles.bottomBarLocked}>
+            <Text style={styles.lockedText}>
+              ⚠️ Khách hàng này đang ở trạng thái nợ xấu. Vui lòng khôi phục hoạt động để ghi nợ mới.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.bottomBar}>
+            {/* <TouchableOpacity
+              style={[styles.actionButton, styles.btnScanTicket]}
+              onPress={handleScanTicket}
+              disabled={isRecording || scanning}
+            >
+              {scanning ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.actionButtonText}>📷 QUÉT TÍCH KÊ</Text>
+              )}
+            </TouchableOpacity> */}
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                isRecording ? styles.btnRecording : styles.btnVoice
+              ]}
+              onPress={handleToggleRecording}
+              disabled={scanning}
+            >
+              {scanning ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : isRecording ? (
+                <Text style={styles.actionButtonText}>🔴 ĐANG GHI... (BẤM DỪNG)</Text>
+              ) : (
+                <Text style={styles.actionButtonText}>🎤 NÓI GHI NỢ</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.btnDebt]}
+              onPress={() => debtModalRef.current?.open()}
+              disabled={isRecording || scanning}
+            >
+              <Text style={styles.actionButtonText}>🔴 GHI NỢ MỚI</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       <DebtModal ref={debtModalRef} customerId={id} onRefresh={handleRefreshAll} />
@@ -955,6 +1049,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -963,56 +1058,94 @@ const styles = StyleSheet.create({
     borderColor: '#F1F5F9', // Viền siêu mỏng nhạt màu
     ...SHADOWS.card,
   },
-  backButton: {
+  backButtonNew: {
+    width: 90,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  backTextNew: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  customerProfileCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarContainerRight: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#F1F5F9', // Nền xám Slate 100 nhã nhặn
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    borderWidth: 1,
+    marginRight: 10,
   },
-  backButtonText: {
-    marginBottom: 6,
-    fontSize: 21, // Tăng từ 20
+  avatarTextRight: {
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#475569', // Slate 600
   },
-  headerTitle: {
-    flex: 1,
-    fontSize: 19, // Tăng từ 18
+  customerDetailsRight: {
+    alignItems: 'flex-start',
+  },
+  customerGreetingRight: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  customerNameRight: {
+    fontSize: 15,
     fontWeight: 'bold',
     color: COLORS.text,
+    maxWidth: 150, // Giới hạn chiều rộng tên khách hàng tránh tràn
   },
-  editCustomerButton: {
+  headerPlaceholder: {
+    width: 90,
+  },
+  // Style cho nhóm nút hành động quản lý khách hàng phía dưới
+  customerAdminActions: {
     flexDirection: 'row',
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  editCustomerBtnNew: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5', // Xanh lục pastel nhạt
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#ECFDF5', // Màu xanh lục nhạt
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#A7F3D0',
+    ...SHADOWS.card,
   },
-  editCustomerText: {
-    fontSize: 15, // Tăng từ 14
+  editCustomerBtnTextNew: {
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#047857',
   },
-  deleteCustomerButton: {
-    flexDirection: 'row',
+  deleteCustomerBtnNew: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#FFF1F1', // Đỏ pastel nhạt
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFF1F1', // Màu đỏ nhạt pastel
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#FECACA', // Viền đỏ nhạt
+    borderColor: '#FECACA',
+    ...SHADOWS.card,
   },
-  deleteCustomerText: {
-    fontSize: 15,
+  deleteCustomerBtnTextNew: {
+    fontSize: 13,
     fontWeight: 'bold',
-    color: COLORS.danger, // Màu chữ đỏ
+    color: COLORS.danger,
   },
   // Container SĐT: Hiển thị ngang hàng SĐT và các nút hành động (giảm padding để gọn hơn)
   phoneSectionContainer: {
@@ -1431,5 +1564,64 @@ const styles = StyleSheet.create({
   monthTileAmount: {
     fontSize: 17,
     fontWeight: 'bold',
+  },
+  cardBadDebt: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  debtLabelBad: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#D97706',
+  },
+  textBadDebt: {
+    color: '#B45309',
+  },
+  badDebtCustomerBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7', // Vàng nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    ...SHADOWS.card,
+  },
+  badDebtCustomerBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#D97706',
+  },
+  restoreCustomerBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#E0F2FE', // Xanh nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    ...SHADOWS.card,
+  },
+  restoreCustomerBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#0284C7',
+  },
+  bottomBarLocked: {
+    backgroundColor: '#FFF1F1',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lockedText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#DC2626',
+    textAlign: 'center',
   },
 });

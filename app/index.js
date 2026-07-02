@@ -13,7 +13,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../src/api/client';
 import { useAuthStore } from '../src/store/authStore';
@@ -32,6 +32,15 @@ import EditDebtModal from '../src/components/EditDebtModal';
 import EditPaymentModal from '../src/components/EditPaymentModal';
 import CustomerDebtHistoryModal from '../src/components/CustomerDebtHistoryModal';
 import DailyReportModal from '../src/components/DailyReportModal';
+import AddBadDebtModal from '../src/components/AddBadDebtModal';
+import AddSupplierModal from '../src/components/AddSupplierModal';
+import SupplierDebtModal from '../src/components/SupplierDebtModal';
+import SupplierPaymentModal from '../src/components/SupplierPaymentModal';
+import SupplierHistoryModal from '../src/components/SupplierHistoryModal';
+import AddEmployeeModal from '../src/components/AddEmployeeModal';
+import SalaryAdvanceModal from '../src/components/SalaryAdvanceModal';
+import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
+import EditEmployeeModal from '../src/components/EditEmployeeModal';
 
 // Loại bỏ dấu tiếng Việt để phục vụ tìm kiếm không dấu
 const removeDiacritics = (str) => {
@@ -45,6 +54,7 @@ const removeDiacritics = (str) => {
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const auth = useAuthStore();
   const modalRef = useRef(null);
   const productModalRef = useRef(null);
@@ -60,24 +70,199 @@ export default function DashboardScreen() {
   const editDebtModalRef = useRef(null);
   const editPaymentModalRef = useRef(null);
   const dailyReportModalRef = useRef(null);
+  const addBadDebtModalRef = useRef(null); // Modal thêm bản ghi nợ xấu mới
+  const addSupplierModalRef = useRef(null);
+  const supplierDebtModalRef = useRef(null);
+  const supplierPaymentModalRef = useRef(null);
+  const supplierHistoryModalRef = useRef(null);
+  const addEmployeeModalRef = useRef(null);
+  const salaryAdvanceModalRef = useRef(null);
+  const employeeHistoryModalRef = useRef(null);
+  const editEmployeeModalRef = useRef(null);
 
+  const [currentView, setCurrentView] = useState(params.view || 'menu'); // 'menu' hoặc 'customers' để điều hướng
   const [search, setSearch] = useState('');
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+
+  // States quản lý tab nhân viên và chấm công / tính lương
+  const [employeeTab, setEmployeeTab] = useState('STAFF'); // 'STAFF' (Nhân sự), 'ATTENDANCE' (Chấm công), 'SALARY' (Bảng lương)
+  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().split('T')[0]); // Ngày chấm công mặc định hôm nay
+  const [attendanceList, setAttendanceList] = useState([]); // Danh sách chấm công tạm thời để gửi lưu
+  const [showSaveToast, setShowSaveToast] = useState(false); // Trạng thái hiển thị thông báo toast khi lưu chấm công thành công
+  const [salaryMonth, setSalaryMonth] = useState(() => {
+    const d = new Date();
+    return `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+  }); // Tháng tính lương mặc định tháng hiện tại
 
   const [isRecording, setIsRecording] = useState(false);
   const [scanning, setScanning] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
+  // Đồng bộ view khi URL thay đổi (bao gồm cả khi reload hoặc bấm quay lại)
+  React.useEffect(() => {
+    setCurrentView(params.view || 'menu');
+  }, [params.view]);
+
   // 1. Dùng React Query tải danh sách khách hàng và cache lại
   const { data: customersResponse, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['customers'],
     queryFn: async () => {
-      const response = await api.get('/customers');
+      const response = await api.get('/customers?isBadDebt=false');
       return response.data;
     },
   });
+
+  // 1.5. Dùng React Query tải danh sách khách hàng nợ xấu
+  const { data: badCustomersResponse, isLoading: isLoadingBad, refetch: refetchBad, isRefetching: isRefetchingBad } = useQuery({
+    queryKey: ['bad_customers'],
+    queryFn: async () => {
+      const response = await api.get('/customers?isBadDebt=true');
+      return response.data;
+    },
+  });
+
+  // 1.8. Dùng React Query tải danh sách nhà cung cấp
+  const { data: suppliersResponse, isLoading: isLoadingSuppliers, refetch: refetchSuppliers, isRefetching: isRefetchingSuppliers } = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: async () => {
+      const response = await api.get('/suppliers');
+      return response.data;
+    },
+  });
+
+  // 1.9. Dùng React Query tải danh sách nhân viên
+  const { data: employeesResponse, isLoading: isLoadingEmployees, refetch: refetchEmployees } = useQuery({
+    queryKey: ['employees'],
+    queryFn: async () => {
+      const response = await api.get('/employees');
+      return response.data;
+    },
+  });
+
+  // States và logic chấm công & bảng lương nhân viên
+  const [salaryData, setSalaryData] = useState([]);
+  const [loadingSalary, setLoadingSalary] = useState(false);
+  const [savingAttendance, setSavingAttendance] = useState(false);
+
+  // States phụ để nhập thưởng phạt khi mở rộng thẻ nhân viên để chốt lương
+  const [activeSalaryEmpId, setActiveSalaryEmpId] = useState(null);
+  const [bonusInput, setBonusInput] = useState('');
+  const [deductionInput, setDeductionInput] = useState('');
+  const [paymentNote, setPaymentNote] = useState('');
+  const [payingSalaryEmpId, setPayingSalaryEmpId] = useState(null);
+
+  // Lấy danh sách chấm công
+  const fetchAttendanceList = async (dateStr) => {
+    try {
+      const response = await api.get(`/employees/attendance?date=${dateStr}`);
+      if (response.data.success) {
+        setAttendanceList(response.data.data);
+      }
+    } catch (err) {
+      console.error("Lỗi tải danh sách chấm công:", err);
+    }
+  };
+
+  // Lấy bảng lương tháng
+  const fetchSalaryData = async (monthStr) => {
+    setLoadingSalary(true);
+    try {
+      const response = await api.get(`/employees/salary/calculate?monthKey=${monthStr}`);
+      if (response.data.success) {
+        setSalaryData(response.data.data);
+      }
+    } catch (err) {
+      console.error("Lỗi tải bảng lương:", err);
+    } finally {
+      setLoadingSalary(false);
+    }
+  };
+
+  // Tự động load dữ liệu chấm công khi đổi ngày hoặc tab
+  React.useEffect(() => {
+    if (currentView === 'employees' && employeeTab === 'ATTENDANCE') {
+      fetchAttendanceList(attendanceDate);
+    }
+  }, [currentView, employeeTab, attendanceDate]);
+
+  // Tự động load dữ liệu bảng lương khi đổi tháng hoặc tab
+  React.useEffect(() => {
+    if (currentView === 'employees' && employeeTab === 'SALARY') {
+      fetchSalaryData(salaryMonth);
+    }
+  }, [currentView, employeeTab, salaryMonth]);
+
+  // Thay đổi trạng thái chấm công
+  const handleToggleAttendance = (empId, status, shift = 'FULL') => {
+    setAttendanceList((prev) =>
+      prev.map((item) =>
+        item.employeeId === empId ? { ...item, status, shift } : item
+      )
+    );
+  };
+
+  // Lưu bảng chấm công
+  const handleSaveAttendance = async () => {
+    setSavingAttendance(true);
+    try {
+      const response = await api.post('/employees/attendance', {
+        date: attendanceDate,
+        list: attendanceList,
+      });
+      if (response.data.success) {
+        setShowSaveToast(true);
+        // Tự động ẩn thông báo sau 5 giây
+        setTimeout(() => {
+          setShowSaveToast(false);
+        }, 5000);
+        fetchAttendanceList(attendanceDate);
+      }
+    } catch (err) {
+      popupModalRef.current?.show({
+        title: 'Thất bại',
+        message: err.response?.data?.message || 'Không thể lưu chấm công.',
+        type: 'error',
+      });
+    } finally {
+      setSavingAttendance(false);
+    }
+  };
+
+  // Gửi yêu cầu chốt trả lương
+  const handlePaySalary = async (empId) => {
+    setPayingSalaryEmpId(empId);
+    try {
+      const parseAmt = (val) => {
+        const clean = val.replace(/[^0-9]/g, '');
+        return clean ? parseInt(clean, 10) : 0;
+      };
+
+      const response = await api.post('/employees/salary/pay', {
+        employeeId: empId,
+        monthKey: salaryMonth,
+        bonus: parseAmt(bonusInput),
+        deductions: parseAmt(deductionInput),
+        note: paymentNote.trim() || null,
+      });
+
+      if (response.data.success) {
+        Alert.alert('Thành công', 'Đã chốt và chi trả lương tháng thành công.');
+        setActiveSalaryEmpId(null);
+        setBonusInput('');
+        setDeductionInput('');
+        setPaymentNote('');
+        fetchSalaryData(salaryMonth);
+      }
+    } catch (err) {
+      Alert.alert('Lỗi', err.response?.data?.message || 'Lỗi thanh toán lương.');
+    } finally {
+      setPayingSalaryEmpId(null);
+    }
+  };
 
   // Xử lý xác nhận xóa khách hàng trực tiếp trên trang chủ qua PopupModal
   const confirmDeleteCustomer = (customerId, customerName) => {
@@ -232,6 +417,276 @@ export default function DashboardScreen() {
       return a.name.localeCompare(b.name, 'vi');
     });
 
+  const badCustomers = badCustomersResponse?.data || [];
+  const totalBadDebt = badCustomers.reduce((sum, c) => sum + (c.debt || 0), 0);
+
+  const filteredBadCustomers = badCustomers
+    .filter((c) => {
+      const nameNorm = removeDiacritics(c.name.toLowerCase());
+      const searchNorm = removeDiacritics(search.toLowerCase());
+      return nameNorm.includes(searchNorm) || (c.phone && c.phone.includes(search));
+    })
+    .sort((a, b) => {
+      const debtA = a.debt || 0;
+      const debtB = b.debt || 0;
+
+      // Ưu tiên những người còn nợ lên đầu
+      if (debtA > 0 && debtB <= 0) return -1;
+      if (debtB > 0 && debtA <= 0) return 1;
+
+      if (debtA > 0 && debtB > 0) {
+        return debtB - debtA;
+      }
+
+      return a.name.localeCompare(b.name, 'vi');
+    });
+
+  const suppliers = suppliersResponse?.data || [];
+  const totalSupplierDebt = suppliers.reduce((sum, s) => sum + (s.debt || 0), 0);
+
+  const filteredSuppliers = suppliers
+    .filter((s) => {
+      const nameNorm = removeDiacritics(s.name.toLowerCase());
+      const searchNorm = removeDiacritics(search.toLowerCase());
+      return nameNorm.includes(searchNorm) || (s.phone && s.phone.includes(search));
+    })
+    .sort((a, b) => {
+      const debtA = a.debt || 0;
+      const debtB = b.debt || 0;
+
+      // Ưu tiên nhà cung cấp mình đang nợ tiền lên đầu
+      if (debtA > 0 && debtB <= 0) return -1;
+      if (debtB > 0 && debtA <= 0) return 1;
+
+      if (debtA > 0 && debtB > 0) {
+        return debtB - debtA;
+      }
+
+      return a.name.localeCompare(b.name, 'vi');
+    });
+
+  const renderSupplierItem = ({ item }) => {
+    const hasDebt = item.debt > 0;
+    const firstLetter = (item.name || 'S').trim().charAt(0).toUpperCase();
+
+    // Xác định màu sắc tươi sáng cho nhà cung cấp
+    const avatarBg = '#FFE4E6';
+    const avatarText = '#9F1239';
+
+    return (
+      <View
+        style={[
+          styles.customerCard,
+          hasDebt
+            ? styles.supplierCardDebtStripe
+            : styles.supplierCardNoDebtStripe
+        ]}
+      >
+        <View style={styles.customerCardClickable}>
+          {/* PHẦN TRÊN: Thông tin nhà cung cấp & dư nợ */}
+          <View style={styles.cardHeaderSection}>
+            <View style={[styles.customerAvatar, { backgroundColor: avatarBg }]}>
+              <Text style={[styles.customerAvatarText, { color: avatarText }]}>{firstLetter}</Text>
+            </View>
+
+            <View style={styles.cardInfo}>
+              <Text style={styles.customerName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={styles.customerPhone} numberOfLines={1}>
+                {item.phone ? `📞 ${item.phone}` : '📞 Không có số điện thoại'}
+              </Text>
+            </View>
+
+            <View style={styles.cardDebtStatusSection}>
+              {hasDebt ? (
+                <View style={styles.debtValueContainer}>
+                  <Text style={[styles.debtValueAmount, { color: '#9F1239' }]}>{formatCurrency(item.debt)}</Text>
+                  <Text style={styles.debtValueLabel}>cần trả lò ⚠️</Text>
+                </View>
+              ) : (
+                <View style={styles.noDebtBadge}>
+                  <Text style={styles.noDebtBadgeText}>Đã trả đủ ✅</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.cardDivider} />
+
+          {/* PHẦN DƯỚI: Các nút hành động */}
+          <View style={styles.cardDebtContainer}>
+            <View style={styles.actionsRightGroup}>
+              {/* Nút xem lịch sử dòng tiền */}
+              <TouchableOpacity
+                style={styles.viewDebtBtn}
+                onPress={() => {
+                  setSelectedSupplier(item);
+                  supplierHistoryModalRef.current?.open();
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.viewDebtBtnText}>👁️ Lịch sử</Text>
+              </TouchableOpacity>
+
+              {/* Nút nhập hàng ghi nợ thêm */}
+              <TouchableOpacity
+                style={styles.addDebtBtn}
+                onPress={() => {
+                  setSelectedSupplier(item);
+                  supplierDebtModalRef.current?.open();
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.addDebtBtnText}>📥 Nhập hàng</Text>
+              </TouchableOpacity>
+
+              {/* Nút trả tiền hàng */}
+              <TouchableOpacity
+                style={[
+                  styles.payBadDebtBtn,
+                  !hasDebt && styles.payBadDebtBtnDisabled
+                ]}
+                onPress={() => {
+                  setSelectedSupplier(item);
+                  supplierPaymentModalRef.current?.open(item.debt || '');
+                }}
+                activeOpacity={0.6}
+                disabled={!hasDebt}
+              >
+                <Text style={[
+                  styles.payBadDebtBtnText,
+                  !hasDebt && styles.payBadDebtBtnTextDisabled
+                ]}>
+                  💵 Trả tiền
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const confirmDeleteEmployee = (empId, empName) => {
+    popupModalRef.current?.show({
+      title: 'Xác nhận xóa',
+      message: `Bạn có chắc chắn muốn xóa nhân viên "${empName}" khỏi sạp không?`,
+      type: 'confirm',
+      confirmText: 'Xóa ngay',
+      cancelText: 'Hủy bỏ',
+      onConfirm: () => handleDeleteEmployee(empId),
+    });
+  };
+
+  const handleDeleteEmployee = async (empId) => {
+    try {
+      const response = await api.delete(`/employees/${empId}`);
+      if (response.data.success) {
+        popupModalRef.current?.show({
+          title: 'Thành công',
+          message: 'Đã xóa nhân viên thành công.',
+          type: 'success',
+          onConfirm: () => refetchEmployees(),
+        });
+      }
+    } catch (err) {
+      popupModalRef.current?.show({
+        title: 'Thất bại',
+        message: err.response?.data?.message || 'Có lỗi xảy ra khi xóa nhân viên.',
+        type: 'error',
+      });
+    }
+  };
+
+  const renderEmployeeItem = ({ item }) => {
+    const firstLetter = (item.name || 'E').trim().charAt(0).toUpperCase();
+    const avatarBg = '#E0F2FE'; // Xanh dương nhạt
+    const avatarText = '#0369A1'; // Xanh dương đậm
+
+    return (
+      <View style={styles.customerCard}>
+        <View style={styles.customerCardClickable}>
+          <View style={styles.cardHeaderSection}>
+            <View style={[styles.customerAvatar, { backgroundColor: avatarBg }]}>
+              <Text style={[styles.customerAvatarText, { color: avatarText }]}>{firstLetter}</Text>
+            </View>
+
+            <View style={styles.cardInfo}>
+              <Text style={styles.customerName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={styles.customerPhone} numberOfLines={1}>
+                {item.role ? `💼 ${item.role}` : '💼 Nhân viên'} {item.phone ? `• 📞 ${item.phone}` : ''}
+              </Text>
+            </View>
+
+            <View style={styles.cardDebtStatusSection}>
+              <View style={styles.debtValueContainer}>
+                <Text style={[styles.debtValueAmount, { color: '#0369A1' }]}>
+                  {formatCurrency(item.baseSalary)}
+                </Text>
+                <Text style={styles.debtValueLabel}>lương tháng</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.cardDivider} />
+
+          <View style={styles.cardDebtContainer}>
+            <View style={styles.actionsRightGroup}>
+              {/* Nút xem lịch sử chấm công, ứng, lương */}
+              <TouchableOpacity
+                style={styles.viewDebtBtn}
+                onPress={() => {
+                  setSelectedEmployee(item);
+                  employeeHistoryModalRef.current?.open();
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.viewDebtBtnText}>👁️ Lịch sử</Text>
+              </TouchableOpacity>
+
+              {/* Nút ứng lương */}
+              <TouchableOpacity
+                style={styles.addDebtBtn}
+                onPress={() => {
+                  setSelectedEmployee(item);
+                  salaryAdvanceModalRef.current?.open();
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.addDebtBtnText}>💸 Ứng lương</Text>
+              </TouchableOpacity>
+
+              {/* Nút sửa nhân viên */}
+              <TouchableOpacity
+                style={[styles.viewDebtBtn, { backgroundColor: '#F0FDFA', borderColor: '#CCFBF1' }]}
+                onPress={() => {
+                  editEmployeeModalRef.current?.open(item);
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={[styles.viewDebtBtnText, { color: '#0D9488' }]}>✏️ Sửa</Text>
+              </TouchableOpacity>
+
+              {/* Nút xóa nhân viên */}
+              <TouchableOpacity
+                style={[styles.exportDebtBtn, { borderColor: '#FCA5A5' }]}
+                onPress={() => {
+                  confirmDeleteEmployee(item.id, item.name);
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={[styles.exportDebtBtnText, { color: '#EF4444' }]}>🗑️ Xóa</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   // Định dạng hiển thị tiền VNĐ (Ví dụ: 1.500.000 đ)
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('vi-VN', {
@@ -242,6 +697,7 @@ export default function DashboardScreen() {
 
   const renderCustomerItem = ({ item }) => {
     const hasDebt = item.debt > 0;
+    const isBadDebtCustomer = item.isBadDebt === true;
     // Lấy chữ cái đầu của tên khách hàng làm avatar
     const firstLetter = (item.name || 'K').trim().charAt(0).toUpperCase();
 
@@ -257,7 +713,11 @@ export default function DashboardScreen() {
       <View
         style={[
           styles.customerCard,
-          hasDebt ? styles.customerCardDebtStripe : styles.customerCardNoDebtStripe,
+          isBadDebtCustomer
+            ? styles.customerCardBadDebtStripe
+            : hasDebt
+              ? styles.customerCardDebtStripe
+              : styles.customerCardNoDebtStripe,
           activeMenuId === item.id && { zIndex: 10, elevation: 10 }
         ]}
       >
@@ -285,7 +745,12 @@ export default function DashboardScreen() {
 
             {/* Trạng thái công nợ bên phải */}
             <View style={styles.cardDebtStatusSection}>
-              {hasDebt ? (
+              {isBadDebtCustomer ? (
+                <View style={styles.badDebtValueContainer}>
+                  <Text style={styles.badDebtValueAmount}>{formatCurrency(item.debt)}</Text>
+                  <Text style={styles.badDebtValueLabel}>NỢ XẤU ⚠️</Text>
+                </View>
+              ) : hasDebt ? (
                 <View style={styles.debtValueContainer}>
                   <Text style={styles.debtValueAmount}>{formatCurrency(item.debt)}</Text>
                   <Text style={styles.debtValueLabel}>còn nợ ⚠️</Text>
@@ -304,46 +769,74 @@ export default function DashboardScreen() {
           {/* PHẦN DƯỚI: Các nút hành động */}
           <View style={styles.cardDebtContainer}>
             <View style={styles.actionsRightGroup}>
-              <TouchableOpacity
-                style={styles.viewDebtBtn}
-                onPress={(e) => {
-                  if (e && e.stopPropagation) {
-                    e.stopPropagation();
-                  }
-                  setSelectedCustomerId(item.id);
-                  customerDebtHistoryModalRef.current?.open(item);
-                }}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.viewDebtBtnText}>👁️ Xem nợ</Text>
-              </TouchableOpacity>
+              {isBadDebtCustomer ? (
+                <TouchableOpacity
+                  style={[
+                    styles.payBadDebtBtn,
+                    item.debt <= 0 && styles.payBadDebtBtnDisabled
+                  ]}
+                  onPress={(e) => {
+                    if (e && e.stopPropagation) {
+                      e.stopPropagation();
+                    }
+                    setSelectedCustomerId(item.id);
+                    // Mở PaymentModal với số tiền nợ hiện tại để điền sẵn làm mặc định
+                    paymentModalRef.current?.open(item.debt || '');
+                  }}
+                  activeOpacity={0.6}
+                  disabled={item.debt <= 0}
+                >
+                  <Text style={[
+                    styles.payBadDebtBtnText,
+                    item.debt <= 0 && styles.payBadDebtBtnTextDisabled
+                  ]}>
+                    {item.debt <= 0 ? '✅ Đã trả đủ' : '💰 Đã trả'}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={styles.viewDebtBtn}
+                    onPress={(e) => {
+                      if (e && e.stopPropagation) {
+                        e.stopPropagation();
+                      }
+                      setSelectedCustomerId(item.id);
+                      customerDebtHistoryModalRef.current?.open(item);
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.viewDebtBtnText}>👁️ Xem nợ</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.addDebtBtn}
-                onPress={(e) => {
-                  if (e && e.stopPropagation) {
-                    e.stopPropagation();
-                  }
-                  setSelectedCustomerId(item.id);
-                  debtModalRef.current?.open();
-                }}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.addDebtBtnText}>🔴 Ghi nợ</Text>
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.addDebtBtn}
+                    onPress={(e) => {
+                      if (e && e.stopPropagation) {
+                        e.stopPropagation();
+                      }
+                      setSelectedCustomerId(item.id);
+                      debtModalRef.current?.open();
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.addDebtBtnText}>🔴 Ghi nợ</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.exportDebtBtn}
-                onPress={(e) => {
-                  if (e && e.stopPropagation) {
-                    e.stopPropagation();
-                  }
-                  exportDebtModalRef.current?.open(item);
-                }}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.exportDebtBtnText}>📊 Xuất nợ</Text>
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.exportDebtBtn}
+                    onPress={(e) => {
+                      if (e && e.stopPropagation) {
+                        e.stopPropagation();
+                      }
+                      exportDebtModalRef.current?.open(item);
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.exportDebtBtnText}>📊 Xuất nợ</Text>
+                  </TouchableOpacity>
+                </>
+              )}
 
               <View style={styles.actionMenuContainer}>
                 <TouchableOpacity
@@ -409,35 +902,752 @@ export default function DashboardScreen() {
     );
   };
 
+  if (currentView === 'menu') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+
+        <View style={styles.contentWrapper}>
+          {/* HEADER đơn giản: Nút Logout bên trái, Profile chủ tài khoản bên phải (Avatar bên trái Tên) */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.logoutButtonMini}
+              onPress={() => auth.logout()}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.logoutTextMini}>Thoát 🚪</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.merchantProfileCardRight}
+              onPress={() => profileModalRef.current?.open()}
+              activeOpacity={0.7}
+            >
+              <View style={styles.avatarContainerRight}>
+                <Text style={styles.avatarTextRight}>
+                  {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.merchantDetailsRight}>
+                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
+                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Danh sách các chức năng chính */}
+          <View style={styles.menuContainer}>
+            <Text style={styles.menuTitle}>HỆ THỐNG QUẢN LÝ</Text>
+            <Text style={styles.menuSubtitle}>Vui lòng lựa chọn nghiệp vụ để bắt đầu làm việc</Text>
+
+            {/* Chức năng 1: Quản lý khách hàng */}
+            <TouchableOpacity
+              style={[styles.menuCard, styles.menuCardActive]}
+              onPress={() => {
+                router.replace({ pathname: '/', params: { view: 'customers' } });
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={styles.menuCardIconBg}>
+                <Text style={styles.menuCardIcon}>👥</Text>
+              </View>
+              <View style={styles.menuCardContent}>
+                <Text style={styles.menuCardTitle}>Quản lý khách hàng</Text>
+                <Text style={styles.menuCardDesc}>Xem sổ nợ khách quen, ghi nợ thịt, thanh toán công nợ và báo cáo</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Chức năng 4: Quản lý tiền hàng */}
+            <TouchableOpacity
+              style={[styles.menuCard, styles.menuCardActiveSupplier]}
+              onPress={() => {
+                router.replace({ pathname: '/', params: { view: 'suppliers' } });
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={styles.menuCardIconBgSupplier}>
+                <Text style={styles.menuCardIcon}>📦</Text>
+              </View>
+              <View style={styles.menuCardContent}>
+                <Text style={styles.menuCardTitleSupplier}>Quản lý tiền hàng</Text>
+                <Text style={styles.menuCardDesc}>Quản lý công nợ với chủ bò</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Chức năng 2: Quản lý nhân viên */}
+            <TouchableOpacity
+              style={[styles.menuCard, styles.menuCardActiveEmployee]}
+              onPress={() => {
+                router.replace({ pathname: '/', params: { view: 'employees' } });
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={styles.menuCardIconBgEmployee}>
+                <Text style={styles.menuCardIcon}>👤</Text>
+              </View>
+              <View style={styles.menuCardContent}>
+                <Text style={styles.menuCardTitleEmployee}>Quản lý nhân viên</Text>
+                <Text style={styles.menuCardDescEmployee}>Chấm công hàng ngày, quản lý tạm ứng lương, tính lương tháng</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Chức năng 3: Quản lý nợ xấu */}
+            <TouchableOpacity
+              style={[styles.menuCard, styles.menuCardActiveBad]}
+              onPress={() => {
+                router.replace({ pathname: '/', params: { view: 'bad_debts' } });
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={styles.menuCardIconBgBad}>
+                <Text style={styles.menuCardIcon}>⚠️</Text>
+              </View>
+              <View style={styles.menuCardContent}>
+                <Text style={styles.menuCardTitle}>Quản lý nợ xấu</Text>
+                <Text style={styles.menuCardDesc}>Khoanh vùng khách hàng khó đòi nợ, theo dõi số tiền đọng và phục hồi trạng thái</Text>
+              </View>
+            </TouchableOpacity>
+
+
+          </View>
+        </View>
+
+        {/* Modal Hồ sơ */}
+        <ProfileModal ref={profileModalRef} />
+        {/* Popup Thông báo */}
+        <PopupModal ref={popupModalRef} />
+      </SafeAreaView>
+    );
+  }
+
+  if (currentView === 'bad_debts') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFBEB" />
+
+        <View style={styles.contentWrapper}>
+          {/* HEADER nợ xấu: tông màu cam/vàng pastel */}
+          <View style={[styles.header, styles.headerBadDebt]}>
+            <TouchableOpacity
+              style={styles.backButtonNew}
+              onPress={() => {
+                router.replace({ pathname: '/', params: { view: 'menu' } });
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.backTextNew}>← Quay lại</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.merchantProfileCardRight}
+              onPress={() => profileModalRef.current?.open()}
+              activeOpacity={0.7}
+            >
+              <View style={styles.avatarContainerRight}>
+                <Text style={styles.avatarTextRight}>
+                  {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.merchantDetailsRight}>
+                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
+                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* TỔNG TIỀN NỢ XẤU */}
+          <View style={styles.summaryCardBad}>
+            <Text style={styles.summaryLabelBad}>⚠️ TỔNG NỢ XẤU KHOANH VÙNG:</Text>
+            <Text style={styles.summaryValueBad}>{formatCurrency(totalBadDebt)}</Text>
+          </View>
+
+          {/* Ô TÌM KIẾM NHANH KHÁCH NỢ XẤU */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="🔍 Tìm khách nợ xấu..."
+              placeholderTextColor={COLORS.textLight}
+              value={search}
+              onChangeText={setSearch}
+            />
+            {search ? (
+              <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
+                <Text style={styles.clearSearchText}>✕</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={styles.listHeaderContainer}>
+            <Text style={styles.listHeaderBad}>📂 KHO LƯU TRỮ NỢ XẤU ({filteredBadCustomers.length})</Text>
+          </View>
+
+          {/* DANH SÁCH KHÁCH HÀNG NỢ XẤU */}
+          {isLoadingBad ? (
+            <ActivityIndicator size="large" color="#D97706" style={{ marginTop: 40 }} />
+          ) : (
+            <FlatList
+              data={filteredBadCustomers}
+              renderItem={renderCustomerItem}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContent}
+              refreshing={isRefetchingBad}
+              onRefresh={refetchBad}
+              CellRendererComponent={CustomCellRenderer}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>Không có khách hàng nào trong kho nợ xấu.</Text>
+                </View>
+              }
+            />
+          )}
+        </View>
+
+        {/* THANH ĐIỀU KHIỂN CỐ ĐỊNH Ở ĐẢY MÀN HÌNH NỢ XẤU */}
+        <View style={styles.bottomBarBad}>
+          <TouchableOpacity
+            style={styles.addBadDebtButtonFull}
+            onPress={() => addBadDebtModalRef.current?.open()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.addBadDebtButtonFullText}>➕ THÊM NỢ XẤU</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ProfileModal ref={profileModalRef} />
+        <PopupModal ref={popupModalRef} />
+        {/* Modal thêm bản ghi nợ xấu mới */}
+        <AddBadDebtModal ref={addBadDebtModalRef} onRefresh={refetchBad} />
+        {/* Các modal cần thiết để nút Xem nợ và Xuất nợ trên thẻ khách hàng hoạt động */}
+        <ExportDebtModal ref={exportDebtModalRef} onRefresh={refetchBad} />
+        <CustomerDebtHistoryModal
+          ref={customerDebtHistoryModalRef}
+          paymentModalRef={paymentModalRef}
+          detailModalRef={detailModalRef}
+          debtModalRef={debtModalRef}
+          onRefresh={refetchBad}
+        />
+        <DebtModal ref={debtModalRef} customerId={selectedCustomerId} onRefresh={refetchBad} />
+        <PaymentModal ref={paymentModalRef} customerId={selectedCustomerId} onRefresh={refetchBad} />
+        <TransactionDetailModal
+          ref={detailModalRef}
+          customerId={selectedCustomerId}
+          onRefresh={refetchBad}
+          onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
+          onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
+        />
+        <EditDebtModal ref={editDebtModalRef} onRefresh={refetchBad} />
+        <EditPaymentModal ref={editPaymentModalRef} onRefresh={refetchBad} />
+      </SafeAreaView>
+    );
+  }
+
+  if (currentView === 'employees') {
+    // Lọc danh sách nhân viên phục vụ tìm kiếm nhanh
+    const employees = employeesResponse?.data || [];
+    const filteredEmployees = employees.filter((emp) => {
+      const nameNorm = removeDiacritics(emp.name.toLowerCase());
+      const searchNorm = removeDiacritics(search.toLowerCase());
+      return nameNorm.includes(searchNorm) || (emp.phone && emp.phone.includes(search));
+    });
+
+    // Thay đổi ngày chấm công
+    const adjustAttendanceDate = (days) => {
+      const current = new Date(attendanceDate);
+      current.setDate(current.getDate() + days);
+      setAttendanceDate(current.toISOString().split('T')[0]);
+    };
+
+    // Thay đổi tháng tính lương
+    const adjustSalaryMonth = (months) => {
+      const parts = salaryMonth.split('/');
+      const month = parseInt(parts[0], 10);
+      const year = parseInt(parts[1], 10);
+      
+      const date = new Date(year, month - 1 + months, 1);
+      setSalaryMonth(`${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`);
+    };
+
+    const formatDateDisplay = (dateStr) => {
+      const d = new Date(dateStr);
+      return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+    };
+
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#EEF2F6" />
+
+        <View style={styles.contentWrapper}>
+          {/* HEADER nhân viên: Indigo pastel nhạt */}
+          <View style={[styles.header, styles.headerEmployee]}>
+            <TouchableOpacity
+              style={styles.backButtonNew}
+              onPress={() => {
+                router.replace({ pathname: '/', params: { view: 'menu' } });
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.backTextNew}>← Quay lại</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.merchantProfileCardRight}
+              onPress={() => profileModalRef.current?.open()}
+              activeOpacity={0.7}
+            >
+              <View style={styles.avatarContainerRight}>
+                <Text style={styles.avatarTextRight}>
+                  {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.merchantDetailsRight}>
+                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
+                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* THANH TABS NGHIỆP VỤ NHÂN VIÊN */}
+          <View style={styles.tabHeaderContainer}>
+            <TouchableOpacity
+              style={[styles.tabHeaderButton, employeeTab === 'STAFF' && styles.tabHeaderButtonActive]}
+              onPress={() => setEmployeeTab('STAFF')}
+            >
+              <Text style={[styles.tabHeaderText, employeeTab === 'STAFF' && styles.tabHeaderTextActive]}>
+                👥 Nhân sự
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabHeaderButton, employeeTab === 'ATTENDANCE' && styles.tabHeaderButtonActive]}
+              onPress={() => setEmployeeTab('ATTENDANCE')}
+            >
+              <Text style={[styles.tabHeaderText, employeeTab === 'ATTENDANCE' && styles.tabHeaderTextActive]}>
+                📅 Chấm công
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabHeaderButton, employeeTab === 'SALARY' && styles.tabHeaderButtonActive]}
+              onPress={() => setEmployeeTab('SALARY')}
+            >
+              <Text style={[styles.tabHeaderText, employeeTab === 'SALARY' && styles.tabHeaderTextActive]}>
+                💰 Bảng lương
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* TAB 1: DANH SÁCH NHÂN SỰ */}
+          {employeeTab === 'STAFF' && (
+            <>
+              {/* Ô TÌM KIẾM NHÂN VIÊN */}
+              <View style={[styles.searchContainer, { marginTop: 12 }]}>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="🔍 Tìm nhân viên..."
+                  placeholderTextColor={COLORS.textLight}
+                  value={search}
+                  onChangeText={setSearch}
+                />
+                {search ? (
+                  <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
+                    <Text style={styles.clearSearchText}>✕</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              <View style={styles.listHeaderContainer}>
+                <Text style={styles.listHeaderEmployee}>📂 DANH SÁCH NHÂN VIÊN ({filteredEmployees.length})</Text>
+              </View>
+
+              {isLoadingEmployees ? (
+                <ActivityIndicator size="large" color="#0369A1" style={{ marginTop: 40 }} />
+              ) : (
+                <FlatList
+                  data={filteredEmployees}
+                  renderItem={renderEmployeeItem}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.listContent}
+                  refreshing={isLoadingEmployees}
+                  onRefresh={refetchEmployees}
+                  CellRendererComponent={CustomCellRenderer}
+                  ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                      <Text style={styles.emptyText}>Chưa có nhân viên nào. Hãy nhấn nút dưới đáy để thêm!</Text>
+                    </View>
+                  }
+                />
+              )}
+            </>
+          )}
+
+          {/* TAB 2: CHẤM CÔNG HÀNG NGÀY */}
+          {employeeTab === 'ATTENDANCE' && (
+            <View style={{ flex: 1 }}>
+              {/* ĐIỀU KHIỂN CHỌN NGÀY CHẤM CÔNG */}
+              <View style={styles.dateSelectorContainer}>
+                <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustAttendanceDate(-1)}>
+                  <Text style={styles.dateSelectorArrowText}>◀️ Trước</Text>
+                </TouchableOpacity>
+                <View style={styles.dateDisplayWrapper}>
+                  <Text style={styles.dateDisplayTitle}>Ngày chấm công</Text>
+                  <Text style={styles.dateDisplayVal}>{formatDateDisplay(attendanceDate)}</Text>
+                </View>
+                <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustAttendanceDate(1)}>
+                  <Text style={styles.dateSelectorArrowText}>Sau ▶️</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* DANH SÁCH NHÂN VIÊN ĐỂ CHẤM CÔNG */}
+              <FlatList
+                data={attendanceList}
+                keyExtractor={(item) => item.employeeId}
+                contentContainerStyle={styles.listContent}
+                renderItem={({ item }) => {
+                  const isPresent = item.status === 'PRESENT';
+                  const isHalf = item.shift === 'HALF';
+                  return (
+                    <View style={styles.attendanceCard}>
+                      <View style={styles.attendanceCardInfo}>
+                        <Text style={styles.attendanceEmpName}>{item.name}</Text>
+                        <Text style={styles.attendanceEmpRole}>{item.role || 'Nhân viên sạp'}</Text>
+                      </View>
+                      
+                      <View style={styles.attendanceActions}>
+                        {/* Nút đi làm cả ngày */}
+                        <TouchableOpacity
+                          style={[
+                            styles.attButton, 
+                            isPresent && !isHalf && styles.attButtonGreen
+                          ]}
+                          onPress={() => handleToggleAttendance(item.employeeId, 'PRESENT', 'FULL')}
+                        >
+                          <Text style={[styles.attButtonText, isPresent && !isHalf && styles.attButtonTextActive]}>
+                            🟢 Cả ngày
+                          </Text>
+                        </TouchableOpacity>
+
+                        {/* Nút đi làm nửa ngày */}
+                        <TouchableOpacity
+                          style={[
+                            styles.attButton, 
+                            isPresent && isHalf && styles.attButtonYellow
+                          ]}
+                          onPress={() => handleToggleAttendance(item.employeeId, 'PRESENT', 'HALF')}
+                        >
+                          <Text style={[styles.attButtonText, isPresent && isHalf && styles.attButtonTextActive]}>
+                            🟡 Nửa ngày
+                          </Text>
+                        </TouchableOpacity>
+
+                        {/* Nút nghỉ */}
+                        <TouchableOpacity
+                          style={[
+                            styles.attButton, 
+                            item.status === 'ABSENT' && styles.attButtonRed
+                          ]}
+                          onPress={() => handleToggleAttendance(item.employeeId, 'ABSENT', 'FULL')}
+                        >
+                          <Text style={[styles.attButtonText, item.status === 'ABSENT' && styles.attButtonTextActive]}>
+                            🔴 Nghỉ
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                }}
+                ListEmptyComponent={
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>Chưa có nhân viên nào hoạt động để chấm công.</Text>
+                  </View>
+                }
+              />
+              {showSaveToast && (
+                <View style={styles.toastContainer}>
+                  <Text style={styles.toastText}>✅ Đã lưu bảng chấm công ngày thành công.</Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* TAB 3: BẢNG LƯƠNG THÁNG */}
+          {employeeTab === 'SALARY' && (
+            <View style={{ flex: 1 }}>
+              {/* ĐIỀU KHIỂN LỌC THÁNG LƯƠNG */}
+              <View style={styles.dateSelectorContainer}>
+                <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustSalaryMonth(-1)}>
+                  <Text style={styles.dateSelectorArrowText}>◀️ Tháng trước</Text>
+                </TouchableOpacity>
+                <View style={styles.dateDisplayWrapper}>
+                  <Text style={styles.dateDisplayTitle}>Tháng lương</Text>
+                  <Text style={styles.dateDisplayVal}>Tháng {salaryMonth}</Text>
+                </View>
+                <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustSalaryMonth(1)}>
+                  <Text style={styles.dateSelectorArrowText}>Tháng sau ▶️</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* TỔNG TIỀN LƯƠNG PHẢI TRẢ TRONG THÁNG */}
+              <View style={styles.summaryCardEmployeeSalary}>
+                <Text style={styles.summaryLabelEmployeeSalary}>💵 TỔNG LƯƠNG THỰC LĨNH THÁNG:</Text>
+                <Text style={styles.summaryValueEmployeeSalary}>
+                  {formatCurrency(salaryData?.reduce((sum, item) => sum + (item.finalAmount || 0), 0) || 0)}
+                </Text>
+              </View>
+
+              {/* DANH SÁCH BẢNG LƯƠNG */}
+              {loadingSalary ? (
+                <ActivityIndicator size="large" color="#0369A1" style={{ marginTop: 40 }} />
+              ) : (
+                <FlatList
+                  data={[...salaryData].sort((a, b) => (a.isPaid === b.isPaid ? 0 : a.isPaid ? 1 : -1))}
+                  keyExtractor={(item) => item.employeeId}
+                  contentContainerStyle={styles.listContent}
+                  renderItem={({ item }) => {
+                    const isExpanded = activeSalaryEmpId === item.employeeId;
+                    return (
+                      <View style={[
+                        styles.salaryCard,
+                        item.isPaid && { opacity: 0.65, backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' }
+                      ]}>
+                        <View style={styles.salaryCardHeader}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.attendanceEmpName}>{item.name}</Text>
+                            <Text style={styles.attendanceEmpRole}>
+                              Đi làm: <Text style={{ fontWeight: 'bold', color: '#0284C7' }}>{item.workingDays}</Text>/{item.totalDaysInMonth} ngày • Nghỉ: <Text style={{ fontWeight: 'bold', color: (item.totalDaysInMonth - item.workingDays) > 0 ? '#EF4444' : '#64748B' }}>{(item.totalDaysInMonth - item.workingDays).toFixed(1).replace('.0', '')}</Text> ngày
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <Text style={styles.salaryCalculatedAmount}>{formatCurrency(item.calculatedSalary)}</Text>
+                            <Text style={styles.salaryAdvancesText}>Đã ứng: -{formatCurrency(item.totalAdvances)}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.salaryCardDivider} />
+
+                        <View style={styles.salaryCardFooter}>
+                          <View>
+                            <Text style={styles.salaryFinalLabel}>Thực lĩnh cuối tháng:</Text>
+                            <Text style={styles.salaryFinalValue}>{formatCurrency(item.finalAmount)}</Text>
+                          </View>
+
+                          {item.isPaid ? (
+                            <View style={styles.paidSalaryBadge}>
+                              <Text style={styles.paidSalaryBadgeText}>✅ Đã chi trả</Text>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              style={styles.paySalaryActionBtn}
+                              onPress={() => {
+                                popupModalRef.current?.show({
+                                  title: 'Xác nhận trả lương',
+                                  message: `Bạn có chắc chắn muốn xác nhận đã trả số tiền ${formatCurrency(item.finalAmount)} lương tháng cho nhân viên "${item.name}" không?`,
+                                  type: 'confirm',
+                                  confirmText: 'Xác nhận trả',
+                                  cancelText: 'Hủy bỏ',
+                                  onConfirm: () => handlePaySalary(item.employeeId),
+                                });
+                              }}
+                              disabled={payingSalaryEmpId === item.employeeId}
+                            >
+                              {payingSalaryEmpId === item.employeeId ? (
+                                <ActivityIndicator color="#FFFFFF" size="small" />
+                              ) : (
+                                <Text style={styles.paySalaryActionBtnText}>💵 Trả lương</Text>
+                              )}
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  }}
+                  ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                      <Text style={styles.emptyText}>Chưa có nhân viên nào hoạt động trong tháng này để tính lương.</Text>
+                    </View>
+                  }
+                />
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* BottomBar cố định đáy cho Tab Nhân sự và Tab Chấm công */}
+        {employeeTab === 'STAFF' && (
+          <View style={styles.bottomBarEmployee}>
+            <TouchableOpacity
+              style={styles.addEmployeeButtonFull}
+              onPress={() => addEmployeeModalRef.current?.open()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.addEmployeeButtonFullText}>➕ THÊM NHÂN VIÊN MỚI</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {employeeTab === 'ATTENDANCE' && (
+          <View style={styles.bottomBarEmployee}>
+            <TouchableOpacity
+              style={[styles.addEmployeeButtonFull, { backgroundColor: '#10B981', shadowColor: '#10B981' }]}
+              onPress={handleSaveAttendance}
+              activeOpacity={0.8}
+              disabled={savingAttendance}
+            >
+              {savingAttendance ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.addEmployeeButtonFullText}>💾 LƯU BẢNG CHẤM CÔNG NGÀY</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <ProfileModal ref={profileModalRef} />
+        <PopupModal ref={popupModalRef} />
+        
+        {/* Modals nhân viên */}
+        <AddEmployeeModal ref={addEmployeeModalRef} onRefresh={refetchEmployees} />
+        <EditEmployeeModal ref={editEmployeeModalRef} onRefresh={refetchEmployees} />
+        <SalaryAdvanceModal ref={salaryAdvanceModalRef} employee={selectedEmployee} onRefresh={() => { refetchEmployees(); if (employeeTab === 'SALARY') fetchSalaryData(salaryMonth); }} />
+        <EmployeeHistoryModal ref={employeeHistoryModalRef} employee={selectedEmployee} />
+      </SafeAreaView>
+    );
+  }
+
+  if (currentView === 'suppliers') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFF1F1" />
+
+        <View style={styles.contentWrapper}>
+          {/* HEADER nhà cung cấp: tông màu đỏ pastel nhạt */}
+          <View style={[styles.header, styles.headerSupplier]}>
+            <TouchableOpacity
+              style={styles.backButtonNew}
+              onPress={() => {
+                router.replace({ pathname: '/', params: { view: 'menu' } });
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.backTextNew}>← Quay lại</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.merchantProfileCardRight}
+              onPress={() => profileModalRef.current?.open()}
+              activeOpacity={0.7}
+            >
+              <View style={styles.avatarContainerRight}>
+                <Text style={styles.avatarTextRight}>
+                  {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.merchantDetailsRight}>
+                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
+                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* TỔNG TIỀN NỢ NHÀ CUNG CẤP */}
+          <View style={styles.summaryCardSupplier}>
+            <Text style={styles.summaryLabelSupplier}>📦 TỔNG NỢ LÒ / NHÀ CUNG CẤP:</Text>
+            <Text style={styles.summaryValueSupplier}>{formatCurrency(totalSupplierDebt)}</Text>
+          </View>
+
+          {/* Ô TÌM KIẾM NHANH NHÀ CUNG CẤP */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="🔍 Tìm nhà cung cấp thịt..."
+              placeholderTextColor={COLORS.textLight}
+              value={search}
+              onChangeText={setSearch}
+            />
+            {search ? (
+              <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
+                <Text style={styles.clearSearchText}>✕</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={styles.listHeaderContainer}>
+            <Text style={styles.listHeaderSupplier}>📂 DANH SÁCH NHÀ CUNG CẤP ({filteredSuppliers.length})</Text>
+          </View>
+
+          {/* DANH SÁCH NHÀ CUNG CẤP */}
+          {isLoadingSuppliers ? (
+            <ActivityIndicator size="large" color="#7F1D1D" style={{ marginTop: 40 }} />
+          ) : (
+            <FlatList
+              data={filteredSuppliers}
+              renderItem={renderSupplierItem}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContent}
+              refreshing={isRefetchingSuppliers}
+              onRefresh={refetchSuppliers}
+              CellRendererComponent={CustomCellRenderer}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>Chưa có nhà cung cấp nào. Hãy nhấn nút dưới đáy để thêm!</Text>
+                </View>
+              }
+            />
+          )}
+        </View>
+
+        {/* THANH BottomBar CỦA VIEW NHÀ CUNG CẤP */}
+        <View style={styles.bottomBarSupplier}>
+          <TouchableOpacity
+            style={styles.addSupplierButtonFull}
+            onPress={() => addSupplierModalRef.current?.open()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.addSupplierButtonFullText}>➕ THÊM NHÀ CUNG CẤP</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ProfileModal ref={profileModalRef} />
+        <PopupModal ref={popupModalRef} />
+        {/* Modals nhà cung cấp */}
+        <AddSupplierModal ref={addSupplierModalRef} onRefresh={refetchSuppliers} />
+        <SupplierDebtModal ref={supplierDebtModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
+        <SupplierPaymentModal ref={supplierPaymentModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
+        <SupplierHistoryModal ref={supplierHistoryModalRef} supplier={selectedSupplier} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
       <View style={styles.contentWrapper}>
-        {/* HEADER: Thiết kế mới sang trọng, gồm Avatar, Thông tin chủ sạp và Nút Đăng xuất */}
+        {/* HEADER đơn giản: Nút Quay lại bên trái, Profile chủ tài khoản bên phải (Avatar bên trái Tên) */}
         <View style={styles.header}>
           <TouchableOpacity
-            style={styles.merchantProfileCard}
-            onPress={() => profileModalRef.current?.open()}
+            style={styles.backButtonNew}
+            onPress={() => {
+              router.replace({ pathname: '/', params: { view: 'menu' } });
+            }}
             activeOpacity={0.7}
           >
-            <View style={styles.avatarContainer}>
-              <Text style={styles.avatarText}>
-                {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.merchantDetails}>
-              <Text style={styles.merchantGreeting}>Chủ sạp thịt quản lý 👋</Text>
-              <Text style={styles.merchantName}>{auth.user?.name || 'Cô Hoa'}</Text>
-            </View>
+            <Text style={styles.backTextNew}>← Quay lại</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.logoutButtonNew}
-            onPress={() => auth.logout()}
+            style={styles.merchantProfileCardRight}
+            onPress={() => profileModalRef.current?.open()}
             activeOpacity={0.7}
           >
-            <Text style={styles.logoutTextNew}>Thoát 🚪</Text>
+            <View style={styles.avatarContainerRight}>
+              <Text style={styles.avatarTextRight}>
+                {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.merchantDetailsRight}>
+              <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
+              <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -822,6 +2032,30 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.danger, // Màu đỏ ghi nợ thương hiệu
   },
+  payBadDebtBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5', // Nền xanh lá pastel nhạt
+    borderWidth: 1,
+    borderColor: '#A7F3D0', // Viền xanh lá nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  payBadDebtBtnDisabled: {
+    backgroundColor: '#F1F5F9', // Nền xám Slate nhạt
+    borderColor: '#CBD5E1',     // Viền xám Slate
+    opacity: 0.7,
+  },
+  payBadDebtBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#059669', // Xanh lá đậm thương hiệu thu nợ
+  },
+  payBadDebtBtnTextDisabled: {
+    color: '#64748B', // Chữ màu xám
+  },
   // Thẻ khách hàng chứa cả thông tin nhấp và nút xóa bên trong
   customerCard: {
     backgroundColor: COLORS.card,
@@ -1030,6 +2264,39 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  // Thanh đáy cho màn Nợ xấu — tông cam/vàng cảnh báo
+  bottomBarBad: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255, 251, 235, 0.97)', // Nền vàng kem nhạt bán trong suốt
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderColor: '#FDE68A', // Viền vàng nhạt
+    flexDirection: 'row',
+    gap: 12,
+  },
+  // Nút THÊM NỢ XẤU — chiếm toàn bộ chiều rộng, giống addCustomerButton nhưng màu cam
+  addBadDebtButtonFull: {
+    flex: 1,
+    backgroundColor: '#D97706', // Màu cam vàng thương hiệu nợ xấu
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#D97706',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  addBadDebtButtonFullText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
   manageProductsButton: {
     flex: 1,
     backgroundColor: '#FAF8F6', // Nền màu kem lanh nhẹ nhàng, cao cấp
@@ -1141,5 +2408,759 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     letterSpacing: 0.5,
+  },
+  // ── CSS cho Menu chính mới & Header đơn giản ───────────────────────
+  menuContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  menuTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  menuSubtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  menuCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
+  },
+  menuCardActive: {
+    borderColor: '#A7F3D0', // Viền xanh nhạt
+    backgroundColor: '#FAFDFB',
+  },
+  menuCardDisabled: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    opacity: 0.85,
+  },
+  menuCardIconBg: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#D1FAE5', // Màu xanh bạc hà nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  menuCardIconBgDisabled: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9', // Xám Slate nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  menuCardIcon: {
+    fontSize: 24,
+  },
+  menuCardContent: {
+    flex: 1,
+  },
+  menuCardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#065F46', // Chữ xanh lá cây đậm
+    marginBottom: 4,
+  },
+  menuCardTitleDisabled: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  menuCardDesc: {
+    fontSize: 12,
+    color: '#047857',
+    lineHeight: 18,
+  },
+  menuCardDescDisabled: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  menuTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  comingSoonBadge: {
+    backgroundColor: '#E2E8F0',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  comingSoonText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  // Style mới đơn giản: Nút bên trái, Profile bên phải (Avatar luôn bên trái Tên)
+  merchantProfileCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarContainerLeft: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginRight: 10,
+  },
+  avatarTextLeft: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#047857',
+  },
+  merchantDetailsLeft: {
+    alignItems: 'flex-start',
+  },
+  merchantGreetingLeft: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  merchantNameLeft: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  merchantProfileCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarContainerRight: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginRight: 10,
+  },
+  avatarTextRight: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#047857',
+  },
+  merchantDetailsRight: {
+    alignItems: 'flex-start',
+  },
+  merchantGreetingRight: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  merchantNameRight: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  logoutButtonMini: {
+    width: 90,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFF1F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  logoutTextMini: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#EF4444',
+  },
+  backButtonNew: {
+    width: 90,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  backTextNew: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  menuCardActiveBad: {
+    borderColor: '#FDE68A', // Viền vàng/cam nhạt
+    backgroundColor: '#FFFDF5',
+  },
+  menuCardIconBgBad: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#FEF3C7', // Vàng nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  headerBadDebt: {
+    backgroundColor: '#FFFDF5',
+    borderBottomWidth: 1,
+    borderColor: '#FEF3C7',
+  },
+  summaryCardBad: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    ...SHADOWS.card,
+  },
+  summaryLabelBad: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#D97706',
+    marginBottom: 8,
+  },
+  summaryValueBad: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#B45309',
+  },
+  listHeaderBad: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#B45309',
+  },
+  customerCardBadDebtStripe: {
+    borderLeftWidth: 5,
+    borderLeftColor: '#D97706', // Màu cam đậm nợ xấu
+    borderColor: '#FEF3C7',
+  },
+  badDebtValueContainer: {
+    alignItems: 'flex-end',
+  },
+  badDebtValueAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#B45309',
+  },
+  badDebtValueLabel: {
+    fontSize: 10,
+    color: '#D97706',
+    fontWeight: 'bold',
+    marginTop: 2,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  // ── CSS cho Quản lý tiền hàng (Supplier) ───────────────────────
+  menuCardActiveSupplier: {
+    borderColor: '#FECACA', // Viền đỏ hồng nhạt
+    backgroundColor: '#FFF5F5',
+  },
+  menuCardIconBgSupplier: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#FEE2E2', // Hồng nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  menuCardTitleSupplier: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#9F1239', // Đỏ Bordeaux
+    marginBottom: 4,
+  },
+  headerSupplier: {
+    backgroundColor: '#FFF5F5',
+    borderBottomWidth: 1,
+    borderColor: '#FECACA',
+  },
+  summaryCardSupplier: {
+    backgroundColor: '#FFF5F5',
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
+    ...SHADOWS.card,
+  },
+  summaryLabelSupplier: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#9F1239',
+    marginBottom: 8,
+  },
+  summaryValueSupplier: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#9F1239',
+  },
+  listHeaderSupplier: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#9F1239',
+  },
+  supplierCardDebtStripe: {
+    borderLeftWidth: 5,
+    borderLeftColor: '#9F1239', // Đỏ đậm nợ nhà cung cấp
+    borderColor: '#FECACA',
+  },
+  supplierCardNoDebtStripe: {
+    borderLeftWidth: 5,
+    borderLeftColor: '#10B981', // Xanh lá khi trả đủ
+    borderColor: '#E2E8F0',
+  },
+  bottomBarSupplier: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(254, 242, 242, 0.97)', // Nền hồng nhạt bán trong suốt
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderColor: '#FECACA',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  addSupplierButtonFull: {
+    flex: 1,
+    backgroundColor: '#9F1239', // Đỏ Bordeaux
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#9F1239',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  addSupplierButtonFullText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  // ── CSS cho Quản lý nhân viên (Employee) ───────────────────────
+  menuCardActiveEmployee: {
+    borderColor: '#BFDBFE', // Viền xanh dương nhạt
+    backgroundColor: '#F0F9FF',
+  },
+  menuCardIconBgEmployee: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#E0F2FE', // Xanh dương nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  menuCardTitleEmployee: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0369A1', // Xanh dương đậm
+    marginBottom: 4,
+  },
+  menuCardDescEmployee: {
+    fontSize: 12,
+    color: '#0284C7',
+    lineHeight: 18,
+  },
+  headerEmployee: {
+    backgroundColor: '#F0F9FF',
+    borderBottomWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  listHeaderEmployee: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#0369A1',
+  },
+  bottomBarEmployee: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(240, 249, 255, 0.97)', // Nền xanh dương bán trong suốt
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderColor: '#BFDBFE',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  addEmployeeButtonFull: {
+    flex: 1,
+    backgroundColor: '#0369A1', // Xanh dương đậm
+    height: 46,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#0369A1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  addEmployeeButtonFullText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  // Tab Header Styles
+  tabHeaderContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    padding: 6,
+    marginHorizontal: 16,
+    marginTop: 15,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  tabHeaderButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  tabHeaderButtonActive: {
+    backgroundColor: '#FFFFFF',
+    ...SHADOWS.card,
+  },
+  tabHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  tabHeaderTextActive: {
+    color: '#0369A1',
+    fontWeight: 'bold',
+  },
+  // Date Selector Styles
+  dateSelectorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 15,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...SHADOWS.card,
+  },
+  dateSelectorArrow: {
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  dateSelectorArrowText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  dateDisplayWrapper: {
+    alignItems: 'center',
+  },
+  dateDisplayTitle: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  dateDisplayVal: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  // Attendance Card Styles
+  attendanceCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...SHADOWS.card,
+  },
+  attendanceCardInfo: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  attendanceEmpName: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  attendanceEmpRole: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  attendanceActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  attButton: {
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  attButtonGreen: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#A5D6A7',
+  },
+  attButtonYellow: {
+    backgroundColor: '#FFFDE7',
+    borderColor: '#FFF59D',
+  },
+  attButtonRed: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#EF9A9A',
+  },
+  attButtonText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  attButtonTextActive: {
+    color: COLORS.text,
+  },
+  // Salary Card Styles
+  salaryCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...SHADOWS.card,
+  },
+  salaryCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  salaryCalculatedAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  salaryAdvancesText: {
+    fontSize: 11,
+    color: '#D97706',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  salaryCardDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 10,
+  },
+  salaryCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  salaryFinalLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  salaryFinalValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0369A1', // Lương thực nhận màu Indigo
+    marginTop: 2,
+  },
+  paidSalaryBadge: {
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A5D6A7',
+  },
+  paidSalaryBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+  },
+  paySalaryActionBtn: {
+    backgroundColor: '#0369A1',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  paySalaryActionBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  salaryExpandForm: {
+    marginTop: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  expandFormLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  expandFormRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inputTinyLabel: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+  },
+  tinyInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    height: 38,
+    paddingHorizontal: 10,
+    fontSize: 12,
+    color: COLORS.text,
+  },
+  submitPaySalaryBtn: {
+    backgroundColor: '#10B981',
+    height: 40,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  submitPaySalaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  leafItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  leafDateText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  leafStatusText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  leafStatusAbsent: {
+    color: '#EF4444',
+  },
+  leafStatusHalf: {
+    color: '#D97706',
+  },
+  leafNoteText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
+  },
+  emptyLeafText: {
+    fontSize: 13,
+    color: '#16A34A',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 10,
+  },
+  toastContainer: {
+    position: 'absolute',
+    bottom: 80,
+    left: 20,
+    right: 20,
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+    borderWidth: 1.2,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  toastText: {
+    color: '#047857',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  summaryCardEmployeeSalary: {
+    backgroundColor: '#F0F9FF',
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 16,
+    marginTop: 15,
+    marginBottom: 5,
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+    ...SHADOWS.card,
+  },
+  summaryLabelEmployeeSalary: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#0369A1',
+    marginBottom: 8,
+  },
+  summaryValueEmployeeSalary: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#0369A1',
   },
 });

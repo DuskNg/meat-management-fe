@@ -97,11 +97,11 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
 
-  // ─── Tải danh mục sản phẩm (chỉ khi modal đang mở) ───────────────────
+  // ─── Tải danh mục sản phẩm (chỉ khi modal đang mở, có kèm theo customerId để lấy giá riêng) ───
   const { data: productsResponse, refetch: refetchProducts } = useQuery({
-    queryKey: ['products'],
+    queryKey: ['products', customerId],
     queryFn: async () => {
-      const res = await api.get('/products');
+      const res = await api.get('/products', { params: { customerId } });
       return res.data;
     },
     enabled: visible,

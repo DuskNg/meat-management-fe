@@ -69,6 +69,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
   // ─── State ──────────────────────────────────────────────────────────────
   const [visible, setVisible] = useState(false);
   const [transactionId, setTransactionId] = useState(null);
+  const [customerId, setCustomerId] = useState(null); // Lưu ID khách hàng phục vụ lấy giá thịt tùy biến
 
   // Giỏ hàng chứa danh sách mặt hàng đang sửa đổi
   const [cartItems, setCartItems] = useState([]);
@@ -90,14 +91,14 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
 
-  // ─── Tải danh mục sản phẩm (chỉ khi modal hiển thị) ────────────────────
+  // ─── Tải danh mục sản phẩm (chỉ khi modal hiển thị và có customerId) ────────────────────
   const { data: productsResponse, refetch: refetchProducts } = useQuery({
-    queryKey: ['products'],
+    queryKey: ['products', customerId],
     queryFn: async () => {
-      const res = await api.get('/products');
+      const res = await api.get('/products', { params: { customerId } });
       return res.data;
     },
-    enabled: visible,
+    enabled: visible && !!customerId,
   });
 
   // Lọc bỏ sản phẩm ảo của ghi nợ nhanh khỏi danh sách thịt đang bán
@@ -110,6 +111,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
     open: (transaction) => {
       if (!transaction) return;
       setTransactionId(transaction.id);
+      setCustomerId(transaction.customerId); // Lưu ID của khách hàng
       
       // Nhóm và cộng dồn các mặt hàng cùng loại thịt từ lịch sử
       const mergedMap = {};

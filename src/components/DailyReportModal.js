@@ -147,6 +147,172 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     }))
   ].sort((a, b) => new Date(b.time) - new Date(a.time)); // Mới nhất xếp trên đầu
 
+  // Xử lý xuất công nợ trong ngày dạng ảnh bằng Canvas HTML5
+  const handleExportImage = () => {
+    if (Platform.OS !== 'web') {
+      alert('Chức năng xuất ảnh hiện hỗ trợ trên giao diện Web.');
+      return;
+    }
+
+    try {
+      // 1. Chuẩn bị canvas
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      const width = 600;
+      const rowHeight = 60;
+      const headerHeight = 260;
+      const footerHeight = 80;
+      const listHeight = timelineItems.length === 0 ? 100 : timelineItems.length * rowHeight;
+      const height = headerHeight + listHeight + footerHeight;
+      
+      canvas.width = width;
+      canvas.height = height;
+
+      // Nền trắng toàn ảnh
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, height);
+
+      // Viền khung ngoài cùng
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(10, 10, width - 20, height - 20);
+
+      // 2. Vẽ Header nền xanh nhạt sang trọng
+      ctx.fillStyle = '#ECFDF5';
+      ctx.fillRect(12, 12, width - 24, 130);
+      
+      // Viền phân cách dưới header
+      ctx.strokeStyle = '#A7F3D0';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(12, 142);
+      ctx.lineTo(width - 12, 142);
+      ctx.stroke();
+
+      // Tiêu đề
+      ctx.fillStyle = '#065F46';
+      ctx.font = 'bold 22px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('BÁO CÁO CÔNG NỢ TRONG NGÀY', width / 2, 55);
+
+      // Ngày báo cáo
+      ctx.fillStyle = '#047857';
+      ctx.font = 'bold 16px Arial, sans-serif';
+      ctx.fillText(`Ngày thống kê: ${selectedDate}`, width / 2, 90);
+
+      // Lời chào/Thời gian xuất
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} - ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'italic 12px Arial, sans-serif';
+      ctx.fillText(`Thời gian xuất: ${timeStr}`, width / 2, 120);
+
+      // 3. Vẽ hộp Tổng kết (Nợ phát sinh & Tiền đã thu)
+      const boxY = 165;
+      const boxWidth = 265;
+      const boxHeight = 70;
+      
+      // Hộp Nợ phát sinh (bên trái)
+      ctx.fillStyle = '#FEF2F2';
+      ctx.fillRect(25, boxY, boxWidth, boxHeight);
+      ctx.strokeStyle = '#FECACA';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(25, boxY, boxWidth, boxHeight);
+      
+      ctx.fillStyle = '#991B1B';
+      ctx.font = 'bold 12px Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('🔴 Nợ phát sinh trong ngày', 40, boxY + 25);
+      ctx.font = 'bold 18px Arial, sans-serif';
+      ctx.fillText(formatCurrency(totalDebtCreated), 40, boxY + 52);
+
+      // Hộp Tiền đã thu (bên phải)
+      ctx.fillStyle = '#F0FDF4';
+      ctx.fillRect(310, boxY, boxWidth, boxHeight);
+      ctx.strokeStyle = '#BBF7D0';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(310, boxY, boxWidth, boxHeight);
+      
+      ctx.fillStyle = '#166534';
+      ctx.font = 'bold 12px Arial, sans-serif';
+      ctx.fillText('🟢 Tiền đã thu trong ngày', 325, boxY + 25);
+      ctx.font = 'bold 18px Arial, sans-serif';
+      ctx.fillText(formatCurrency(totalPaymentReceived), 325, boxY + 52);
+
+      // 4. Vẽ danh sách chi tiết
+      let currentY = boxY + boxHeight + 45;
+      
+      ctx.fillStyle = '#1E293B';
+      ctx.font = 'bold 15px Arial, sans-serif';
+      ctx.fillText(`Chi tiết giao dịch (${timelineItems.length}):`, 25, currentY - 10);
+
+      if (timelineItems.length === 0) {
+        ctx.fillStyle = '#64748B';
+        ctx.font = 'italic 14px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Không có giao dịch công nợ phát sinh trong ngày.', width / 2, currentY + 45);
+      } else {
+        timelineItems.forEach((item) => {
+          const isDebt = item.type === 'debt';
+          
+          // Vẽ đường kẻ ngăn cách trên mỗi item
+          ctx.strokeStyle = '#F1F5F9';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(25, currentY);
+          ctx.lineTo(width - 25, currentY);
+          ctx.stroke();
+
+          // Tên khách hàng (căn trái)
+          ctx.fillStyle = '#1E293B';
+          ctx.font = 'bold 14px Arial, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(item.customerName, 30, currentY + 24);
+
+          // Chi tiết (mặt hàng/ghi chú)
+          ctx.fillStyle = '#64748B';
+          ctx.font = '12px Arial, sans-serif';
+          ctx.fillText(isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`, 30, currentY + 45);
+
+          // Số tiền (căn phải)
+          ctx.fillStyle = isDebt ? '#DC2626' : '#16A34A';
+          ctx.font = 'bold 14px Arial, sans-serif';
+          ctx.textAlign = 'right';
+          const amtStr = `${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`;
+          ctx.fillText(amtStr, width - 30, currentY + 34);
+
+          currentY += rowHeight;
+        });
+      }
+
+      // 5. Vẽ Footer
+      const footerY = height - 55;
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(25, footerY - 10);
+      ctx.lineTo(width - 25, footerY - 10);
+      ctx.stroke();
+
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '11px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, footerY + 15);
+      ctx.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, footerY + 32);
+
+      // 6. Thực hiện download ảnh
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `CongNo_Ngay_${selectedDate.replace(/\//g, '_')}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('[EXPORT IMAGE ERROR]', err);
+      alert('Đã xảy ra lỗi khi xuất ảnh công nợ.');
+    }
+  };
+
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
@@ -231,13 +397,25 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
           </View>
         )}
 
-        {/* Nút đóng */}
-        <TouchableOpacity
-          style={styles.closeButton}
-          onPress={() => setVisible(false)}
-        >
-          <Text style={styles.closeButtonText}>ĐÓNG LẠI</Text>
-        </TouchableOpacity>
+        {/* Nhóm nút hành động dưới đáy */}
+        <View style={styles.footerButtons}>
+          {Platform.OS === 'web' && !loading && !error && timelineItems.length > 0 && (
+            <TouchableOpacity
+              style={styles.exportButton}
+              onPress={handleExportImage}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.exportButtonText}>XUẤT ẢNH BÁO CÁO 📸</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.closeButtonNew}
+            onPress={() => setVisible(false)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.closeButtonTextNew}>ĐÓNG LẠI</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </SmoothModal>
   );
@@ -427,18 +605,40 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
-  closeButton: {
+  footerButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  exportButton: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: '#E0F2FE', // Màu xanh dương nhạt pastel
+    borderColor: '#BAE6FD',
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  exportButtonText: {
+    color: '#0369A1', // Xanh dương đậm
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  closeButtonNew: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
     backgroundColor: COLORS.inputBg,
     borderWidth: 1,
     borderColor: COLORS.border,
-    height: 46,
-    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  closeButtonText: {
+  closeButtonTextNew: {
     color: COLORS.textSecondary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
   },
 });
