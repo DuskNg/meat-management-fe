@@ -70,6 +70,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
   // Refs cho 2 modal PIN
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
+  const isSubmittingRef = useRef(false);
 
   // 1. Phơi bày các hàm điều khiển Modal ra ngoài component cha (Customer Detail)
   useImperativeHandle(ref, () => ({
@@ -110,7 +111,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
   // Xử lý gửi cập nhật lượt thu tiền
   const handleSubmit = async () => {
-    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
+    if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (!amount || amount.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
       return;
@@ -129,6 +130,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
     setError('');
     setLoading(true);
+    isSubmittingRef.current = true;
     try {
       const response = await api.put(`/payments/${paymentId}`, {
         amount: payAmount,
@@ -146,6 +148,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
       setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

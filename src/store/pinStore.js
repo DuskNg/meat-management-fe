@@ -3,6 +3,7 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from './authStore';
+import { api } from '../api/client';
 
 // ─── Helper: tương thích đa nền tảng (Web vs Native) ─────────────────────────
 const isWeb = Platform.OS === 'web';
@@ -41,33 +42,21 @@ const getUserId = () => {
 };
 
 // Định nghĩa các khoá lưu trữ động theo userId
-const getPinHashKey = () => `meat_pin_hash_${getUserId()}`;
 const getPinVerifiedAtKey = () => `meat_pin_verified_at_${getUserId()}`;
 const getPinSessionHoursKey = () => `meat_pin_session_hours_${getUserId()}`;
-
-// ─── Helper: băm PIN bằng chuỗi đơn giản (PIN chỉ 4 số, lưu trong thiết bị riêng) ───
-// Không cần thuật toán mạnh như bcrypt vì PIN lưu trên thiết bị của chính chủ buôn
-const hashPin = (pin) => {
-  // Thêm salt cố định để tránh so sánh trực tiếp trong bộ nhớ
-  const salted = `meat_pin_salt_2026_${pin}_secure`;
-  let hash = 0;
-  for (let i = 0; i < salted.length; i++) {
-    const char = salted.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Chuyển sang 32-bit integer
-  }
-  return Math.abs(hash).toString(36) + salted.length.toString(36);
-};
 
 // ─── Các hàm công khai của pinStore ──────────────────────────────────────────
 
 /**
- * Kiểm tra người dùng đã cài mã PIN chưa
+ * Kiểm tra người dùng đã cài mã PIN chưa (kiểm tra từ trạng thái profile lưu ở authStore)
  * @returns {Promise<boolean>}
  */
 export const hasPin = async () => {
-  const hash = await getItem(getPinHashKey());
-  return !!hash;
+  try {
+    return !!useAuthStore.getState().user?.hasPin;
+  } catch (e) {
+    return false;
+  }
 };
 
 /**
@@ -89,7 +78,7 @@ export const setSessionHours = async (hours) => {
 };
 
 /**
- * Kiểm tra phiên PIN hiện tại còn hiệu lực không
+ * Kiểm tra phiên PIN hiện tại còn hiệu lực không (lưu trữ thời gian xác thực cục bộ)
  * @returns {Promise<boolean>}
  */
 export const isSessionValid = async () => {
@@ -105,23 +94,34 @@ export const isSessionValid = async () => {
 };
 
 /**
- * Xác minh PIN người dùng nhập có khớp không
+ * Xác minh PIN người dùng nhập có khớp không (gọi API xác thực ở Backend)
  * @param {string} pin - Chuỗi 4 số người dùng vừa nhập
  * @returns {Promise<boolean>}
  */
 export const verifyPin = async (pin) => {
-  const storedHash = await getItem(getPinHashKey());
-  if (!storedHash) return false;
-  return hashPin(pin) === storedHash;
+  try {
+    const response = await api.post('/auth/pin/verify', { pin });
+    return !!response.data?.success;
+  } catch (error) {
+    console.error('Lỗi xác minh mã PIN:', error);
+    return false;
+  }
 };
 
 /**
- * Lưu mã PIN mới (đã băm)
+ * Lưu mã PIN mới (gọi API lưu trên Backend và cập nhật authStore)
  * @param {string} pin - Chuỗi 4 số mã PIN mới
  */
 export const savePin = async (pin) => {
-  const hashed = hashPin(pin);
-  await setItem(getPinHashKey(), hashed);
+  try {
+    const response = await api.post('/auth/pin/setup', { pin });
+    if (response.data?.success) {
+      await useAuthStore.getState().setHasPin(true);
+    }
+  } catch (error) {
+    console.error('Lỗi thiết lập mã PIN:', error);
+    throw error;
+  }
 };
 
 /**
@@ -132,11 +132,16 @@ export const markSessionVerified = async () => {
 };
 
 /**
- * Xóa toàn bộ dữ liệu PIN (dùng khi reset PIN)
+ * Xóa toàn bộ dữ liệu PIN (gọi API xóa ở Backend và xóa phiên cục bộ)
  */
 export const clearPin = async () => {
-  await deleteItem(getPinHashKey());
-  await deleteItem(getPinVerifiedAtKey());
+  try {
+    await api.post('/auth/pin/clear');
+    await useAuthStore.getState().setHasPin(false);
+    await deleteItem(getPinVerifiedAtKey());
+  } catch (error) {
+    console.error('Lỗi xóa mã PIN:', error);
+  }
 };
 
 /**

@@ -13,6 +13,7 @@ import {
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
+import DailyDebtTile from './DailyDebtTile';
 
 const CustomerDebtHistoryModal = forwardRef(({
   paymentModalRef,
@@ -27,7 +28,7 @@ const CustomerDebtHistoryModal = forwardRef(({
   const [monthGroups, setMonthGroups] = useState([]);
   const [expandedMonth, setExpandedMonth] = useState(null); // Lưu trữ khóa của tháng đang mở rộng
 
-  // 1. Phơi bày hàm open/close ra bên ngoài
+  // 1. Phơi bày các hàm điều khiển (open, close, refresh) ra bên ngoài
   useImperativeHandle(ref, () => ({
     open: (customerData) => {
       setCustomer(customerData);
@@ -38,6 +39,11 @@ const CustomerDebtHistoryModal = forwardRef(({
     },
     close: () => {
       setVisible(false);
+    },
+    refresh: () => {
+      if (customer?.id) {
+        fetchDebtHistory(customer.id);
+      }
     },
   }));
 
@@ -90,109 +96,100 @@ const CustomerDebtHistoryModal = forwardRef(({
       const transactions = transRes.data?.data || [];
       const payments = payRes.data?.data || [];
 
-      // Phân bổ thanh toán FIFO
-      const specificPaymentsByDate = {};
-      const specificPaymentsByMonth = {};
-      let generalPaidPool = 0;
-
-      payments.forEach((p) => {
-        const trimNote = (p.note || '').trim();
-        const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
-        const monthMatch = trimNote.match(/^Thanh toán nợ Tháng (\d{2})\/(\d{4})/);
-
-        if (dateMatch) {
-          const dateKey = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
-          if (!specificPaymentsByDate[dateKey]) {
-            specificPaymentsByDate[dateKey] = [];
-          }
-          specificPaymentsByDate[dateKey].push(p);
-        } else if (monthMatch) {
-          const monthKey = `${monthMatch[1]}/${monthMatch[2]}`;
-          if (!specificPaymentsByMonth[monthKey]) {
-            specificPaymentsByMonth[monthKey] = [];
-          }
-          specificPaymentsByMonth[monthKey].push(p);
-        } else {
-          generalPaidPool += parseFloat(p.amount || 0);
-        }
-      });
-
+      // Bản đồ phân bổ nợ - trả để liên kết lịch sử
       const remainingDebtMap = {};
       transactions.forEach((t) => {
         remainingDebtMap[t.id] = parseFloat(t.totalAmount || 0);
       });
 
-      Object.keys(specificPaymentsByDate).forEach((dateKey) => {
-        const dayPays = specificPaymentsByDate[dateKey];
-        let dayPaidPool = dayPays.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-
-        const dayTransactions = transactions
-          .filter((t) => toDateKey(t.date) === dateKey)
-          .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-        dayTransactions.forEach((t) => {
-          const amt = remainingDebtMap[t.id];
-          if (dayPaidPool >= amt) {
-            remainingDebtMap[t.id] = 0;
-            dayPaidPool -= amt;
-          } else if (dayPaidPool > 0) {
-            remainingDebtMap[t.id] = amt - dayPaidPool;
-            dayPaidPool = 0;
-          }
-        });
-
-        if (dayPaidPool > 0) {
-          generalPaidPool += dayPaidPool;
-        }
+      const remainingPayMap = {};
+      payments.forEach((p) => {
+        remainingPayMap[p.id] = parseFloat(p.amount || 0);
       });
 
-      Object.keys(specificPaymentsByMonth).forEach((monthKey) => {
-        const monthPays = specificPaymentsByMonth[monthKey];
-        let monthPaidPool = monthPays.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+      const transAllocations = {}; // t.id -> array of { paymentId, date, amount, note }
+      const payAllocations = {};   // p.id -> array of { transactionId, date, amount, note }
 
-        const monthTransactions = transactions
-          .filter((t) => {
-            const d = new Date(t.date);
-            const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-            const yyyy = d.getFullYear();
-            return `${mm}/${yyyy}` === monthKey;
-          })
-          .sort((a, b) => new Date(a.date) - new Date(b.date));
+      const recordAllocation = (tId, tDate, tNote, pId, pDate, pNote, amount) => {
+        if (!transAllocations[tId]) transAllocations[tId] = [];
+        transAllocations[tId].push({ paymentId: pId, date: pDate, amount, note: pNote });
 
-        monthTransactions.forEach((t) => {
-          const amt = remainingDebtMap[t.id];
-          if (amt > 0) {
-            if (monthPaidPool >= amt) {
-              remainingDebtMap[t.id] = 0;
-              monthPaidPool -= amt;
-            } else if (monthPaidPool > 0) {
-              remainingDebtMap[t.id] = amt - monthPaidPool;
-              monthPaidPool = 0;
+        if (!payAllocations[pId]) payAllocations[pId] = [];
+        payAllocations[pId].push({ transactionId: tId, date: tDate, amount, note: tNote });
+      };
+
+      // A. Phân bổ theo ngày cụ thể (Specific Date matching)
+      payments.forEach((p) => {
+        const trimNote = (p.note || '').trim();
+        const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
+        if (dateMatch) {
+          const dateKey = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
+          const dayTransactions = transactions
+            .filter((t) => toDateKey(t.date) === dateKey)
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+          dayTransactions.forEach((t) => {
+            const debtAmt = remainingDebtMap[t.id];
+            const payAmt = remainingPayMap[p.id];
+            if (debtAmt > 0 && payAmt > 0) {
+              const allocAmt = Math.min(debtAmt, payAmt);
+              remainingDebtMap[t.id] -= allocAmt;
+              remainingPayMap[p.id] -= allocAmt;
+              recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
             }
-          }
-        });
-
-        if (monthPaidPool > 0) {
-          generalPaidPool += monthPaidPool;
+          });
         }
       });
 
-      const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-      sortedTransactions.forEach((t) => {
-        const amt = remainingDebtMap[t.id];
-        if (amt > 0) {
-          if (generalPaidPool >= amt) {
-            remainingDebtMap[t.id] = 0;
-            generalPaidPool -= amt;
-          } else if (generalPaidPool > 0) {
-            remainingDebtMap[t.id] = amt - generalPaidPool;
-            generalPaidPool = 0;
-          }
+      // B. Phân bổ theo tháng cụ thể (Specific Month matching)
+      payments.forEach((p) => {
+        const trimNote = (p.note || '').trim();
+        const monthMatch = trimNote.match(/^Thanh toán nợ Tháng (\d{2})\/(\d{4})/);
+        if (monthMatch) {
+          const monthKey = `${monthMatch[1]}/${monthMatch[2]}`;
+          const monthTransactions = transactions
+            .filter((t) => {
+              const d = new Date(t.date);
+              const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+              const yyyy = d.getFullYear();
+              return `${mm}/${yyyy}` === monthKey;
+            })
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+          monthTransactions.forEach((t) => {
+            const debtAmt = remainingDebtMap[t.id];
+            const payAmt = remainingPayMap[p.id];
+            if (debtAmt > 0 && payAmt > 0) {
+              const allocAmt = Math.min(debtAmt, payAmt);
+              remainingDebtMap[t.id] -= allocAmt;
+              remainingPayMap[p.id] -= allocAmt;
+              recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
+            }
+          });
         }
+      });
+
+      // C. Phân bổ chung FIFO (cho phần còn dư của thanh toán cụ thể và thanh toán chung)
+      // Sắp xếp tăng dần theo thời gian để trả nợ cũ trước
+      const sortedPayments = [...payments].sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt));
+      const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      sortedPayments.forEach((p) => {
+        sortedTransactions.forEach((t) => {
+          const debtAmt = remainingDebtMap[t.id];
+          const payAmt = remainingPayMap[p.id];
+          if (debtAmt > 0 && payAmt > 0) {
+            const allocAmt = Math.min(debtAmt, payAmt);
+            remainingDebtMap[t.id] -= allocAmt;
+            remainingPayMap[p.id] -= allocAmt;
+            recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
+          }
+        });
       });
 
       const map = new Map();
 
+      // 1. Duyệt qua tất cả giao dịch (nợ) để tạo các nhóm ngày nợ
       transactions.forEach((t) => {
         const key = toDateKey(t.date);
         if (!map.has(key)) {
@@ -218,33 +215,71 @@ const CustomerDebtHistoryModal = forwardRef(({
           remainingAmount: remainingAmt,
           note: t.note,
           items: t.items || [],
+          allocations: transAllocations[t.id] || [], // Truyền thông tin phân bổ thanh toán
         });
         g.totalDebt += originalAmt;
         g.remainingDebt += remainingAmt;
       });
 
+      // 2. Phân bổ các lượt thanh toán (payment) vào các nhóm ngày của hóa đơn nợ được khấu trừ tương ứng
       payments.forEach((p) => {
-        const key = toDateKey(p.paidAt);
-        if (!map.has(key)) {
-          map.set(key, {
-            dateKey: key,
-            date: p.paidAt,
-            transactions: [],
-            payments: [],
-            totalDebt: 0,
-            remainingDebt: 0,
-            totalPayment: 0,
+        const allocations = payAllocations[p.id] || [];
+
+        if (allocations.length > 0) {
+          // Lượt thanh toán này đã được phân bổ để khấu trừ nợ
+          // Gộp nó vào các ngày nợ tương ứng
+          allocations.forEach((alloc) => {
+            const transDateKey = toDateKey(alloc.date);
+            if (map.has(transDateKey)) {
+              const g = map.get(transDateKey);
+              // Kiểm tra xem lượt trả này đã được thêm vào ngày nợ này chưa (tránh nhân đôi)
+              if (!g.payments.some((existingPay) => existingPay.id === p.id)) {
+                g.payments.push({
+                  id: p.id,
+                  type: 'payment',
+                  date: p.paidAt,
+                  amount: alloc.amount, // Số tiền được phân bổ cho ngày nợ này
+                  note: p.note,
+                  allocations: [alloc],
+                });
+                g.totalPayment += alloc.amount;
+              } else {
+                const existingPay = g.payments.find((existingPay) => existingPay.id === p.id);
+                existingPay.amount += alloc.amount;
+                existingPay.allocations.push(alloc);
+                g.totalPayment += alloc.amount;
+              }
+            }
           });
         }
-        const g = map.get(key);
-        g.payments.push({
-          id: p.id,
-          type: 'payment',
-          date: p.paidAt,
-          amount: parseFloat(p.amount),
-          note: p.note,
-        });
-        g.totalPayment += parseFloat(p.amount);
+
+        // 3. Nếu payment còn dư chưa phân bổ hết (tiền trả trước / dư)
+        // Tạo nhóm ngày riêng cho ngày nạp tiền đó
+        const prepayAmt = remainingPayMap[p.id];
+        if (prepayAmt > 0) {
+          const payDateKey = toDateKey(p.paidAt);
+          if (!map.has(payDateKey)) {
+            map.set(payDateKey, {
+              dateKey: payDateKey,
+              date: p.paidAt,
+              transactions: [],
+              payments: [],
+              totalDebt: 0,
+              remainingDebt: 0,
+              totalPayment: 0,
+            });
+          }
+          const g = map.get(payDateKey);
+          g.payments.push({
+            id: p.id,
+            type: 'payment',
+            date: p.paidAt,
+            amount: prepayAmt,
+            note: p.note || 'Trả trước (dư)',
+            allocations: [],
+          });
+          g.totalPayment += prepayAmt;
+        }
       });
 
       const dayGroupsVal = Array.from(map.values()).sort(
@@ -445,62 +480,14 @@ const CustomerDebtHistoryModal = forwardRef(({
 
                       {/* Grid các ngày của tháng */}
                       <View style={styles.grid}>
-                        {month.days.map((group) => {
-                          const dayHasDebt = group.totalDebt > 0;
-                          const dayHasPay = group.totalPayment > 0;
-
-                          const isFullyPaid = dayHasDebt && group.remainingDebt === 0;
-                          const isPartiallyPaid = dayHasDebt && group.remainingDebt > 0 && group.remainingDebt < group.totalDebt;
-                          const isPaymentOnly = !dayHasDebt && dayHasPay;
-
-                          let dayBgColor, dayBdColor, dayTxtColor;
-                          if (isFullyPaid || isPaymentOnly) {
-                            dayBgColor = '#F0FDF4';
-                            dayBdColor = '#86EFAC';
-                            dayTxtColor = COLORS.primary;
-                          } else if (isPartiallyPaid) {
-                            dayBgColor = '#FFF7ED';
-                            dayBdColor = '#FED7AA';
-                            dayTxtColor = '#C2410C';
-                          } else {
-                            dayBgColor = '#FFF1F1';
-                            dayBdColor = '#FECACA';
-                            dayTxtColor = COLORS.danger;
-                          }
-
-                          return (
-                            <TouchableOpacity
-                              key={group.dateKey}
-                              style={[
-                                styles.tile,
-                                {
-                                  width: tileSize,
-                                  height: tileSize,
-                                  backgroundColor: dayBgColor,
-                                  borderColor: dayBdColor,
-                                },
-                              ]}
-                              onPress={() => {
-                                detailModalRef?.current?.open(group);
-                              }}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={[styles.tileWeekday, { color: dayTxtColor }]} numberOfLines={1} adjustsFontSizeToFit>
-                                {getWeekday(group.date)}
-                              </Text>
-                              <Text style={styles.tileDate} numberOfLines={1} adjustsFontSizeToFit>
-                                {formatShortDate(group.date)}
-                              </Text>
-                              {isFullyPaid ? (
-                                <Text style={[styles.tileAmount, { color: dayTxtColor }]} numberOfLines={1} adjustsFontSizeToFit>0đ</Text>
-                              ) : (
-                                <Text style={[styles.tileAmount, { color: dayTxtColor }]} numberOfLines={1} adjustsFontSizeToFit>
-                                  {formatAmountShort(dayHasDebt ? group.remainingDebt : group.totalPayment)}
-                                </Text>
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })}
+                        {month.days.map((group) => (
+                          <DailyDebtTile
+                            key={group.dateKey}
+                            group={group}
+                            tileSize={tileSize}
+                            onPress={() => detailModalRef?.current?.open(group)}
+                          />
+                        ))}
                       </View>
                     </View>
                   )}

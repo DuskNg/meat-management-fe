@@ -11,11 +11,13 @@ import {
   Platform,
   ScrollView
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '../src/store/authStore';
 import { api } from '../src/api/client';
 import { COLORS, FONTS, SHADOWS } from '../src/theme';
 
 export default function LoginScreen() {
+  const router = useRouter();
   const auth = useAuthStore();
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
@@ -215,6 +217,13 @@ export default function LoginScreen() {
                 ) : (
                   <Text style={styles.buttonText}>ĐĂNG NHẬP</Text>
                 )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.adminLinkButton}
+                onPress={() => router.push('/admin/login')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.adminLinkText}>⚙️ Đăng nhập quản trị viên (Admin)</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -427,5 +436,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     letterSpacing: 0.5,
+  },
+  adminLinkButton: {
+    alignSelf: 'center',
+    padding: 10,
+    marginTop: 20,
+  },
+  adminLinkText: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });

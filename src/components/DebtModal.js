@@ -93,9 +93,9 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [quickAmount, setQuickAmount] = useState('');
   const [quickProductName, setQuickProductName] = useState('Tiền hàng');
 
-  // Refs cho 2 modal PIN
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
+  const isSubmittingRef = useRef(false);
 
   // ─── Tải danh mục sản phẩm (chỉ khi modal đang mở, có kèm theo customerId để lấy giá riêng) ───
   const { data: productsResponse, refetch: refetchProducts } = useQuery({
@@ -282,7 +282,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // ─── Xác nhận và gửi toàn bộ giỏ hàng lên API ──────────────────────────────────
   const handleSubmit = async () => {
-    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
+    if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     const isoDate = parseDateString(dateStr);
     if (!isoDate) {
       setError('Ngày ghi nợ không đúng định dạng (Ví dụ: 14/06/2026).');
@@ -322,6 +322,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setError('');
       setErrorField('');
       setLoading(true);
+      isSubmittingRef.current = true;
       try {
         const response = await api.post('/transactions', {
           customerId,
@@ -345,6 +346,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
       } finally {
         setLoading(false);
+        isSubmittingRef.current = false;
       }
     } else {
       // Logic gửi ghi nợ nhanh
@@ -363,6 +365,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setError('');
       setErrorField('');
       setLoading(true);
+      isSubmittingRef.current = true;
       try {
         const response = await api.post('/transactions', {
           customerId,
@@ -388,6 +391,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
       } finally {
         setLoading(false);
+        isSubmittingRef.current = false;
       }
     }
   };

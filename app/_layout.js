@@ -29,15 +29,32 @@ function RootLayoutNav() {
   useEffect(() => {
     if (!isInitialized) return;
 
-    // Kiểm tra xem người dùng đang đứng ở cụm màn hình login hay không
-    const inAuthGroup = segments[0] === 'login';
+    const user = useAuthStore.getState().user;
+    
+    // Kiểm tra phân cụm màn hình hiện tại
+    const inAuthGroup = segments[0] === 'login' || (segments[0] === 'admin' && segments[1] === 'login');
+    const inAdminGroup = segments[0] === 'admin';
 
-    if (!isAuthenticated && !inAuthGroup) {
-      // Chưa đăng nhập -> Chuyển ngay về trang Đăng nhập
-      router.replace('/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      // Đã đăng nhập nhưng cố truy cập login -> Đưa về trang chủ
-      router.replace('/');
+    if (!isAuthenticated) {
+      if (!inAuthGroup) {
+        // Chưa đăng nhập -> Chuyển ngay về trang Đăng nhập
+        router.replace('/login');
+      }
+    } else {
+      // Đã đăng nhập
+      if (user?.isAdmin) {
+        // Tài khoản Admin tối cao
+        if (!inAdminGroup || segments[1] === 'login') {
+          // Đưa Admin về trang quản trị
+          router.replace('/admin');
+        }
+      } else {
+        // Tài khoản chủ buôn thường
+        if (inAdminGroup || inAuthGroup) {
+          // Đưa người dùng thường về trang chủ bán hàng
+          router.replace('/');
+        }
+      }
     }
   }, [isAuthenticated, isInitialized, segments]);
 

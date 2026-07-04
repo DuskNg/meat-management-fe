@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/SalaryAdvanceModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -20,6 +20,7 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const isSubmittingRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
     open: () => {
@@ -45,7 +46,7 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
   };
 
   const handleSubmit = async () => {
-    if (loading) return;
+    if (loading || isSubmittingRef.current) return;
     if (!amount || amount.trim() === '') {
       setError('Số tiền tạm ứng không được để trống.');
       return;
@@ -58,6 +59,7 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
 
     setError('');
     setLoading(true);
+    isSubmittingRef.current = true;
     try {
       const response = await api.post('/employees/advances', {
         employeeId: employee?.id,
@@ -76,6 +78,7 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
       setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

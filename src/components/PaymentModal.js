@@ -29,6 +29,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   // Refs cho 2 modal PIN
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
+  const isSubmittingRef = useRef(false);
 
   // Định dạng hiển thị tiền VNĐ
   const formatCurrency = (value) => {
@@ -98,7 +99,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // 4. Ghi nhận thu tiền khách trả nợ (gọi sau khi xác thực PIN thành công)
   const handleSubmit = async () => {
-    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
+    if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (!amount || amount.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
       return;
@@ -118,6 +119,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
     setError('');
     setLoading(true);
+    isSubmittingRef.current = true;
     try {
       // Nếu có chọn tháng cụ thể, tự động thêm tiền tố đặc thù để khấu trừ đúng tháng đó kèm ngày thanh toán cụ thể
       let finalNote = note.trim();
@@ -148,6 +150,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

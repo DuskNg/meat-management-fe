@@ -1,0 +1,270 @@
+// meat-management-fe/src/components/AdminPermissionModal.js
+import React, { useState, useImperativeHandle, forwardRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  Switch,
+  ActivityIndicator,
+} from 'react-native';
+import { api } from '../api/client';
+
+const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
+  const [visible, setVisible] = useState(false);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Trạng thái các quyền phân bổ
+  const [canManageCustomers, setCanManageCustomers] = useState(false);
+  const [canManageDebt, setCanManageDebt] = useState(false);
+  const [canManageBadDebt, setCanManageBadDebt] = useState(false);
+  const [canManageEmployees, setCanManageEmployees] = useState(false);
+
+  // Phơi bày các hàm điều khiển cho component cha gọi qua ref
+  useImperativeHandle(ref, () => ({
+    open: (targetUser) => {
+      setUser(targetUser);
+      setCanManageCustomers(targetUser.canManageCustomers);
+      setCanManageDebt(targetUser.canManageDebt);
+      setCanManageBadDebt(targetUser.canManageBadDebt);
+      setCanManageEmployees(targetUser.canManageEmployees);
+      setErrorMsg('');
+      setVisible(true);
+    },
+    close: () => {
+      setVisible(false);
+    },
+  }));
+
+  // Xử lý gửi cập nhật quyền lên server
+  const handleSubmit = async () => {
+    if (!user) return;
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      const response = await api.put(`/admin/users/${user.id}/permissions`, {
+        canManageCustomers,
+        canManageDebt,
+        canManageBadDebt,
+        canManageEmployees,
+      });
+
+      if (response.data && response.data.success) {
+        if (onSaveSuccess) {
+          onSaveSuccess(response.data.data);
+        }
+        setVisible(false);
+      } else {
+        setErrorMsg(response.data.message || 'Lỗi cập nhật phân quyền.');
+      }
+    } catch (error) {
+      console.error('Lỗi phân quyền:', error);
+      setErrorMsg(error.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!visible || !user) return null;
+
+  return (
+    <Modal
+      transparent
+      animationType="fade"
+      visible={visible}
+      onRequestClose={() => setVisible(false)}
+    >
+      <View style={styles.overlay}>
+        <View style={styles.card}>
+          <Text style={styles.title}>Phân quyền tài khoản</Text>
+          <Text style={styles.subtitle}>Tài khoản: {user.name} ({user.phone})</Text>
+
+          {errorMsg ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+
+          {/* Dòng điều khiển phân quyền 1 */}
+          <View style={styles.row}>
+            <View style={styles.infoCol}>
+              <Text style={styles.label}>Quản lý khách hàng</Text>
+              <Text style={styles.desc}>Cho phép xem, thêm, sửa, xóa danh sách khách hàng thường.</Text>
+            </View>
+            <Switch
+              value={canManageCustomers}
+              onValueChange={setCanManageCustomers}
+              trackColor={{ false: '#334155', true: '#0EA5E9' }}
+              thumbColor={canManageCustomers ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
+
+          {/* Dòng điều khiển phân quyền 2 */}
+          <View style={styles.row}>
+            <View style={styles.infoCol}>
+              <Text style={styles.label}>Quản lý công nợ</Text>
+              <Text style={styles.desc}>Cho phép ghi đơn nợ mới, thu tiền, chỉnh sửa hoặc xóa giao dịch.</Text>
+            </View>
+            <Switch
+              value={canManageDebt}
+              onValueChange={setCanManageDebt}
+              trackColor={{ false: '#334155', true: '#0EA5E9' }}
+              thumbColor={canManageDebt ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
+
+          {/* Dòng điều khiển phân quyền 3 */}
+          <View style={styles.row}>
+            <View style={styles.infoCol}>
+              <Text style={styles.label}>Quản lý nợ xấu</Text>
+              <Text style={styles.desc}>Cho phép truy cập và quản lý nhóm khách hàng nợ xấu.</Text>
+            </View>
+            <Switch
+              value={canManageBadDebt}
+              onValueChange={setCanManageBadDebt}
+              trackColor={{ false: '#334155', true: '#0EA5E9' }}
+              thumbColor={canManageBadDebt ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
+
+          {/* Dòng điều khiển phân quyền 4 */}
+          <View style={styles.row}>
+            <View style={styles.infoCol}>
+              <Text style={styles.label}>Quản lý nhân viên</Text>
+              <Text style={styles.desc}>Cho phép quản lý nhân viên, chấm công và thanh toán lương.</Text>
+            </View>
+            <Switch
+              value={canManageEmployees}
+              onValueChange={setCanManageEmployees}
+              trackColor={{ false: '#334155', true: '#0EA5E9' }}
+              thumbColor={canManageEmployees ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
+
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setVisible(false)}
+              disabled={loading}
+            >
+              <Text style={styles.cancelBtnText}>Hủy</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.submitBtn}
+              onPress={handleSubmit}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.submitBtnText}>Xác nhận</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+});
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 450,
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#F8FAFC',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginBottom: 20,
+  },
+  errorBox: {
+    backgroundColor: '#EF444415',
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#F87171',
+    fontSize: 13,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  infoCol: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E2E8F0',
+    marginBottom: 2,
+  },
+  desc: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 20,
+    gap: 12,
+  },
+  cancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#475569',
+  },
+  cancelBtnText: {
+    color: '#94A3B8',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  submitBtn: {
+    backgroundColor: '#0EA5E9',
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  submitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});
+
+export default AdminPermissionModal;

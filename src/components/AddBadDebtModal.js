@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/AddBadDebtModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -23,6 +23,7 @@ const AddBadDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const isSubmittingRef = useRef(false);
 
   // Phơi bày hàm open/close ra ngoài component cha qua ref
   useImperativeHandle(ref, () => ({
@@ -56,7 +57,7 @@ const AddBadDebtModal = forwardRef(({ onRefresh }, ref) => {
 
   // Xử lý tạo mới bản ghi nợ xấu
   const handleSubmit = async () => {
-    if (loading) return;
+    if (loading || isSubmittingRef.current) return;
 
     // Validate bắt buộc: Tên
     if (!name || name.trim() === '') {
@@ -77,6 +78,7 @@ const AddBadDebtModal = forwardRef(({ onRefresh }, ref) => {
 
     setError('');
     setLoading(true);
+    isSubmittingRef.current = true;
     try {
       const response = await api.post('/customers', {
         name: name.trim(),
@@ -97,6 +99,7 @@ const AddBadDebtModal = forwardRef(({ onRefresh }, ref) => {
       setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

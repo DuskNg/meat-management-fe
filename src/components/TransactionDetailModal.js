@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/TransactionDetailModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   StyleSheet,
   Text,
@@ -7,10 +8,16 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
+import PinInputModal from './PinInputModal';
+import PinSetupModal from './PinSetupModal';
+import PopupModal from './PopupModal';
+import { hasPin, isSessionValid } from '../store/pinStore';
 
 /**
  * Modal hiển thị chi tiết tất cả giao dịch trong một ngày.
@@ -25,16 +32,173 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
  *   totalPayment: number,
  * }
  */
-const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransaction, onEditPayment }, ref) => {
+const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh, onEditTransaction, onEditPayment }, ref) => {
+  const queryClient = useQueryClient();
   const [visible, setVisible] = useState(false);
-  const [dayGroup, setDayGroup] = useState(null);
+  const [dayGroupState, setDayGroupState] = useState(null);
+  const [selectedDateKey, setSelectedDateKey] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Tự động phân tích và lấy dayGroup mới nhất từ monthGroups (đồng bộ hoàn hảo với Grid bên ngoài)
+  const dayGroup = React.useMemo(() => {
+    if (monthGroups && selectedDateKey) {
+      for (const m of monthGroups) {
+        const found = m.days.find(d => d.dateKey === selectedDateKey);
+        if (found) return found;
+      }
+    }
+    return dayGroupState;
+  }, [monthGroups, selectedDateKey, dayGroupState]);
+
+  // Các refs cho Modal PIN và Popup thông báo
+  const pinInputRef = useRef(null);
+  const pinSetupRef = useRef(null);
+  const popupModalRef = useRef(null);
+  const isSubmittingRef = useRef(false);
+
+  // Kiểm tra mã PIN trước khi thực hiện thao tác nhạy cảm
+  const requirePin = async (action) => {
+    const pinExists = await hasPin();
+    if (!pinExists) {
+      pinSetupRef.current?.open(action);
+      return;
+    }
+    const sessionOk = await isSessionValid();
+    if (sessionOk) {
+      action();
+    } else {
+      pinInputRef.current?.open(action, 'xác nhận xóa');
+    }
+  };
+
+  // Xóa đơn ghi nợ thịt
+  const handleDeleteTransaction = (transactionId) => {
+    popupModalRef.current?.show({
+      title: 'Xác nhận xóa đơn nợ',
+      message: 'Bạn có chắc chắn muốn xóa đơn ghi nợ thịt này không? Hành động này không thể hoàn tác.',
+      type: 'confirm',
+      confirmText: 'Xóa',
+      cancelText: 'Hủy',
+      onConfirm: () => {
+        requirePin(async () => {
+          if (loading || isSubmittingRef.current) return;
+          setLoading(true);
+          setError('');
+          isSubmittingRef.current = true;
+          try {
+            const response = await api.delete(`/transactions/${transactionId}`);
+            if (response.data.success) {
+              Alert.alert('Thành công', 'Đã xóa đơn ghi nợ thịt.');
+              // Cập nhật ngay React Query Cache để màn hình cha và drawer tháng đổi số tức thì
+              queryClient.setQueryData(['transactions', customerId], (oldData) => {
+                if (!oldData || !oldData.data) return oldData;
+                return {
+                  ...oldData,
+                  data: oldData.data.filter(t => t.id !== transactionId)
+                };
+              });
+
+              setDayGroupState(prev => {
+                if (!prev) return null;
+                const updatedTransactions = prev.transactions.filter(t => t.id !== transactionId);
+                if (updatedTransactions.length === 0 && prev.payments.length === 0) {
+                  setVisible(false);
+                  return null;
+                }
+                const newTotalDebt = updatedTransactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+                const remaining = newTotalDebt - prev.totalPayment;
+                return {
+                  ...prev,
+                  transactions: updatedTransactions,
+                  totalDebt: newTotalDebt,
+                  remainingDebt: remaining >= 0 ? remaining : 0
+                };
+              });
+              if (onRefresh) onRefresh();
+            } else {
+              Alert.alert('Lỗi', response.data.message || 'Lỗi xóa đơn nợ.');
+              setError(response.data.message || 'Lỗi xóa đơn nợ. Vui lòng thử lại.');
+            }
+          } catch (err) {
+            const errMsg = err.response?.data?.message || err.message || 'Lỗi kết nối mạng';
+            Alert.alert('Lỗi', errMsg);
+            setError(errMsg);
+          } finally {
+            setLoading(false);
+            isSubmittingRef.current = false;
+          }
+        });
+      }
+    });
+  };
+
+  // Xóa lượt thu tiền
+  const handleDeletePayment = (paymentId) => {
+    popupModalRef.current?.show({
+      title: 'Xác nhận xóa lượt thu tiền',
+      message: 'Bạn có chắc chắn muốn xóa lượt thu tiền trả nợ này không? Hành động này không thể hoàn tác.',
+      type: 'confirm',
+      confirmText: 'Xóa',
+      cancelText: 'Hủy',
+      onConfirm: () => {
+        requirePin(async () => {
+          if (loading || isSubmittingRef.current) return;
+          setLoading(true);
+          setError('');
+          isSubmittingRef.current = true;
+          try {
+            const response = await api.delete(`/payments/${paymentId}`);
+            if (response.data.success) {
+              Alert.alert('Thành công', 'Đã xóa lượt thu tiền.');
+              // Cập nhật ngay React Query Cache để màn hình cha và drawer tháng đổi số tức thì
+              queryClient.setQueryData(['payments', customerId], (oldData) => {
+                if (!oldData || !oldData.data) return oldData;
+                return {
+                  ...oldData,
+                  data: oldData.data.filter(p => p.id !== paymentId)
+                };
+              });
+
+              setDayGroupState(prev => {
+                if (!prev) return null;
+                const updatedPayments = prev.payments.filter(p => p.id !== paymentId);
+                if (prev.transactions.length === 0 && updatedPayments.length === 0) {
+                  setVisible(false);
+                  return null;
+                }
+                const newTotalPayment = updatedPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+                const remaining = prev.totalDebt - newTotalPayment;
+                return {
+                  ...prev,
+                  payments: updatedPayments,
+                  totalPayment: newTotalPayment,
+                  remainingDebt: remaining >= 0 ? remaining : 0
+                };
+              });
+              if (onRefresh) onRefresh();
+            } else {
+              Alert.alert('Lỗi', response.data.message || 'Lỗi xóa lượt thu tiền.');
+              setError(response.data.message || 'Lỗi xóa lượt thu tiền. Vui lòng thử lại.');
+            }
+          } catch (err) {
+            const errMsg = err.response?.data?.message || err.message || 'Lỗi kết nối mạng';
+            Alert.alert('Lỗi', errMsg);
+            setError(errMsg);
+          } finally {
+            setLoading(false);
+            isSubmittingRef.current = false;
+          }
+        });
+      }
+    });
+  };
 
   // Phơi bày open/close ra component cha
   useImperativeHandle(ref, () => ({
     open: (group) => {
-      setDayGroup(group);
+      setDayGroupState(group);
+      setSelectedDateKey(group.dateKey);
       setVisible(true);
       setError('');
       setLoading(false);
@@ -58,12 +222,20 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
   };
 
   const handleMarkAsPaid = async () => {
-    if (loading || !dayGroup || !customerId) return; // Ngăn chặn bấm đúp khi đang thực hiện giao dịch
+    if (loading || isSubmittingRef.current || !dayGroup || !customerId) {
+      Alert.alert('Thông báo', `Bị chặn gửi: loading=${loading}, isSubmitting=${isSubmittingRef.current}, hasDayGroup=${!!dayGroup}, customerId=${customerId}`);
+      return;
+    }
     setLoading(true);
     setError('');
+    isSubmittingRef.current = true;
     try {
       // Lấy số nợ còn lại thực tế của ngày sau khi đã phân bổ theo FIFO
       const remainingDebt = dayGroup.remainingDebt !== undefined ? dayGroup.remainingDebt : (dayGroup.totalDebt - dayGroup.totalPayment);
+      
+      // Hiển thị Alert debug trước khi gọi API
+      Alert.alert('Debug Gửi API', `Khách hàng: ${customerId}\nSố tiền: ${remainingDebt.toLocaleString('vi-VN')}đ\nNgày nợ: ${dayGroup.dateKey}`);
+
       const response = await api.post('/payments', {
         customerId,
         amount: remainingDebt,
@@ -72,15 +244,42 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
       });
 
       if (response.data.success) {
-        setVisible(false);
+        Alert.alert('Thành công', 'Đã thanh toán nợ ngày hôm nay.');
+        const newPayment = response.data.data;
+        // Cập nhật ngay React Query Cache để màn hình cha và drawer tháng đổi số tức thì
+        queryClient.setQueryData(['payments', customerId], (oldData) => {
+          if (!oldData) return { success: true, data: [newPayment] };
+          const oldList = oldData.data || [];
+          return {
+            ...oldData,
+            data: [...oldList, newPayment]
+          };
+        });
+
+        setDayGroupState(prev => {
+          if (!prev) return null;
+          const updatedPayments = [...prev.payments, newPayment];
+          const newTotalPayment = updatedPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+          const remaining = prev.totalDebt - newTotalPayment;
+          return {
+            ...prev,
+            payments: updatedPayments,
+            totalPayment: newTotalPayment,
+            remainingDebt: remaining >= 0 ? remaining : 0
+          };
+        });
         if (onRefresh) onRefresh();
       } else {
+        Alert.alert('Thất bại', response.data.message || 'Lỗi thanh toán.');
         setError(response.data.message || 'Lỗi thanh toán. Vui lòng thử lại.');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
+      const errMsg = err.response?.data?.message || err.message || 'Lỗi kết nối mạng';
+      Alert.alert('Lỗi mạng/máy chủ', errMsg);
+      setError(errMsg);
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -89,6 +288,15 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
       .format(amount)
       .replace('₫', 'đ');
+
+  // Helper chuyển đổi chuỗi ngày ISO thành dạng khóa "DD/MM/YYYY"
+  const toDateKey = (dateStr) => {
+    const d = new Date(dateStr);
+    const dd = d.getDate().toString().padStart(2, '0');
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
 
   // ─── Helper: lấy thứ trong tuần tiếng Việt đầy đủ ─────────────────────
   const getFullWeekday = (dateStr) => {
@@ -171,7 +379,7 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
                 <View key={t.id} style={styles.transactionCard}>
                   {/* Header đơn: số thứ tự + nút sửa + tổng tiền đơn */}
                   <View style={styles.transCardHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Text style={styles.transCardNum}>Đơn #{tIdx + 1}</Text>
                       <TouchableOpacity
                         style={styles.editCardBtn}
@@ -181,6 +389,12 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
                         }}
                       >
                         <Text style={styles.editCardText}>✏️ Sửa</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteCardBtn}
+                        onPress={() => handleDeleteTransaction(t.id)}
+                      >
+                        <Text style={styles.deleteCardText}>🗑️ Xóa</Text>
                       </TouchableOpacity>
                     </View>
                     <Text style={styles.transCardTotal}>{formatCurrency(t.amount)}</Text>
@@ -235,6 +449,18 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
                   {t.note ? (
                     <Text style={styles.transNote}>📝 {t.note}</Text>
                   ) : null}
+
+                  {/* Lịch sử khấu trừ thanh toán */}
+                  {t.allocations && t.allocations.length > 0 && (
+                    <View style={styles.allocationBox}>
+                      <Text style={styles.allocationTitle}>🔗 Đã khấu trừ từ các lần trả:</Text>
+                      {t.allocations.map((alloc, aIdx) => (
+                        <Text key={aIdx} style={styles.allocationItem}>
+                          • Đã trả <Text style={styles.boldText}>{formatCurrency(alloc.amount)}</Text> vào ngày {toDateKey(alloc.date)}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
                 </View>
               ))}
             </View>
@@ -247,7 +473,7 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
               {payments.map((p) => (
                 <View key={p.id} style={styles.paymentCard}>
                   <View style={styles.transCardHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Text style={styles.paymentLabel}>Khách đã trả</Text>
                       <TouchableOpacity
                         style={styles.editCardBtn}
@@ -258,6 +484,12 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
                       >
                         <Text style={styles.editCardText}>✏️ Sửa</Text>
                       </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteCardBtn}
+                        onPress={() => handleDeletePayment(p.id)}
+                      >
+                        <Text style={styles.deleteCardText}>🗑️ Xóa</Text>
+                      </TouchableOpacity>
                     </View>
                     <Text style={[styles.transCardTotal, { color: COLORS.primaryDark }]}>
                       {formatCurrency(p.amount)}
@@ -266,6 +498,18 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
                   {p.note ? (
                     <Text style={styles.transNote}>📝 {formatPaymentNote(p.note, p.paidAt)}</Text>
                   ) : null}
+
+                  {/* Lịch sử khấu trừ hóa đơn nợ */}
+                  {p.allocations && p.allocations.length > 0 && (
+                    <View style={styles.allocationBox}>
+                      <Text style={styles.allocationTitle}>🔗 Khấu trừ cho các đơn nợ:</Text>
+                      {p.allocations.map((alloc, aIdx) => (
+                        <Text key={aIdx} style={styles.allocationItem}>
+                          • Khấu trừ <Text style={styles.boldText}>{formatCurrency(alloc.amount)}</Text> cho đơn nợ ngày {toDateKey(alloc.date)}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
                 </View>
               ))}
             </View>
@@ -296,6 +540,12 @@ const TransactionDetailModal = forwardRef(({ customerId, onRefresh, onEditTransa
           </TouchableOpacity>
         </View>
       </View>
+      {/* Modal nhập PIN khi phiên hết hạn */}
+      <PinInputModal ref={pinInputRef} />
+      {/* Modal tạo PIN lần đầu */}
+      <PinSetupModal ref={pinSetupRef} />
+      {/* Popup thông báo dùng chung */}
+      <PopupModal ref={popupModalRef} />
     </SmoothModal>
   );
 });
@@ -561,5 +811,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
+  },
+  deleteCardBtn: {
+    backgroundColor: '#FFF1F1',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  deleteCardText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.danger,
+  },
+  allocationBox: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  allocationTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+  },
+  allocationItem: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+  },
+  boldText: {
+    fontWeight: 'bold',
+    color: COLORS.text,
   },
 });

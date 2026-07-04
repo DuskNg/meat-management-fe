@@ -50,18 +50,18 @@ export const useAuthStore = create((set) => ({
       await setStorageItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
       await setStorageItem(USER_INFO_KEY, JSON.stringify(user));
       
-      // Lưu số điện thoại mới nhất vừa đăng nhập thành công
-      if (user && user.phone) {
+      // Lưu số điện thoại mới nhất vừa đăng nhập thành công (chỉ lưu số của tài khoản thường, không lưu số Admin)
+      if (user && user.phone && !user.isAdmin) {
         await setStorageItem(SAVED_PHONE_KEY, user.phone);
       }
 
-      set({
+      set((state) => ({
         user,
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         isAuthenticated: true,
-        savedPhone: user?.phone || '',
-      });
+        savedPhone: user?.isAdmin ? state.savedPhone : (user?.phone || ''),
+      }));
     } catch (error) {
       console.error('Lỗi khi lưu thông tin đăng nhập:', error);
     }
@@ -119,5 +119,30 @@ export const useAuthStore = create((set) => ({
       console.error('Lỗi khi nạp lại trạng thái đăng nhập:', error);
       set({ isInitialized: true });
     }
+  },
+
+  // 4. Cập nhật trạng thái có mã PIN hay chưa của người dùng
+  setHasPin: async (hasPin) => {
+    try {
+      const user = useAuthStore.getState().user;
+      if (user) {
+        const updatedUser = { ...user, hasPin };
+        await setStorageItem(USER_INFO_KEY, JSON.stringify(updatedUser));
+        set({ user: updatedUser });
+      }
+    } catch (error) {
+      console.error('Lỗi khi cập nhật trạng thái PIN:', error);
+    }
+  },
+
+  // 5. Kiểm tra quyền của người dùng hiện tại (Admin hoặc mặc định chưa cài đặt đều là true)
+  hasPermission: (permissionField) => {
+    const user = useAuthStore.getState().user;
+    if (!user) return false;
+    if (user.isAdmin) return true;
+    if (!user.permissions || user.permissions[permissionField] === undefined) {
+      return true;
+    }
+    return !!user.permissions[permissionField];
   },
 }));

@@ -22,6 +22,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useAuthStore } from '../../src/store/authStore';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../src/api/client';
 import { COLORS, FONTS, SHADOWS } from '../../src/theme';
@@ -36,6 +37,7 @@ import ScanTicketModal from '../../src/components/ScanTicketModal';
 import PopupModal from '../../src/components/PopupModal';
 
 export default function CustomerDetailScreen() {
+  const auth = useAuthStore();
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -408,112 +410,93 @@ export default function CustomerDetailScreen() {
   // Nhóm các giao dịch và thanh toán theo tháng mục tiêu và theo ngày thực tế phát sinh
   const monthGroups = useMemo(() => {
     // 1. Phân loại các đợt thanh toán (thanh toán cụ thể ngày vs thanh toán cụ thể tháng vs thanh toán chung)
-    const specificPaymentsByDate = {}; // key: "DD/MM/YYYY" -> Mảng lượt trả nợ riêng ngày đó
-    const specificPaymentsByMonth = {}; // key: "MM/YYYY" -> Mảng lượt trả nợ riêng tháng đó
-    let generalPaidPool = 0;
-
-    payments.forEach((p) => {
-      const trimNote = (p.note || '').trim();
-      const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
-      const monthMatch = trimNote.match(/^Thanh toán nợ Tháng (\d{2})\/(\d{4})/);
-
-      if (dateMatch) {
-        const dateKey = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
-        if (!specificPaymentsByDate[dateKey]) {
-          specificPaymentsByDate[dateKey] = [];
-        }
-        specificPaymentsByDate[dateKey].push(p);
-      } else if (monthMatch) {
-        const monthKey = `${monthMatch[1]}/${monthMatch[2]}`;
-        if (!specificPaymentsByMonth[monthKey]) {
-          specificPaymentsByMonth[monthKey] = [];
-        }
-        specificPaymentsByMonth[monthKey].push(p);
-      } else {
-        generalPaidPool += parseFloat(p.amount || 0);
-      }
-    });
-
-    // 2. Khởi tạo bản đồ nợ còn lại của từng đơn hàng
     const remainingDebtMap = {};
     transactions.forEach((t) => {
       remainingDebtMap[t.id] = parseFloat(t.totalAmount || 0);
     });
 
-    // 3. Khấu trừ các lượt trả nợ đích danh cho từng ngày (trừ đúng ngày đó)
-    Object.keys(specificPaymentsByDate).forEach((dateKey) => {
-      const dayPays = specificPaymentsByDate[dateKey];
-      let dayPaidPool = dayPays.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-
-      // Lấy toàn bộ giao dịch trong ngày này, xếp từ cũ đến mới
-      const dayTransactions = transactions
-        .filter((t) => toDateKey(t.date) === dateKey)
-        .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-      dayTransactions.forEach((t) => {
-        const amt = remainingDebtMap[t.id];
-        if (dayPaidPool >= amt) {
-          remainingDebtMap[t.id] = 0;
-          dayPaidPool -= amt;
-        } else if (dayPaidPool > 0) {
-          remainingDebtMap[t.id] = amt - dayPaidPool;
-          dayPaidPool = 0;
-        }
-      });
-
-      // Nếu người bán ghi nhận thu thừa so với ngày đó, phần dư dồn vào quỹ trả nợ chung
-      if (dayPaidPool > 0) {
-        generalPaidPool += dayPaidPool;
-      }
+    const remainingPayMap = {};
+    payments.forEach((p) => {
+      remainingPayMap[p.id] = parseFloat(p.amount || 0);
     });
 
-    // 3.5. Khấu trừ các lượt trả nợ đích danh cho từng Tháng (trừ đúng các đơn nợ trong tháng đó)
-    Object.keys(specificPaymentsByMonth).forEach((monthKey) => {
-      const monthPays = specificPaymentsByMonth[monthKey];
-      let monthPaidPool = monthPays.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    const transAllocations = {}; // t.id -> array of { paymentId, date, amount, note }
+    const payAllocations = {};   // p.id -> array of { transactionId, date, amount, note }
 
-      // Lấy toàn bộ đơn nợ trong tháng này, xếp từ cũ đến mới để khấu trừ
-      const monthTransactions = transactions
-        .filter((t) => {
-          const d = new Date(t.date);
-          const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-          const yyyy = d.getFullYear();
-          return `${mm}/${yyyy}` === monthKey;
-        })
-        .sort((a, b) => new Date(a.date) - new Date(b.date));
+    const recordAllocation = (tId, tDate, tNote, pId, pDate, pNote, amount) => {
+      if (!transAllocations[tId]) transAllocations[tId] = [];
+      transAllocations[tId].push({ paymentId: pId, date: pDate, amount, note: pNote });
 
-      monthTransactions.forEach((t) => {
-        const amt = remainingDebtMap[t.id];
-        if (amt > 0) {
-          if (monthPaidPool >= amt) {
-            remainingDebtMap[t.id] = 0;
-            monthPaidPool -= amt;
-          } else if (monthPaidPool > 0) {
-            remainingDebtMap[t.id] = amt - monthPaidPool;
-            monthPaidPool = 0;
+      if (!payAllocations[pId]) payAllocations[pId] = [];
+      payAllocations[pId].push({ transactionId: tId, date: tDate, amount, note: tNote });
+    };
+
+    // A. Phân bổ theo ngày cụ thể (Specific Date matching)
+    payments.forEach((p) => {
+      const trimNote = (p.note || '').trim();
+      const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
+      if (dateMatch) {
+        const dateKey = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
+        const dayTransactions = transactions
+          .filter((t) => toDateKey(t.date) === dateKey)
+          .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        dayTransactions.forEach((t) => {
+          const debtAmt = remainingDebtMap[t.id];
+          const payAmt = remainingPayMap[p.id];
+          if (debtAmt > 0 && payAmt > 0) {
+            const allocAmt = Math.min(debtAmt, payAmt);
+            remainingDebtMap[t.id] -= allocAmt;
+            remainingPayMap[p.id] -= allocAmt;
+            recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
           }
-        }
-      });
-
-      // Nếu trả thừa so với tổng nợ tháng đó, phần dư dồn vào quỹ trả nợ chung
-      if (monthPaidPool > 0) {
-        generalPaidPool += monthPaidPool;
+        });
       }
     });
 
-    // 4. Khấu trừ quỹ trả nợ chung theo FIFO toàn bộ lịch sử (từ xa tới gần)
-    const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-    sortedTransactions.forEach((t) => {
-      const amt = remainingDebtMap[t.id];
-      if (amt > 0) {
-        if (generalPaidPool >= amt) {
-          remainingDebtMap[t.id] = 0;
-          generalPaidPool -= amt;
-        } else if (generalPaidPool > 0) {
-          remainingDebtMap[t.id] = amt - generalPaidPool;
-          generalPaidPool = 0;
-        }
+    // B. Phân bổ theo tháng cụ thể (Specific Month matching)
+    payments.forEach((p) => {
+      const trimNote = (p.note || '').trim();
+      const monthMatch = trimNote.match(/^Thanh toán nợ Tháng (\d{2})\/(\d{4})/);
+      if (monthMatch) {
+        const monthKey = `${monthMatch[1]}/${monthMatch[2]}`;
+        const monthTransactions = transactions
+          .filter((t) => {
+            const d = new Date(t.date);
+            const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+            const yyyy = d.getFullYear();
+            return `${mm}/${yyyy}` === monthKey;
+          })
+          .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        monthTransactions.forEach((t) => {
+          const debtAmt = remainingDebtMap[t.id];
+          const payAmt = remainingPayMap[p.id];
+          if (debtAmt > 0 && payAmt > 0) {
+            const allocAmt = Math.min(debtAmt, payAmt);
+            remainingDebtMap[t.id] -= allocAmt;
+            remainingPayMap[p.id] -= allocAmt;
+            recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
+          }
+        });
       }
+    });
+
+    // C. Phân bổ chung FIFO (cho phần còn dư của thanh toán cụ thể và thanh toán chung)
+    const sortedPayments = [...payments].sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt));
+    const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    sortedPayments.forEach((p) => {
+      sortedTransactions.forEach((t) => {
+        const debtAmt = remainingDebtMap[t.id];
+        const payAmt = remainingPayMap[p.id];
+        if (debtAmt > 0 && payAmt > 0) {
+          const allocAmt = Math.min(debtAmt, payAmt);
+          remainingDebtMap[t.id] -= allocAmt;
+          remainingPayMap[p.id] -= allocAmt;
+          recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
+        }
+      });
     });
 
     // 5. Gom nhóm các giao dịch và thanh toán theo tháng mục tiêu, sau đó theo ngày thực tế phát sinh
@@ -585,6 +568,7 @@ export default function CustomerDetailScreen() {
         remainingAmount: remainingAmt,
         note: t.note,
         items: t.items || [],
+        allocations: transAllocations[t.id] || [], // Truyền thông tin phân bổ thanh toán
       });
       g.totalDebt += originalAmt;
       g.remainingDebt += remainingAmt;
@@ -593,32 +577,71 @@ export default function CustomerDetailScreen() {
       mGroup.remainingDebt += remainingAmt;
     });
 
-    // Đưa khoản thanh toán vào đúng tháng mục tiêu và ngày thực tế
+    // Đưa khoản thanh toán vào đúng tháng mục tiêu và gộp vào ngày nợ tương ứng
     payments.forEach((p) => {
-      const monthKey = getPaymentTargetMonth(p);
-      const mGroup = getOrCreateMonthGroup(monthKey);
+      const allocations = payAllocations[p.id] || [];
 
-      const key = toDateKey(p.paidAt);
-      if (!mGroup.daysMap.has(key)) {
-        mGroup.daysMap.set(key, {
-          dateKey: key,
-          date: p.paidAt, // Dùng ngày thanh toán thực tế
-          transactions: [],
-          payments: [],
-          totalDebt: 0,
-          remainingDebt: 0,
-          totalPayment: 0,
+      if (allocations.length > 0) {
+        // Lượt thanh toán này đã được phân bổ để khấu trừ nợ
+        // Gộp nó vào các ngày nợ tương ứng
+        allocations.forEach((alloc) => {
+          const transDateKey = toDateKey(alloc.date);
+          const transMonthKey = getTransactionTargetMonth({ date: alloc.date });
+          const mGroup = getOrCreateMonthGroup(transMonthKey);
+
+          if (mGroup.daysMap.has(transDateKey)) {
+            const g = mGroup.daysMap.get(transDateKey);
+            // Kiểm tra xem lượt trả này đã được thêm vào ngày nợ này chưa (tránh nhân đôi)
+            if (!g.payments.some((existingPay) => existingPay.id === p.id)) {
+              g.payments.push({
+                id: p.id,
+                type: 'payment',
+                date: p.paidAt,
+                amount: alloc.amount, // Số tiền được phân bổ cho ngày nợ này
+                note: p.note,
+                allocations: [alloc],
+              });
+              g.totalPayment += alloc.amount;
+            } else {
+              const existingPay = g.payments.find((existingPay) => existingPay.id === p.id);
+              existingPay.amount += alloc.amount;
+              existingPay.allocations.push(alloc);
+              g.totalPayment += alloc.amount;
+            }
+          }
         });
       }
-      const g = mGroup.daysMap.get(key);
-      g.payments.push({
-        id: p.id,
-        type: 'payment',
-        date: p.paidAt,
-        amount: parseFloat(p.amount),
-        note: p.note,
-      });
-      g.totalPayment += parseFloat(p.amount);
+
+      // Nếu payment còn dư chưa phân bổ hết (tiền trả trước / dư)
+      // Tạo nhóm ngày riêng cho ngày nạp tiền đó
+      const prepayAmt = remainingPayMap[p.id];
+      if (prepayAmt > 0) {
+        const payMonthKey = getPaymentTargetMonth(p);
+        const mGroup = getOrCreateMonthGroup(payMonthKey);
+        const payDateKey = toDateKey(p.paidAt);
+
+        if (!mGroup.daysMap.has(payDateKey)) {
+          mGroup.daysMap.set(payDateKey, {
+            dateKey: payDateKey,
+            date: p.paidAt, // Dùng ngày thanh toán thực tế
+            transactions: [],
+            payments: [],
+            totalDebt: 0,
+            remainingDebt: 0,
+            totalPayment: 0,
+          });
+        }
+        const g = mGroup.daysMap.get(payDateKey);
+        g.payments.push({
+          id: p.id,
+          type: 'payment',
+          date: p.paidAt,
+          amount: prepayAmt,
+          note: p.note || 'Trả trước (dư)',
+          allocations: [],
+        });
+        g.totalPayment += prepayAmt;
+      }
     });
 
     // Chuyển đối map ngày sang danh sách và sắp xếp từ ngày mới nhất đến cũ nhất
@@ -1009,6 +1032,7 @@ export default function CustomerDetailScreen() {
       <TransactionDetailModal
         ref={detailModalRef}
         customerId={id}
+        monthGroups={monthGroups}
         onRefresh={handleRefreshAll}
         onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
         onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}

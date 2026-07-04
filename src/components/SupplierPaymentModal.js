@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/SupplierPaymentModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -20,6 +20,7 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const isSubmittingRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
     open: (defaultAmount = '') => {
@@ -46,7 +47,7 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
 
   // Xác nhận lưu giao dịch trả tiền
   const handleSubmit = async () => {
-    if (loading) return;
+    if (loading || isSubmittingRef.current) return;
     if (!amount || amount.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
       return;
@@ -59,6 +60,7 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
 
     setError('');
     setLoading(true);
+    isSubmittingRef.current = true;
     try {
       const response = await api.post('/suppliers/payments', {
         supplierId: supplier?.id,
@@ -77,6 +79,7 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
       setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

@@ -90,6 +90,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
   // Refs cho 2 modal PIN
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
+  const isSubmittingRef = useRef(false);
 
   // ─── Tải danh mục sản phẩm (chỉ khi modal hiển thị và có customerId) ────────────────────
   const { data: productsResponse, refetch: refetchProducts } = useQuery({
@@ -252,7 +253,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
 
   // ─── Lưu cập nhật đơn hàng ──────────────────────────────────
   const handleSubmit = async () => {
-    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
+    if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (cartItems.length === 0) {
       setError('Đơn hàng không được để trống. Vui lòng thêm ít nhất 1 mặt hàng.');
       return;
@@ -265,6 +266,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
 
     setError('');
     setLoading(true);
+    isSubmittingRef.current = true;
     try {
       const response = await api.put(`/transactions/${transactionId}`, {
         date: isoDate,
@@ -286,6 +288,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
       setError(err.response?.data?.message || 'Lỗi kết nối, vui lòng kiểm tra lại.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

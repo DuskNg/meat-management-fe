@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/AddCustomerModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -21,6 +21,7 @@ const AddCustomerModal = forwardRef(({ onRefresh }, ref) => {
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const isSubmittingRef = useRef(false);
 
   // 1. Phơi bày các hàm điều khiển Modal ra ngoài component cha (App Index)
   useImperativeHandle(ref, () => ({
@@ -39,13 +40,14 @@ const AddCustomerModal = forwardRef(({ onRefresh }, ref) => {
 
   // 2. Xử lý tạo mới khách hàng
   const handleSubmit = async () => {
-    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
+    if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (!name || name.trim() === '') {
       setError('Tên khách hàng bắt buộc phải nhập.');
       return;
     }
     setError('');
     setLoading(true);
+    isSubmittingRef.current = true;
     try {
       const response = await api.post('/customers', {
         name: name.trim(),
@@ -64,6 +66,7 @@ const AddCustomerModal = forwardRef(({ onRefresh }, ref) => {
       setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

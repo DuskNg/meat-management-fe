@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/MonthDetailDrawer.js
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useAuthStore } from '../store/authStore';
 import {
   StyleSheet,
   Text,
@@ -11,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { COLORS, FONTS, SHADOWS } from '../theme';
+import DailyDebtTile from './DailyDebtTile';
 
 const MonthDetailDrawer = forwardRef(({
   monthGroups,
@@ -22,6 +24,7 @@ const MonthDetailDrawer = forwardRef(({
   detailModalRef,
   debtModalRef,
 }, ref) => {
+  const auth = useAuthStore();
   const { width, height } = useWindowDimensions();
   const [visible, setVisible] = useState(false);
   const [month, setMonth] = useState(null);
@@ -225,66 +228,14 @@ const MonthDetailDrawer = forwardRef(({
         >
           {/* Grid ngày */}
           <View style={styles.grid}>
-            {month.days.map((group) => {
-              const hasDebt = group.totalDebt > 0;
-              const hasPay = group.totalPayment > 0;
-
-              // Phân loại màu sắc của từng ô ngày
-              const isFullyPaid = hasDebt && group.remainingDebt === 0;
-              const isPartiallyPaid = hasDebt && group.remainingDebt > 0 && group.remainingDebt < group.totalDebt;
-              const isPaymentOnly = !hasDebt && hasPay;
-
-              let bgColor, bdColor, txtColor;
-              if (isFullyPaid || isPaymentOnly) {
-                bgColor = '#F0FDF4';
-                bdColor = '#86EFAC';
-                txtColor = COLORS.primary;
-              } else if (isPartiallyPaid) {
-                bgColor = '#FFF7ED';
-                bdColor = '#FED7AA';
-                txtColor = '#C2410C';
-              } else {
-                bgColor = '#FFF1F1';
-                bdColor = '#FECACA';
-                txtColor = COLORS.danger;
-              }
-
-              return (
-                <TouchableOpacity
-                  key={group.dateKey}
-                  style={[
-                    styles.tile,
-                    {
-                      width: tileSize,
-                      height: tileSize, // Đổi về dạng ô vuông hoàn hảo theo yêu cầu người dùng
-                      backgroundColor: bgColor,
-                      borderColor: bdColor,
-                    },
-                  ]}
-                  onPress={() => {
-                    detailModalRef?.current?.open(group);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  {/* Thứ viết tắt */}
-                  <Text style={[styles.tileWeekday, { color: txtColor }]} numberOfLines={1} adjustsFontSizeToFit>
-                    {getWeekday(group.date)}
-                  </Text>
-                  {/* Ngày/Tháng */}
-                  <Text style={styles.tileDate} numberOfLines={1} adjustsFontSizeToFit>
-                    {formatShortDate(group.date)}
-                  </Text>
-                  {/* Số tiền rút gọn hoặc trạng thái */}
-                  {isFullyPaid ? (
-                    <Text style={[styles.tileAmount, { color: txtColor }]} numberOfLines={1} adjustsFontSizeToFit>0đ</Text>
-                  ) : (
-                    <Text style={[styles.tileAmount, { color: txtColor }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {formatAmountShort(hasDebt ? group.remainingDebt : group.totalPayment)}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+            {month.days.map((group) => (
+              <DailyDebtTile
+                key={group.dateKey}
+                group={group}
+                tileSize={tileSize}
+                onPress={() => detailModalRef?.current?.open(group)}
+              />
+            ))}
           </View>
         </ScrollView>
       </Animated.View>

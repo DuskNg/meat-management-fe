@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/ScanTicketModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -96,6 +96,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
   const [error, setError] = useState('');
   const [errorField, setErrorField] = useState('');
   const [modalTitleText, setModalTitleText] = useState('📸 KẾT QUẢ QUÉT TÍCH KÊ');
+  const isSubmittingRef = useRef(false);
 
   // --- Phơi bày open/close ra ngoài qua forwardRef ---
   useImperativeHandle(ref, () => ({
@@ -218,7 +219,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
 
   // --- Gửi dữ liệu nợ lên server ---
   const handleSubmit = async () => {
-    if (loading) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
+    if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (scannedItems.length === 0) {
       setError('Vui lòng có ít nhất 1 mặt hàng trong tích kê.');
       return;
@@ -252,6 +253,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
     setError('');
     setErrorField('');
     setLoading(true);
+    isSubmittingRef.current = true;
 
     try {
       const response = await api.post('/transactions', {
@@ -276,6 +278,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
       setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

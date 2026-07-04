@@ -125,6 +125,17 @@ export default function DashboardScreen() {
     },
   });
 
+  // Các hàm làm mới dữ liệu khách hàng kèm theo lịch sử nợ chi tiết nếu đang mở
+  const handleRefreshAll = () => {
+    refetch();
+    customerDebtHistoryModalRef.current?.refresh();
+  };
+
+  const handleRefreshBadAll = () => {
+    refetchBad();
+    customerDebtHistoryModalRef.current?.refresh();
+  };
+
   // 1.8. Dùng React Query tải danh sách nhà cung cấp
   const { data: suppliersResponse, isLoading: isLoadingSuppliers, refetch: refetchSuppliers, isRefetching: isRefetchingSuppliers } = useQuery({
     queryKey: ['suppliers'],
@@ -207,6 +218,7 @@ export default function DashboardScreen() {
 
   // Lưu bảng chấm công
   const handleSaveAttendance = async () => {
+    if (savingAttendance) return; // Chống spam click
     setSavingAttendance(true);
     try {
       const response = await api.post('/employees/attendance', {
@@ -234,6 +246,7 @@ export default function DashboardScreen() {
 
   // Gửi yêu cầu chốt trả lương
   const handlePaySalary = async (empId) => {
+    if (payingSalaryEmpId) return; // Chống spam click
     setPayingSalaryEmpId(empId);
     try {
       const parseAmt = (val) => {
@@ -941,72 +954,80 @@ export default function DashboardScreen() {
             <Text style={styles.menuSubtitle}>Vui lòng lựa chọn nghiệp vụ để bắt đầu làm việc</Text>
 
             {/* Chức năng 1: Quản lý khách hàng */}
-            <TouchableOpacity
-              style={[styles.menuCard, styles.menuCardActive]}
-              onPress={() => {
-                router.replace({ pathname: '/', params: { view: 'customers' } });
-              }}
-              activeOpacity={0.8}
-            >
-              <View style={styles.menuCardIconBg}>
-                <Text style={styles.menuCardIcon}>👥</Text>
-              </View>
-              <View style={styles.menuCardContent}>
-                <Text style={styles.menuCardTitle}>Quản lý khách hàng</Text>
-                <Text style={styles.menuCardDesc}>Xem sổ nợ khách quen, ghi nợ thịt, thanh toán công nợ và báo cáo</Text>
-              </View>
-            </TouchableOpacity>
+            {auth.hasPermission('canManageCustomers') && (
+              <TouchableOpacity
+                style={[styles.menuCard, styles.menuCardActive]}
+                onPress={() => {
+                  router.replace({ pathname: '/', params: { view: 'customers' } });
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.menuCardIconBg}>
+                  <Text style={styles.menuCardIcon}>👥</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={styles.menuCardTitle}>Quản lý khách hàng</Text>
+                  <Text style={styles.menuCardDesc}>Xem sổ nợ khách quen, ghi nợ thịt, thanh toán công nợ và báo cáo</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
             {/* Chức năng 4: Quản lý tiền hàng */}
-            <TouchableOpacity
-              style={[styles.menuCard, styles.menuCardActiveSupplier]}
-              onPress={() => {
-                router.replace({ pathname: '/', params: { view: 'suppliers' } });
-              }}
-              activeOpacity={0.8}
-            >
-              <View style={styles.menuCardIconBgSupplier}>
-                <Text style={styles.menuCardIcon}>📦</Text>
-              </View>
-              <View style={styles.menuCardContent}>
-                <Text style={styles.menuCardTitleSupplier}>Quản lý tiền hàng</Text>
-                <Text style={styles.menuCardDesc}>Quản lý công nợ với chủ bò</Text>
-              </View>
-            </TouchableOpacity>
+            {auth.hasPermission('canManageDebt') && (
+              <TouchableOpacity
+                style={[styles.menuCard, styles.menuCardActiveSupplier]}
+                onPress={() => {
+                  router.replace({ pathname: '/', params: { view: 'suppliers' } });
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.menuCardIconBgSupplier}>
+                  <Text style={styles.menuCardIcon}>📦</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={styles.menuCardTitleSupplier}>Quản lý tiền hàng</Text>
+                  <Text style={styles.menuCardDesc}>Quản lý công nợ với chủ bò</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
             {/* Chức năng 2: Quản lý nhân viên */}
-            <TouchableOpacity
-              style={[styles.menuCard, styles.menuCardActiveEmployee]}
-              onPress={() => {
-                router.replace({ pathname: '/', params: { view: 'employees' } });
-              }}
-              activeOpacity={0.8}
-            >
-              <View style={styles.menuCardIconBgEmployee}>
-                <Text style={styles.menuCardIcon}>👤</Text>
-              </View>
-              <View style={styles.menuCardContent}>
-                <Text style={styles.menuCardTitleEmployee}>Quản lý nhân viên</Text>
-                <Text style={styles.menuCardDescEmployee}>Chấm công hàng ngày, quản lý tạm ứng lương, tính lương tháng</Text>
-              </View>
-            </TouchableOpacity>
+            {auth.hasPermission('canManageEmployees') && (
+              <TouchableOpacity
+                style={[styles.menuCard, styles.menuCardActiveEmployee]}
+                onPress={() => {
+                  router.replace({ pathname: '/', params: { view: 'employees' } });
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.menuCardIconBgEmployee}>
+                  <Text style={styles.menuCardIcon}>👤</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={styles.menuCardTitleEmployee}>Quản lý nhân viên</Text>
+                  <Text style={styles.menuCardDescEmployee}>Chấm công hàng ngày, quản lý tạm ứng lương, tính lương tháng</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
             {/* Chức năng 3: Quản lý nợ xấu */}
-            <TouchableOpacity
-              style={[styles.menuCard, styles.menuCardActiveBad]}
-              onPress={() => {
-                router.replace({ pathname: '/', params: { view: 'bad_debts' } });
-              }}
-              activeOpacity={0.8}
-            >
-              <View style={styles.menuCardIconBgBad}>
-                <Text style={styles.menuCardIcon}>⚠️</Text>
-              </View>
-              <View style={styles.menuCardContent}>
-                <Text style={styles.menuCardTitle}>Quản lý nợ xấu</Text>
-                <Text style={styles.menuCardDesc}>Khoanh vùng khách hàng khó đòi nợ, theo dõi số tiền đọng và phục hồi trạng thái</Text>
-              </View>
-            </TouchableOpacity>
+            {auth.hasPermission('canManageBadDebt') && (
+              <TouchableOpacity
+                style={[styles.menuCard, styles.menuCardActiveBad]}
+                onPress={() => {
+                  router.replace({ pathname: '/', params: { view: 'bad_debts' } });
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.menuCardIconBgBad}>
+                  <Text style={styles.menuCardIcon}>⚠️</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={styles.menuCardTitle}>Quản lý nợ xấu</Text>
+                  <Text style={styles.menuCardDesc}>Khoanh vùng khách hàng khó đòi nợ, theo dõi số tiền đọng và phục hồi trạng thái</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
 
           </View>
@@ -1116,27 +1137,27 @@ export default function DashboardScreen() {
         <ProfileModal ref={profileModalRef} />
         <PopupModal ref={popupModalRef} />
         {/* Modal thêm bản ghi nợ xấu mới */}
-        <AddBadDebtModal ref={addBadDebtModalRef} onRefresh={refetchBad} />
+        <AddBadDebtModal ref={addBadDebtModalRef} onRefresh={handleRefreshBadAll} />
         {/* Các modal cần thiết để nút Xem nợ và Xuất nợ trên thẻ khách hàng hoạt động */}
-        <ExportDebtModal ref={exportDebtModalRef} onRefresh={refetchBad} />
+        <ExportDebtModal ref={exportDebtModalRef} onRefresh={handleRefreshBadAll} />
         <CustomerDebtHistoryModal
           ref={customerDebtHistoryModalRef}
           paymentModalRef={paymentModalRef}
           detailModalRef={detailModalRef}
           debtModalRef={debtModalRef}
-          onRefresh={refetchBad}
+          onRefresh={handleRefreshBadAll}
         />
-        <DebtModal ref={debtModalRef} customerId={selectedCustomerId} onRefresh={refetchBad} />
-        <PaymentModal ref={paymentModalRef} customerId={selectedCustomerId} onRefresh={refetchBad} />
+        <DebtModal ref={debtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshBadAll} />
+        <PaymentModal ref={paymentModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshBadAll} />
         <TransactionDetailModal
           ref={detailModalRef}
           customerId={selectedCustomerId}
-          onRefresh={refetchBad}
+          onRefresh={handleRefreshBadAll}
           onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
           onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
         />
-        <EditDebtModal ref={editDebtModalRef} onRefresh={refetchBad} />
-        <EditPaymentModal ref={editPaymentModalRef} onRefresh={refetchBad} />
+        <EditDebtModal ref={editDebtModalRef} onRefresh={handleRefreshBadAll} />
+        <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshBadAll} />
       </SafeAreaView>
     );
   }
@@ -1162,7 +1183,7 @@ export default function DashboardScreen() {
       const parts = salaryMonth.split('/');
       const month = parseInt(parts[0], 10);
       const year = parseInt(parts[1], 10);
-      
+
       const date = new Date(year, month - 1 + months, 1);
       setSalaryMonth(`${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`);
     };
@@ -1311,12 +1332,12 @@ export default function DashboardScreen() {
                         <Text style={styles.attendanceEmpName}>{item.name}</Text>
                         <Text style={styles.attendanceEmpRole}>{item.role || 'Nhân viên sạp'}</Text>
                       </View>
-                      
+
                       <View style={styles.attendanceActions}>
                         {/* Nút đi làm cả ngày */}
                         <TouchableOpacity
                           style={[
-                            styles.attButton, 
+                            styles.attButton,
                             isPresent && !isHalf && styles.attButtonGreen
                           ]}
                           onPress={() => handleToggleAttendance(item.employeeId, 'PRESENT', 'FULL')}
@@ -1329,7 +1350,7 @@ export default function DashboardScreen() {
                         {/* Nút đi làm nửa ngày */}
                         <TouchableOpacity
                           style={[
-                            styles.attButton, 
+                            styles.attButton,
                             isPresent && isHalf && styles.attButtonYellow
                           ]}
                           onPress={() => handleToggleAttendance(item.employeeId, 'PRESENT', 'HALF')}
@@ -1342,7 +1363,7 @@ export default function DashboardScreen() {
                         {/* Nút nghỉ */}
                         <TouchableOpacity
                           style={[
-                            styles.attButton, 
+                            styles.attButton,
                             item.status === 'ABSENT' && styles.attButtonRed
                           ]}
                           onPress={() => handleToggleAttendance(item.employeeId, 'ABSENT', 'FULL')}
@@ -1503,7 +1524,7 @@ export default function DashboardScreen() {
 
         <ProfileModal ref={profileModalRef} />
         <PopupModal ref={popupModalRef} />
-        
+
         {/* Modals nhân viên */}
         <AddEmployeeModal ref={addEmployeeModalRef} onRefresh={refetchEmployees} />
         <EditEmployeeModal ref={editEmployeeModalRef} onRefresh={refetchEmployees} />
@@ -1752,10 +1773,10 @@ export default function DashboardScreen() {
       </View>
 
       {/* MODAL THÊM KHÁCH MỚI (Ẩn) */}
-      <AddCustomerModal ref={modalRef} onRefresh={refetch} />
+      <AddCustomerModal ref={modalRef} onRefresh={handleRefreshAll} />
 
       {/* MODAL SỬA KHÁCH HÀNG (Ẩn) */}
-      <EditCustomerModal ref={editCustomerModalRef} onRefresh={refetch} />
+      <EditCustomerModal ref={editCustomerModalRef} onRefresh={handleRefreshAll} />
 
       {/* MODAL HỒ SƠ CHỦ TÀI KHOẢN (Ẩn) */}
       <ProfileModal ref={profileModalRef} />
@@ -1767,10 +1788,10 @@ export default function DashboardScreen() {
       <PopupModal ref={popupModalRef} />
 
       {/* MODAL KẾT QUẢ GHI NỢ GIỌNG NÓI (Ẩn) */}
-      <ScanTicketModal ref={scanTicketModalRef} onRefresh={refetch} />
+      <ScanTicketModal ref={scanTicketModalRef} onRefresh={handleRefreshAll} />
 
       {/* MODAL XUẤT CÔNG NỢ DẠNG ẢNH (Ẩn) */}
-      <ExportDebtModal ref={exportDebtModalRef} onRefresh={refetch} />
+      <ExportDebtModal ref={exportDebtModalRef} onRefresh={handleRefreshAll} />
 
       {/* MODAL XEM CHI TIẾT LỊCH SỬ NỢ THEO THÁNG/NGÀY (Ẩn) */}
       <CustomerDebtHistoryModal
@@ -1778,22 +1799,22 @@ export default function DashboardScreen() {
         paymentModalRef={paymentModalRef}
         detailModalRef={detailModalRef}
         debtModalRef={debtModalRef}
-        onRefresh={refetch}
+        onRefresh={handleRefreshAll}
       />
 
       {/* CÁC SUB-MODAL PHỤC VỤ LỊCH SỬ NỢ */}
-      <DebtModal ref={debtModalRef} customerId={selectedCustomerId} onRefresh={refetch} />
-      <PaymentModal ref={paymentModalRef} customerId={selectedCustomerId} onRefresh={refetch} />
+      <DebtModal ref={debtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshAll} />
+      <PaymentModal ref={paymentModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshAll} />
       <TransactionDetailModal
         ref={detailModalRef}
         customerId={selectedCustomerId}
-        onRefresh={refetch}
+        onRefresh={handleRefreshAll}
         onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
         onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
       />
-      <EditDebtModal ref={editDebtModalRef} onRefresh={refetch} />
-      <EditPaymentModal ref={editPaymentModalRef} onRefresh={refetch} />
-      <DailyReportModal ref={dailyReportModalRef} onRefresh={refetch} />
+      <EditDebtModal ref={editDebtModalRef} onRefresh={handleRefreshAll} />
+      <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} />
+      <DailyReportModal ref={dailyReportModalRef} onRefresh={handleRefreshAll} />
     </SafeAreaView>
   );
 }
