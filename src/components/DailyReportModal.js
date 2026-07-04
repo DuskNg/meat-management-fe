@@ -162,7 +162,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     }))
   ].sort((a, b) => new Date(b.time) - new Date(a.time)); // Mới nhất xếp trên đầu
 
-  // Xử lý xuất công nợ trong ngày dạng ảnh bằng Canvas HTML5
+  // Xử lý xuất công nợ trong ngày dạng ảnh bằng Canvas HTML5 (Cứ 15 giao dịch chia làm 1 cột, tự động tăng chiều rộng)
   const handleExportImage = () => {
     if (Platform.OS !== 'web') {
       alert('Chức năng xuất ảnh hiện hỗ trợ trên giao diện Web.');
@@ -174,16 +174,26 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
-      const width = 1500;
+      const itemsPerCol = 15;
+      const numCols = Math.max(1, Math.ceil(timelineItems.length / itemsPerCol));
+      const colWidth = 500;
+      
+      // Chiều rộng cơ sở: tối thiểu 1000px để hiển thị đẹp mắt 2 hộp tổng kết ở header
+      const width = Math.max(1000, numCols * colWidth);
       const rowHeight = 60;
       const headerHeight = 260;
       const footerHeight = 80;
-      const numRows = Math.ceil(timelineItems.length / 3);
+      const numRows = Math.min(itemsPerCol, timelineItems.length);
       const listHeight = timelineItems.length === 0 ? 100 : numRows * rowHeight;
       const height = headerHeight + listHeight + footerHeight;
       
-      canvas.width = width;
-      canvas.height = height;
+      // Tỉ lệ scale ảnh lên 1.3
+      const scale = 1.3;
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+
+      // Áp dụng tỉ lệ scale cho context vẽ để phóng to tất cả các thành phần tương ứng
+      ctx.scale(scale, scale);
 
       // Nền trắng toàn ảnh
       ctx.fillStyle = '#FFFFFF';
@@ -224,39 +234,41 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       ctx.font = 'italic 12px Arial, sans-serif';
       ctx.fillText(`Thời gian xuất: ${timeStr}`, width / 2, 120);
 
-      // 3. Vẽ hộp Tổng kết (Nợ phát sinh & Tiền đã thu) - Chỉnh lại chiều rộng 2 hộp cho cân đối với ảnh rộng 1500px
+      // 3. Vẽ hộp Tổng kết (Nợ phát sinh & Tiền đã thu) - Tự động tính toán theo chiều rộng canvas
       const boxY = 165;
-      const boxWidth = 710;
+      const boxPadding = 25;
+      const boxWidth = (width - boxPadding * 3) / 2;
       const boxHeight = 70;
       
       // Hộp Nợ phát sinh (bên trái)
       ctx.fillStyle = '#FEF2F2';
-      ctx.fillRect(25, boxY, boxWidth, boxHeight);
+      ctx.fillRect(boxPadding, boxY, boxWidth, boxHeight);
       ctx.strokeStyle = '#FECACA';
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(25, boxY, boxWidth, boxHeight);
+      ctx.strokeRect(boxPadding, boxY, boxWidth, boxHeight);
       
       ctx.fillStyle = '#991B1B';
       ctx.font = 'bold 12px Arial, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('🔴 Nợ phát sinh trong ngày', 40, boxY + 25);
+      ctx.fillText('🔴 Nợ phát sinh trong ngày', boxPadding + 15, boxY + 25);
       ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalDebtCreated), 40, boxY + 52);
+      ctx.fillText(formatCurrency(totalDebtCreated), boxPadding + 15, boxY + 52);
 
       // Hộp Tiền đã thu (bên phải)
+      const rightBoxX = boxPadding * 2 + boxWidth;
       ctx.fillStyle = '#F0FDF4';
-      ctx.fillRect(765, boxY, boxWidth, boxHeight);
+      ctx.fillRect(rightBoxX, boxY, boxWidth, boxHeight);
       ctx.strokeStyle = '#BBF7D0';
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(765, boxY, boxWidth, boxHeight);
+      ctx.strokeRect(rightBoxX, boxY, boxWidth, boxHeight);
       
       ctx.fillStyle = '#166534';
       ctx.font = 'bold 12px Arial, sans-serif';
-      ctx.fillText('🟢 Tiền đã thu trong ngày', 780, boxY + 25);
+      ctx.fillText('🟢 Tiền đã thu trong ngày', rightBoxX + 15, boxY + 25);
       ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalPaymentReceived), 780, boxY + 52);
+      ctx.fillText(formatCurrency(totalPaymentReceived), rightBoxX + 15, boxY + 52);
 
-      // 4. Vẽ danh sách chi tiết (Chia 3 cột)
+      // 4. Vẽ danh sách chi tiết (Chia nhiều cột động)
       let currentY = boxY + boxHeight + 45;
       
       ctx.fillStyle = '#1E293B';
@@ -281,38 +293,25 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
           ctx.stroke();
         }
 
-        // Vẽ đường kẻ dọc chia tách 3 cột
+        // Vẽ đường kẻ dọc chia tách các cột
         ctx.strokeStyle = '#F1F5F9';
         ctx.lineWidth = 1;
-        
-        // Cột dọc 1 (tại 1/3 chiều rộng)
-        ctx.beginPath();
-        ctx.moveTo(width / 3, currentY);
-        ctx.lineTo(width / 3, currentY + numRows * rowHeight);
-        ctx.stroke();
-
-        // Cột dọc 2 (tại 2/3 chiều rộng)
-        ctx.beginPath();
-        ctx.moveTo((2 * width) / 3, currentY);
-        ctx.lineTo((2 * width) / 3, currentY + numRows * rowHeight);
-        ctx.stroke();
+        const actualColWidth = (width - 50) / numCols;
+        for (let c = 1; c < numCols; c++) {
+          const lineX = 25 + c * actualColWidth;
+          ctx.beginPath();
+          ctx.moveTo(lineX, currentY);
+          ctx.lineTo(lineX, currentY + numRows * rowHeight);
+          ctx.stroke();
+        }
 
         timelineItems.forEach((item, index) => {
           const isDebt = item.type === 'debt';
-          const rowIndex = Math.floor(index / 3);
-          const colIndex = index % 3;
+          const colIndex = Math.floor(index / itemsPerCol);
+          const rowIndex = index % itemsPerCol;
           
-          let textLeftX, textRightX;
-          if (colIndex === 0) {
-            textLeftX = 35;
-            textRightX = width / 3 - 25;
-          } else if (colIndex === 1) {
-            textLeftX = width / 3 + 15;
-            textRightX = (2 * width) / 3 - 25;
-          } else {
-            textLeftX = (2 * width) / 3 + 15;
-            textRightX = width - 35;
-          }
+          const textLeftX = 25 + colIndex * actualColWidth + 10;
+          const textRightX = 25 + (colIndex + 1) * actualColWidth - 10;
           
           const itemY = currentY + rowIndex * rowHeight;
 
@@ -360,6 +359,67 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     } catch (err) {
       console.error('[EXPORT IMAGE ERROR]', err);
       alert('Đã xảy ra lỗi khi xuất ảnh công nợ.');
+    }
+  };
+
+  // Xử lý xuất báo cáo công nợ trong ngày ra file Excel dạng CSV hỗ trợ tiếng Việt có dấu
+  const handleExportExcel = () => {
+    if (Platform.OS !== 'web') {
+      alert('Chức năng xuất Excel hiện hỗ trợ trên giao diện Web.');
+      return;
+    }
+
+    try {
+      // Sử dụng byte order mark (BOM) UTF-8 để Excel hiển thị đúng dấu tiếng Việt
+      let csvContent = '\uFEFF';
+      
+      // Tiêu đề báo cáo
+      csvContent += `BÁO CÁO CÔNG NỢ TRONG NGÀY\r\n`;
+      csvContent += `Ngày thống kê: ${selectedDate}\r\n`;
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} - ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+      csvContent += `Thời gian xuất: ${timeStr}\r\n\r\n`;
+      
+      // Tiêu đề cột
+      csvContent += 'Thời gian,Khách hàng,Loại giao dịch,Chi tiết giao dịch,Số tiền (đ)\r\n';
+      
+      // Duyệt qua danh sách để điền thông tin chi tiết
+      timelineItems.forEach(item => {
+        const isDebt = item.type === 'debt';
+        const typeStr = isDebt ? 'Nợ phát sinh' : 'Tiền đã thu';
+        
+        const tDate = new Date(item.time);
+        const hour = String(tDate.getHours()).padStart(2, '0');
+        const minute = String(tDate.getMinutes()).padStart(2, '0');
+        const timeFormatted = `${hour}:${minute}`;
+        
+        const customerNameEscaped = `"${(item.customerName || '').replace(/"/g, '""')}"`;
+        const detailsEscaped = `"${(item.details || '').replace(/"/g, '""')}"`;
+        const amountVal = isDebt ? item.amount : -item.amount;
+        
+        csvContent += `${timeFormatted},${customerNameEscaped},${typeStr},${detailsEscaped},${amountVal}\r\n`;
+      });
+      
+      // Phần tổng kết báo cáo
+      csvContent += '\r\n';
+      csvContent += `Tổng nợ phát sinh trong ngày,,,,,${totalDebtCreated}\r\n`;
+      csvContent += `Tổng tiền đã thu trong ngày,,,,,${totalPaymentReceived}\r\n`;
+      csvContent += `Chênh lệch nợ ròng,,,,,${totalDebtCreated - totalPaymentReceived}\r\n`;
+      
+      // Tải tệp tin về trình duyệt
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `BaoCao_CongNo_Ngay_${selectedDate.replace(/\//g, '_')}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setTimeout(() => URL.revokeObjectURL(url), 200);
+    } catch (err) {
+      console.error('[EXPORT EXCEL ERROR]', err);
+      alert('Đã xảy ra lỗi khi xuất file Excel.');
     }
   };
 
@@ -451,11 +511,19 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
         <View style={styles.footerButtons}>
           {Platform.OS === 'web' && !loading && !error && timelineItems.length > 0 && (
             <TouchableOpacity
-              style={styles.exportButton}
-              onPress={handleExportImage}
+              style={[
+                styles.exportButton,
+                timelineItems.length > 100 && styles.excelButton
+              ]}
+              onPress={timelineItems.length > 100 ? handleExportExcel : handleExportImage}
               activeOpacity={0.7}
             >
-              <Text style={styles.exportButtonText}>XUẤT ẢNH BÁO CÁO 📸</Text>
+              <Text style={[
+                styles.exportButtonText,
+                timelineItems.length > 100 && styles.excelButtonText
+              ]}>
+                {timelineItems.length > 100 ? 'XUẤT EXCEL BÁO CÁO 📊' : 'XUẤT ẢNH BÁO CÁO 📸'}
+              </Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -675,6 +743,13 @@ const styles = StyleSheet.create({
     color: '#0369A1', // Xanh dương đậm
     fontSize: 13,
     fontWeight: 'bold',
+  },
+  excelButton: {
+    backgroundColor: '#DCFCE7', // Màu xanh lá nhạt pastel
+    borderColor: '#BBF7D0',
+  },
+  excelButtonText: {
+    color: '#15803D', // Xanh lá đậm
   },
   closeButtonNew: {
     flex: 1,

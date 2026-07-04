@@ -61,6 +61,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [transactions, setTransactions] = useState([]);
   const [payments, setPayments] = useState([]);
   const [error, setError] = useState('');
+  const [rows, setRows] = useState([]);
+  const [totalDebtInMonth, setTotalDebtInMonth] = useState(0);
+  const [totalPaymentInMonth, setTotalPaymentInMonth] = useState(0);
 
   // 1. Phơi bày các hàm điều khiển ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -152,7 +155,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }).format(amount).replace('₫', 'đ');
   };
 
-  // 3. Tạo file ảnh công nợ từ dữ liệu tháng được chọn bằng HTML5 Canvas (Hàm tự động vẽ)
+  // 3. Tạo file ảnh công nợ từ dữ liệu tháng được chọn bằng HTML5 Canvas (Cứ 15 dòng chia thành 1 cột, tự động giãn ngang)
   const generateDebtImage = (month, transList, payList, cust) => {
     if (Platform.OS !== 'web') {
       return; // Không vẽ trên môi trường Native để tránh lỗi Canvas
@@ -178,8 +181,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       // Nhóm giao dịch & thanh toán theo ngày (mỗi ngày chỉ 1 mảng thôi)
       const dayMap = {};
-      let totalDebtInMonth = 0;
-      let totalPaymentInMonth = 0;
+      let totalDebtVal = 0;
+      let totalPaymentVal = 0;
 
       filteredTrans.forEach(t => {
         const d = new Date(t.date);
@@ -196,7 +199,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         }
         const amt = parseFloat(t.totalAmount || 0);
         dayMap[dateKey].debtAmount += amt;
-        totalDebtInMonth += amt;
+        totalDebtVal += amt;
 
         if (t.items && t.items.length > 0) {
           t.items.forEach(item => {
@@ -231,7 +234,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         }
         const amt = parseFloat(p.amount || 0);
         dayMap[dateKey].paymentAmount += amt;
-        totalPaymentInMonth += amt;
+        totalPaymentVal += amt;
 
         if (p.note && !p.note.startsWith('Thanh toán nợ ngày')) {
           dayMap[dateKey].notes.push(formatPaymentNote(p.note, p.paidAt));
@@ -239,7 +242,19 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       });
 
       // Sắp xếp tăng dần theo thời gian (cũ tới mới)
-      const rows = Object.values(dayMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+      const sortedRows = Object.values(dayMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      // Lưu trữ dữ liệu vào State
+      setRows(sortedRows);
+      setTotalDebtInMonth(totalDebtVal);
+      setTotalPaymentInMonth(totalPaymentVal);
+
+      // Nếu vượt quá 100 ngày giao dịch, không vẽ ảnh mà hiển thị xuất Excel
+      if (sortedRows.length > 100) {
+        setGenerating(false);
+        setImageUri(null);
+        return;
+      }
 
       // Hàm ngắt dòng cho chữ tiếng Việt trên canvas
       const wrapText = (context, text, maxWidth) => {
@@ -286,7 +301,6 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         return lines;
       };
 
-      const width = 800;
       const startTableY = 160;
       const footerHeight = 160;
 
@@ -297,16 +311,16 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       const colDateX = 50;
       const colDescX = 110;
-      const colDebtX = width - 170; // 630
-      const colPayX = width - 50;   // 750
-      const colDescMaxWidth = 380;  // Giới hạn để mép phải tối đa của mô tả chỉ tới 490px, tránh đè lên số tiền nợ (thường bắt đầu từ khoảng 500px - 520px)
+      const colDebtX = 800 - 170; // 630 (tính từ startX của mỗi cột)
+      const colPayX = 800 - 50;   // 750 (tính từ startX của mỗi cột)
+      const colDescMaxWidth = 380;
 
       const lineHeight = 20;
       const paddingY = 15;
       const minRowHeight = 55;
 
       // Tính toán số dòng chữ mô tả và chiều cao của từng hàng
-      const rowsWithLayout = rows.map(row => {
+      const rowsWithLayout = sortedRows.map(row => {
         let descText = '';
         const parts = [];
         if (row.items && row.items.length > 0) {
@@ -332,17 +346,35 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         };
       });
 
-      const contentHeight = rowsWithLayout.length > 0
-        ? rowsWithLayout.reduce((sum, r) => sum + r.rowHeight, 0)
-        : 80;
+      // Chia các dòng thành các cột, cứ 15 giao dịch chia 1 cột
+      const itemsPerCol = 15;
+      const numCols = Math.max(1, Math.ceil(rowsWithLayout.length / itemsPerCol));
+      const colWidth = 800;
+      const width = numCols * colWidth;
 
+      const columns = [];
+      for (let i = 0; i < numCols; i++) {
+        columns.push(rowsWithLayout.slice(i * itemsPerCol, (i + 1) * itemsPerCol));
+      }
+
+      // Tính chiều cao nội dung cao nhất trong các cột
+      const colHeights = columns.map(col => {
+        return col.length > 0 ? col.reduce((sum, r) => sum + r.rowHeight, 0) : 80;
+      });
+      const contentHeight = Math.max(...colHeights);
       const canvasHeight = startTableY + 42 + contentHeight + footerHeight;
 
       // Tạo canvas chính thức để vẽ
       const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = canvasHeight;
+      
+      // Thiết lập kích thước canvas nhân với tỉ lệ scale 1.3 để xuất ảnh sắc nét hơn
+      const scale = 1.3;
+      canvas.width = width * scale;
+      canvas.height = canvasHeight * scale;
       const ctx = canvas.getContext('2d');
+
+      // Áp dụng tỉ lệ scale cho context vẽ để phóng to tất cả các thành phần tương ứng
+      ctx.scale(scale, scale);
 
       // Vẽ nền trắng phẳng tinh tế
       ctx.fillStyle = '#FFFFFF';
@@ -378,134 +410,138 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       ctx.fillStyle = '#475569';
       ctx.fillText(`Số ĐT: ${cust?.phone || 'Không có'}`, width - 40, 135);
 
-      // ─── PHẦN BẢNG DỮ LIỆU (TABLE HEADER) ──────────
-      ctx.fillStyle = '#10B981'; // Header bảng màu xanh lá
-      ctx.fillRect(40, startTableY, width - 80, 42);
-      ctx.strokeStyle = '#059669';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(40, startTableY, width - 80, 42);
+      // ─── PHẦN BẢNG DỮ LIỆU (TABLE HEADER & ROWS) ──────────
+      columns.forEach((colRows, colIdx) => {
+        const startX = colIdx * colWidth;
 
-      // Chữ tiêu đề cột
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 15px Arial';
-      ctx.textAlign = 'left';
-      ctx.fillText('Ngày', colDateX, startTableY + 27);
-      ctx.fillText('Nội dung / Chi tiết giao dịch trong ngày', colDescX, startTableY + 27);
+        // Vẽ Header bảng màu xanh lá cho cột này
+        ctx.fillStyle = '#10B981';
+        ctx.fillRect(startX + 40, startTableY, 720, 42);
+        ctx.strokeStyle = '#059669';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(startX + 40, startTableY, 720, 42);
 
-      ctx.textAlign = 'right';
-      ctx.fillText('Tiền Nợ (+)', colDebtX, startTableY + 27);
-      ctx.fillText('Đã Trả (-)', colPayX, startTableY + 27);
+        // Chữ tiêu đề cột
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 15px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('Ngày', startX + colDateX, startTableY + 27);
+        ctx.fillText('Nội dung / Chi tiết giao dịch trong ngày', startX + colDescX, startTableY + 27);
 
-      // ─── VẼ CÁC DÒNG GIAO DỊCH ─────────────────────
-      let currentY = startTableY + 42;
-      ctx.textAlign = 'left';
+        ctx.textAlign = 'right';
+        ctx.fillText('Tiền Nợ (+)', startX + colDebtX, startTableY + 27);
+        ctx.fillText('Đã Trả (-)', startX + colPayX, startTableY + 27);
 
-      if (rowsWithLayout.length === 0) {
-        ctx.fillStyle = '#F8FAFC';
-        ctx.fillRect(40, currentY, width - 80, 80);
-        ctx.strokeStyle = '#E2E8F0';
-        ctx.strokeRect(40, currentY, width - 80, 80);
+        // Vẽ các dòng giao dịch của cột này
+        let currentY = startTableY + 42;
+        ctx.textAlign = 'left';
 
-        ctx.fillStyle = '#94A3B8';
-        ctx.font = 'italic 16px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('Không có giao dịch phát sinh trong tháng này', width / 2, currentY + 48);
-        currentY += 80;
-      } else {
-        rowsWithLayout.forEach((row, idx) => {
-          // Tô màu nền xen kẽ để dễ đọc dòng
-          ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-          ctx.fillRect(40, currentY, width - 80, row.rowHeight);
-
+        if (colRows.length === 0) {
+          ctx.fillStyle = '#F8FAFC';
+          ctx.fillRect(startX + 40, currentY, 720, 80);
           ctx.strokeStyle = '#E2E8F0';
-          ctx.strokeRect(40, currentY, width - 80, row.rowHeight);
+          ctx.strokeRect(startX + 40, currentY, 720, 80);
 
-          // Thiết lập textBaseline là middle để căn giữa dọc dễ dàng hơn
-          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#94A3B8';
+          ctx.font = 'italic 16px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('Không có giao dịch phát sinh trong tháng này', startX + 400, currentY + 48);
+        } else {
+          colRows.forEach((row, idx) => {
+            // Tô màu nền xen kẽ để dễ đọc dòng
+            ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+            ctx.fillRect(startX + 40, currentY, 720, row.rowHeight);
 
-          // Cột ngày
-          ctx.fillStyle = '#0F172A';
-          ctx.font = '15px Arial';
-          ctx.textAlign = 'left';
+            ctx.strokeStyle = '#E2E8F0';
+            ctx.strokeRect(startX + 40, currentY, 720, row.rowHeight);
 
-          const [day, monthStr] = row.dateKey.split('/');
-          ctx.fillText(`${day}/${monthStr}`, colDateX, currentY + row.rowHeight / 2);
+            // Thiết lập textBaseline là middle để căn giữa dọc dễ dàng hơn
+            ctx.textBaseline = 'middle';
 
-          // Cột Chi tiết mô tả - vẽ nhiều dòng
-          ctx.fillStyle = '#0F172A';
-          ctx.textAlign = 'left';
+            // Cột ngày
+            ctx.fillStyle = '#0F172A';
+            ctx.font = '15px Arial';
+            ctx.textAlign = 'left';
 
-          // Tính toán vị trí Y xuất phát sao cho toàn bộ cụm chữ được căn giữa theo chiều dọc của hàng
-          const startTextY = currentY + row.rowHeight / 2 - ((row.descLines.length - 1) * lineHeight) / 2;
-          row.descLines.forEach((line, lineIdx) => {
-            ctx.fillText(line, colDescX, startTextY + lineIdx * lineHeight);
+            const [day, monthStr] = row.dateKey.split('/');
+            ctx.fillText(`${day}/${monthStr}`, startX + colDateX, currentY + row.rowHeight / 2);
+
+            // Cột Chi tiết mô tả - vẽ nhiều dòng
+            ctx.fillStyle = '#0F172A';
+            ctx.textAlign = 'left';
+
+            // Tính toán vị trí Y xuất phát sao cho toàn bộ cụm chữ được căn giữa theo chiều dọc của hàng
+            const startTextY = currentY + row.rowHeight / 2 - ((row.descLines.length - 1) * lineHeight) / 2;
+            row.descLines.forEach((line, lineIdx) => {
+              ctx.fillText(line, startX + colDescX, startTextY + lineIdx * lineHeight);
+            });
+
+            // Cột tiền nợ
+            ctx.textAlign = 'right';
+            if (row.debtAmount > 0) {
+              ctx.fillStyle = '#DC2626';
+              ctx.font = 'bold 15px Arial';
+              ctx.fillText(formatCurrency(row.debtAmount), startX + colDebtX, currentY + row.rowHeight / 2);
+            }
+
+            // Cột tiền trả
+            if (row.paymentAmount > 0) {
+              ctx.fillStyle = '#10B981';
+              ctx.font = 'bold 15px Arial';
+              ctx.fillText(formatCurrency(row.paymentAmount), startX + colPayX, currentY + row.rowHeight / 2);
+            }
+
+            currentY += row.rowHeight;
+            ctx.textBaseline = 'alphabetic'; // Trả về mặc định cho các phần vẽ sau
+            ctx.textAlign = 'left';
           });
-
-          // Cột tiền nợ
-          ctx.textAlign = 'right';
-          if (row.debtAmount > 0) {
-            ctx.fillStyle = '#DC2626';
-            ctx.font = 'bold 15px Arial';
-            ctx.fillText(formatCurrency(row.debtAmount), colDebtX, currentY + row.rowHeight / 2);
-          }
-
-          // Cột tiền trả
-          if (row.paymentAmount > 0) {
-            ctx.fillStyle = '#10B981';
-            ctx.font = 'bold 15px Arial';
-            ctx.fillText(formatCurrency(row.paymentAmount), colPayX, currentY + row.rowHeight / 2);
-          }
-
-          currentY += row.rowHeight;
-          ctx.textBaseline = 'alphabetic'; // Trả về mặc định cho các phần vẽ sau
-          ctx.textAlign = 'left';
-        });
-      }
+        }
+      });
 
       // ─── PHẦN TỔNG KẾT (FOOTER) ───────────────────
-      currentY += 15;
+      let currentFooterY = startTableY + 42 + contentHeight + 15;
 
       // Vẽ nét gạch ngang trước tổng kết
       ctx.strokeStyle = '#E2E8F0';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(40, currentY);
-      ctx.lineTo(width - 40, currentY);
+      ctx.moveTo(40, currentFooterY);
+      ctx.lineTo(width - 40, currentFooterY);
       ctx.stroke();
 
-      currentY += 30;
+      currentFooterY += 30;
 
       // Hàng 1: Tổng tiền nợ
       ctx.textAlign = 'right';
       ctx.fillStyle = '#475569';
       ctx.font = '16px Arial';
-      ctx.fillText('Tổng tiền nợ:', 560, currentY);
+      ctx.fillText('Tổng tiền nợ:', width - 240, currentFooterY);
 
       ctx.fillStyle = '#DC2626';
       ctx.font = 'bold 16px Arial';
-      ctx.fillText(formatCurrency(totalDebtInMonth), 760, currentY);
+      ctx.fillText(formatCurrency(totalDebtVal), width - 40, currentFooterY);
 
       // Hàng 2: Tổng tiền đã thanh toán
-      currentY += 30;
+      currentFooterY += 30;
       ctx.fillStyle = '#475569';
       ctx.font = '16px Arial';
-      ctx.fillText('Tổng tiền đã thanh toán:', 560, currentY);
+      ctx.fillText('Tổng tiền đã thanh toán:', width - 240, currentFooterY);
 
       ctx.fillStyle = '#10B981';
       ctx.font = 'bold 16px Arial';
-      ctx.fillText(formatCurrency(totalPaymentInMonth), 760, currentY);
+      ctx.fillText(formatCurrency(totalPaymentVal), width - 40, currentFooterY);
 
       // Hàng 3: Tiền nợ còn lại
-      currentY += 35;
+      currentFooterY += 35;
       ctx.fillStyle = '#0F172A';
       ctx.font = 'bold 17px Arial';
-      ctx.fillText('Tiền nợ còn lại:', 560, currentY);
+      ctx.fillText('Tiền nợ còn lại:', width - 240, currentFooterY);
 
       // Chỉ tính nợ còn lại của riêng tháng được chọn
-      const overallDebt = Math.max(0, totalDebtInMonth - totalPaymentInMonth);
+      const overallDebt = Math.max(0, totalDebtVal - totalPaymentVal);
       ctx.fillStyle = overallDebt > 0 ? '#DC2626' : '#10B981';
       ctx.font = 'bold 20px Arial';
-      ctx.fillText(formatCurrency(overallDebt), 760, currentY);
+      ctx.fillText(formatCurrency(overallDebt), width - 40, currentFooterY);
 
       // Xuất base64
       const url = canvas.toDataURL('image/png');
@@ -515,6 +551,70 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       console.error('[GENERATE IMAGE ERROR]', err);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  // Xử lý xuất công nợ tháng ra file Excel dạng CSV hỗ trợ tiếng Việt có dấu
+  const handleExportExcel = () => {
+    if (Platform.OS !== 'web') {
+      alert('Chức năng xuất Excel hiện hỗ trợ trên giao diện Web.');
+      return;
+    }
+
+    try {
+      // Sử dụng byte order mark (BOM) UTF-8 để Excel hiển thị đúng dấu tiếng Việt
+      let csvContent = '\uFEFF';
+      
+      // Tiêu đề báo cáo
+      csvContent += `BẢNG CHI TIẾT CÔNG NỢ THÁNG ${selectedMonth}\r\n`;
+      csvContent += `Khách hàng: ${customer?.name}\r\n`;
+      csvContent += `Số ĐT: ${customer?.phone || 'Không có'}\r\n\r\n`;
+      
+      // Tiêu đề cột
+      csvContent += 'Ngày,Nội dung / Chi tiết giao dịch,Tiền Nợ (+),Đã Trả (-)\r\n';
+      
+      // Duyệt qua danh sách để điền thông tin chi tiết
+      rows.forEach(row => {
+        let descText = '';
+        const parts = [];
+        if (row.items && row.items.length > 0) {
+          parts.push(row.items.join(', '));
+        }
+        if (row.notes && row.notes.length > 0) {
+          parts.push(row.notes.join('; '));
+        }
+        descText = parts.join(' | ');
+
+        const dateFormatted = row.dateKey;
+        const descEscaped = `"${descText.replace(/"/g, '""')}"`;
+        const debtStr = row.debtAmount > 0 ? row.debtAmount : '';
+        const paymentStr = row.paymentAmount > 0 ? row.paymentAmount : '';
+        
+        csvContent += `${dateFormatted},${descEscaped},${debtStr},${paymentStr}\r\n`;
+      });
+      
+      // Phần tổng kết báo cáo
+      csvContent += '\r\n';
+      csvContent += `Tổng tiền nợ,,,,${totalDebtInMonth}\r\n`;
+      csvContent += `Tổng tiền đã thanh toán,,,,${totalPaymentInMonth}\r\n`;
+      csvContent += `Tiền nợ còn lại,,,,${Math.max(0, totalDebtInMonth - totalPaymentInMonth)}\r\n`;
+      
+      // Tải tệp tin về trình duyệt
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
+      const safeMonth = selectedMonth.replace('/', '-');
+      link.download = `CongNo_${safeName}_Thang_${safeMonth}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setTimeout(() => URL.revokeObjectURL(url), 200);
+    } catch (err) {
+      console.error('[EXPORT EXCEL ERROR]', err);
+      alert('Đã xảy ra lỗi khi xuất file Excel.');
     }
   };
 
@@ -704,8 +804,25 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                 </View>
               )}
 
+              {/* PHẦN HIỂN THỊ KHI SỐ LƯỢNG DÒNG QUÁ LỚN (> 100) */}
+              {!generating && availableMonths.length > 0 && rows.length > 100 && (
+                <View style={styles.excelExportBox}>
+                  <Text style={styles.excelWarningText}>
+                    ⚠️ Số lượng giao dịch trong tháng quá lớn ({rows.length} ngày có giao dịch). Vui lòng xuất báo cáo dưới dạng tệp Excel để dễ dàng đối chiếu.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.excelExportButton}
+                    onPress={handleExportExcel}
+                  >
+                    <Text style={styles.excelExportButtonText}>
+                      📊 XUẤT FILE EXCEL CÔNG NỢ
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {/* PHẦN HIỂN THỊ XEM TRƯỚC VÀ NÚT TẢI */}
-              {imageUri && !generating && (
+              {imageUri && !generating && rows.length <= 100 && (
                 <View style={styles.previewBox}>
                   <View style={styles.previewHeaderRow}>
                     <Text style={styles.sectionLabelInline}>Bảng ảnh xem trước:</Text>
@@ -999,6 +1116,41 @@ const styles = StyleSheet.create({
   closeButtonText: {
     color: COLORS.textSecondary,
     fontSize: 15,
+    fontWeight: 'bold',
+  },
+  excelExportBox: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F0FDF4', // xanh lá nhạt pastel
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  excelWarningText: {
+    color: '#166534',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 15,
+    lineHeight: 20,
+  },
+  excelExportButton: {
+    backgroundColor: '#10B981', // Xanh lá
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  excelExportButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: 'bold',
   },
 });
