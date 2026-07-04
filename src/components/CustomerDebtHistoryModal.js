@@ -9,10 +9,17 @@ import {
   ScrollView,
   Platform,
   useWindowDimensions,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
+
+// Kích hoạt tính năng LayoutAnimation trên thiết bị Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import DailyDebtTile from './DailyDebtTile';
 
 const CustomerDebtHistoryModal = forwardRef(({
@@ -320,8 +327,9 @@ const CustomerDebtHistoryModal = forwardRef(({
 
       setMonthGroups(sortedMonths);
 
-      // Tự động mở rộng tháng đầu tiên nếu có dữ liệu
+      // Tự động mở rộng tháng đầu tiên nếu có dữ liệu kèm hiệu ứng hoạt họa mượt mà
       if (sortedMonths.length > 0) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setExpandedMonth(sortedMonths[0].monthKey);
       }
     } catch (err) {
@@ -389,7 +397,11 @@ const CustomerDebtHistoryModal = forwardRef(({
                       isExpanded && styles.monthHeaderExpanded,
                       hasDebt ? styles.monthHeaderDebt : styles.monthHeaderNoDebt
                     ]}
-                    onPress={() => setExpandedMonth(isExpanded ? null : month.monthKey)}
+                    onPress={() => {
+                      // Kích hoạt hiệu ứng mở rộng/thu gọn mượt mà
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setExpandedMonth(isExpanded ? null : month.monthKey);
+                    }}
                     activeOpacity={0.7}
                   >
                     <View style={styles.monthHeaderLeft}>
