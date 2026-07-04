@@ -174,11 +174,12 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
-      const width = 600;
+      const width = 1000;
       const rowHeight = 60;
       const headerHeight = 260;
       const footerHeight = 80;
-      const listHeight = timelineItems.length === 0 ? 100 : timelineItems.length * rowHeight;
+      const numRows = Math.ceil(timelineItems.length / 2);
+      const listHeight = timelineItems.length === 0 ? 100 : numRows * rowHeight;
       const height = headerHeight + listHeight + footerHeight;
       
       canvas.width = width;
@@ -223,9 +224,9 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       ctx.font = 'italic 12px Arial, sans-serif';
       ctx.fillText(`Thời gian xuất: ${timeStr}`, width / 2, 120);
 
-      // 3. Vẽ hộp Tổng kết (Nợ phát sinh & Tiền đã thu)
+      // 3. Vẽ hộp Tổng kết (Nợ phát sinh & Tiền đã thu) - Chỉnh lại chiều rộng 2 hộp cho cân đối với ảnh rộng 1000px
       const boxY = 165;
-      const boxWidth = 265;
+      const boxWidth = 450;
       const boxHeight = 70;
       
       // Hộp Nợ phát sinh (bên trái)
@@ -244,22 +245,23 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
 
       // Hộp Tiền đã thu (bên phải)
       ctx.fillStyle = '#F0FDF4';
-      ctx.fillRect(310, boxY, boxWidth, boxHeight);
+      ctx.fillRect(525, boxY, boxWidth, boxHeight);
       ctx.strokeStyle = '#BBF7D0';
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(310, boxY, boxWidth, boxHeight);
+      ctx.strokeRect(525, boxY, boxWidth, boxHeight);
       
       ctx.fillStyle = '#166534';
       ctx.font = 'bold 12px Arial, sans-serif';
-      ctx.fillText('🟢 Tiền đã thu trong ngày', 325, boxY + 25);
+      ctx.fillText('🟢 Tiền đã thu trong ngày', 540, boxY + 25);
       ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalPaymentReceived), 325, boxY + 52);
+      ctx.fillText(formatCurrency(totalPaymentReceived), 540, boxY + 52);
 
-      // 4. Vẽ danh sách chi tiết
+      // 4. Vẽ danh sách chi tiết (Chia 2 cột)
       let currentY = boxY + boxHeight + 45;
       
       ctx.fillStyle = '#1E293B';
       ctx.font = 'bold 15px Arial, sans-serif';
+      ctx.textAlign = 'left';
       ctx.fillText(`Chi tiết giao dịch (${timelineItems.length}):`, 25, currentY - 10);
 
       if (timelineItems.length === 0) {
@@ -268,36 +270,51 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
         ctx.textAlign = 'center';
         ctx.fillText('Không có giao dịch công nợ phát sinh trong ngày.', width / 2, currentY + 45);
       } else {
-        timelineItems.forEach((item) => {
-          const isDebt = item.type === 'debt';
-          
-          // Vẽ đường kẻ ngăn cách trên mỗi item
+        // Vẽ các đường kẻ ngang phân tách các hàng
+        for (let r = 0; r <= numRows; r++) {
+          const lineY = currentY + r * rowHeight;
           ctx.strokeStyle = '#F1F5F9';
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(25, currentY);
-          ctx.lineTo(width - 25, currentY);
+          ctx.moveTo(25, lineY);
+          ctx.lineTo(width - 25, lineY);
           ctx.stroke();
+        }
+
+        // Vẽ đường kẻ dọc ở giữa chia đôi 2 cột
+        ctx.strokeStyle = '#F1F5F9';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(width / 2, currentY);
+        ctx.lineTo(width / 2, currentY + numRows * rowHeight);
+        ctx.stroke();
+
+        timelineItems.forEach((item, index) => {
+          const isDebt = item.type === 'debt';
+          const rowIndex = Math.floor(index / 2);
+          const colIndex = index % 2;
+          
+          const textLeftX = colIndex === 0 ? 35 : width / 2 + 35;
+          const textRightX = colIndex === 0 ? width / 2 - 35 : width - 35;
+          const itemY = currentY + rowIndex * rowHeight;
 
           // Tên khách hàng (căn trái)
           ctx.fillStyle = '#1E293B';
           ctx.font = 'bold 14px Arial, sans-serif';
           ctx.textAlign = 'left';
-          ctx.fillText(item.customerName, 30, currentY + 24);
+          ctx.fillText(item.customerName, textLeftX, itemY + 24);
 
           // Chi tiết (mặt hàng/ghi chú)
           ctx.fillStyle = '#64748B';
           ctx.font = '12px Arial, sans-serif';
-          ctx.fillText(isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`, 30, currentY + 45);
+          ctx.fillText(isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`, textLeftX, itemY + 45);
 
           // Số tiền (căn phải)
           ctx.fillStyle = isDebt ? '#DC2626' : '#16A34A';
           ctx.font = 'bold 14px Arial, sans-serif';
           ctx.textAlign = 'right';
           const amtStr = `${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`;
-          ctx.fillText(amtStr, width - 30, currentY + 34);
-
-          currentY += rowHeight;
+          ctx.fillText(amtStr, textRightX, itemY + 34);
         });
       }
 
