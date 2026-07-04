@@ -174,11 +174,11 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
-      const width = 1000;
+      const width = 1200;
       const rowHeight = 60;
       const headerHeight = 260;
       const footerHeight = 80;
-      const numRows = Math.ceil(timelineItems.length / 2);
+      const numRows = Math.ceil(timelineItems.length / 3);
       const listHeight = timelineItems.length === 0 ? 100 : numRows * rowHeight;
       const height = headerHeight + listHeight + footerHeight;
       
@@ -224,9 +224,9 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       ctx.font = 'italic 12px Arial, sans-serif';
       ctx.fillText(`Thời gian xuất: ${timeStr}`, width / 2, 120);
 
-      // 3. Vẽ hộp Tổng kết (Nợ phát sinh & Tiền đã thu) - Chỉnh lại chiều rộng 2 hộp cho cân đối với ảnh rộng 1000px
+      // 3. Vẽ hộp Tổng kết (Nợ phát sinh & Tiền đã thu) - Chỉnh lại chiều rộng 2 hộp cho cân đối với ảnh rộng 1200px
       const boxY = 165;
-      const boxWidth = 450;
+      const boxWidth = 560;
       const boxHeight = 70;
       
       // Hộp Nợ phát sinh (bên trái)
@@ -245,18 +245,18 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
 
       // Hộp Tiền đã thu (bên phải)
       ctx.fillStyle = '#F0FDF4';
-      ctx.fillRect(525, boxY, boxWidth, boxHeight);
+      ctx.fillRect(615, boxY, boxWidth, boxHeight);
       ctx.strokeStyle = '#BBF7D0';
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(525, boxY, boxWidth, boxHeight);
+      ctx.strokeRect(615, boxY, boxWidth, boxHeight);
       
       ctx.fillStyle = '#166534';
       ctx.font = 'bold 12px Arial, sans-serif';
-      ctx.fillText('🟢 Tiền đã thu trong ngày', 540, boxY + 25);
+      ctx.fillText('🟢 Tiền đã thu trong ngày', 630, boxY + 25);
       ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalPaymentReceived), 540, boxY + 52);
+      ctx.fillText(formatCurrency(totalPaymentReceived), 630, boxY + 52);
 
-      // 4. Vẽ danh sách chi tiết (Chia 2 cột)
+      // 4. Vẽ danh sách chi tiết (Chia 3 cột)
       let currentY = boxY + boxHeight + 45;
       
       ctx.fillStyle = '#1E293B';
@@ -281,21 +281,39 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
           ctx.stroke();
         }
 
-        // Vẽ đường kẻ dọc ở giữa chia đôi 2 cột
+        // Vẽ đường kẻ dọc chia tách 3 cột
         ctx.strokeStyle = '#F1F5F9';
         ctx.lineWidth = 1;
+        
+        // Cột dọc 1 (tại 1/3 chiều rộng)
         ctx.beginPath();
-        ctx.moveTo(width / 2, currentY);
-        ctx.lineTo(width / 2, currentY + numRows * rowHeight);
+        ctx.moveTo(width / 3, currentY);
+        ctx.lineTo(width / 3, currentY + numRows * rowHeight);
+        ctx.stroke();
+
+        // Cột dọc 2 (tại 2/3 chiều rộng)
+        ctx.beginPath();
+        ctx.moveTo((2 * width) / 3, currentY);
+        ctx.lineTo((2 * width) / 3, currentY + numRows * rowHeight);
         ctx.stroke();
 
         timelineItems.forEach((item, index) => {
           const isDebt = item.type === 'debt';
-          const rowIndex = Math.floor(index / 2);
-          const colIndex = index % 2;
+          const rowIndex = Math.floor(index / 3);
+          const colIndex = index % 3;
           
-          const textLeftX = colIndex === 0 ? 35 : width / 2 + 35;
-          const textRightX = colIndex === 0 ? width / 2 - 35 : width - 35;
+          let textLeftX, textRightX;
+          if (colIndex === 0) {
+            textLeftX = 35;
+            textRightX = width / 3 - 25;
+          } else if (colIndex === 1) {
+            textLeftX = width / 3 + 15;
+            textRightX = (2 * width) / 3 - 25;
+          } else {
+            textLeftX = (2 * width) / 3 + 15;
+            textRightX = width - 35;
+          }
+          
           const itemY = currentY + rowIndex * rowHeight;
 
           // Tên khách hàng (căn trái)
