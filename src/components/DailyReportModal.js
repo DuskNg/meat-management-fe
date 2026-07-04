@@ -174,7 +174,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
-      const width = 1200;
+      const width = 1500;
       const rowHeight = 60;
       const headerHeight = 260;
       const footerHeight = 80;
@@ -224,9 +224,9 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       ctx.font = 'italic 12px Arial, sans-serif';
       ctx.fillText(`Thời gian xuất: ${timeStr}`, width / 2, 120);
 
-      // 3. Vẽ hộp Tổng kết (Nợ phát sinh & Tiền đã thu) - Chỉnh lại chiều rộng 2 hộp cho cân đối với ảnh rộng 1200px
+      // 3. Vẽ hộp Tổng kết (Nợ phát sinh & Tiền đã thu) - Chỉnh lại chiều rộng 2 hộp cho cân đối với ảnh rộng 1500px
       const boxY = 165;
-      const boxWidth = 560;
+      const boxWidth = 710;
       const boxHeight = 70;
       
       // Hộp Nợ phát sinh (bên trái)
@@ -245,16 +245,16 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
 
       // Hộp Tiền đã thu (bên phải)
       ctx.fillStyle = '#F0FDF4';
-      ctx.fillRect(615, boxY, boxWidth, boxHeight);
+      ctx.fillRect(765, boxY, boxWidth, boxHeight);
       ctx.strokeStyle = '#BBF7D0';
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(615, boxY, boxWidth, boxHeight);
+      ctx.strokeRect(765, boxY, boxWidth, boxHeight);
       
       ctx.fillStyle = '#166534';
       ctx.font = 'bold 12px Arial, sans-serif';
-      ctx.fillText('🟢 Tiền đã thu trong ngày', 630, boxY + 25);
+      ctx.fillText('🟢 Tiền đã thu trong ngày', 780, boxY + 25);
       ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalPaymentReceived), 630, boxY + 52);
+      ctx.fillText(formatCurrency(totalPaymentReceived), 780, boxY + 52);
 
       // 4. Vẽ danh sách chi tiết (Chia 3 cột)
       let currentY = boxY + boxHeight + 45;
