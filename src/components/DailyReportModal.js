@@ -21,6 +21,8 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
   const [transactions, setTransactions] = useState([]);
   const [payments, setPayments] = useState([]);
   const [error, setError] = useState('');
+  // Bộ lọc loại giao dịch đang chọn: 'all' (tất cả), 'debt' (nợ phát sinh), 'payment' (tiền đã thu)
+  const [activeFilter, setActiveFilter] = useState('all');
 
   // 1. Phơi bày hàm open/close ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -34,6 +36,8 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       setSelectedDate(todayStr);
       setVisible(true);
       setError('');
+      // Reset bộ lọc về tất cả khi mở modal
+      setActiveFilter('all');
       fetchDailyData(todayStr);
     },
     close: () => {
@@ -136,8 +140,17 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
   const totalDebtCreated = transactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
   const totalPaymentReceived = payments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
 
-  // Gộp chung giao dịch và thanh toán thành một dòng thời gian hiển thị
+  // Gộp chung giao dịch và thanh toán thành một dòng thời gian hiển thị (tiền đã thu lên đầu, sau đó đến nợ phát sinh)
   const timelineItems = [
+    ...payments.map(p => ({
+      id: p.id,
+      type: 'payment',
+      time: p.paidAt,
+      customerName: p.customer?.name || 'Khách ẩn danh',
+      amount: parseFloat(p.amount || 0),
+      note: p.note,
+      details: formatPaymentNote(p.note, p.paidAt)
+    })),
     ...transactions.map(t => ({
       id: t.id,
       type: 'debt',
@@ -150,17 +163,21 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
         const name = item.product?.name || 'Thịt';
         return `${qty}${item.product?.unit || 'kg'} ${name}`;
       }).join(', ')
-    })),
-    ...payments.map(p => ({
-      id: p.id,
-      type: 'payment',
-      time: p.paidAt,
-      customerName: p.customer?.name || 'Khách ẩn danh',
-      amount: parseFloat(p.amount || 0),
-      note: p.note,
-      details: formatPaymentNote(p.note, p.paidAt)
     }))
-  ].sort((a, b) => new Date(b.time) - new Date(a.time)); // Mới nhất xếp trên đầu
+  ].sort((a, b) => {
+    // Sắp xếp tiền đã thu (payment) lên đầu, nợ phát sinh (debt) ở sau
+    if (a.type === 'payment' && b.type === 'debt') return -1;
+    if (a.type === 'debt' && b.type === 'payment') return 1;
+    // Cùng loại thì xếp theo thời gian mới nhất lên đầu
+    return new Date(b.time) - new Date(a.time);
+  });
+
+  // Lọc danh sách giao dịch hiển thị dựa trên bộ lọc đang chọn
+  const displayItems = timelineItems.filter(item => {
+    if (activeFilter === 'debt') return item.type === 'debt';
+    if (activeFilter === 'payment') return item.type === 'payment';
+    return true;
+  });
 
   // Xử lý xuất công nợ trong ngày dạng ảnh bằng Canvas HTML5 (Cứ 15 giao dịch chia làm 1 cột, tự động tăng chiều rộng)
   const handleExportImage = () => {
@@ -175,7 +192,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       const ctx = canvas.getContext('2d');
       
       const itemsPerCol = 15;
-      const numCols = Math.max(1, Math.ceil(timelineItems.length / itemsPerCol));
+      const numCols = Math.max(1, Math.ceil(displayItems.length / itemsPerCol));
       const colWidth = 500;
       
       // Chiều rộng cơ sở: tối thiểu 1000px để hiển thị đẹp mắt 2 hộp tổng kết ở header
@@ -183,8 +200,8 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       const rowHeight = 60;
       const headerHeight = 260;
       const footerHeight = 80;
-      const numRows = Math.min(itemsPerCol, timelineItems.length);
-      const listHeight = timelineItems.length === 0 ? 100 : numRows * rowHeight;
+      const numRows = Math.min(itemsPerCol, displayItems.length);
+      const listHeight = displayItems.length === 0 ? 100 : numRows * rowHeight;
       const height = headerHeight + listHeight + footerHeight;
       
       // Tỉ lệ scale ảnh lên 1.3
@@ -274,9 +291,9 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       ctx.fillStyle = '#1E293B';
       ctx.font = 'bold 15px Arial, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(`Chi tiết giao dịch (${timelineItems.length}):`, 25, currentY - 10);
+      ctx.fillText(`Chi tiết giao dịch (${displayItems.length}):`, 25, currentY - 10);
 
-      if (timelineItems.length === 0) {
+      if (displayItems.length === 0) {
         ctx.fillStyle = '#64748B';
         ctx.font = 'italic 14px Arial, sans-serif';
         ctx.textAlign = 'center';
@@ -305,7 +322,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
           ctx.stroke();
         }
 
-        timelineItems.forEach((item, index) => {
+        displayItems.forEach((item, index) => {
           const isDebt = item.type === 'debt';
           const colIndex = Math.floor(index / itemsPerCol);
           const rowIndex = index % itemsPerCol;
@@ -384,7 +401,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       csvContent += 'Thời gian,Khách hàng,Loại giao dịch,Chi tiết giao dịch,Số tiền (đ)\r\n';
       
       // Duyệt qua danh sách để điền thông tin chi tiết
-      timelineItems.forEach(item => {
+      displayItems.forEach(item => {
         const isDebt = item.type === 'debt';
         const typeStr = isDebt ? 'Nợ phát sinh' : 'Tiền đã thu';
         
@@ -458,26 +475,44 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
           <View style={styles.mainContent}>
             {/* Hộp tổng kết nhanh trong ngày */}
             <View style={styles.summaryContainer}>
-              <View style={[styles.summaryBox, styles.debtBox]}>
+              <TouchableOpacity
+                style={[
+                  styles.summaryBox,
+                  styles.debtBox,
+                  activeFilter === 'debt' && styles.activeDebtBox,
+                  activeFilter === 'payment' && styles.inactiveBox
+                ]}
+                onPress={() => setActiveFilter(prev => prev === 'debt' ? 'all' : 'debt')}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.summaryBoxLabel}>🔴 Nợ phát sinh</Text>
                 <Text style={styles.summaryBoxValue}>{formatCurrency(totalDebtCreated)}</Text>
-              </View>
-              <View style={[styles.summaryBox, styles.paymentBox]}>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.summaryBox,
+                  styles.paymentBox,
+                  activeFilter === 'payment' && styles.activePaymentBox,
+                  activeFilter === 'debt' && styles.inactiveBox
+                ]}
+                onPress={() => setActiveFilter(prev => prev === 'payment' ? 'all' : 'payment')}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.summaryBoxLabel}>🟢 Tiền đã thu</Text>
                 <Text style={styles.summaryBoxValue}>{formatCurrency(totalPaymentReceived)}</Text>
-              </View>
+              </TouchableOpacity>
             </View>
 
             {/* Tiêu đề danh sách chi tiết */}
-            <Text style={styles.listTitle}>📝 Danh sách chi tiết ({timelineItems.length}):</Text>
+            <Text style={styles.listTitle}>📝 Danh sách chi tiết ({displayItems.length}):</Text>
 
-            {timelineItems.length === 0 ? (
+            {displayItems.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>Không có giao dịch công nợ phát sinh trong ngày này.</Text>
               </View>
             ) : (
               <ScrollView style={styles.scrollList} showsVerticalScrollIndicator={false}>
-                {timelineItems.map((item) => {
+                {displayItems.map((item) => {
                   const isDebt = item.type === 'debt';
                   return (
                     <View
@@ -509,20 +544,20 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
 
         {/* Nhóm nút hành động dưới đáy */}
         <View style={styles.footerButtons}>
-          {Platform.OS === 'web' && !loading && !error && timelineItems.length > 0 && (
+          {Platform.OS === 'web' && !loading && !error && displayItems.length > 0 && (
             <TouchableOpacity
               style={[
                 styles.exportButton,
-                timelineItems.length > 100 && styles.excelButton
+                displayItems.length > 100 && styles.excelButton
               ]}
-              onPress={timelineItems.length > 100 ? handleExportExcel : handleExportImage}
+              onPress={displayItems.length > 100 ? handleExportExcel : handleExportImage}
               activeOpacity={0.7}
             >
               <Text style={[
                 styles.exportButtonText,
-                timelineItems.length > 100 && styles.excelButtonText
+                displayItems.length > 100 && styles.excelButtonText
               ]}>
-                {timelineItems.length > 100 ? 'XUẤT EXCEL BÁO CÁO 📊' : 'XUẤT ẢNH BÁO CÁO 📸'}
+                {displayItems.length > 100 ? 'XUẤT EXCEL BÁO CÁO 📊' : 'XUẤT ẢNH BÁO CÁO 📸'}
               </Text>
             </TouchableOpacity>
           )}
@@ -621,6 +656,17 @@ const styles = StyleSheet.create({
   paymentBox: {
     backgroundColor: '#F0FDF4',
     borderColor: '#BBF7D0',
+  },
+  activeDebtBox: {
+    borderColor: '#DC2626',
+    borderWidth: 2,
+  },
+  activePaymentBox: {
+    borderColor: '#16A34A',
+    borderWidth: 2,
+  },
+  inactiveBox: {
+    opacity: 0.5,
   },
   summaryBoxLabel: {
     fontSize: 12,
