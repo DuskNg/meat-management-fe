@@ -53,9 +53,7 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
-          // Thêm tham số timestamp để đảm bảo trình duyệt luôn tải sw.js mới nhất
-          var swUrl = '/sw.js?v=' + Date.now();
-
+          var swUrl = '/sw.js';
           navigator.serviceWorker.register(swUrl)
             .then(function(registration) {
               console.log('[App] Service Worker đăng ký thành công:', registration.scope);
