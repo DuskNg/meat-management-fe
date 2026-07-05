@@ -48,5 +48,57 @@
     </noscript>
     <!-- Thẻ div gốc của ứng dụng Expo -->
     <div id="root"></div>
+
+    <!-- Đăng ký Service Worker để tự động cập nhật app trên mọi thiết bị, đặc biệt giải quyết cache iOS Safari PWA -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          // Thêm tham số timestamp để đảm bảo trình duyệt luôn tải sw.js mới nhất
+          var swUrl = '/sw.js?v=' + Date.now();
+
+          navigator.serviceWorker.register(swUrl)
+            .then(function(registration) {
+              console.log('[App] Service Worker đăng ký thành công:', registration.scope);
+
+              // Lắng nghe khi có Service Worker mới đang chờ kích hoạt
+              registration.addEventListener('updatefound', function() {
+                var newWorker = registration.installing;
+                if (!newWorker) return;
+
+                newWorker.addEventListener('statechange', function() {
+                  // Khi SW mới đã được cài đặt và đang chờ
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.log('[App] Phát hiện bản cập nhật mới. Đang kích hoạt...');
+                    // Ra lệnh cho SW mới kích hoạt ngay
+                    newWorker.postMessage({ type: 'SKIP_WAITING' });
+                  }
+                });
+              });
+            })
+            .catch(function(err) {
+              console.error('[App] Đăng ký Service Worker thất bại:', err);
+            });
+
+          // Lắng nghe thông báo từ Service Worker khi đã cập nhật xong
+          navigator.serviceWorker.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'SW_UPDATED') {
+              console.log('[App] Service Worker đã cập nhật lên phiên bản:', event.data.version);
+              // Tự động tải lại trang để áp dụng bản mới
+              window.location.reload(true);
+            }
+          });
+
+          // Phát hiện khi controller thay đổi (SW mới tiếp quản) và reload
+          var refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', function() {
+            if (!refreshing) {
+              refreshing = true;
+              console.log('[App] Controller mới đã tiếp quản. Tải lại trang...');
+              window.location.reload(true);
+            }
+          });
+        });
+      }
+    </script>
   </body>
 </html>
