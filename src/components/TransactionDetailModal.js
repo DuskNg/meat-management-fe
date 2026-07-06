@@ -235,11 +235,9 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
       
       // Hiển thị Alert debug trước khi gọi API
       Alert.alert('Debug Gửi API', `Khách hàng: ${customerId}\nSố tiền: ${remainingDebt.toLocaleString('vi-VN')}đ\nNgày nợ: ${dayGroup.dateKey}`);
-
       const response = await api.post('/payments', {
         customerId,
         amount: remainingDebt,
-        paidAt: dayGroup.date, // Ghi nhận thanh toán vào đúng ngày của giao dịch
         note: `Thanh toán nợ ngày ${dayGroup.dateKey}`,
       });
 

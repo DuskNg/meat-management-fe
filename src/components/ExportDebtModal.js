@@ -274,7 +274,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             breakIndex--; // Lùi lại để lấy phần an toàn
 
             const part = word.substring(0, breakIndex);
-            
+
             if (currentLine) {
               lines.push(currentLine);
               currentLine = '';
@@ -287,7 +287,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
           const testLine = currentLine ? currentLine + ' ' + word : word;
           const metrics = context.measureText(testLine);
-          
+
           if (metrics.width <= maxWidth) {
             currentLine = testLine;
           } else {
@@ -366,7 +366,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       // Tạo canvas chính thức để vẽ
       const canvas = document.createElement('canvas');
-      
+
       // Thiết lập kích thước canvas nhân với tỉ lệ scale 1.3 để xuất ảnh sắc nét hơn
       const scale = 1.3;
       canvas.width = width * scale;
@@ -564,15 +564,15 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     try {
       // Sử dụng byte order mark (BOM) UTF-8 để Excel hiển thị đúng dấu tiếng Việt
       let csvContent = '\uFEFF';
-      
+
       // Tiêu đề báo cáo
       csvContent += `BẢNG CHI TIẾT CÔNG NỢ THÁNG ${selectedMonth}\r\n`;
       csvContent += `Khách hàng: ${customer?.name}\r\n`;
       csvContent += `Số ĐT: ${customer?.phone || 'Không có'}\r\n\r\n`;
-      
+
       // Tiêu đề cột
       csvContent += 'Ngày,Nội dung / Chi tiết giao dịch,Tiền Nợ (+),Đã Trả (-)\r\n';
-      
+
       // Duyệt qua danh sách để điền thông tin chi tiết
       rows.forEach(row => {
         let descText = '';
@@ -589,16 +589,16 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         const descEscaped = `"${descText.replace(/"/g, '""')}"`;
         const debtStr = row.debtAmount > 0 ? row.debtAmount : '';
         const paymentStr = row.paymentAmount > 0 ? row.paymentAmount : '';
-        
+
         csvContent += `${dateFormatted},${descEscaped},${debtStr},${paymentStr}\r\n`;
       });
-      
+
       // Phần tổng kết báo cáo
       csvContent += '\r\n';
       csvContent += `Tổng tiền nợ,,,,${totalDebtInMonth}\r\n`;
       csvContent += `Tổng tiền đã thanh toán,,,,${totalPaymentInMonth}\r\n`;
       csvContent += `Tiền nợ còn lại,,,,${Math.max(0, totalDebtInMonth - totalPaymentInMonth)}\r\n`;
-      
+
       // Tải tệp tin về trình duyệt
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -610,7 +610,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
       setTimeout(() => URL.revokeObjectURL(url), 200);
     } catch (err) {
       console.error('[EXPORT EXCEL ERROR]', err);
@@ -688,13 +688,13 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       try {
         const blob = base64ToBlob(imageUri, 'image/png');
 
-        // Trên iOS Safari: dùng Web Share API để hiện Share Sheet
-        // Người dùng có thể chọn "Lưu ảnh" vào thư viện hoặc gửi thẳng qua Zalo
-        if (isIOS() && navigator.canShare) {
+        // Sử dụng Web Share API nếu trình duyệt hỗ trợ chia sẻ tệp (áp dụng cho cả iOS và Android di động)
+        // Người dùng có thể chọn "Lưu hình ảnh" vào thư viện thiết bị từ bảng chia sẻ hệ thống
+        if (navigator.canShare) {
           const imageFile = new File([blob], fileName, { type: 'image/png' });
 
           if (navigator.canShare({ files: [imageFile] })) {
-            // Hiện iOS Share Sheet — sau khi người dùng đóng mới mở Zalo
+            // Hiện Share Sheet của hệ thống — sau khi người dùng đóng mới mở Zalo
             await navigator.share({
               files: [imageFile],
               title: `Ảnh công nợ tháng ${selectedMonth}`,
@@ -847,7 +847,11 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                     />
                   </View>
 
-                  {Platform.OS !== 'web' && (
+                  {Platform.OS === 'web' ? (
+                    <Text style={styles.helperText}>
+                      💡 Mẹo trên điện thoại: Bạn có thể nhấn giữ lâu vào ảnh trên và chọn "Lưu hình ảnh" để lưu trực tiếp vào Thư viện ảnh (Gallery) của máy.
+                    </Text>
+                  ) : (
                     <Text style={styles.helperText}>
                       💡 Mẹo: Nhấn giữ vào ảnh trên để lưu vào Thư viện ảnh của thiết bị hoặc chụp màn hình để chia sẻ nhanh qua Zalo.
                     </Text>

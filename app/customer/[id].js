@@ -58,59 +58,104 @@ export default function CustomerDetailScreen() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
-  // Xử lý quét tích kê nhận diện chữ từ ảnh chụp qua Gemini API
-  const handleScanTicket = () => {
-    if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.capture = 'environment'; // Ưu tiên mở camera trên điện thoại
-      input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+  // Hàm xử lý kết quả phân tích chung cho cả giọng nói và nhập chữ
+  const processParseResult = (responseData, sourceTitle) => {
+    const { customerId, customerName, data } = responseData;
+    const { transaction_type, date, customer_name, weight_kg, meat_type, amount, paid_full, status, missing_fields, raw_transcript } = data;
 
-        setScanning(true);
-        const reader = new FileReader();
-        reader.onloadend = async () => {
+    if (status === 'incomplete') {
+      popupModalRef.current?.show({
+        title: 'Thông tin chưa đầy đủ',
+        message: `Câu thoại thiếu thông tin bắt buộc: ${missing_fields.join(', ')}. Vui lòng bổ sung đầy đủ.`,
+        type: 'warning'
+      });
+      return;
+    }
+
+    const activeCustomerId = id;
+
+    if (transaction_type === 'tra_tien') {
+      setTimeout(() => {
+        paymentModalRef.current?.open(amount || '');
+      }, 100);
+    } else {
+      const items = [];
+      if (transaction_type === 'ghi_no_thu_cong' && weight_kg && meat_type) {
+        items.push({
+          product: {
+            name: meat_type,
+            unit: 'kg',
+            defaultPrice: amount ? (amount / weight_kg) : 100000
+          },
+          quantity: weight_kg,
+          price: amount ? (amount / weight_kg) : 100000
+        });
+      } else if (amount && amount > 0) {
+        items.push({
+          product: {
+            name: meat_type || 'Thịt lẻ',
+            unit: 'phần',
+            defaultPrice: amount
+          },
+          quantity: 1,
+          price: amount
+        });
+      }
+
+      scanTicketModalRef.current?.open(
+        items,
+        sourceTitle,
+        raw_transcript,
+        date,
+        customerName,
+        activeCustomerId
+      );
+    }
+  };
+
+  // Hộp thoại nhập chữ dự phòng khi thiết bị không hỗ trợ hoặc lỗi micro
+  const handleTypeTextFallback = () => {
+    setTimeout(() => {
+      popupModalRef.current?.show({
+        title: 'Nhập câu thoại ghi nợ',
+        message: 'Ví dụ: "Ngày 5 tháng 7, chị Lan, 2 cân ba chỉ, 150 nghìn" hoặc "chị Hoa trả 100 nghìn"',
+        type: 'confirm',
+        confirmText: 'Phân tích',
+        cancelText: 'Hủy',
+        showTextInput: true,
+        textInputPlaceholder: 'Nhập câu nói của bạn tại đây...',
+        onConfirm: async (text) => {
+          if (!text || !text.trim()) return;
+
+          setScanning(true);
           try {
-            const base64Data = reader.result;
-            // Gửi ảnh chụp tích kê lên server backend với thời gian chờ tối đa 120 giây
-            const response = await api.post('/transactions/scan-ticket', { image: base64Data }, { timeout: 120000 });
+            const response = await api.post('/transactions/voice-to-text', {
+              transcript: text.trim()
+            });
+
             if (response.data.success) {
-              const scannedItems = response.data.data;
-              // Mở modal kết quả quét tích kê đơn giản để người dùng chỉnh sửa và xác nhận
-              scanTicketModalRef.current?.open(scannedItems);
+              processParseResult(response.data, '🎤 KẾT QUẢ PHÂN TÍCH AI');
             } else {
               popupModalRef.current?.show({
                 title: 'Thất bại',
-                message: response.data.message || 'Không thể nhận diện tích kê.',
+                message: response.data.message || 'Không thể phân tích văn bản.',
                 type: 'error'
               });
             }
-          } catch (err) {
-            console.error(err);
+          } catch (parseErr) {
+            console.error(parseErr);
             popupModalRef.current?.show({
               title: 'Lỗi kết nối',
-              message: err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ quét tích kê.',
+              message: parseErr.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ phân tích.',
               type: 'error'
             });
           } finally {
             setScanning(false);
           }
-        };
-        reader.readAsDataURL(file);
-      };
-      input.click();
-    } else {
-      popupModalRef.current?.show({
-        title: 'Thông báo',
-        message: 'Chức năng quét tích kê hiện hỗ trợ trên giao diện Web.',
-        type: 'info'
+        }
       });
-    }
+    }, 100);
   };
-
-
 
   // Xử lý thu âm và chuyển đổi ghi nợ bằng giọng nói tiếng Việt qua Gemini API
   const handleToggleRecording = async () => {
@@ -159,8 +204,7 @@ export default function CustomerDetailScreen() {
               }, { timeout: 120000 });
 
               if (response.data.success) {
-                const { date, items, note } = response.data.data;
-                scanTicketModalRef.current?.open(items, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI', note, date);
+                processParseResult(response.data, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI');
               } else {
                 popupModalRef.current?.show({
                   title: 'Thất bại',
@@ -188,8 +232,11 @@ export default function CustomerDetailScreen() {
         console.error(err);
         popupModalRef.current?.show({
           title: 'Lỗi thiết bị',
-          message: 'Không thể truy cập Micro. Vui lòng cấp quyền micro cho trình duyệt.',
-          type: 'error'
+          message: 'Không thể truy cập Micro. Bạn có muốn tự nhập câu thoại bằng chữ để AI phân tích không?',
+          type: 'confirm',
+          confirmText: 'Nhập chữ',
+          cancelText: 'Hủy bỏ',
+          onConfirm: () => handleTypeTextFallback(),
         });
       }
     }
@@ -249,10 +296,10 @@ export default function CustomerDetailScreen() {
   const handleToggleBadDebt = async () => {
     if (!customer) return;
     const nextStatus = !customer.isBadDebt;
-    
+
     popupModalRef.current?.show({
       title: nextStatus ? 'Đánh dấu nợ xấu' : 'Khôi phục hoạt động',
-      message: nextStatus 
+      message: nextStatus
         ? `Bạn có chắc chắn muốn đánh dấu khách hàng "${customer.name}" là nợ xấu? Khách hàng này sẽ được chuyển vào Kho lưu trữ nợ xấu và khóa chức năng ghi nợ mới.`
         : `Bạn có chắc chắn muốn khôi phục khách hàng "${customer.name}" hoạt động bình thường không?`,
       type: 'confirm',
@@ -543,7 +590,7 @@ export default function CustomerDetailScreen() {
     transactions.forEach((t) => {
       const monthKey = getTransactionTargetMonth(t);
       const mGroup = getOrCreateMonthGroup(monthKey);
-      
+
       const key = toDateKey(t.date);
       if (!mGroup.daysMap.has(key)) {
         mGroup.daysMap.set(key, {
@@ -577,70 +624,37 @@ export default function CustomerDetailScreen() {
       mGroup.remainingDebt += remainingAmt;
     });
 
-    // Đưa khoản thanh toán vào đúng tháng mục tiêu và gộp vào ngày nợ tương ứng
+    // Đưa khoản thanh toán vào đúng tháng mục tiêu và ngày thực tế thu tiền
     payments.forEach((p) => {
-      const allocations = payAllocations[p.id] || [];
+      const payMonthKey = getPaymentTargetMonth(p);
+      const mGroup = getOrCreateMonthGroup(payMonthKey);
+      const payDateKey = toDateKey(p.paidAt);
 
-      if (allocations.length > 0) {
-        // Lượt thanh toán này đã được phân bổ để khấu trừ nợ
-        // Gộp nó vào các ngày nợ tương ứng
-        allocations.forEach((alloc) => {
-          const transDateKey = toDateKey(alloc.date);
-          const transMonthKey = getTransactionTargetMonth({ date: alloc.date });
-          const mGroup = getOrCreateMonthGroup(transMonthKey);
-
-          if (mGroup.daysMap.has(transDateKey)) {
-            const g = mGroup.daysMap.get(transDateKey);
-            // Kiểm tra xem lượt trả này đã được thêm vào ngày nợ này chưa (tránh nhân đôi)
-            if (!g.payments.some((existingPay) => existingPay.id === p.id)) {
-              g.payments.push({
-                id: p.id,
-                type: 'payment',
-                date: p.paidAt,
-                amount: alloc.amount, // Số tiền được phân bổ cho ngày nợ này
-                note: p.note,
-                allocations: [alloc],
-              });
-              g.totalPayment += alloc.amount;
-            } else {
-              const existingPay = g.payments.find((existingPay) => existingPay.id === p.id);
-              existingPay.amount += alloc.amount;
-              existingPay.allocations.push(alloc);
-              g.totalPayment += alloc.amount;
-            }
-          }
+      if (!mGroup.daysMap.has(payDateKey)) {
+        mGroup.daysMap.set(payDateKey, {
+          dateKey: payDateKey,
+          date: p.paidAt, // Dùng ngày thanh toán thực tế
+          transactions: [],
+          payments: [],
+          totalDebt: 0,
+          remainingDebt: 0,
+          totalPayment: 0,
         });
       }
-
-      // Nếu payment còn dư chưa phân bổ hết (tiền trả trước / dư)
-      // Tạo nhóm ngày riêng cho ngày nạp tiền đó
-      const prepayAmt = remainingPayMap[p.id];
-      if (prepayAmt > 0) {
-        const payMonthKey = getPaymentTargetMonth(p);
-        const mGroup = getOrCreateMonthGroup(payMonthKey);
-        const payDateKey = toDateKey(p.paidAt);
-
-        if (!mGroup.daysMap.has(payDateKey)) {
-          mGroup.daysMap.set(payDateKey, {
-            dateKey: payDateKey,
-            date: p.paidAt, // Dùng ngày thanh toán thực tế
-            transactions: [],
-            payments: [],
-            totalDebt: 0,
-            remainingDebt: 0,
-            totalPayment: 0,
-          });
-        }
-        const g = mGroup.daysMap.get(payDateKey);
+      const g = mGroup.daysMap.get(payDateKey);
+      
+      // Kiểm tra xem lượt trả này đã được thêm vào ngày này chưa để tránh nhân đôi
+      if (!g.payments.some((existingPay) => existingPay.id === p.id)) {
+        const allocations = payAllocations[p.id] || [];
         g.payments.push({
           id: p.id,
           type: 'payment',
           date: p.paidAt,
-          amount: prepayAmt,
-          note: p.note || 'Trả trước (dư)',
-          allocations: [],
+          amount: parseFloat(p.amount), // Ghi nhận toàn bộ số tiền trả vào ngày thực tế
+          note: p.note,
+          allocations: allocations,
         });
-        g.totalPayment += prepayAmt;
+        g.totalPayment += parseFloat(p.amount);
       }
     });
 
@@ -775,8 +789,8 @@ export default function CustomerDetailScreen() {
             customer?.isBadDebt
               ? styles.cardBadDebt
               : customer?.debt > 0
-              ? styles.cardHasDebt
-              : styles.cardNoDebt,
+                ? styles.cardHasDebt
+                : styles.cardNoDebt,
           ]}>
             <Text style={customer?.isBadDebt ? styles.debtLabelBad : styles.debtLabel}>
               {customer?.isBadDebt ? '⚠️ SỐ NỢ XẤU KHOANH VÙNG:' : 'SỐ TIỀN CÒN NỢ HIỆN TẠI:'}
@@ -786,8 +800,8 @@ export default function CustomerDetailScreen() {
               customer?.isBadDebt
                 ? styles.textBadDebt
                 : customer?.debt > 0
-                ? styles.textDebt
-                : styles.textPayment,
+                  ? styles.textDebt
+                  : styles.textPayment,
             ]}>
               {formatCurrency(customer?.debt || 0)}
             </Text>
@@ -854,7 +868,7 @@ export default function CustomerDetailScreen() {
               >
                 <Text style={styles.editCustomerBtnTextNew}>Sửa thông tin ✏️</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={customer?.isBadDebt ? styles.restoreCustomerBtn : styles.badDebtCustomerBtn}
                 onPress={handleToggleBadDebt}
@@ -988,17 +1002,6 @@ export default function CustomerDetailScreen() {
           </View>
         ) : (
           <View style={styles.bottomBar}>
-            {/* <TouchableOpacity
-              style={[styles.actionButton, styles.btnScanTicket]}
-              onPress={handleScanTicket}
-              disabled={isRecording || scanning}
-            >
-              {scanning ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.actionButtonText}>📷 QUÉT TÍCH KÊ</Text>
-              )}
-            </TouchableOpacity> */}
             <TouchableOpacity
               style={[
                 styles.actionButton,

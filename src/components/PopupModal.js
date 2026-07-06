@@ -6,6 +6,7 @@ import {
   View,
   TouchableOpacity,
   Dimensions,
+  TextInput,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { COLORS, FONTS, SHADOWS } from '../theme';
@@ -19,6 +20,7 @@ const { width: screenWidth } = Dimensions.get('window');
  */
 const PopupModal = forwardRef((props, ref) => {
   const [visible, setVisible] = useState(false);
+  const [textValue, setTextValue] = useState('');
   const [options, setOptions] = useState({
     title: 'Thông báo',
     message: '',
@@ -27,6 +29,9 @@ const PopupModal = forwardRef((props, ref) => {
     cancelText: 'Hủy',
     onConfirm: null,
     onCancel: null,
+    showTextInput: false,
+    textInputPlaceholder: 'Nhập nội dung...',
+    textInputDefaultValue: '',
   });
 
   // Xuất các phương thức ra component cha qua ref
@@ -40,7 +45,11 @@ const PopupModal = forwardRef((props, ref) => {
         cancelText: config.cancelText || 'Hủy',
         onConfirm: config.onConfirm || null,
         onCancel: config.onCancel || null,
+        showTextInput: config.showTextInput || false,
+        textInputPlaceholder: config.textInputPlaceholder || 'Nhập nội dung...',
+        textInputDefaultValue: config.textInputDefaultValue || '',
       });
+      setTextValue(config.textInputDefaultValue || '');
       setVisible(true);
     },
     close: () => {
@@ -51,7 +60,7 @@ const PopupModal = forwardRef((props, ref) => {
   const handleConfirm = () => {
     setVisible(false);
     if (options.onConfirm) {
-      options.onConfirm();
+      options.onConfirm(options.showTextInput ? textValue : undefined);
     }
   };
 
@@ -105,6 +114,18 @@ const PopupModal = forwardRef((props, ref) => {
             {options.message ? (
               <Text style={styles.messageText}>{options.message}</Text>
             ) : null}
+            {options.showTextInput && (
+              <TextInput
+                style={styles.textInput}
+                placeholder={options.textInputPlaceholder}
+                placeholderTextColor={COLORS.textLight}
+                value={textValue}
+                onChangeText={setTextValue}
+                multiline={true}
+                numberOfLines={3}
+                autoFocus={true}
+              />
+            )}
           </View>
 
           {/* Vùng nút bấm hành động */}
@@ -179,6 +200,20 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  textInput: {
+    width: '100%',
+    minHeight: 80,
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: FONTS.body,
+    color: COLORS.text,
+    marginTop: 16,
+    textAlignVertical: 'top', // Dành cho Android multiline
   },
   buttonContainer: {
     width: '100%',

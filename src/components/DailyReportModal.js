@@ -8,11 +8,22 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
+  TextInput,
 } from 'react-native';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
+
+const normalizeText = (str) => {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D');
+};
 
 const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
@@ -23,6 +34,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
   const [error, setError] = useState('');
   // Bộ lọc loại giao dịch đang chọn: 'all' (tất cả), 'debt' (nợ phát sinh), 'payment' (tiền đã thu)
   const [activeFilter, setActiveFilter] = useState('all');
+  const [searchText, setSearchText] = useState('');
 
   // 1. Phơi bày hàm open/close ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -36,8 +48,9 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       setSelectedDate(todayStr);
       setVisible(true);
       setError('');
-      // Reset bộ lọc về tất cả khi mở modal
+      // Reset bộ lọc và thanh tìm kiếm khi mở modal
       setActiveFilter('all');
+      setSearchText('');
       fetchDailyData(todayStr);
     },
     close: () => {
@@ -113,12 +126,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
 
       // Lọc các giao dịch phát sinh trong ngày được chọn
       const dailyTrans = transList.filter(t => toDateKey(t.date) === dateStr);
-      
-      // Lọc các khoản thanh toán phát sinh trong ngày được chọn VÀ thuộc về tháng tương ứng
-      const selectedMonthKey = dateStr.substring(3); // "DD/MM/YYYY" -> "MM/YYYY"
-      const dailyPays = payList.filter(p => {
-        return toDateKey(p.paidAt) === dateStr && getPaymentTargetMonth(p) === selectedMonthKey;
-      });
+      const dailyPays = payList.filter(p => toDateKey(p.paidAt) === dateStr);
 
       setTransactions(dailyTrans);
       setPayments(dailyPays);
@@ -172,10 +180,22 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     return new Date(b.time) - new Date(a.time);
   });
 
-  // Lọc danh sách giao dịch hiển thị dựa trên bộ lọc đang chọn
+  // Lọc danh sách giao dịch hiển thị dựa trên bộ lọc đang chọn và từ khóa tìm kiếm
   const displayItems = timelineItems.filter(item => {
-    if (activeFilter === 'debt') return item.type === 'debt';
-    if (activeFilter === 'payment') return item.type === 'payment';
+    // 1. Lọc theo tab/loại giao dịch
+    if (activeFilter === 'debt' && item.type !== 'debt') return false;
+    if (activeFilter === 'payment' && item.type !== 'payment') return false;
+    
+    // 2. Lọc theo từ khóa tìm kiếm (tên khách hàng, loại thịt hoặc số tiền)
+    if (searchText && searchText.trim()) {
+      const query = normalizeText(searchText);
+      const nameMatch = normalizeText(item.customerName || '').includes(query);
+      const detailMatch = normalizeText(item.details || '').includes(query);
+      const amountMatch = (item.amount || 0).toString().includes(query);
+      
+      return nameMatch || detailMatch || amountMatch;
+    }
+    
     return true;
   });
 
@@ -455,6 +475,24 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
             allowFuture={true}
           />
         </View>
+
+        {/* Thanh tìm kiếm nhanh dạng text */}
+        {!loading && !error && (
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="🔍 Tìm theo tên khách, loại thịt hoặc số tiền..."
+              placeholderTextColor={COLORS.textLight}
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+            {searchText ? (
+              <TouchableOpacity style={styles.clearSearch} onPress={() => setSearchText('')}>
+                <Text style={styles.clearSearchText}>✕</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        )}
 
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -810,6 +848,33 @@ const styles = StyleSheet.create({
   closeButtonTextNew: {
     color: COLORS.textSecondary,
     fontSize: 14,
+    fontWeight: 'bold',
+  },
+  searchContainer: {
+    marginBottom: 16,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  searchInput: {
+    backgroundColor: COLORS.card,
+    height: 40,
+    borderRadius: 10,
+    paddingLeft: 12,
+    paddingRight: 35,
+    fontSize: 13,
+    color: COLORS.text,
+    borderWidth: 1.2,
+    borderColor: COLORS.border,
+    ...SHADOWS.card,
+  },
+  clearSearch: {
+    position: 'absolute',
+    right: 12,
+    padding: 6,
+  },
+  clearSearchText: {
+    fontSize: 16,
+    color: COLORS.textLight,
     fontWeight: 'bold',
   },
 });

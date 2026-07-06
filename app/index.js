@@ -86,6 +86,7 @@ export default function DashboardScreen() {
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [showDebtSummary, setShowDebtSummary] = useState(false);
 
   // States quản lý tab nhân viên và chấm công / tính lương
   const [employeeTab, setEmployeeTab] = useState('STAFF'); // 'STAFF' (Nhân sự), 'ATTENDANCE' (Chấm công), 'SALARY' (Bảng lương)
@@ -99,6 +100,7 @@ export default function DashboardScreen() {
 
   const [isRecording, setIsRecording] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [scanningMsg, setScanningMsg] = useState('AI đang phân tích...');
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
@@ -125,9 +127,21 @@ export default function DashboardScreen() {
     },
   });
 
+  const { data: paymentsResponse, isLoading: isLoadingPayments, refetch: refetchPayments } = useQuery({
+    queryKey: ['customer_payments_summary'],
+    queryFn: async () => {
+      const response = await api.get('/payments');
+      return response.data;
+    },
+    enabled: showDebtSummary,
+  });
+
   // Các hàm làm mới dữ liệu khách hàng kèm theo lịch sử nợ chi tiết nếu đang mở
   const handleRefreshAll = () => {
     refetch();
+    if (showDebtSummary) {
+      refetchPayments();
+    }
     customerDebtHistoryModalRef.current?.refresh();
   };
 
@@ -317,6 +331,166 @@ export default function DashboardScreen() {
     }
   };
 
+  // Hàm xử lý kết quả phân tích chung cho cả giọng nói và nhập chữ
+  const processParseResult = (responseData, sourceTitle) => {
+    const { customerId, customerName, data } = responseData;
+    const { transaction_type, date, customer_name, weight_kg, meat_type, amount, paid_full, status, missing_fields, raw_transcript } = data;
+
+    if (status === 'incomplete') {
+      popupModalRef.current?.show({
+        title: 'Thông tin chưa đầy đủ',
+        message: `Câu thoại thiếu thông tin bắt buộc: ${missing_fields.join(', ')}. Vui lòng bổ sung đầy đủ.`,
+        type: 'warning'
+      });
+      return;
+    }
+
+    if (transaction_type === 'tra_tien') {
+      if (customerId) {
+        setSelectedCustomerId(customerId);
+        setTimeout(() => {
+          paymentModalRef.current?.open(amount || '');
+        }, 100);
+      } else {
+        popupModalRef.current?.show({
+          title: 'Không nhận diện được khách hàng',
+          message: `Yêu cầu trả tiền cho "${customerName}" nhưng không khớp với khách hàng nào trong sạp. Vui lòng chọn khách hàng thủ công để thanh toán.`,
+          type: 'warning'
+        });
+      }
+    } else {
+      const items = [];
+      if (transaction_type === 'ghi_no_thu_cong' && weight_kg && meat_type) {
+        items.push({
+          product: {
+            name: meat_type,
+            unit: 'kg',
+            defaultPrice: amount ? (amount / weight_kg) : 100000
+          },
+          quantity: weight_kg,
+          price: amount ? (amount / weight_kg) : 100000
+        });
+      } else if (amount && amount > 0) {
+        items.push({
+          product: {
+            name: meat_type || 'Thịt lẻ',
+            unit: 'phần',
+            defaultPrice: amount
+          },
+          quantity: 1,
+          price: amount
+        });
+      }
+
+      scanTicketModalRef.current?.open(
+        items,
+        sourceTitle,
+        raw_transcript,
+        date,
+        customerName,
+        customerId
+      );
+    }
+  };
+
+  // Hộp thoại nhập chữ dự phòng khi thiết bị không hỗ trợ hoặc lỗi micro
+  const handleTypeTextFallback = () => {
+    setTimeout(() => {
+      popupModalRef.current?.show({
+        title: 'Nhập câu thoại ghi nợ',
+        message: 'Ví dụ: "Ngày 5 tháng 7, chị Lan, 2 cân ba chỉ, 150 nghìn" hoặc "chị Hoa trả 100 nghìn"',
+        type: 'confirm',
+        confirmText: 'Phân tích',
+        cancelText: 'Hủy',
+        showTextInput: true,
+        textInputPlaceholder: 'Nhập câu nói của bạn tại đây...',
+        onConfirm: async (text) => {
+          if (!text || !text.trim()) return;
+
+          setScanningMsg('AI đang phân tích câu chữ...');
+          setScanning(true);
+          try {
+            const response = await api.post('/transactions/voice-to-text', {
+              transcript: text.trim()
+            });
+
+            if (response.data.success) {
+              processParseResult(response.data, '🎤 KẾT QUẢ PHÂN TÍCH AI');
+            } else {
+              popupModalRef.current?.show({
+                title: 'Thất bại',
+                message: response.data.message || 'Không thể phân tích văn bản.',
+                type: 'error'
+              });
+            }
+          } catch (parseErr) {
+            console.error(parseErr);
+            popupModalRef.current?.show({
+              title: 'Lỗi kết nối',
+              message: parseErr.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ phân tích.',
+              type: 'error'
+            });
+          } finally {
+            setScanning(false);
+          }
+        }
+      });
+    }, 100);
+  };
+
+  // Xử lý quét tích kê nhận diện chữ từ ảnh chụp qua Gemini API
+  const handleScanTicket = () => {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.capture = 'environment'; // Ưu tiên mở camera trên điện thoại
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setScanningMsg('AI đang phân tích hình ảnh tích kê...');
+        setScanning(true);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          try {
+            const base64Data = reader.result;
+            // Gửi ảnh chụp tích kê lên server backend với thời gian chờ tối đa 120 giây
+            const response = await api.post('/transactions/scan-ticket', { image: base64Data }, { timeout: 120000 });
+            if (response.data.success) {
+              const scannedItems = response.data.data;
+              // Mở modal kết quả quét tích kê đơn giản để người dùng chỉnh sửa và xác nhận
+              scanTicketModalRef.current?.open(scannedItems);
+            } else {
+              popupModalRef.current?.show({
+                title: 'Thất bại',
+                message: response.data.message || 'Không thể nhận diện tích kê.',
+                type: 'error'
+              });
+            }
+          } catch (err) {
+            console.error(err);
+            popupModalRef.current?.show({
+              title: 'Lỗi kết nối',
+              message: err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ quét tích kê.',
+              type: 'error'
+            });
+          } finally {
+            setScanning(false);
+          }
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    } else {
+      popupModalRef.current?.show({
+        title: 'Thông báo',
+        message: 'Chức năng quét tích kê hiện hỗ trợ trên giao diện Web.',
+        type: 'info'
+      });
+    }
+  };
+
   // Xử lý thu âm và phân tích ghi nợ giọng nói qua backend/Gemini
   const handleToggleRecording = async () => {
     if (Platform.OS !== 'web') {
@@ -356,6 +530,7 @@ export default function DashboardScreen() {
           reader.onloadend = async () => {
             const base64Audio = reader.result;
 
+            setScanningMsg('AI đang phân tích giọng nói...');
             setScanning(true);
             try {
               const response = await api.post('/transactions/voice-to-text', {
@@ -364,9 +539,7 @@ export default function DashboardScreen() {
               }, { timeout: 120000 });
 
               if (response.data.success) {
-                const { customerId, customerName, data } = response.data;
-                const { date, items, note } = data;
-                scanTicketModalRef.current?.open(items, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI', note, date, customerName, customerId);
+                processParseResult(response.data, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI');
               } else {
                 popupModalRef.current?.show({
                   title: 'Thất bại',
@@ -394,17 +567,35 @@ export default function DashboardScreen() {
         console.error(err);
         popupModalRef.current?.show({
           title: 'Lỗi thiết bị',
-          message: 'Không thể truy cập Micro. Vui lòng cấp quyền micro cho trình duyệt.',
-          type: 'error'
+          message: 'Không thể truy cập Micro. Bạn có muốn tự nhập câu thoại bằng chữ để AI phân tích không?',
+          type: 'confirm',
+          confirmText: 'Nhập chữ',
+          cancelText: 'Hủy bỏ',
+          onConfirm: () => handleTypeTextFallback(),
         });
       }
     }
   };
 
   const customers = customersResponse?.data || [];
+  const customerIdSet = new Set(customers.map((c) => c.id));
+  const customerPayments = (paymentsResponse?.data || []).filter((payment) => customerIdSet.has(payment.customerId));
 
   // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
   const totalDebt = customers.reduce((sum, c) => sum + (c.debt || 0), 0);
+  const totalCollected = customerPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  const totalOriginalDebt = totalDebt + totalCollected;
+  const collectedByDay = customerPayments.reduce((groups, payment) => {
+    const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
+    const dateKey = paidDate && !isNaN(paidDate.getTime())
+      ? `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}-${paidDate.getDate().toString().padStart(2, '0')}`
+      : 'unknown';
+    groups[dateKey] = (groups[dateKey] || 0) + parseFloat(payment.amount || 0);
+    return groups;
+  }, {});
+  const dailyCollectedRows = Object.entries(collectedByDay)
+    .map(([dateKey, amount]) => ({ dateKey, amount }))
+    .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
 
   // 3. Bộ lọc tìm kiếm nhanh theo tên hoặc SĐT khách hàng (không xét dấu tiếng Việt) và sắp xếp
   const filteredCustomers = customers
@@ -706,6 +897,16 @@ export default function DashboardScreen() {
       style: 'currency',
       currency: 'VND'
     }).format(amount).replace('₫', 'đ');
+  };
+
+  const formatPaymentDate = (dateKey) => {
+    if (dateKey === 'unknown') return 'Không rõ ngày';
+    const date = new Date(`${dateKey}T00:00:00`);
+    return date.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
   };
 
   const renderCustomerItem = ({ item }) => {
@@ -1673,10 +1874,58 @@ export default function DashboardScreen() {
         </View>
 
         {/* TỔNG TIỀN NỢ: To rõ, thu hút sự chú ý ngay */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>💰 TỔNG TIỀN NỢ:</Text>
-          <Text style={styles.summaryValue}>{formatCurrency(totalDebt)}</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.summaryCard}
+          onPress={() => setShowDebtSummary((prev) => !prev)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.summaryMainRow}>
+            <View>
+              <Text style={styles.summaryLabel}>💰 TỔNG TIỀN NỢ:</Text>
+              <Text style={styles.summaryHint}>{showDebtSummary ? 'Bấm để thu gọn' : 'Bấm để xem chi tiết'}</Text>
+            </View>
+            <Text style={styles.summaryValue}>{formatCurrency(totalDebt)}</Text>
+          </View>
+
+          {showDebtSummary && (
+            <View style={styles.debtSummaryDetail}>
+              {isLoadingPayments ? (
+                <ActivityIndicator size="small" color={COLORS.dangerDark} style={styles.summaryLoader} />
+              ) : (
+                <>
+                  <View style={styles.debtSummaryGrid}>
+                    <View style={styles.debtSummaryBox}>
+                      <Text style={styles.debtSummaryBoxLabel}>Tổng tiền</Text>
+                      <Text style={styles.debtSummaryBoxValue}>{formatCurrency(totalOriginalDebt)}</Text>
+                    </View>
+                    <View style={styles.debtSummaryBox}>
+                      <Text style={styles.debtSummaryBoxLabel}>Đã thu</Text>
+                      <Text style={[styles.debtSummaryBoxValue, styles.collectedValue]}>{formatCurrency(totalCollected)}</Text>
+                    </View>
+                    <View style={styles.debtSummaryBox}>
+                      <Text style={styles.debtSummaryBoxLabel}>Nợ còn lại</Text>
+                      <Text style={styles.debtSummaryBoxValue}>{formatCurrency(totalDebt)}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.dailyCollectedSection}>
+                    <Text style={styles.dailyCollectedTitle}>Tiền đã thu từng ngày</Text>
+                    {dailyCollectedRows.length > 0 ? (
+                      dailyCollectedRows.map((row) => (
+                        <View key={row.dateKey} style={styles.dailyCollectedRow}>
+                          <Text style={styles.dailyCollectedDate}>{formatPaymentDate(row.dateKey)}</Text>
+                          <Text style={styles.dailyCollectedAmount}>{formatCurrency(row.amount)}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.dailyCollectedEmpty}>Chưa có khoản thu nào.</Text>
+                    )}
+                  </View>
+                </>
+              )}
+            </View>
+          )}
+        </TouchableOpacity>
 
         {/* NÚT THỐNG KÊ TRONG NGÀY */}
         <TouchableOpacity
@@ -1686,6 +1935,43 @@ export default function DashboardScreen() {
         >
           <Text style={styles.dailyReportButtonText}>📈 THỐNG KÊ CÔNG NỢ TRONG NGÀY</Text>
         </TouchableOpacity>
+
+        {/* HÀNG 4 NÚT TIỆN ÍCH AI & QUẢN LÝ */}
+        <View style={styles.actionRowContainer}>
+          <TouchableOpacity
+            style={[styles.actionRowButton, styles.btnMeat]}
+            onPress={() => productModalRef.current?.open()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionRowButtonTextWhite}>Thêm thịt</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionRowButton, styles.btnCustomer]}
+            onPress={() => modalRef.current?.open()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionRowButtonTextWhite}>Thêm khách</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionRowButton, styles.btnScan, styles.actionRowButtonDisabled]}
+            onPress={handleScanTicket}
+            activeOpacity={0.7}
+            disabled={true}
+          >
+            <Text style={styles.actionRowButtonTextWhite}>Chụp tích kê</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionRowButton, styles.btnVoice, isRecording && styles.btnVoiceRecording, styles.actionRowButtonDisabled]}
+            onPress={handleToggleRecording}
+            activeOpacity={0.7}
+            disabled={true}
+          >
+            <Text style={styles.actionRowButtonTextWhite}>{isRecording ? 'Đang nói...' : 'Giọng nói'}</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Ô TÌM KIẾM NHANH KHÁCH QUEN */}
         <View style={styles.searchContainer}>
@@ -1736,40 +2022,14 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* OVERLAY KHI ĐANG PHÂN TÍCH GIỌNG NÓI BẰNG AI */}
+        {/* OVERLAY KHI ĐANG PHÂN TÍCH BẰNG AI */}
         {scanning && (
           <View style={styles.scanningOverlay}>
             <ActivityIndicator size="large" color={COLORS.primaryDark} />
-            <Text style={styles.scanningText}>AI đang phân tích giọng nói...</Text>
+            <Text style={styles.scanningText}>{scanningMsg}</Text>
           </View>
         )}
 
-        {/* THANH ĐIỀU KHIỂN CỐ ĐỊNH Ở ĐÁY MÀN HÌNH */}
-        <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={styles.manageProductsButton}
-            onPress={() => productModalRef.current?.open()}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.manageProductsButtonText}>🥩 QUẢN LÝ THỊT</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.voiceButton, isRecording && styles.voiceButtonRecording]}
-            onPress={handleToggleRecording}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.voiceButtonText}>{isRecording ? '🛑' : '🎤'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.addCustomerButton}
-            onPress={() => modalRef.current?.open()}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.addCustomerButtonText}>➕ THÊM KHÁCH</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* MODAL THÊM KHÁCH MỚI (Ẩn) */}
@@ -1902,24 +2162,110 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 10,
     borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    padding: 14,
     borderWidth: 1,
     borderColor: '#FECACA',
     ...SHADOWS.card,
+  },
+  summaryMainRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
   },
   summaryLabel: {
     fontSize: 13,
     fontWeight: 'bold',
     color: COLORS.dangerDark,
   },
+  summaryHint: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginTop: 3,
+  },
   summaryValue: {
     fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.danger,
+    textAlign: 'right',
+    flexShrink: 0,
+  },
+  debtSummaryDetail: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#FECACA',
+  },
+  summaryLoader: {
+    marginVertical: 8,
+  },
+  debtSummaryGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  debtSummaryBox: {
+    flex: 1,
+    minHeight: 70,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+  },
+  debtSummaryBoxLabel: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    fontWeight: '700',
+    marginBottom: 5,
+  },
+  debtSummaryBoxValue: {
+    fontSize: 13,
+    color: COLORS.dangerDark,
+    fontWeight: 'bold',
+  },
+  collectedValue: {
+    color: '#047857',
+  },
+  dailyCollectedSection: {
+    marginTop: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    padding: 10,
+  },
+  dailyCollectedTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  dailyCollectedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 7,
+    borderTopWidth: 1,
+    borderTopColor: '#F8FAFC',
+    gap: 10,
+  },
+  dailyCollectedDate: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  dailyCollectedAmount: {
+    fontSize: 13,
+    color: '#047857',
+    fontWeight: 'bold',
+    textAlign: 'right',
+  },
+  dailyCollectedEmpty: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
   },
   searchContainer: {
     marginHorizontal: 16,
@@ -1960,7 +2306,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 85, // Giảm khoảng trống đệm đáy do bottomBar nhỏ hơn
+    paddingBottom: 20,
   },
   // Thẻ khách hàng chứa cả thông tin nhấp và nút xóa bên trong
   customerCard: {
@@ -2429,6 +2775,51 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     letterSpacing: 0.5,
+  },
+  actionRowContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    gap: 8,
+  },
+  actionRowButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    ...SHADOWS.card,
+  },
+  actionRowButtonDisabled: {
+    opacity: 0.45,
+  },
+  btnMeat: {
+    backgroundColor: '#BE123C', // Màu đỏ hồng Rose 700
+    borderColor: '#9F1239',
+  },
+  btnCustomer: {
+    backgroundColor: '#059669', // Xanh lá đậm Emerald 600
+    borderColor: '#047857',
+  },
+  btnScan: {
+    backgroundColor: '#4F46E5', // Màu xanh Indigo 600
+    borderColor: '#4338CA',
+  },
+  btnVoice: {
+    backgroundColor: '#7C3AED', // Tím đậm Violet 600
+    borderColor: '#6D28D9',
+  },
+  btnVoiceRecording: {
+    backgroundColor: '#EF4444', // Màu đỏ khi đang ghi âm
+    borderColor: '#DC2626',
+  },
+  actionRowButtonTextWhite: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
   // ── CSS cho Menu chính mới & Header đơn giản ───────────────────────
   menuContainer: {
