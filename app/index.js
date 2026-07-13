@@ -342,22 +342,31 @@ export default function DashboardScreen() {
   // Hàm xử lý kết quả phân tích chung cho cả giọng nói và nhập chữ
   const processParseResult = (responseData, sourceTitle) => {
     const { customerId, customerName, data } = responseData;
-    const { transaction_type, date, customer_name, weight_kg, meat_type, amount, paid_full, status, missing_fields, raw_transcript } = data;
-
-    if (status === 'incomplete') {
+    const results = Array.isArray(data) ? data : [data].filter(Boolean);
+    const firstResult = results[0];
+    if (!firstResult) {
       popupModalRef.current?.show({
-        title: 'Thông tin chưa đầy đủ',
-        message: `Câu thoại thiếu thông tin bắt buộc: ${missing_fields.join(', ')}. Vui lòng bổ sung đầy đủ.`,
+        title: 'Không có kết quả',
+        message: 'AI không trả về dữ liệu giao dịch để hiển thị.',
         type: 'warning'
       });
       return;
     }
 
-    if (transaction_type === 'tra_tien') {
+    if (results.length === 1 && firstResult.status === 'incomplete') {
+      popupModalRef.current?.show({
+        title: 'Thông tin chưa đầy đủ',
+        message: `Câu thoại thiếu thông tin bắt buộc: ${(firstResult.missing_fields || []).join(', ')}. Vui lòng bổ sung đầy đủ.`,
+        type: 'warning'
+      });
+      return;
+    }
+
+    if (results.length === 1 && firstResult.transaction_type === 'tra_tien') {
       if (customerId) {
         setSelectedCustomerId(customerId);
         setTimeout(() => {
-          paymentModalRef.current?.open(amount || '');
+          paymentModalRef.current?.open(firstResult.amount || '');
         }, 100);
       } else {
         popupModalRef.current?.show({
@@ -367,34 +376,30 @@ export default function DashboardScreen() {
         });
       }
     } else {
-      const items = [];
-      if (transaction_type === 'ghi_no_thu_cong' && weight_kg && meat_type) {
-        items.push({
+      const items = results.map((result) => {
+        const amount = Number(result.amount) || 0;
+        const hasWeight = Number(result.weight_kg) > 0;
+        const quantity = hasWeight ? Number(result.weight_kg) : (result.transaction_type === 'ghi_no_nhanh' ? 1 : 0);
+        const price = hasWeight ? amount / quantity : (quantity ? amount : 0);
+        return {
           product: {
-            name: meat_type,
-            unit: 'kg',
-            defaultPrice: amount ? (amount / weight_kg) : 100000
+            name: result.meat_type || 'Thịt lẻ',
+            unit: hasWeight || result.transaction_type === 'ghi_no_thu_cong' ? 'kg' : 'phần',
+            defaultPrice: price
           },
-          quantity: weight_kg,
-          price: amount ? (amount / weight_kg) : 100000
-        });
-      } else if (amount && amount > 0) {
-        items.push({
-          product: {
-            name: meat_type || 'Thịt lẻ',
-            unit: 'phần',
-            defaultPrice: amount
-          },
-          quantity: 1,
-          price: amount
-        });
-      }
+          quantity,
+          price,
+          voiceDate: result.date,
+          voiceCustomerName: result.customer_name || customerName,
+          voiceTotalAmount: amount,
+        };
+      });
 
       scanTicketModalRef.current?.open(
         items,
         sourceTitle,
-        raw_transcript,
-        date,
+        results.map((result) => result.raw_transcript).filter(Boolean).join(' | '),
+        firstResult.date,
         customerName,
         customerId
       );

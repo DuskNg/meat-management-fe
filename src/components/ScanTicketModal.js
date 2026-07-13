@@ -87,6 +87,12 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
       .format(amount)
       .replace('₫', 'đ');
 
+  const formatVoiceDate = (value) => {
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return value || 'Chưa xác định';
+    return date.toLocaleDateString('vi-VN');
+  };
+
   // --- State ---
   const [visible, setVisible] = useState(false);
   const [dateStr, setDateStr] = useState(getTodayFormatted());
@@ -155,6 +161,9 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
             price: prc,
             displayQuantity: qty.toString(),
             displayPrice: formatNumberString(prc.toString()),
+            voiceDate: item.voiceDate,
+            voiceCustomerName: item.voiceCustomerName,
+            voiceTotalAmount: item.voiceTotalAmount,
           };
         });
         setScannedItems(mapped);
@@ -291,7 +300,9 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
     const searchNorm = removeDiacritics(customerSearch.toLowerCase());
     return nameNorm.includes(searchNorm) || (c.phone && c.phone.includes(customerSearch));
   });
-  const isVoiceResult = modalTitleText.includes('GIỌNG NÓI');
+  const isVoiceResult = modalTitleText.includes('GIỌNG NÓI')
+    || modalTitleText.includes('GHI NO GIONG NOI')
+    || scannedItems.some((item) => item.voiceDate || item.voiceCustomerName || item.voiceTotalAmount != null);
 
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
@@ -390,7 +401,15 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
           {scannedItems.map((item) => {
             const subtotal = item.quantity * item.price;
             return (
-              <View key={item.tempId} style={styles.itemRow}>
+              <View key={item.tempId} style={styles.voiceItemWrapper}>
+                {isVoiceResult && (
+                  <View style={styles.voiceItemMeta}>
+                    <Text style={styles.voiceItemMetaText}>
+                      Ngày: {formatVoiceDate(item.voiceDate)}  •  Khách hàng: {item.voiceCustomerName || 'Chưa xác định'}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.itemRow}>
                 {/* Tên sản phẩm (Có thể chỉnh sửa nếu AI nghe sai) */}
                 <View style={styles.productNameContainer}>
                   <TextInput
@@ -430,7 +449,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
 
                 {/* Thành tiền dòng */}
                 <Text style={styles.subtotalText} numberOfLines={1}>
-                  {formatCurrency(subtotal)}
+                    {formatCurrency(isVoiceResult && item.voiceTotalAmount != null ? item.voiceTotalAmount : subtotal)}
                 </Text>
 
                 {/* Nút xóa dòng sản phẩm */}
@@ -440,7 +459,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
                 >
                   <Text style={styles.removeText}>✕</Text>
                 </TouchableOpacity>
-              </View>
+                </View>
             );
           })}
         </ScrollView>
@@ -719,6 +738,20 @@ const styles = StyleSheet.create({
     color: '#B45309',
     lineHeight: 18,
     fontWeight: '500',
+  },
+  voiceItemWrapper: {
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  voiceItemMeta: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 6,
+    paddingTop: 8,
+  },
+  voiceItemMetaText: {
+    color: '#334155',
+    fontSize: 12,
+    fontWeight: '600',
   },
   productNameContainer: {
     flex: 1.6,
