@@ -291,6 +291,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
     const searchNorm = removeDiacritics(customerSearch.toLowerCase());
     return nameNorm.includes(searchNorm) || (c.phone && c.phone.includes(customerSearch));
   });
+  const isVoiceResult = modalTitleText.includes('GIỌNG NÓI');
 
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
@@ -313,7 +314,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
         )}
 
         {/* --- CẤU HÌNH KHÁCH HÀNG (Nếu chưa có) --- */}
-        {!customerId && (
+        {!isVoiceResult && !customerId && (
           <View style={styles.selectorSection}>
             <Text style={styles.label}>👤 Khách hàng ghi nợ:</Text>
             <View style={styles.dropdownContainer}>
@@ -362,19 +363,23 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
         )}
 
         {/* --- CẤU HÌNH NGÀY GHI NỢ --- */}
-        <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
-        <DatePickerInput
-          value={dateStr}
-          onChange={(val) => {
-            setDateStr(val);
-            if (errorField === 'date') {
-              setError('');
-              setErrorField('');
-            }
-          }}
-          allowFuture={true}
-          hasError={errorField === 'date'}
-        />
+        {!isVoiceResult && (
+          <>
+            <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
+            <DatePickerInput
+              value={dateStr}
+              onChange={(val) => {
+                setDateStr(val);
+                if (errorField === 'date') {
+                  setError('');
+                  setErrorField('');
+                }
+              }}
+              allowFuture={true}
+              hasError={errorField === 'date'}
+            />
+          </>
+        )}
 
         <View style={styles.divider} />
 
