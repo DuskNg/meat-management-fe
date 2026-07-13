@@ -5,7 +5,6 @@ import {
   Text,
   View,
   TextInput,
-  TouchableOpacity,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -15,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '../src/store/authStore';
 import { api } from '../src/api/client';
 import { COLORS, FONTS, SHADOWS } from '../src/theme';
+import AnimatedPressable from '../src/components/AnimatedPressable';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -206,7 +206,7 @@ export default function LoginScreen() {
                 value={phone}
                 onChangeText={handlePhoneChange}
               />
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.button}
                 onPress={handleRequestOtp}
                 disabled={loading}
@@ -217,14 +217,14 @@ export default function LoginScreen() {
                 ) : (
                   <Text style={styles.buttonText}>ĐĂNG NHẬP</Text>
                 )}
-              </TouchableOpacity>
-              <TouchableOpacity
+              </AnimatedPressable>
+              <AnimatedPressable
                 style={styles.adminLinkButton}
                 onPress={() => router.push('/admin/login')}
                 activeOpacity={0.8}
               >
                 <Text style={styles.adminLinkText}>⚙️ Đăng nhập quản trị viên (Admin)</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           ) : (
             // BƯỚC 2: NHẬP MÃ OTP ĐỂ ĐĂNG NHẬP (TẠM THỜI ẨN / COMMENT)

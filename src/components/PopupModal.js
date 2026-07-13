@@ -4,12 +4,12 @@ import {
   StyleSheet,
   Text,
   View,
-  TouchableOpacity,
   Dimensions,
   TextInput,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { COLORS, FONTS, SHADOWS } from '../theme';
+import AnimatedPressable from './AnimatedPressable';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -131,22 +131,22 @@ const PopupModal = forwardRef((props, ref) => {
           {/* Vùng nút bấm hành động */}
           <View style={[styles.buttonContainer, isConfirm ? styles.rowButtons : styles.singleButton]}>
             {isConfirm && (
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.button, styles.cancelButton]}
                 onPress={handleCancel}
                 activeOpacity={0.8}
               >
                 <Text style={styles.cancelButtonText}>{options.cancelText}</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             )}
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={[styles.button, { backgroundColor: primaryColor }]}
               onPress={handleConfirm}
               activeOpacity={0.8}
             >
               <Text style={styles.confirmButtonText}>{options.confirmText}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </View>
       </View>

@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
-  useWindowDimensions,
   LayoutAnimation,
   UIManager,
 } from 'react-native';
@@ -28,11 +27,11 @@ const CustomerDebtHistoryModal = forwardRef(({
   debtModalRef,
   onRefresh,
 }, ref) => {
-  const { width } = useWindowDimensions();
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(false);
   const [monthGroups, setMonthGroups] = useState([]);
+  const [gridWidth, setGridWidth] = useState(0);
   const [expandedMonth, setExpandedMonth] = useState(null); // Lưu trữ khóa của tháng đang mở rộng
 
   // 1. Phơi bày các hàm điều khiển (open, close, refresh) ra bên ngoài
@@ -349,9 +348,6 @@ const CustomerDebtHistoryModal = forwardRef(({
   };
 
   // 3. Tính toán kích cỡ ô vuông của ngày cho khớp 4 cột
-  const modalPadding = 20;
-  const contentWidth = Math.min(width, 600);
-  const gridWidth = contentWidth - modalPadding * 2 - 24;
   const NUM_COLS = 4;
   const TILE_GAP = 8;
   const tileSize = Math.max(0, Math.floor((gridWidth - TILE_GAP * (NUM_COLS - 1)) / NUM_COLS));
@@ -491,7 +487,10 @@ const CustomerDebtHistoryModal = forwardRef(({
                       <Text style={styles.daysHeader}>Lịch sử ghi nhận theo ngày:</Text>
 
                       {/* Grid các ngày của tháng */}
-                      <View style={styles.grid}>
+                      <View
+                        style={styles.grid}
+                        onLayout={({ nativeEvent }) => setGridWidth(nativeEvent.layout.width)}
+                      >
                         {month.days.map((group) => (
                           <DailyDebtTile
                             key={group.dateKey}
@@ -725,6 +724,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   grid: {
+    width: '100%',
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,

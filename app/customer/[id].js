@@ -35,6 +35,7 @@ import EditCustomerModal from '../../src/components/EditCustomerModal';
 import MonthDetailDrawer from '../../src/components/MonthDetailDrawer';
 import ScanTicketModal from '../../src/components/ScanTicketModal';
 import PopupModal from '../../src/components/PopupModal';
+import { startNativeRecording, stopNativeRecording } from '../../src/utils/mediaActions';
 
 export default function CustomerDetailScreen() {
   const auth = useAuthStore();
@@ -160,6 +161,43 @@ export default function CustomerDetailScreen() {
   // Xử lý thu âm và chuyển đổi ghi nợ bằng giọng nói tiếng Việt qua Gemini API
   const handleToggleRecording = async () => {
     if (Platform.OS !== 'web') {
+      try {
+        if (isRecording) {
+          const audio = await stopNativeRecording(mediaRecorderRef.current);
+          mediaRecorderRef.current = null;
+          setIsRecording(false);
+          setScanning(true);
+          const response = await api.post('/transactions/voice-to-text', {
+            audio: audio.dataUri,
+            mimeType: audio.mimeType,
+          }, { timeout: 120000 });
+          if (response.data.success) {
+            processParseResult(response.data, 'KET QUA GHI NO GIONG NOI');
+          } else {
+            popupModalRef.current?.show({
+              title: 'That bai',
+              message: response.data.message || 'Khong the dich giong noi.',
+              type: 'error',
+            });
+          }
+          setScanning(false);
+        } else {
+          mediaRecorderRef.current = await startNativeRecording();
+          setIsRecording(true);
+        }
+      } catch (err) {
+        mediaRecorderRef.current = null;
+        setIsRecording(false);
+        setScanning(false);
+        popupModalRef.current?.show({
+          title: err.message === 'MIC_PERMISSION_DENIED' ? 'Chua cap quyen microphone' : 'Loi ghi am',
+          message: err.message === 'MIC_PERMISSION_DENIED'
+            ? 'Hay cap quyen microphone trong Cai dat de dung giong noi.'
+            : 'Khong the ghi am tren thiet bi nay.',
+          type: 'error',
+        });
+      }
+      return;
       popupModalRef.current?.show({
         title: 'Thông báo',
         message: 'Chức năng ghi nợ giọng nói hiện hỗ trợ trên giao diện Web.',

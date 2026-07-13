@@ -6,7 +6,6 @@ import {
   View,
   FlatList,
   TextInput,
-  TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
   StatusBar,
@@ -41,6 +40,11 @@ import AddEmployeeModal from '../src/components/AddEmployeeModal';
 import SalaryAdvanceModal from '../src/components/SalaryAdvanceModal';
 import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
 import EditEmployeeModal from '../src/components/EditEmployeeModal';
+import AnimatedPressable from '../src/components/AnimatedPressable';
+import { captureTicketImage, selectTicketImages, startNativeRecording, stopNativeRecording } from '../src/utils/mediaActions';
+
+// Giữ nguyên markup/action hiện có nhưng bổ sung feedback scale cho toàn bộ nút của dashboard.
+const TouchableOpacity = AnimatedPressable;
 
 // Loại bỏ dấu tiếng Việt để phục vụ tìm kiếm không dấu
 const removeDiacritics = (str) => {
@@ -87,6 +91,10 @@ export default function DashboardScreen() {
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [showDebtSummary, setShowDebtSummary] = useState(false);
+  const [selectedRevenueMonth, setSelectedRevenueMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+  });
 
   // States quản lý tab nhân viên và chấm công / tính lương
   const [employeeTab, setEmployeeTab] = useState('STAFF'); // 'STAFF' (Nhân sự), 'ATTENDANCE' (Chấm công), 'SALARY' (Bảng lương)
@@ -439,15 +447,88 @@ export default function DashboardScreen() {
   };
 
   // Xử lý quét tích kê nhận diện chữ từ ảnh chụp qua Gemini API
+  const submitTicketImages = async (images) => {
+    if (!images.length) return;
+
+    setScanningMsg(`AI dang phan tich ${images.length} tich ke...`);
+    setScanning(true);
+    try {
+      const responses = [];
+      const batchSize = 4;
+      for (let index = 0; index < images.length; index += batchSize) {
+        const batchResponses = await Promise.all(
+          images.slice(index, index + batchSize).map((image) => api.post(
+            '/transactions/scan-ticket',
+            { image: image.dataUri || image },
+            { timeout: 120000 }
+          ))
+        );
+        responses.push(...batchResponses);
+      }
+
+      const mergedItems = new Map();
+      responses.forEach((response) => {
+        if (!response.data.success) return;
+        (response.data.data || []).forEach((item) => {
+          const key = item.product?.id || item.product?.name || item.name;
+          const existing = mergedItems.get(key);
+          if (existing) {
+            existing.quantity += Number(item.quantity) || 0;
+          } else {
+            mergedItems.set(key, { ...item, quantity: Number(item.quantity) || 0 });
+          }
+        });
+      });
+
+      const scannedItems = Array.from(mergedItems.values());
+      if (!scannedItems.length) {
+        throw new Error('Khong doc duoc san pham nao tu cac tich ke.');
+      }
+      scanTicketModalRef.current?.open(scannedItems);
+    } catch (err) {
+      console.error(err);
+      popupModalRef.current?.show({
+        title: 'Loi phan tich tich ke',
+        message: err.response?.data?.message || err.message || 'Khong the phan tich cac tich ke.',
+        type: 'error',
+      });
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const handleScanTicket = () => {
+    popupModalRef.current?.show({
+      title: 'Hướng dẫn chụp tích kê',
+      message: 'Để AI đọc chính xác hơn:\n\n• Chụp thẳng từ trên xuống, lấy trọn tờ tích kê.\n• Đủ sáng, không bị bóng hoặc loá.\n• Giữ camera cố định, không rung và không che mất chữ.\n• Đặt tờ giấy trên nền phẳng, tương phản.\n• Không chụp nghiêng hoặc để vật khác nằm trên bảng.',
+      type: 'info',
+      confirmText: 'Đã hiểu, chọn ảnh',
+      onConfirm: () => runScanTicket(),
+    });
+  };
+
+  const runScanTicket = async () => {
     if (Platform.OS === 'web') {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
+      input.multiple = true;
       input.capture = 'environment'; // Ưu tiên mở camera trên điện thoại
       input.onchange = async (e) => {
-        const file = e.target.files[0];
+        const files = Array.from(e.target.files || []);
+        const file = files[0];
         if (!file) return;
+
+        if (files.length > 1) {
+          const images = await Promise.all(files.map((selectedFile) => new Promise((resolve, reject) => {
+            const fileReader = new FileReader();
+            fileReader.onload = () => resolve({ dataUri: fileReader.result });
+            fileReader.onerror = reject;
+            fileReader.readAsDataURL(selectedFile);
+          })));
+          await submitTicketImages(images);
+          return;
+        }
 
         setScanningMsg('AI đang phân tích hình ảnh tích kê...');
         setScanning(true);
@@ -483,6 +564,41 @@ export default function DashboardScreen() {
       };
       input.click();
     } else {
+      try {
+        const images = await selectTicketImages();
+        await submitTicketImages(images);
+        return;
+
+        const captured = await captureTicketImage();
+        if (!captured) return;
+        setScanningMsg('AI dang phan tich hinh anh tich ke...');
+        setScanning(true);
+        const response = await api.post(
+          '/transactions/scan-ticket',
+          { image: captured.dataUri },
+          { timeout: 120000 }
+        );
+        if (response.data.success) {
+          scanTicketModalRef.current?.open(response.data.data);
+        } else {
+          popupModalRef.current?.show({
+            title: 'That bai',
+            message: response.data.message || 'Khong the nhan dien tich ke.',
+            type: 'error',
+          });
+        }
+      } catch (err) {
+        popupModalRef.current?.show({
+          title: err.message === 'CAMERA_PERMISSION_DENIED' ? 'Chua cap quyen camera' : 'Loi chup anh',
+          message: err.message === 'CAMERA_PERMISSION_DENIED'
+            ? 'Hay cap quyen camera trong Cai dat de chup tich ke.'
+            : (err.response?.data?.message || 'Khong the chup hoac phan tich tich ke.'),
+          type: 'error',
+        });
+      } finally {
+        setScanning(false);
+      }
+      return;
       popupModalRef.current?.show({
         title: 'Thông báo',
         message: 'Chức năng quét tích kê hiện hỗ trợ trên giao diện Web.',
@@ -494,6 +610,44 @@ export default function DashboardScreen() {
   // Xử lý thu âm và phân tích ghi nợ giọng nói qua backend/Gemini
   const handleToggleRecording = async () => {
     if (Platform.OS !== 'web') {
+      try {
+        if (isRecording) {
+          const audio = await stopNativeRecording(mediaRecorderRef.current);
+          mediaRecorderRef.current = null;
+          setIsRecording(false);
+          setScanningMsg('AI dang phan tich giong noi...');
+          setScanning(true);
+          const response = await api.post('/transactions/voice-to-text', {
+            audio: audio.dataUri,
+            mimeType: audio.mimeType,
+          }, { timeout: 120000 });
+          if (response.data.success) {
+            processParseResult(response.data, 'KET QUA GHI NO GIONG NOI');
+          } else {
+            popupModalRef.current?.show({
+              title: 'That bai',
+              message: response.data.message || 'Khong the dich giong noi.',
+              type: 'error',
+            });
+          }
+          setScanning(false);
+        } else {
+          mediaRecorderRef.current = await startNativeRecording();
+          setIsRecording(true);
+        }
+      } catch (err) {
+        mediaRecorderRef.current = null;
+        setIsRecording(false);
+        setScanning(false);
+        popupModalRef.current?.show({
+          title: err.message === 'MIC_PERMISSION_DENIED' ? 'Chua cap quyen microphone' : 'Loi ghi am',
+          message: err.message === 'MIC_PERMISSION_DENIED'
+            ? 'Hay cap quyen microphone trong Cai dat de dung giong noi.'
+            : 'Khong the ghi am tren thiet bi nay.',
+          type: 'error',
+        });
+      }
+      return;
       popupModalRef.current?.show({
         title: 'Thông báo',
         message: 'Chức năng ghi nợ giọng nói hiện hỗ trợ trên giao diện Web.',
@@ -583,9 +737,16 @@ export default function DashboardScreen() {
 
   // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
   const totalDebt = customers.reduce((sum, c) => sum + (c.debt || 0), 0);
+  const selectedMonthPayments = customerPayments.filter((payment) => {
+    const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
+    if (!paidDate || isNaN(paidDate.getTime())) return false;
+    const monthKey = `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}`;
+    return monthKey === selectedRevenueMonth;
+  });
+  const totalCollectedInSelectedMonth = selectedMonthPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
   const totalCollected = customerPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
   const totalOriginalDebt = totalDebt + totalCollected;
-  const collectedByDay = customerPayments.reduce((groups, payment) => {
+  const collectedByDay = selectedMonthPayments.reduce((groups, payment) => {
     const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
     const dateKey = paidDate && !isNaN(paidDate.getTime())
       ? `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}-${paidDate.getDate().toString().padStart(2, '0')}`
@@ -722,7 +883,7 @@ export default function DashboardScreen() {
           <View style={styles.cardDebtContainer}>
             <View style={styles.actionsRightGroup}>
               {/* Nút xem lịch sử dòng tiền */}
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.viewDebtBtn}
                 onPress={() => {
                   setSelectedSupplier(item);
@@ -731,10 +892,10 @@ export default function DashboardScreen() {
                 activeOpacity={0.6}
               >
                 <Text style={styles.viewDebtBtnText}>👁️ Lịch sử</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
               {/* Nút nhập hàng ghi nợ thêm */}
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.addDebtBtn}
                 onPress={() => {
                   setSelectedSupplier(item);
@@ -743,10 +904,10 @@ export default function DashboardScreen() {
                 activeOpacity={0.6}
               >
                 <Text style={styles.addDebtBtnText}>📥 Nhập hàng</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
               {/* Nút trả tiền hàng */}
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[
                   styles.payBadDebtBtn,
                   !hasDebt && styles.payBadDebtBtnDisabled
@@ -764,7 +925,7 @@ export default function DashboardScreen() {
                 ]}>
                   💵 Trả tiền
                 </Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </View>
         </View>
@@ -840,7 +1001,7 @@ export default function DashboardScreen() {
           <View style={styles.cardDebtContainer}>
             <View style={styles.actionsRightGroup}>
               {/* Nút xem lịch sử chấm công, ứng, lương */}
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.viewDebtBtn}
                 onPress={() => {
                   setSelectedEmployee(item);
@@ -849,10 +1010,10 @@ export default function DashboardScreen() {
                 activeOpacity={0.6}
               >
                 <Text style={styles.viewDebtBtnText}>👁️ Lịch sử</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
               {/* Nút ứng lương */}
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.addDebtBtn}
                 onPress={() => {
                   setSelectedEmployee(item);
@@ -861,10 +1022,10 @@ export default function DashboardScreen() {
                 activeOpacity={0.6}
               >
                 <Text style={styles.addDebtBtnText}>💸 Ứng lương</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
               {/* Nút sửa nhân viên */}
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.viewDebtBtn, { backgroundColor: '#F0FDFA', borderColor: '#CCFBF1' }]}
                 onPress={() => {
                   editEmployeeModalRef.current?.open(item);
@@ -872,7 +1033,7 @@ export default function DashboardScreen() {
                 activeOpacity={0.6}
               >
                 <Text style={[styles.viewDebtBtnText, { color: '#0D9488' }]}>✏️ Sửa</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
               {/* Nút xóa nhân viên */}
               <TouchableOpacity
@@ -907,6 +1068,17 @@ export default function DashboardScreen() {
       month: '2-digit',
       year: 'numeric',
     });
+  };
+
+  const formatRevenueMonth = (monthKey) => {
+    const [year, month] = monthKey.split('-');
+    return `Tháng ${month}/${year}`;
+  };
+
+  const adjustRevenueMonth = (months) => {
+    const [year, month] = selectedRevenueMonth.split('-').map(Number);
+    const date = new Date(year, month - 1 + months, 1);
+    setSelectedRevenueMonth(`${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`);
   };
 
   const renderCustomerItem = ({ item }) => {
@@ -1874,18 +2046,18 @@ export default function DashboardScreen() {
         </View>
 
         {/* TỔNG TIỀN NỢ: To rõ, thu hút sự chú ý ngay */}
-        <TouchableOpacity
-          style={styles.summaryCard}
-          onPress={() => setShowDebtSummary((prev) => !prev)}
-          activeOpacity={0.85}
-        >
-          <View style={styles.summaryMainRow}>
+        <View style={styles.summaryCard}>
+          <TouchableOpacity
+            style={styles.summaryMainRow}
+            onPress={() => setShowDebtSummary((prev) => !prev)}
+            activeOpacity={0.85}
+          >
             <View>
               <Text style={styles.summaryLabel}>💰 TỔNG TIỀN NỢ:</Text>
               <Text style={styles.summaryHint}>{showDebtSummary ? 'Bấm để thu gọn' : 'Bấm để xem chi tiết'}</Text>
             </View>
             <Text style={styles.summaryValue}>{formatCurrency(totalDebt)}</Text>
-          </View>
+          </TouchableOpacity>
 
           {showDebtSummary && (
             <View style={styles.debtSummaryDetail}>
@@ -1900,12 +2072,67 @@ export default function DashboardScreen() {
                     </View>
                     <View style={styles.debtSummaryBox}>
                       <Text style={styles.debtSummaryBoxLabel}>Đã thu</Text>
-                      <Text style={[styles.debtSummaryBoxValue, styles.collectedValue]}>{formatCurrency(totalCollected)}</Text>
+                      <Text style={[styles.debtSummaryBoxValue, styles.collectedValue]}>{formatCurrency(totalCollectedInSelectedMonth)}</Text>
                     </View>
                     <View style={styles.debtSummaryBox}>
                       <Text style={styles.debtSummaryBoxLabel}>Nợ còn lại</Text>
                       <Text style={styles.debtSummaryBoxValue}>{formatCurrency(totalDebt)}</Text>
                     </View>
+                  </View>
+
+                  <View style={styles.monthPickerSection}>
+                    <Text style={styles.monthPickerLabel}>Chọn tháng xem doanh thu</Text>
+                    <View style={styles.monthPickerRow}>
+                      <TouchableOpacity
+                        style={styles.monthArrowButton}
+                        onPress={(e) => {
+                          if (e && e.stopPropagation) e.stopPropagation();
+                          adjustRevenueMonth(-1);
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={styles.monthArrowText}>{'<'}</Text>
+                      </TouchableOpacity>
+
+                      <View style={styles.monthInputWrapper}>
+                        <Text style={styles.monthInputText}>{formatRevenueMonth(selectedRevenueMonth)}</Text>
+                        {Platform.OS === 'web' && (
+                          <input
+                            type="month"
+                            value={selectedRevenueMonth}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                setSelectedRevenueMonth(e.target.value);
+                              }
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              width: '100%',
+                              height: '100%',
+                              opacity: 0,
+                              cursor: 'pointer',
+                            }}
+                          />
+                        )}
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.monthArrowButton}
+                        onPress={(e) => {
+                          if (e && e.stopPropagation) e.stopPropagation();
+                          adjustRevenueMonth(1);
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={styles.monthArrowText}>{'>'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.monthRevenueText}>
+                      Tổng doanh thu {formatRevenueMonth(selectedRevenueMonth).toLowerCase()}: {formatCurrency(totalCollectedInSelectedMonth)}
+                    </Text>
                   </View>
 
                   <View style={styles.dailyCollectedSection}>
@@ -1925,7 +2152,7 @@ export default function DashboardScreen() {
               )}
             </View>
           )}
-        </TouchableOpacity>
+        </View>
 
         {/* NÚT THỐNG KÊ TRONG NGÀY */}
         <TouchableOpacity
@@ -1955,19 +2182,17 @@ export default function DashboardScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionRowButton, styles.btnScan, styles.actionRowButtonDisabled]}
+            style={[styles.actionRowButton, styles.btnScan]}
             onPress={handleScanTicket}
             activeOpacity={0.7}
-            disabled={true}
           >
             <Text style={styles.actionRowButtonTextWhite}>Chụp tích kê</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionRowButton, styles.btnVoice, isRecording && styles.btnVoiceRecording, styles.actionRowButtonDisabled]}
+            style={[styles.actionRowButton, styles.btnVoice, isRecording && styles.btnVoiceRecording]}
             onPress={handleToggleRecording}
             activeOpacity={0.7}
-            disabled={true}
           >
             <Text style={styles.actionRowButtonTextWhite}>{isRecording ? 'Đang nói...' : 'Giọng nói'}</Text>
           </TouchableOpacity>
@@ -2226,6 +2451,63 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   collectedValue: {
+    color: '#047857',
+  },
+  monthPickerSection: {
+    marginTop: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    padding: 10,
+  },
+  monthPickerLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  monthPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  monthArrowButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthArrowText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.dangerDark,
+  },
+  monthInputWrapper: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: '#FFF7F7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  monthInputText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: COLORS.dangerDark,
+  },
+  monthRevenueText: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: 'bold',
     color: '#047857',
   },
   dailyCollectedSection: {
