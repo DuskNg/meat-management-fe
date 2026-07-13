@@ -460,6 +460,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
                   <Text style={styles.removeText}>✕</Text>
                 </TouchableOpacity>
                 </View>
+              </View>
             );
           })}
         </ScrollView>
