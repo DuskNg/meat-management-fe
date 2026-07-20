@@ -518,7 +518,6 @@ export default function DashboardScreen() {
       input.type = 'file';
       input.accept = 'image/*';
       input.multiple = true;
-      input.capture = 'environment'; // Ưu tiên mở camera trên điện thoại
       input.onchange = async (e) => {
         const files = Array.from(e.target.files || []);
         const file = files[0];
