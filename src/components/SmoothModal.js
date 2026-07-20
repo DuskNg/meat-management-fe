@@ -43,11 +43,12 @@ const SmoothModal = ({ visible, onClose, children }) => {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.centeredView}
         >
-          {/* Lớp nền trong suốt click ngoài để đóng */}
+          {/* Lớp nền trong suốt click ngoài để đóng - pointerEvents="box-only" để không chặn children */}
           <TouchableOpacity
             style={styles.backdropClick}
             activeOpacity={1}
             onPress={onClose}
+            pointerEvents="box-only"
           />
           {children}
         </KeyboardAvoidingView>
