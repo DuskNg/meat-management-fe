@@ -609,11 +609,20 @@ export default function DashboardScreen() {
           });
         }
       } catch (err) {
+        let errTitle = 'Lỗi chọn ảnh';
+        let errMsg = err.response?.data?.message || 'Không thể chọn hoặc phân tích tích kê.';
+
+        if (err.message === 'CAMERA_PERMISSION_DENIED') {
+          errTitle = 'Chưa cấp quyền camera';
+          errMsg = 'Hãy cấp quyền camera trong Cài đặt để chụp tích kê.';
+        } else if (err.message === 'MEDIA_LIBRARY_PERMISSION_DENIED') {
+          errTitle = 'Chưa cấp quyền thư viện ảnh';
+          errMsg = 'Hãy cấp quyền truy cập thư viện ảnh trong Cài đặt để chọn ảnh tích kê.';
+        }
+
         popupModalRef.current?.show({
-          title: err.message === 'CAMERA_PERMISSION_DENIED' ? 'Chua cap quyen camera' : 'Loi chup anh',
-          message: err.message === 'CAMERA_PERMISSION_DENIED'
-            ? 'Hay cap quyen camera trong Cai dat de chup tich ke.'
-            : (err.response?.data?.message || 'Khong the chup hoac phan tich tich ke.'),
+          title: errTitle,
+          message: errMsg,
           type: 'error',
         });
       } finally {

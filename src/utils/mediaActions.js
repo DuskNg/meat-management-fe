@@ -26,6 +26,12 @@ export async function captureTicketImage() {
 }
 
 export async function selectTicketImages() {
+  // Yêu cầu quyền truy cập thư viện ảnh trên thiết bị
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error('MEDIA_LIBRARY_PERMISSION_DENIED');
+  }
+
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     allowsMultipleSelection: true,
