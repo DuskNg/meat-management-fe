@@ -73,6 +73,15 @@ export default function CustomerDetailScreen() {
       return;
     }
 
+    if (results.length === 1 && (firstResult.status === 'unrelated' || firstResult.transaction_type === 'unrelated')) {
+      popupModalRef.current?.show({
+        title: 'Không nhận diện được nội dung ghi nợ',
+        message: 'Câu thoại không liên quan đến cấu trúc ghi nợ. Vui lòng nói ngày, tên khách hàng và số tiền (hoặc số kg và loại thịt).',
+        type: 'warning'
+      });
+      return;
+    }
+
     if (results.length === 1 && firstResult.status === 'incomplete') {
       popupModalRef.current?.show({
         title: 'Thông tin chưa đầy đủ',
@@ -119,6 +128,114 @@ export default function CustomerDetailScreen() {
     }
   };
 
+  // Gửi câu thoại chữ lên AI để phân tích (có cơ chế thử lại nếu lỗi)
+  const submitTypedText = async (text) => {
+    if (!text || !text.trim()) return;
+
+    setScanning(true);
+    try {
+      const response = await api.post('/transactions/voice-to-text', {
+        transcript: text.trim()
+      });
+
+      if (response.data.success) {
+        processParseResult(response.data, '🎤 KẾT QUẢ PHÂN TÍCH AI');
+      } else {
+        popupModalRef.current?.show({
+          title: 'Thất bại',
+          message: (response.data.message || 'Không thể phân tích văn bản.') + '\n\nBạn có muốn thử lại không?',
+          type: 'confirm',
+          confirmText: 'Thử lại',
+          cancelText: 'Hủy bỏ',
+          onConfirm: () => submitTypedText(text)
+        });
+      }
+    } catch (parseErr) {
+      console.error(parseErr);
+      popupModalRef.current?.show({
+        title: 'Lỗi kết nối',
+        message: (parseErr.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ phân tích.') + '\n\nBạn có muốn thử lại không?',
+        type: 'confirm',
+        confirmText: 'Thử lại',
+        cancelText: 'Hủy bỏ',
+        onConfirm: () => submitTypedText(text)
+      });
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  // Phân tích âm thanh giọng nói từ Web (có cơ chế thử lại nếu lỗi)
+  const processVoiceAudio = async (base64Audio) => {
+    setScanning(true);
+    try {
+      const response = await api.post('/transactions/voice-to-text', {
+        audio: base64Audio,
+        mimeType: 'audio/webm'
+      }, { timeout: 120000 });
+
+      if (response.data.success) {
+        processParseResult(response.data, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI');
+      } else {
+        popupModalRef.current?.show({
+          title: 'Thất bại',
+          message: (response.data.message || 'Không thể dịch giọng nói.') + '\n\nBạn có muốn thử lại không?',
+          type: 'confirm',
+          confirmText: 'Thử lại',
+          cancelText: 'Hủy bỏ',
+          onConfirm: () => processVoiceAudio(base64Audio)
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      popupModalRef.current?.show({
+        title: err.response?.status === 400 ? 'Lỗi nhận diện' : 'Lỗi kết nối',
+        message: (err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.') + '\n\nBạn có muốn thử lại không?',
+        type: 'confirm',
+        confirmText: 'Thử lại',
+        cancelText: 'Hủy bỏ',
+        onConfirm: () => processVoiceAudio(base64Audio)
+      });
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  // Phân tích âm thanh giọng nói từ thiết bị di động Native (có cơ chế thử lại nếu lỗi)
+  const processNativeVoiceAudio = async (audio) => {
+    setScanning(true);
+    try {
+      const response = await api.post('/transactions/voice-to-text', {
+        audio: audio.dataUri,
+        mimeType: audio.mimeType,
+      }, { timeout: 120000 });
+      if (response.data.success) {
+        processParseResult(response.data, 'KET QUA GHI NO GIONG NOI');
+      } else {
+        popupModalRef.current?.show({
+          title: 'Thất bại',
+          message: (response.data.message || 'Không thể dịch giọng nói.') + '\n\nBạn có muốn thử lại không?',
+          type: 'confirm',
+          confirmText: 'Thử lại',
+          cancelText: 'Hủy bỏ',
+          onConfirm: () => processNativeVoiceAudio(audio),
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      popupModalRef.current?.show({
+        title: 'Lỗi kết nối',
+        message: (err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.') + '\n\nBạn có muốn thử lại không?',
+        type: 'confirm',
+        confirmText: 'Thử lại',
+        cancelText: 'Hủy bỏ',
+        onConfirm: () => processNativeVoiceAudio(audio),
+      });
+    } finally {
+      setScanning(false);
+    }
+  };
+
   // Hộp thoại nhập chữ dự phòng khi thiết bị không hỗ trợ hoặc lỗi micro
   const handleTypeTextFallback = () => {
     setTimeout(() => {
@@ -130,35 +247,7 @@ export default function CustomerDetailScreen() {
         cancelText: 'Hủy',
         showTextInput: true,
         textInputPlaceholder: 'Nhập câu nói của bạn tại đây...',
-        onConfirm: async (text) => {
-          if (!text || !text.trim()) return;
-
-          setScanning(true);
-          try {
-            const response = await api.post('/transactions/voice-to-text', {
-              transcript: text.trim()
-            });
-
-            if (response.data.success) {
-              processParseResult(response.data, '🎤 KẾT QUẢ PHÂN TÍCH AI');
-            } else {
-              popupModalRef.current?.show({
-                title: 'Thất bại',
-                message: response.data.message || 'Không thể phân tích văn bản.',
-                type: 'error'
-              });
-            }
-          } catch (parseErr) {
-            console.error(parseErr);
-            popupModalRef.current?.show({
-              title: 'Lỗi kết nối',
-              message: parseErr.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ phân tích.',
-              type: 'error'
-            });
-          } finally {
-            setScanning(false);
-          }
-        }
+        onConfirm: (text) => submitTypedText(text)
       });
     }, 100);
   };
@@ -171,21 +260,7 @@ export default function CustomerDetailScreen() {
           const audio = await stopNativeRecording(mediaRecorderRef.current);
           mediaRecorderRef.current = null;
           setIsRecording(false);
-          setScanning(true);
-          const response = await api.post('/transactions/voice-to-text', {
-            audio: audio.dataUri,
-            mimeType: audio.mimeType,
-          }, { timeout: 120000 });
-          if (response.data.success) {
-            processParseResult(response.data, 'KET QUA GHI NO GIONG NOI');
-          } else {
-            popupModalRef.current?.show({
-              title: 'That bai',
-              message: response.data.message || 'Khong the dich giong noi.',
-              type: 'error',
-            });
-          }
-          setScanning(false);
+          await processNativeVoiceAudio(audio);
         } else {
           mediaRecorderRef.current = await startNativeRecording();
           setIsRecording(true);
@@ -195,10 +270,10 @@ export default function CustomerDetailScreen() {
         setIsRecording(false);
         setScanning(false);
         popupModalRef.current?.show({
-          title: err.message === 'MIC_PERMISSION_DENIED' ? 'Chua cap quyen microphone' : 'Loi ghi am',
+          title: err.message === 'MIC_PERMISSION_DENIED' ? 'Chưa cấp quyền microphone' : 'Lỗi ghi âm',
           message: err.message === 'MIC_PERMISSION_DENIED'
-            ? 'Hay cap quyen microphone trong Cai dat de dung giong noi.'
-            : 'Khong the ghi am tren thiet bi nay.',
+            ? 'Hãy cấp quyền microphone trong Cài đặt để dùng giọng nói.'
+            : 'Không thể ghi âm trên thiết bị này.',
           type: 'error',
         });
       }
@@ -238,33 +313,7 @@ export default function CustomerDetailScreen() {
           const reader = new FileReader();
           reader.onloadend = async () => {
             const base64Audio = reader.result;
-
-            setScanning(true);
-            try {
-              const response = await api.post('/transactions/voice-to-text', {
-                audio: base64Audio,
-                mimeType: 'audio/webm'
-              }, { timeout: 120000 });
-
-              if (response.data.success) {
-                processParseResult(response.data, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI');
-              } else {
-                popupModalRef.current?.show({
-                  title: 'Thất bại',
-                  message: response.data.message || 'Không thể dịch giọng nói.',
-                  type: 'error'
-                });
-              }
-            } catch (err) {
-              console.error(err);
-              popupModalRef.current?.show({
-                title: err.response?.status === 400 ? 'Lỗi nhận diện' : 'Lỗi kết nối',
-                message: err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.',
-                type: 'error'
-              });
-            } finally {
-              setScanning(false);
-            }
+            await processVoiceAudio(base64Audio);
           };
           reader.readAsDataURL(audioBlob);
         };
@@ -283,6 +332,23 @@ export default function CustomerDetailScreen() {
         });
       }
     }
+  };
+
+  const handleVoicePress = () => {
+    if (isRecording) {
+      handleToggleRecording();
+      return;
+    }
+
+    popupModalRef.current?.show({
+      title: 'Hướng dẫn ghi nợ bằng giọng nói',
+      icon: '📸',
+      message: '🎤 HƯỚNG DẪN GHI NỢ GIỌNG NÓI\n\n1. Ghi nợ thủ công\nNói: ngày → tên khách → số lượng + loại thịt → giá.\nVí dụ: “Hôm nay, anh Khải, 1,2 cân bắp bò, giá 28.”\n\n2. Ghi nợ nhanh\nNói: ngày → tên khách → ghi nợ nhanh → số tiền.\nVí dụ: “Hôm qua, chị Lan, ghi nợ nhanh 500 nghìn.”\n\n💡 Chú thích: Không cần đọc ngày cụ thể, bạn có thể nói "hôm nay", "ngày mai", "hôm qua", "mai"... hoặc bỏ qua ngày (mặc định lấy ngày hôm nay).',
+      type: 'confirm',
+      confirmText: 'Bắt đầu nói',
+      cancelText: 'Để sau',
+      onConfirm: handleToggleRecording,
+    });
   };
 
   // Xử lý quay lại trang danh sách khách hàng
@@ -1048,10 +1114,11 @@ export default function CustomerDetailScreen() {
             <TouchableOpacity
               style={[
                 styles.actionButton,
-                isRecording ? styles.btnRecording : styles.btnVoice
+                isRecording ? styles.btnRecording : styles.btnVoice,
+                { opacity: 0.5 }
               ]}
-              onPress={handleToggleRecording}
-              disabled={scanning}
+              onPress={handleVoicePress}
+              disabled={true}
             >
               {scanning ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />

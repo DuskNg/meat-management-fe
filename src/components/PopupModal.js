@@ -25,6 +25,7 @@ const PopupModal = forwardRef((props, ref) => {
     title: 'Thông báo',
     message: '',
     type: 'info', // 'info' | 'success' | 'error' | 'warning' | 'confirm'
+    icon: null,
     confirmText: 'Đồng ý',
     cancelText: 'Hủy',
     onConfirm: null,
@@ -41,6 +42,7 @@ const PopupModal = forwardRef((props, ref) => {
         title: config.title || 'Thông báo',
         message: config.message || '',
         type: config.type || 'info',
+        icon: config.icon || null,
         confirmText: config.confirmText || 'Đồng ý',
         cancelText: config.cancelText || 'Hủy',
         onConfirm: config.onConfirm || null,
@@ -97,6 +99,25 @@ const PopupModal = forwardRef((props, ref) => {
       primaryColor = COLORS.primary;
   }
 
+  if (options.icon) {
+    icon = options.icon;
+  }
+
+  const renderMessage = (msg) => {
+    if (!msg) return null;
+    const parts = msg.split('**');
+    return parts.map((part, index) => {
+      if (index % 2 === 1) {
+        return (
+          <Text key={index} style={{ fontWeight: 'bold', color: COLORS.text }}>
+            {part}
+          </Text>
+        );
+      }
+      return part;
+    });
+  };
+
   const isConfirm = options.type === 'confirm';
 
   return (
@@ -112,7 +133,7 @@ const PopupModal = forwardRef((props, ref) => {
           <View style={styles.textContainer}>
             <Text style={styles.titleText}>{options.title}</Text>
             {options.message ? (
-              <Text style={styles.messageText}>{options.message}</Text>
+              <Text style={styles.messageText}>{renderMessage(options.message)}</Text>
             ) : null}
             {options.showTextInput && (
               <TextInput

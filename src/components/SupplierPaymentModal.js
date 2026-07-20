@@ -25,7 +25,9 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
   useImperativeHandle(ref, () => ({
     open: (defaultAmount = '') => {
       setVisible(true);
-      setAmount(defaultAmount ? formatNumberString(defaultAmount.toString()) : '');
+      // Làm tròn số nợ đề xuất để tránh lỗi phần thập phân (float) của tiền VNĐ
+      const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
+      setAmount(defaultAmount ? formatNumberString(numericAmount.toString()) : '');
       setNote('');
       setError('');
     },

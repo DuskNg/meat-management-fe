@@ -505,7 +505,7 @@ export default function DashboardScreen() {
   const handleScanTicket = () => {
     popupModalRef.current?.show({
       title: 'Hướng dẫn chụp tích kê',
-      message: 'Để AI đọc chính xác hơn:\n\n• Chụp thẳng từ trên xuống, lấy trọn tờ tích kê.\n• Đủ sáng, không bị bóng hoặc loá.\n• Giữ camera cố định, không rung và không che mất chữ.\n• Đặt tờ giấy trên nền phẳng, tương phản.\n• Không chụp nghiêng hoặc để vật khác nằm trên bảng.',
+      message: 'Để AI đọc chính xác hơn:\n\n• **Chữ viết rõ ràng, ghi đúng hàng đúng cột (ví dụ: cột hàng hóa viết đúng tên thịt, cột số lượng viết đúng số kg).**\n• Chụp thẳng từ trên xuống, lấy trọn tờ tích kê.\n• Đủ sáng, không bị bóng hoặc loá.\n• Giữ camera cố định, không rung và không che mất chữ.\n• Không chụp nghiêng hoặc để vật khác nằm trên bảng.',
       type: 'info',
       confirmText: 'Đã hiểu, chọn ảnh',
       onConfirm: () => runScanTicket(),
@@ -544,9 +544,16 @@ export default function DashboardScreen() {
             // Gửi ảnh chụp tích kê lên server backend với thời gian chờ tối đa 120 giây
             const response = await api.post('/transactions/scan-ticket', { image: base64Data }, { timeout: 120000 });
             if (response.data.success) {
-              const scannedItems = response.data.data;
-              // Mở modal kết quả quét tích kê đơn giản để người dùng chỉnh sửa và xác nhận
-              scanTicketModalRef.current?.open(scannedItems);
+              // Tạo một mã hóa đơn/tích kê riêng để phân tách
+              const ticketKey = `ticket-${Date.now()}-0`;
+              const scannedItems = (response.data.data || []).map(item => ({
+                ...item,
+                voiceCustomerName: response.data.customerName || '',
+                ticketImage: base64Data, // Lưu ảnh để đối chiếu
+                orderKey: ticketKey,
+                ticketLabel: null,
+              }));
+              scanTicketModalRef.current?.open(scannedItems, '📸 KẾT QUẢ QUÉT TÍCH KÊ');
             } else {
               popupModalRef.current?.show({
                 title: 'Thất bại',
@@ -584,7 +591,16 @@ export default function DashboardScreen() {
           { timeout: 120000 }
         );
         if (response.data.success) {
-          scanTicketModalRef.current?.open(response.data.data);
+          // Tạo một mã hóa đơn/tích kê riêng để phân tách
+          const ticketKey = `ticket-${Date.now()}-0`;
+          const scannedItems = (response.data.data || []).map(item => ({
+            ...item,
+            voiceCustomerName: response.data.customerName || '',
+            ticketImage: captured.dataUri, // Lưu ảnh để đối chiếu
+            orderKey: ticketKey,
+            ticketLabel: null,
+          }));
+          scanTicketModalRef.current?.open(scannedItems, '📸 KẾT QUẢ QUÉT TÍCH KÊ');
         } else {
           popupModalRef.current?.show({
             title: 'That bai',
@@ -2195,9 +2211,10 @@ export default function DashboardScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionRowButton, styles.btnVoice, isRecording && styles.btnVoiceRecording]}
+            style={[styles.actionRowButton, styles.btnVoice, isRecording && styles.btnVoiceRecording, { opacity: 0.5 }]}
             onPress={handleToggleRecording}
             activeOpacity={0.7}
+            disabled={true}
           >
             <Text style={styles.actionRowButtonTextWhite}>{isRecording ? 'Đang nói...' : 'Giọng nói'}</Text>
           </TouchableOpacity>

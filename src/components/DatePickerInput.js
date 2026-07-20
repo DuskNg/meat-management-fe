@@ -146,6 +146,7 @@ const DatePickerInput = ({
   disabled = false,
   minDate = null,
   maxDate = null,
+  compact = false, // Thêm prop compact
 }) => {
   // Tự động inject CSS cho Web để dãn rộng vùng click của bộ chọn ngày
   if (Platform.OS === 'web') {
@@ -219,6 +220,7 @@ const DatePickerInput = ({
       <TouchableOpacity
         style={[
           styles.container,
+          compact && styles.containerCompact,
           disabled && styles.containerDisabled,
           (pressed || showPicker || showCustomPicker) && !disabled && styles.containerFocused
         ]}
@@ -229,25 +231,31 @@ const DatePickerInput = ({
         disabled={disabled || (Platform.OS === 'web' && !isSingleMonthLimit)}
       >
         {/* Icon lịch bên trái */}
-        <View style={styles.iconWrapper}>
-          <Text style={styles.icon}>📅</Text>
-        </View>
+        {!compact && (
+          <View style={styles.iconWrapper}>
+            <Text style={styles.icon}>📅</Text>
+          </View>
+        )}
 
         {/* Phần nội dung ngày */}
-        <View style={styles.dateContent}>
-          <Text style={styles.weekdayText}>{weekday}</Text>
-          <Text style={styles.dateDisplayText}>{value || formatDateToDisplay(new Date())}</Text>
+        <View style={[styles.dateContent, compact && styles.dateContentCompact]}>
+          {!compact && <Text style={styles.weekdayText}>{weekday}</Text>}
+          <Text style={[styles.dateDisplayText, compact && styles.dateDisplayTextCompact]}>
+            {value || formatDateToDisplay(new Date())}
+          </Text>
         </View>
 
         {/* Nhãn "Đổi ngày" / "Cố định" */}
-        {disabled ? (
-          <View style={[styles.changeTag, styles.disabledTag]}>
-            <Text style={[styles.changeTagText, styles.disabledTagText]}>Cố định 🔒</Text>
-          </View>
-        ) : (
-          <View style={styles.changeTag}>
-            <Text style={styles.changeTagText}>Đổi ngày</Text>
-          </View>
+        {!compact && (
+          disabled ? (
+            <View style={[styles.changeTag, styles.disabledTag]}>
+              <Text style={[styles.changeTagText, styles.disabledTagText]}>Cố định 🔒</Text>
+            </View>
+          ) : (
+            <View style={styles.changeTag}>
+              <Text style={styles.changeTagText}>Đổi ngày</Text>
+            </View>
+          )
         )}
 
         {/* HTML date input cho Web (chỉ khi không có giới hạn 1 tháng cụ thể) */}
@@ -556,5 +564,21 @@ const styles = StyleSheet.create({
   },
   gridCellTextDisabled: {
     color: COLORS.textLight,
+  },
+  containerCompact: {
+    height: 32,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    marginBottom: 0,
+  },
+  dateContentCompact: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  dateDisplayTextCompact: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text,
   },
 });

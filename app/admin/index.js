@@ -14,6 +14,7 @@ import { useAuthStore } from '../../src/store/authStore';
 import { api } from '../../src/api/client';
 import AdminPermissionModal from '../../src/components/AdminPermissionModal';
 import AdminLogsModal from '../../src/components/AdminLogsModal';
+import AdminAiUsageModal from '../../src/components/AdminAiUsageModal';
 
 export default function AdminDashboard() {
   const authStore = useAuthStore();
@@ -24,6 +25,7 @@ export default function AdminDashboard() {
   // Refs của các modal
   const permissionModalRef = useRef(null);
   const logsModalRef = useRef(null);
+  const aiUsageModalRef = useRef(null);
 
   // Tải danh sách người dùng
   const fetchUsers = async () => {
@@ -175,6 +177,14 @@ export default function AdminDashboard() {
                     >
                       <Text style={styles.actionBtnText}>Xem Logs</Text>
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.aiUsageBtn}
+                      onPress={() => aiUsageModalRef.current?.open(item)}
+                    >
+                      <Text style={styles.actionBtnText}>💰 Chi phí AI</Text>
+                    </TouchableOpacity>
+
                   </View>
                 )}
               </View>
@@ -191,6 +201,9 @@ export default function AdminDashboard() {
       
       <AdminLogsModal
         ref={logsModalRef}
+      />
+      <AdminAiUsageModal
+        ref={aiUsageModalRef}
       />
     </SafeAreaView>
   );
@@ -393,6 +406,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#475569',
     paddingVertical: 6,
     paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  aiUsageBtn: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
     borderRadius: 6,
   },
   actionBtnText: {

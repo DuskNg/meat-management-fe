@@ -43,8 +43,10 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   useImperativeHandle(ref, () => ({
     open: (defaultAmount = '', monthKey = null) => {
       setVisible(true);
-      setAmount(defaultAmount ? formatNumberString(defaultAmount.toString()) : '');
-      setMaxAmount(defaultAmount ? parseFloat(defaultAmount) : null); // Thiết lập giới hạn thanh toán tối đa theo nợ tháng
+      // Làm tròn số nợ đề xuất để tránh lỗi phần thập phân (float) của tiền VNĐ
+      const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
+      setAmount(defaultAmount ? formatNumberString(numericAmount.toString()) : '');
+      setMaxAmount(defaultAmount ? numericAmount : null); // Thiết lập giới hạn thanh toán tối đa theo nợ tháng
       setTargetMonthKey(monthKey); // Lưu lại khóa tháng cụ thể (ví dụ: "07/2026")
       setNote('');
       setError('');
