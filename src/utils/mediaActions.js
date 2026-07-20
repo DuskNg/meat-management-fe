@@ -17,11 +17,22 @@ export async function captureTicketImage() {
     base64: true,
   });
 
-  if (result.canceled || !result.assets?.[0]?.base64) return null;
+  if (result.canceled || !result.assets?.[0]) return null;
 
   const asset = result.assets[0];
+  let base64Data = asset.base64;
+  if (!base64Data) {
+    try {
+      base64Data = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    } catch (fileErr) {
+      console.error('Không thể đọc file ảnh chụp:', fileErr);
+    }
+  }
+
   return {
-    dataUri: `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`,
+    dataUri: base64Data ? `data:${asset.mimeType || 'image/jpeg'};base64,${base64Data}` : null,
   };
 }
 
@@ -39,13 +50,28 @@ export async function selectTicketImages() {
     base64: true,
   });
 
-  if (result.canceled) return [];
+  if (result.canceled || !result.assets) return [];
 
-  return result.assets
-    .filter((asset) => asset.base64)
-    .map((asset) => ({
-      dataUri: `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`,
-    }));
+  // Đọc file ảnh dưới dạng Base64 bằng FileSystem nếu ImagePicker không trả về base64
+  const images = await Promise.all(
+    result.assets.map(async (asset) => {
+      let base64Data = asset.base64;
+      if (!base64Data) {
+        try {
+          base64Data = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+        } catch (fileErr) {
+          console.error('Không thể đọc file ảnh:', fileErr);
+        }
+      }
+      return {
+        dataUri: base64Data ? `data:${asset.mimeType || 'image/jpeg'};base64,${base64Data}` : null,
+      };
+    })
+  );
+
+  return images.filter((img) => img.dataUri);
 }
 
 export async function startNativeRecording() {
