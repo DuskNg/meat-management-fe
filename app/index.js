@@ -455,7 +455,7 @@ export default function DashboardScreen() {
   const submitTicketImages = async (images) => {
     if (!images.length) return;
 
-    setScanningMsg(`AI dang phan tich ${images.length} tich ke...`);
+    setScanningMsg(`AI đang phân tích ${images.length} tích kê...`);
     setScanning(true);
     try {
       const responses = [];
@@ -471,30 +471,35 @@ export default function DashboardScreen() {
         responses.push(...batchResponses);
       }
 
-      const mergedItems = new Map();
-      responses.forEach((response) => {
+      // Giữ riêng biệt từng tích kê, mỗi ảnh tương ứng 1 nhóm hàng hoá độc lập
+      const allItems = [];
+      const timestamp = Date.now();
+      responses.forEach((response, idx) => {
         if (!response.data.success) return;
+        const ticketKey = `ticket-${timestamp}-${idx}`;
+        const ticketImage = images[idx]?.dataUri || null;
+        const ticketLabel = images.length > 1 ? `Tích kê ${idx + 1}` : null;
         (response.data.data || []).forEach((item) => {
-          const key = item.product?.id || item.product?.name || item.name;
-          const existing = mergedItems.get(key);
-          if (existing) {
-            existing.quantity += Number(item.quantity) || 0;
-          } else {
-            mergedItems.set(key, { ...item, quantity: Number(item.quantity) || 0 });
-          }
+          allItems.push({
+            ...item,
+            quantity: Number(item.quantity) || 0,
+            voiceCustomerName: response.data.customerName || '',
+            orderKey: ticketKey,
+            ticketLabel,
+            ticketImage,
+          });
         });
       });
 
-      const scannedItems = Array.from(mergedItems.values());
-      if (!scannedItems.length) {
-        throw new Error('Khong doc duoc san pham nao tu cac tich ke.');
+      if (!allItems.length) {
+        throw new Error('Không đọc được sản phẩm nào từ các tích kê.');
       }
-      scanTicketModalRef.current?.open(scannedItems);
+      scanTicketModalRef.current?.open(allItems, '📸 KẾT QUẢ QUÉT TÍCH KÊ');
     } catch (err) {
       console.error(err);
       popupModalRef.current?.show({
-        title: 'Loi phan tich tich ke',
-        message: err.response?.data?.message || err.message || 'Khong the phan tich cac tich ke.',
+        title: 'Lỗi phân tích tích kê',
+        message: err.response?.data?.message || err.message || 'Không thể phân tích các tích kê.',
         type: 'error',
       });
     } finally {
