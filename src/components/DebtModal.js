@@ -76,6 +76,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [currentQuantity, setCurrentQuantity] = useState('');
   const [currentPrice, setCurrentPrice] = useState('');
   const [productSearch, setProductSearch] = useState('');
+  // Trạng thái mở/đóng dropdown chọn thịt
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   // Thông tin chung cho cả đơn hàng
   const [dateStr, setDateStr] = useState(getTodayFormatted());
@@ -518,61 +520,123 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
               </View>
             )}
 
-            {/* ── CHỌN LOẠI THỊT ── */}
+            {/* ── CHỌN LOẠI THỊT (dạng Select Dropdown) ── */}
             <Text style={styles.label}>
-              {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua (lướt ngang để xem loại thịt):'}
+              {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt:'}
             </Text>
             <View style={styles.productsContainer}>
-              {products.length > 0 && (
-                <TextInput
-                  style={styles.productSearchInput}
-                  placeholder="🔍 Tìm nhanh loại thịt..."
-                  placeholderTextColor={COLORS.textLight}
-                  value={productSearch}
-                  onChangeText={setProductSearch}
-                  autoCorrect={false}
-                  returnKeyType="search"
-                />
-              )}
-              {products.length === 0 ? (
+              {/* Hàng tìm kiếm + nút Thêm thịt cùng dòng */}
+              <View style={styles.selectRow}>
                 <TouchableOpacity
-                  style={[styles.productBadge, styles.addProductBadge]}
+                  style={[
+                    styles.selectTrigger,
+                    dropdownOpen && styles.selectTriggerActive,
+                    currentProduct && styles.selectTriggerSelected,
+                  ]}
+                  onPress={() => setDropdownOpen((prev) => !prev)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[
+                    styles.selectTriggerText,
+                    !currentProduct && styles.selectTriggerPlaceholder,
+                  ]}>
+                    {currentProduct ? currentProduct.name : '🔍 Chọn loại thịt...'}
+                  </Text>
+                  {currentProduct ? (
+                    <TouchableOpacity
+                      style={styles.selectClearBtn}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setCurrentProduct(null);
+                        setCurrentPrice('');
+                        setProductSearch('');
+                        setDropdownOpen(false);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.selectClearText}>✕</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={styles.selectChevron}>{dropdownOpen ? '▲' : '▼'}</Text>
+                  )}
+                </TouchableOpacity>
+
+                {/* Nút thêm thịt cùng dòng */}
+                <TouchableOpacity
+                  style={styles.addProductBtn}
                   onPress={() => productModalRef.current?.open()}
                 >
-                  <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
-                  <Text style={styles.productBadgePrice}>Tạo mới</Text>
+                  <Text style={styles.addProductBtnText}>＋ Thêm thịt</Text>
                 </TouchableOpacity>
-              ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {/* Nút thêm loại thịt mới nhanh */}
-                  <TouchableOpacity
-                    style={[styles.productBadge, styles.addProductBadge]}
-                    onPress={() => productModalRef.current?.open()}
-                  >
-                    <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
-                    <Text style={styles.productBadgePrice}>Tạo mới</Text>
-                  </TouchableOpacity>
-                  {filteredProducts.map((p) => {
-                    const isSelected = currentProduct?.id === p.id;
-                    return (
+              </View>
+
+              {/* Dropdown list thịt */}
+              {dropdownOpen && (
+                <View style={styles.dropdownContainer}>
+                  {/* Ô tìm kiếm bên trong dropdown */}
+                  <View style={styles.dropdownSearchRow}>
+                    <TextInput
+                      style={styles.dropdownSearchInput}
+                      placeholder="🔍 Tìm thịt..."
+                      placeholderTextColor={COLORS.textLight}
+                      value={productSearch}
+                      onChangeText={setProductSearch}
+                      autoCorrect={false}
+                      autoFocus={true}
+                    />
+                    {productSearch.length > 0 && (
                       <TouchableOpacity
-                        key={p.id}
-                        style={[styles.productBadge, isSelected && styles.productBadgeSelected]}
-                        onPress={() => handleSelectProduct(p)}
+                        style={styles.dropdownClearBtn}
+                        onPress={() => setProductSearch('')}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                       >
-                        <Text style={[styles.productBadgeText, isSelected && styles.productBadgeTextSelected]}>
-                          {p.name}
-                        </Text>
-                        <Text style={styles.productBadgePrice}>
-                          {formatCurrency(p.defaultPrice)}/{p.unit}
-                        </Text>
+                        <Text style={styles.dropdownClearText}>✕</Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+                    )}
+                  </View>
+
+                  {/* Danh sách sản phẩm */}
+                  <ScrollView style={styles.dropdownList} nestedScrollEnabled={true} keyboardShouldPersistTaps="handled">
+                    {filteredProducts.length === 0 ? (
+                      <Text style={styles.noProductSearchText}>Không tìm thấy loại thịt phù hợp.</Text>
+                    ) : (
+                      filteredProducts.map((p) => {
+                        const isSelected = currentProduct?.id === p.id;
+                        return (
+                          <TouchableOpacity
+                            key={p.id}
+                            style={[
+                              styles.dropdownItem,
+                              isSelected && styles.dropdownItemSelected,
+                            ]}
+                            onPress={() => {
+                              handleSelectProduct(p);
+                              setDropdownOpen(false);
+                              setProductSearch('');
+                            }}
+                          >
+                            <Text style={[
+                              styles.dropdownItemText,
+                              isSelected && styles.dropdownItemTextSelected,
+                            ]}>
+                              {p.name}
+                            </Text>
+                            <Text style={styles.dropdownItemPrice}>
+                              {formatCurrency(p.defaultPrice)}/{p.unit}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </ScrollView>
+                </View>
               )}
-              {products.length > 0 && filteredProducts.length === 0 && (
-                <Text style={styles.noProductSearchText}>Không tìm thấy loại thịt phù hợp.</Text>
+
+              {/* Khi không có sản phẩm nào */}
+              {products.length === 0 && (
+                <Text style={[styles.noProductSearchText, { color: COLORS.dangerDark }]}>
+                  Chưa có loại thịt. Bấm ＋ để thêm.
+                </Text>
               )}
             </View>
             {errorField === 'product' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
@@ -740,14 +804,14 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           </View>
         )}
 
-        {/* ── NÚT HỦY / XÁC NHẬN ── */}
+        {/* ── NÚT HỦY / XÁC NHẬN (đã giảm size) ── */}
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={[styles.button, styles.cancelButton]}
             onPress={() => setVisible(false)}
             disabled={loading}
           >
-            <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+            <Text style={styles.cancelButtonText}>Hủy bỏ</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -767,8 +831,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
             ) : (
               <Text style={styles.submitButtonText}>
                 {activeTab === 'manual'
-                  ? (cartItems.length > 0 ? `GHI NỢ (${cartItems.length})` : 'XÁC NHẬN')
-                  : 'GHI NỢ NHANH'}
+                  ? (cartItems.length > 0 ? `Ghi nợ (${cartItems.length})` : 'Xác nhận')
+                  : 'Ghi nợ nhanh'}
               </Text>
             )}
           </TouchableOpacity>
@@ -930,7 +994,7 @@ const styles = StyleSheet.create({
     color: COLORS.dangerDark,
   },
 
-  // ── Chọn sản phẩm (thu gọn chiều cao và margin) ──────────────────────────
+  // ── Chọn sản phẩm dạng Select Dropdown ────────────────────────────────
   label: {
     fontSize: 14,
     fontWeight: FONTS.weightBold,
@@ -939,61 +1003,176 @@ const styles = StyleSheet.create({
   },
   productsContainer: {
     marginBottom: 10,
+    // Cho phép dropdown nổi lên trên các phần tử khác
+    zIndex: 100,
   },
-  productSearchInput: {
-    backgroundColor: COLORS.inputBg,
+  // Hàng chứa ô select + nút thêm thịt
+  selectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 0,
+  },
+  // Ô Select chính (giống input nhưng có chevron)
+  selectTrigger: {
+    flex: 1,
     height: 42,
+    backgroundColor: COLORS.inputBg,
     borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 15,
-    color: COLORS.text,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  selectTriggerActive: {
+    borderColor: COLORS.danger,
+    borderWidth: 1.5,
+  },
+  selectTriggerSelected: {
+    borderColor: COLORS.danger,
+    backgroundColor: COLORS.dangerLight,
+  },
+  selectTriggerText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    flex: 1,
+  },
+  selectTriggerPlaceholder: {
+    color: COLORS.textLight,
+    fontWeight: '400',
+  },
+  selectChevron: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginLeft: 4,
+  },
+  // Nút X trong ô select để xóa lựa chọn
+  selectClearBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: COLORS.danger,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  selectClearText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#fff',
+    lineHeight: 11,
+  },
+  // Nút + thêm thịt nằm cạnh ô select
+  addProductBtn: {
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#FAF8F6',
+    borderWidth: 1.5,
+    borderColor: '#7F1D1D',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  addProductBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#7F1D1D',
+  },
+  // Dropdown container nổi lên
+  dropdownContainer: {
+    position: 'absolute',
+    top: 44,
+    left: 0,
+    right: 50, // Chừa chỗ cho nút + bên phải
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 10,
+    zIndex: 200,
+    overflow: 'hidden',
+  },
+  // Hàng tìm kiếm bên trong dropdown
+  dropdownSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  dropdownSearchInput: {
+    flex: 1,
+    height: 36,
+    fontSize: 14,
+    color: COLORS.text,
+    paddingVertical: 0,
+    paddingHorizontal: 10,
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  // Nút X xóa text tìm kiếm trong dropdown
+  dropdownClearBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: COLORS.textLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
+  },
+  dropdownClearText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#fff',
+    lineHeight: 11,
+  },
+  // Danh sách item trong dropdown
+  dropdownList: {
+    maxHeight: 180,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  dropdownItemSelected: {
+    backgroundColor: COLORS.dangerLight,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    flex: 1,
+  },
+  dropdownItemTextSelected: {
+    color: COLORS.dangerDark,
+  },
+  dropdownItemPrice: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginLeft: 8,
   },
   noProductSearchText: {
     color: COLORS.textSecondary,
     fontSize: 14,
     paddingVertical: 10,
     textAlign: 'center',
-  },
-  productBadge: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: COLORS.inputBg,
-    marginRight: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    minWidth: 80,
-  },
-  productBadgeSelected: {
-    backgroundColor: COLORS.dangerLight,
-    borderColor: COLORS.danger,
-  },
-  productBadgeText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  productBadgeTextSelected: {
-    color: COLORS.dangerDark,
-  },
-  productBadgePrice: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  addProductBadge: {
-    backgroundColor: '#FAF8F6',
-    borderColor: '#7F1D1D',
-    borderStyle: 'dashed',
-  },
-  addProductBadgeText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#7F1D1D',
   },
 
   // ── Form scroll ─────────────────────────────────────────────────────────
@@ -1120,36 +1299,38 @@ const styles = StyleSheet.create({
     color: COLORS.primaryDark,
   },
 
-  // ── Các nút hành động (đã giảm height và margin) ────────────────────────
+  // ── Các nút hành động (thu gọn, tối ưu height) ──────────────────────────
   buttonContainer: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     marginTop: 2,
   },
   button: {
     flex: 1,
-    height: 44,
-    borderRadius: 10,
+    height: 38,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   cancelButton: {
+    flex: 0.65, // Nút hủy nhỏ hơn nút ghi nợ
     backgroundColor: COLORS.inputBg,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   cancelButtonText: {
     color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 13,
+    fontWeight: '600',
   },
   submitButton: {
+    flex: 1.35, // Nút ghi nợ lớn hơn nút hủy
     backgroundColor: COLORS.danger,
     shadowColor: COLORS.danger,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
   submitDisabled: {
     backgroundColor: COLORS.textLight,
@@ -1158,7 +1339,7 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
   },
 });
