@@ -75,6 +75,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [currentProduct, setCurrentProduct] = useState(null);
   const [currentQuantity, setCurrentQuantity] = useState('');
   const [currentPrice, setCurrentPrice] = useState('');
+  const [productSearch, setProductSearch] = useState('');
 
   // Thông tin chung cho cả đơn hàng
   const [dateStr, setDateStr] = useState(getTodayFormatted());
@@ -111,6 +112,10 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const products = (productsResponse?.data || []).filter(
     (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
   );
+  const normalizedProductSearch = productSearch.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const filteredProducts = products.filter((product) =>
+    product.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(normalizedProductSearch)
+  );
 
   // ─── Phơi bày open/close ra component cha ─────────────────────────────
   useImperativeHandle(ref, () => ({
@@ -119,6 +124,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setCurrentProduct(null);
       setCurrentQuantity('');
       setCurrentPrice('');
+      setProductSearch('');
       setError('');
       setErrorField('');
       
@@ -511,6 +517,17 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
               {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua (lướt ngang để xem loại thịt):'}
             </Text>
             <View style={styles.productsContainer}>
+              {products.length > 0 && (
+                <TextInput
+                  style={styles.productSearchInput}
+                  placeholder="🔍 Tìm nhanh loại thịt..."
+                  placeholderTextColor={COLORS.textLight}
+                  value={productSearch}
+                  onChangeText={setProductSearch}
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+              )}
               {products.length === 0 ? (
                 <TouchableOpacity
                   style={[styles.productBadge, styles.addProductBadge]}
@@ -529,7 +546,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                     <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
                     <Text style={styles.productBadgePrice}>Tạo mới</Text>
                   </TouchableOpacity>
-                  {products.map((p) => {
+                  {filteredProducts.map((p) => {
                     const isSelected = currentProduct?.id === p.id;
                     return (
                       <TouchableOpacity
@@ -547,6 +564,9 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                     );
                   })}
                 </ScrollView>
+              )}
+              {products.length > 0 && filteredProducts.length === 0 && (
+                <Text style={styles.noProductSearchText}>Không tìm thấy loại thịt phù hợp.</Text>
               )}
             </View>
             {errorField === 'product' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
@@ -912,6 +932,23 @@ const styles = StyleSheet.create({
   },
   productsContainer: {
     marginBottom: 10,
+  },
+  productSearchInput: {
+    backgroundColor: COLORS.inputBg,
+    height: 42,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 8,
+  },
+  noProductSearchText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    paddingVertical: 10,
+    textAlign: 'center',
   },
   productBadge: {
     paddingVertical: 6,

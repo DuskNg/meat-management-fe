@@ -1563,7 +1563,7 @@ export default function DashboardScreen() {
           onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
           onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
         />
-        <EditDebtModal ref={editDebtModalRef} onRefresh={handleRefreshBadAll} />
+        <EditDebtModal ref={editDebtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshBadAll} />
         <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshBadAll} />
       </SafeAreaView>
     );
@@ -2332,7 +2332,7 @@ export default function DashboardScreen() {
         onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
         onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
       />
-      <EditDebtModal ref={editDebtModalRef} onRefresh={handleRefreshAll} />
+      <EditDebtModal ref={editDebtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshAll} />
       <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} />
       <DailyReportModal ref={dailyReportModalRef} onRefresh={handleRefreshAll} />
     </SafeAreaView>

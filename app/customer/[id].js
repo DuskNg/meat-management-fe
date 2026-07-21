@@ -1150,7 +1150,7 @@ export default function CustomerDetailScreen() {
         onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
         onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
       />
-      <EditDebtModal ref={editDebtModalRef} onRefresh={handleRefreshAll} />
+      <EditDebtModal ref={editDebtModalRef} customerId={id} onRefresh={handleRefreshAll} />
       <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} />
       <EditCustomerModal ref={editCustomerModalRef} onRefresh={handleRefreshAll} />
       <MonthDetailDrawer

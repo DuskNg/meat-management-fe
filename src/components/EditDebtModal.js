@@ -20,7 +20,7 @@ import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
 
-const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
+const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, ref) => {
   // ─── Helper: Chuyển ISO date string/Date object sang DD/MM/YYYY ───────────
   const formatDateToDisplay = (dateInput) => {
     if (!dateInput) return '';
@@ -78,6 +78,8 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [currentProduct, setCurrentProduct] = useState(null);
   const [currentQuantity, setCurrentQuantity] = useState('');
   const [currentPrice, setCurrentPrice] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [editingItemId, setEditingItemId] = useState(null);
 
   // Thông tin chung của cả hóa đơn
   const [dateStr, setDateStr] = useState('');
@@ -106,13 +108,17 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
   const products = (productsResponse?.data || []).filter(
     (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
   );
+  const normalizedProductSearch = productSearch.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const filteredProducts = products.filter((product) =>
+    product.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(normalizedProductSearch)
+  );
 
   // ─── Phơi bày open/close ra ngoài cho component cha ───────────────────
   useImperativeHandle(ref, () => ({
     open: (transaction) => {
       if (!transaction) return;
       setTransactionId(transaction.id);
-      setCustomerId(transaction.customerId); // Lưu ID của khách hàng
+      setCustomerId(transaction.customerId || ownerCustomerId); // Ưu tiên ID trong giao dịch, fallback sang khách hàng đang xem
       
       // Nhóm và cộng dồn các mặt hàng cùng loại thịt từ lịch sử
       const mergedMap = {};
@@ -153,6 +159,8 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
       setCurrentProduct(null);
       setCurrentQuantity('');
       setCurrentPrice('');
+      setProductSearch('');
+      setEditingItemId(null);
       setDateStr(formatDateToDisplay(transaction.date));
       setNote(transaction.note || '');
       setError('');
@@ -165,6 +173,15 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
   const handleSelectProduct = (product) => {
     setCurrentProduct(product);
     setCurrentPrice(formatNumberString(product.defaultPrice.toString()));
+    setEditingItemId(null);
+    setError('');
+  };
+
+  const handleEditCartItem = (item) => {
+    setCurrentProduct(item.product);
+    setCurrentQuantity(item.displayQuantity);
+    setCurrentPrice(item.displayPrice);
+    setEditingItemId(item.tempId);
     setError('');
   };
 
@@ -187,6 +204,19 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
     const p = parseNumberString(currentPrice);
     if (p <= 0) {
       setError('Đơn giá phải lớn hơn 0.');
+      return;
+    }
+
+    if (editingItemId !== null) {
+      setCartItems((prev) => prev.map((item) => item.tempId === editingItemId
+        ? { ...item, quantity: q, price: p, displayQuantity: currentQuantity, displayPrice: currentPrice, amount: q * p }
+        : item
+      ));
+      setEditingItemId(null);
+      setCurrentProduct(null);
+      setCurrentQuantity('');
+      setCurrentPrice('');
+      setError('');
       return;
     }
 
@@ -335,7 +365,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
             <ScrollView style={styles.cartItemsScroll} nestedScrollEnabled={true}>
               {cartItems.map((item) => (
                 <View key={item.tempId} style={styles.cartItem}>
-                  <View style={styles.cartItemInfo}>
+                  <TouchableOpacity style={styles.cartItemInfo} onPress={() => handleEditCartItem(item)}>
                     <Text style={styles.cartItemText}>
                       <Text style={styles.cartItemName}>{item.product.name}</Text>
                       <Text style={styles.cartItemMeta}>
@@ -345,8 +375,14 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
                         </Text>
                       </Text>
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                   {/* Nút xóa mặt hàng khỏi giỏ */}
+                  <TouchableOpacity
+                    style={styles.cartEditBtn}
+                    onPress={() => handleEditCartItem(item)}
+                  >
+                    <Text style={styles.cartEditText}>✏️ Sửa</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.cartRemoveBtn}
                     onPress={() => handleRemoveFromCart(item.tempId)}
@@ -364,6 +400,17 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
           {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua (lướt ngang để xem loại thịt):'}
         </Text>
         <View style={styles.productsContainer}>
+          {products.length > 0 && (
+            <TextInput
+              style={styles.productSearchInput}
+              placeholder="🔍 Tìm nhanh loại thịt..."
+              placeholderTextColor={COLORS.textLight}
+              value={productSearch}
+              onChangeText={setProductSearch}
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+          )}
           {products.length === 0 ? (
             <TouchableOpacity
               style={[styles.productBadge, styles.addProductBadge]}
@@ -382,7 +429,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
                 <Text style={addProductBadgeText => styles.addProductBadgeText}>➕ Thêm thịt</Text>
                 <Text style={styles.productBadgePrice}>Tạo mới</Text>
               </TouchableOpacity>
-              {products.map((p) => {
+              {filteredProducts.map((p) => {
                 const isSelected = currentProduct?.id === p.id;
                 return (
                   <TouchableOpacity
@@ -400,6 +447,9 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
                 );
               })}
             </ScrollView>
+          )}
+          {products.length > 0 && filteredProducts.length === 0 && (
+            <Text style={styles.noProductSearchText}>Không tìm thấy loại thịt phù hợp.</Text>
           )}
         </View>
 
@@ -452,7 +502,7 @@ const EditDebtModal = forwardRef(({ onRefresh }, ref) => {
 
               {/* Nút thêm vào giỏ hàng */}
               <TouchableOpacity style={styles.addToCartBtn} onPress={handleAddToCart}>
-                <Text style={styles.addToCartText}>➕ THÊM VÀO ĐƠN</Text>
+                <Text style={styles.addToCartText}>{editingItemId !== null ? '💾 CẬP NHẬT MẶT HÀNG' : '➕ THÊM VÀO ĐƠN'}</Text>
               </TouchableOpacity>
             </View>
           ) : products.length === 0 ? (
@@ -635,6 +685,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 8,
   },
+  cartEditBtn: {
+    minWidth: 52,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FEF3C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
+    paddingHorizontal: 8,
+  },
+  cartEditText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#92400E',
+  },
   cartRemoveText: {
     fontSize: 11,
     fontWeight: 'bold',
@@ -650,6 +715,23 @@ const styles = StyleSheet.create({
   },
   productsContainer: {
     marginBottom: 10,
+  },
+  productSearchInput: {
+    backgroundColor: COLORS.inputBg,
+    height: 42,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 8,
+  },
+  noProductSearchText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    paddingVertical: 10,
+    textAlign: 'center',
   },
   productBadge: {
     paddingVertical: 6,
