@@ -420,8 +420,14 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
 
-        {/* Thanh chọn giữa 2 hình thức ghi nợ */}
-        <View style={styles.tabContainer}>
+        {/* Cuộn toàn bộ nội dung form để tránh bị đè khi hiển thị bàn phím */}
+        <ScrollView
+          style={styles.mainScroll}
+          contentContainerStyle={styles.mainScrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Thanh chọn giữa 2 hình thức ghi nợ */}
+          <View style={styles.tabContainer}>
           <TouchableOpacity
             style={[styles.tabButton, activeTab === 'manual' && styles.tabButtonActive]}
             onPress={() => {
@@ -571,7 +577,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
             </View>
             {errorField === 'product' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 
-            <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+            <>
               {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
               {currentProduct ? (
                 <View>
@@ -663,20 +669,12 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   />
                 </View>
               )}
-            </ScrollView>
-
-            {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}
-            {cartItems.length > 0 && (
-              <View style={styles.totalContainer}>
-                <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
-                <Text style={styles.totalValue}>{formatCurrency(cartTotal)}</Text>
-              </View>
-            )}
+            </>
           </>
         ) : (
           /* ── TAB GHI NỢ NHANH ── */
           <>
-            <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+            <>
               {/* Nội dung/Tên khoản nợ */}
               <Text style={styles.label}>📝 Nội dung ghi nợ:</Text>
               <TextInput
@@ -729,8 +727,17 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                 value={note}
                 onChangeText={setNote}
               />
-            </ScrollView>
+            </>
           </>
+        )}
+        </ScrollView>
+
+        {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}
+        {activeTab === 'manual' && cartItems.length > 0 && (
+          <View style={styles.totalContainer}>
+            <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
+            <Text style={styles.totalValue}>{formatCurrency(cartTotal)}</Text>
+          </View>
         )}
 
         {/* ── NÚT HỦY / XÁC NHẬN ── */}
@@ -990,9 +997,12 @@ const styles = StyleSheet.create({
   },
 
   // ── Form scroll ─────────────────────────────────────────────────────────
-  formScroll: {
+  mainScroll: {
     flex: 1,
     marginBottom: 10,
+  },
+  mainScrollContent: {
+    paddingBottom: 10,
   },
   numericRow: {
     flexDirection: 'row',

@@ -340,7 +340,13 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
           </TouchableOpacity>
         </View>
 
-        {/* Thông báo lỗi chung */}
+        {/* Cuộn toàn bộ nội dung form để tránh bị đè khi hiển thị bàn phím */}
+        <ScrollView
+          style={styles.mainScroll}
+          contentContainerStyle={styles.mainScrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Thông báo lỗi chung */}
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
         {/* ── NGÀY GHI NỢ ĐƯA LÊN TRÊN CÙNG ĐẦU TIÊN ── */}
@@ -453,7 +459,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
           )}
         </View>
 
-        <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+        <>
           {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
           {currentProduct ? (
             <View>
@@ -465,7 +471,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
                 <TextInput
                   style={[
                     styles.input,
-                    { flex: 1, minWidth: 0, fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 0, borderWidth: 0, height: '100%' }
+                    { flex: 1, minWidth: 0, fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 0 }
                   ]}
                   placeholder="Ví dụ: 1.5"
                   placeholderTextColor={COLORS.textLight}
@@ -529,6 +535,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
               />
             </View>
           )}
+        </>
         </ScrollView>
 
         {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}
@@ -773,9 +780,12 @@ const styles = StyleSheet.create({
   },
 
   // ── Form scroll ─────────────────────────────────────────────────────────
-  formScroll: {
+  mainScroll: {
     flex: 1,
     marginBottom: 10,
+  },
+  mainScrollContent: {
+    paddingBottom: 10,
   },
   numericRow: {
     flexDirection: 'row',
