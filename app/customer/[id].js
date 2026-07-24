@@ -99,29 +99,43 @@ export default function CustomerDetailScreen() {
       }, 100);
     } else {
       const items = results.map((result) => {
-        const amount = Number(result.amount) || 0;
+        if (result.product) {
+          return {
+            ...result,
+            quantity: Number(result.quantity) || 1,
+            price: Number(result.price) || 0,
+            amount: Number(result.amount) || Math.round((Number(result.quantity) || 1) * (Number(result.price) || 0)),
+            voiceDate: result.voiceDate || responseData.date || firstResult.date,
+            voiceCustomerName: result.voiceCustomerName || customerName || '',
+          };
+        }
+
+        const itemAmt = Number(result.amount) || 0;
         const hasWeight = Number(result.weight_kg) > 0;
-        const quantity = hasWeight ? Number(result.weight_kg) : (result.transaction_type === 'ghi_no_nhanh' ? 1 : 0);
-        const price = hasWeight ? amount / quantity : (quantity ? amount : 0);
+        const qty = hasWeight ? Number(result.weight_kg) : 1;
+        const prc = hasWeight ? itemAmt / qty : itemAmt;
         return {
           product: {
-            name: result.meat_type || 'Thịt lẻ',
-            unit: hasWeight || result.transaction_type === 'ghi_no_thu_cong' ? 'kg' : 'phần',
-            defaultPrice: price
+            name: result.meat_type || 'Tiền hàng',
+            unit: hasWeight ? 'kg' : 'phần',
+            defaultPrice: prc
           },
-          quantity,
-          price,
-          voiceDate: result.date,
-          voiceCustomerName: result.customer_name || customerName,
-          voiceTotalAmount: amount,
+          quantity: qty,
+          price: prc,
+          amount: itemAmt,
+          voiceDate: result.date || responseData.date,
+          voiceCustomerName: result.customer_name || customerName || '',
+          voiceTotalAmount: itemAmt,
         };
       });
+
+      const rawNotes = results.map((result) => result.rawTranscript || result.raw_transcript).filter(Boolean).join(' | ');
 
       scanTicketModalRef.current?.open(
         items,
         sourceTitle,
-        results.map((result) => result.raw_transcript).filter(Boolean).join(' | '),
-        firstResult.date,
+        rawNotes || responseData.rawTranscript || '',
+        responseData.date || firstResult.date,
         customerName,
         activeCustomerId
       );
@@ -1114,19 +1128,13 @@ export default function CustomerDetailScreen() {
             <TouchableOpacity
               style={[
                 styles.actionButton,
-                isRecording ? styles.btnRecording : styles.btnVoice,
-                { opacity: 0.5 }
+                styles.btnVoice,
+                styles.actionButtonDisabled,
               ]}
-              onPress={handleVoicePress}
               disabled={true}
+              onPress={handleVoicePress}
             >
-              {scanning ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : isRecording ? (
-                <Text style={styles.actionButtonText}>🔴 ĐANG GHI... (BẤM DỪNG)</Text>
-              ) : (
-                <Text style={styles.actionButtonText}>🎤 NÓI GHI NỢ</Text>
-              )}
+              <Text style={styles.actionButtonText}>🎤 NÓI GHI NỢ</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.btnDebt]}
@@ -1532,6 +1540,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...SHADOWS.card,
+  },
+  actionButtonDisabled: {
+    opacity: 0.45,
   },
   btnDebt: {
     backgroundColor: COLORS.danger,

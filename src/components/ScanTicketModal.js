@@ -260,7 +260,7 @@ const DebtItem = ({ item, products, onUpdate, onRemove }) => {
 };
 
 // --- Component một đơn nợ (nhóm cùng khách trong cùng ngày) ---
-const DebtOrder = ({ order, customers, products, onUpdateOrder, onUpdateItem, onRemoveItem, onPressImage }) => {
+const DebtOrder = ({ order, customers, products, onUpdateOrder, onUpdateItem, onRemoveItem, onAddItem, onAddQuickDebtItem, onPressImage }) => {
   const [expanded, setExpanded] = useState(true);
   const selectedCustomer = customers.find((c) => c.id === order.selectedCustomerId) || null;
   const displayedCustomer = selectedCustomer || (order.customerName ? { name: order.customerName } : null);
@@ -368,6 +368,25 @@ const DebtOrder = ({ order, customers, products, onUpdateOrder, onUpdateItem, on
                 />
               </View>
             ))}
+          </View>
+
+          {/* Nút bấm thêm dòng ghi nợ nhanh hoặc thêm mặt hàng */}
+          <View style={styles.addOrderButtonsRow}>
+            <TouchableOpacity
+              style={styles.btnQuickDebtCompact}
+              onPress={() => onAddQuickDebtItem && onAddQuickDebtItem(order.orderKey)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.btnQuickDebtCompactText}>⚡ + Ghi nợ nhanh</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.btnAddItemCompact}
+              onPress={() => onAddItem && onAddItem(order.orderKey)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.btnAddItemCompactText}>🥩 + Thêm mặt hàng</Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -559,6 +578,65 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
           items: order.items.filter((item) => item.tempId !== tempId),
         };
       }).filter((order) => order.items.length > 0)
+    );
+  };
+
+  // --- Thêm mặt hàng thịt mới vào đơn ---
+  const handleAddItem = (orderKey) => {
+    setOrders((prev) =>
+      prev.map((order) => {
+        if (order.orderKey !== orderKey) return order;
+        const newItem = {
+          tempId: `${Date.now()}-${Math.random()}`,
+          orderKey,
+          voiceDate: order.voiceDate,
+          voiceCustomerName: order.customerName,
+          ticketLabel: order.ticketLabel,
+          ticketImage: order.ticketImage,
+          product: { name: 'Thịt lẻ', unit: 'kg' },
+          selectedProductId: null,
+          quantity: 1,
+          price: 0,
+          amount: 0,
+          displayQuantity: '1',
+          displayPrice: '0',
+          displayAmount: '0',
+        };
+        return {
+          ...order,
+          items: [...order.items, newItem],
+        };
+      })
+    );
+  };
+
+  // --- Thêm dòng ghi nợ nhanh vào đơn ---
+  const handleAddQuickDebtItem = (orderKey) => {
+    setOrders((prev) =>
+      prev.map((order) => {
+        if (order.orderKey !== orderKey) return order;
+        const newItem = {
+          tempId: `${Date.now()}-${Math.random()}`,
+          orderKey,
+          voiceDate: order.voiceDate,
+          voiceCustomerName: order.customerName,
+          ticketLabel: order.ticketLabel,
+          ticketImage: order.ticketImage,
+          product: { name: 'Tiền hàng', unit: 'phần' },
+          selectedProductId: null,
+          quantity: 1,
+          price: 0,
+          amount: 0,
+          displayQuantity: '1',
+          displayPrice: '0',
+          displayAmount: '0',
+          isQuickDebt: true,
+        };
+        return {
+          ...order,
+          items: [...order.items, newItem],
+        };
+      })
     );
   };
 
@@ -830,6 +908,8 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
                     onUpdateOrder={(updates) => handleUpdateOrder(order.orderKey, updates)}
                     onUpdateItem={(tempId, updates) => handleUpdateItem(order.orderKey, tempId, updates)}
                     onRemoveItem={(tempId) => handleRemoveItem(order.orderKey, tempId)}
+                    onAddItem={(orderKey) => handleAddItem(orderKey)}
+                    onAddQuickDebtItem={(orderKey) => handleAddQuickDebtItem(orderKey)}
                     onPressImage={(url) => imagePreviewModalRef.current?.open(url)}
                   />
                 </View>
@@ -1542,5 +1622,42 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     zIndex: 10,
     elevation: 10,
+  },
+  addOrderButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#FAFAFA',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  btnQuickDebtCompact: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  btnQuickDebtCompactText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#D97706',
+  },
+  btnAddItemCompact: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  btnAddItemCompactText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#2563EB',
   },
 });

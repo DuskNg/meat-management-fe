@@ -11,6 +11,7 @@ import {
   StatusBar,
   Platform,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -353,7 +354,16 @@ export default function DashboardScreen() {
       return;
     }
 
-    if (results.length === 1 && firstResult.status === 'incomplete') {
+    if (firstResult.status === 'unrelated' || firstResult.transaction_type === 'unrelated') {
+      popupModalRef.current?.show({
+        title: 'Không nhận diện được nội dung ghi nợ',
+        message: 'Câu thoại không liên quan đến cấu trúc ghi nợ. Vui lòng nói ngày, tên khách hàng và số tiền (hoặc loại thịt và khối lượng).',
+        type: 'warning'
+      });
+      return;
+    }
+
+    if (firstResult.status === 'incomplete') {
       popupModalRef.current?.show({
         title: 'Thông tin chưa đầy đủ',
         message: `Câu thoại thiếu thông tin bắt buộc: ${(firstResult.missing_fields || []).join(', ')}. Vui lòng bổ sung đầy đủ.`,
@@ -362,7 +372,7 @@ export default function DashboardScreen() {
       return;
     }
 
-    if (results.length === 1 && firstResult.transaction_type === 'tra_tien') {
+    if (firstResult.transaction_type === 'tra_tien') {
       if (customerId) {
         setSelectedCustomerId(customerId);
         setTimeout(() => {
@@ -375,35 +385,51 @@ export default function DashboardScreen() {
           type: 'warning'
         });
       }
-    } else {
-      const items = results.map((result) => {
-        const amount = Number(result.amount) || 0;
-        const hasWeight = Number(result.weight_kg) > 0;
-        const quantity = hasWeight ? Number(result.weight_kg) : (result.transaction_type === 'ghi_no_nhanh' ? 1 : 0);
-        const price = hasWeight ? amount / quantity : (quantity ? amount : 0);
-        return {
-          product: {
-            name: result.meat_type || 'Thịt lẻ',
-            unit: hasWeight || result.transaction_type === 'ghi_no_thu_cong' ? 'kg' : 'phần',
-            defaultPrice: price
-          },
-          quantity,
-          price,
-          voiceDate: result.date,
-          voiceCustomerName: result.customer_name || customerName,
-          voiceTotalAmount: amount,
-        };
-      });
-
-      scanTicketModalRef.current?.open(
-        items,
-        sourceTitle,
-        results.map((result) => result.raw_transcript).filter(Boolean).join(' | '),
-        firstResult.date,
-        customerName,
-        customerId
-      );
+      return;
     }
+
+    // Luồng Ghi nợ: Chuẩn hóa danh sách items
+    const items = results.map((result) => {
+      if (result.product) {
+        return {
+          ...result,
+          quantity: Number(result.quantity) || 1,
+          price: Number(result.price) || 0,
+          amount: Number(result.amount) || Math.round((Number(result.quantity) || 1) * (Number(result.price) || 0)),
+          voiceDate: result.voiceDate || responseData.date || firstResult.date,
+          voiceCustomerName: result.voiceCustomerName || customerName || '',
+        };
+      }
+
+      const itemAmt = Number(result.amount) || 0;
+      const hasWeight = Number(result.weight_kg) > 0;
+      const qty = hasWeight ? Number(result.weight_kg) : 1;
+      const prc = hasWeight ? itemAmt / qty : itemAmt;
+      return {
+        product: {
+          name: result.meat_type || 'Tiền hàng',
+          unit: hasWeight ? 'kg' : 'phần',
+          defaultPrice: prc
+        },
+        quantity: qty,
+        price: prc,
+        amount: itemAmt,
+        voiceDate: result.date || responseData.date,
+        voiceCustomerName: result.customer_name || customerName || '',
+        voiceTotalAmount: itemAmt,
+      };
+    });
+
+    const rawNotes = results.map((result) => result.rawTranscript || result.raw_transcript).filter(Boolean).join(' | ');
+
+    scanTicketModalRef.current?.open(
+      items,
+      sourceTitle,
+      rawNotes || responseData.rawTranscript || '',
+      responseData.date || firstResult.date,
+      customerName,
+      customerId
+    );
   };
 
   // Hộp thoại nhập chữ dự phòng khi thiết bị không hỗ trợ hoặc lỗi micro
@@ -2172,12 +2198,15 @@ export default function DashboardScreen() {
                   <View style={styles.dailyCollectedSection}>
                     <Text style={styles.dailyCollectedTitle}>Tiền đã thu từng ngày</Text>
                     {dailyCollectedRows.length > 0 ? (
-                      dailyCollectedRows.map((row) => (
-                        <View key={row.dateKey} style={styles.dailyCollectedRow}>
-                          <Text style={styles.dailyCollectedDate}>{formatPaymentDate(row.dateKey)}</Text>
-                          <Text style={styles.dailyCollectedAmount}>{formatCurrency(row.amount)}</Text>
-                        </View>
-                      ))
+                      // Thanh cuộn cho danh sách tiền đã thu từng ngày
+                      <ScrollView style={styles.dailyCollectedScroll} nestedScrollEnabled={true}>
+                        {dailyCollectedRows.map((row) => (
+                          <View key={row.dateKey} style={styles.dailyCollectedRow}>
+                            <Text style={styles.dailyCollectedDate}>{formatPaymentDate(row.dateKey)}</Text>
+                            <Text style={styles.dailyCollectedAmount}>{formatCurrency(row.amount)}</Text>
+                          </View>
+                        ))}
+                      </ScrollView>
                     ) : (
                       <Text style={styles.dailyCollectedEmpty}>Chưa có khoản thu nào.</Text>
                     )}
@@ -2224,12 +2253,12 @@ export default function DashboardScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionRowButton, styles.btnVoice, isRecording && styles.btnVoiceRecording, { opacity: 0.5 }]}
+            style={[styles.actionRowButton, styles.btnVoice, styles.actionRowButtonDisabled]}
+            disabled={true}
             onPress={handleToggleRecording}
             activeOpacity={0.7}
-            disabled={true}
           >
-            <Text style={styles.actionRowButtonTextWhite}>{isRecording ? 'Đang nói...' : 'Giọng nói'}</Text>
+            <Text style={styles.actionRowButtonTextWhite}>Giọng nói</Text>
           </TouchableOpacity>
         </View>
 
@@ -2552,6 +2581,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FEE2E2',
     padding: 10,
+  },
+  dailyCollectedScroll: {
+    maxHeight: 150, // Giới hạn chiều cao để xuất hiện thanh cuộn khi có nhiều dòng
   },
   dailyCollectedTitle: {
     fontSize: 12,
