@@ -357,7 +357,7 @@ export default function CustomerDetailScreen() {
     popupModalRef.current?.show({
       title: 'Hướng dẫn ghi nợ bằng giọng nói',
       icon: '📸',
-      message: '🎤 HƯỚNG DẪN GHI NỢ GIỌNG NÓI\n\n1. Ghi nợ thủ công\nNói: ngày → tên khách → số lượng + loại thịt → giá.\nVí dụ: “Hôm nay, anh Khải, 1,2 cân bắp bò, giá 28.”\n\n2. Ghi nợ nhanh\nNói: ngày → tên khách → ghi nợ nhanh → số tiền.\nVí dụ: “Hôm qua, chị Lan, ghi nợ nhanh 500 nghìn.”\n\n💡 Chú thích: Không cần đọc ngày cụ thể, bạn có thể nói "hôm nay", "ngày mai", "hôm qua", "mai"... hoặc bỏ qua ngày (mặc định lấy ngày hôm nay).',
+      message: '🎤 HƯỚNG DẪN GHI NỢ GIỌNG NÓI\n\n1. **Ghi nợ thủ công**\nNói: ngày → tên khách → số lượng + loại thịt → giá.\nVí dụ: “Hôm nay, anh Khải, 1,2 cân bắp bò, giá 28.”\n\n2. **Ghi nợ nhanh**\nNói: ngày → tên khách → ghi nợ nhanh → số tiền.\nVí dụ: “Hôm qua, chị Lan, ghi nợ nhanh 500 nghìn.”\n\n💡 Chú thích: Không cần đọc ngày cụ thể, bạn có thể nói "hôm nay", "ngày mai", "hôm qua", "mai"... hoặc bỏ qua ngày (mặc định lấy ngày hôm nay).',
       type: 'confirm',
       confirmText: 'Bắt đầu nói',
       cancelText: 'Để sau',
@@ -1129,12 +1129,15 @@ export default function CustomerDetailScreen() {
               style={[
                 styles.actionButton,
                 styles.btnVoice,
-                styles.actionButtonDisabled,
+                isRecording && { backgroundColor: '#EF4444', borderColor: '#DC2626' },
+                scanning && styles.actionButtonDisabled,
               ]}
-              disabled={true}
+              disabled={scanning}
               onPress={handleVoicePress}
             >
-              <Text style={styles.actionButtonText}>🎤 NÓI GHI NỢ</Text>
+              <Text style={styles.actionButtonText}>
+                {scanning ? '🎤 ĐANG PHÂN TÍCH...' : isRecording ? '🔴 DỪNG GHI' : '🎤 NÓI GHI NỢ'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.btnDebt]}

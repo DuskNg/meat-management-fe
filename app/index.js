@@ -57,6 +57,42 @@ const removeDiacritics = (str) => {
     .replace(/Đ/g, 'D');
 };
 
+// Trả về chuỗi danh sách các ngày nghỉ hoặc làm nửa ngày dưới dạng (ngày X, Y)
+const getLeavesText = (leaves) => {
+  if (!leaves || leaves.length === 0) return '';
+  const dayStrings = leaves
+    .map((leaf) => {
+      if (!leaf.date) return '';
+      const dateParts = leaf.date.split('-');
+      if (dateParts.length < 3) return '';
+      const day = parseInt(dateParts[2], 10);
+      if (isNaN(day)) return '';
+      if (leaf.status === 'PRESENT' && leaf.shift === 'HALF') {
+        return `${day} (nửa ngày)`;
+      }
+      return `${day}`;
+    })
+    .filter(Boolean);
+  if (dayStrings.length === 0) return '';
+  return ` (ngày ${dayStrings.join(', ')})`;
+};
+
+// Tính tổng số ngày trong tháng từ chuỗi "MM/YYYY" hoặc mặc định tháng hiện tại
+const getDaysInMonthFromStr = (monthStr) => {
+  if (!monthStr) {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  }
+  const parts = monthStr.split('/');
+  if (parts.length !== 2) {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  }
+  const month = parseInt(parts[0], 10);
+  const year = parseInt(parts[1], 10);
+  return new Date(year, month, 0).getDate();
+};
+
 export default function DashboardScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -791,6 +827,24 @@ export default function DashboardScreen() {
     }
   };
 
+  // Mở popup hướng dẫn người dùng cách nói ghi nợ trước khi thu âm
+  const handleVoicePress = () => {
+    if (isRecording) {
+      handleToggleRecording();
+      return;
+    }
+
+    popupModalRef.current?.show({
+      title: 'Hướng dẫn ghi nợ bằng giọng nói',
+      icon: '🎙️',
+      message: '🎤 HƯỚNG DẪN GHI NỢ GIỌNG NÓI\n\n1. **Ghi nợ thủ công**\nNói: ngày → tên khách → số lượng + loại thịt → giá.\nVí dụ: “Hôm nay, anh Khải, 1,2 cân bắp bò, giá 28.”\n\n2. **Ghi nợ nhanh**\nNói: ngày → tên khách → ghi nợ nhanh → số tiền.\nVí dụ: “Hôm qua, chị Lan, ghi nợ nhanh 500 nghìn.”\n\n💡 Chú thích: Không cần đọc ngày cụ thể, bạn có thể nói "hôm nay", "ngày mai", "hôm qua", "mai"... hoặc bỏ qua ngày (mặc định lấy ngày hôm nay).',
+      type: 'confirm',
+      confirmText: 'Bắt đầu nói',
+      cancelText: 'Để sau',
+      onConfirm: handleToggleRecording,
+    });
+  };
+
   const customers = customersResponse?.data || [];
   const customerIdSet = new Set(customers.map((c) => c.id));
   const customerPayments = (paymentsResponse?.data || []).filter((payment) => customerIdSet.has(payment.customerId));
@@ -1052,6 +1106,9 @@ export default function DashboardScreen() {
                   {formatCurrency(item.baseSalary)}
                 </Text>
                 <Text style={styles.debtValueLabel}>lương tháng</Text>
+                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
+                  (~{formatCurrency(Math.round(item.baseSalary / getDaysInMonthFromStr(salaryMonth)))}/ngày - chia {getDaysInMonthFromStr(salaryMonth)} công)
+                </Text>
               </View>
             </View>
           </View>
@@ -1867,7 +1924,7 @@ export default function DashboardScreen() {
                           <View style={{ flex: 1 }}>
                             <Text style={styles.attendanceEmpName}>{item.name}</Text>
                             <Text style={styles.attendanceEmpRole}>
-                              Đi làm: <Text style={{ fontWeight: 'bold', color: '#0284C7' }}>{item.workingDays}</Text>/{item.totalDaysInMonth} ngày • Nghỉ: <Text style={{ fontWeight: 'bold', color: (item.totalDaysInMonth - item.workingDays) > 0 ? '#EF4444' : '#64748B' }}>{(item.totalDaysInMonth - item.workingDays).toFixed(1).replace('.0', '')}</Text> ngày
+                              Đi làm: <Text style={{ fontWeight: 'bold', color: '#0284C7' }}>{item.workingDays}</Text>/{item.totalDaysInMonth} ngày • Nghỉ: <Text style={{ fontWeight: 'bold', color: (item.totalDaysInMonth - item.workingDays) > 0 ? '#EF4444' : '#64748B' }}>{(item.totalDaysInMonth - item.workingDays).toFixed(1).replace('.0', '')}</Text> ngày{getLeavesText(item.leaves)}
                             </Text>
                           </View>
                           <View style={{ alignItems: 'flex-end' }}>
@@ -2253,12 +2310,19 @@ export default function DashboardScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionRowButton, styles.btnVoice, styles.actionRowButtonDisabled]}
-            disabled={true}
-            onPress={handleToggleRecording}
+            style={[
+              styles.actionRowButton,
+              styles.btnVoice,
+              isRecording && { backgroundColor: '#EF4444', borderColor: '#DC2626' },
+              scanning && styles.actionRowButtonDisabled
+            ]}
+            disabled={scanning}
+            onPress={handleVoicePress}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionRowButtonTextWhite}>Giọng nói</Text>
+            <Text style={styles.actionRowButtonTextWhite}>
+              {scanning ? 'Đang phân tích...' : isRecording ? 'Dừng ghi 🔴' : 'Giọng nói'}
+            </Text>
           </TouchableOpacity>
         </View>
 
