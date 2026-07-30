@@ -1481,6 +1481,24 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
+            {auth.hasPermission('canManageStore') && (
+              <TouchableOpacity
+                style={[styles.menuCard, styles.menuCardActiveStore]}
+                onPress={() => {
+                  router.push('/store');
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.menuCardIconBgStore}>
+                  <Text style={styles.menuCardIcon}>🏪</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={styles.menuCardTitleStore}>Quản lý Cửa hàng</Text>
+                  <Text style={styles.menuCardDescStore}>Quản lý bàn ăn, thực đơn món ăn, thanh toán bàn, doanh thu cửa hàng</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
             {/* Chức năng 2: Quản lý nhân viên */}
             {auth.hasPermission('canManageEmployees') && (
               <TouchableOpacity
@@ -1518,6 +1536,9 @@ export default function DashboardScreen() {
                 </View>
               </TouchableOpacity>
             )}
+
+            {/* Chức năng 5: Quản lý Cửa hàng */}
+
 
 
           </View>
@@ -3617,6 +3638,31 @@ const styles = StyleSheet.create({
   menuCardDescEmployee: {
     fontSize: 12,
     color: '#0284C7',
+    lineHeight: 18,
+  },
+  // ── CSS cho Quản lý Cửa hàng (Store) ───────────────────────
+  menuCardActiveStore: {
+    borderColor: '#DDD6FE', // Viền tím nhạt
+    backgroundColor: '#F5F3FF',
+  },
+  menuCardIconBgStore: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#EDE9FE', // Tím nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  menuCardTitleStore: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#5B21B6', // Tím đậm
+    marginBottom: 4,
+  },
+  menuCardDescStore: {
+    fontSize: 12,
+    color: '#7C3AED',
     lineHeight: 18,
   },
   headerEmployee: {
