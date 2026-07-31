@@ -30,7 +30,7 @@ function RootLayoutNav() {
     if (!isInitialized) return;
 
     const user = useAuthStore.getState().user;
-    
+
     // Kiểm tra phân cụm màn hình hiện tại
     const inAuthGroup = segments[0] === 'login' || (segments[0] === 'admin' && segments[1] === 'login');
     const inAdminGroup = segments[0] === 'admin';

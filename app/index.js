@@ -1493,8 +1493,44 @@ export default function DashboardScreen() {
                   <Text style={styles.menuCardIcon}>🏪</Text>
                 </View>
                 <View style={styles.menuCardContent}>
-                  <Text style={styles.menuCardTitleStore}>Quản lý Cửa hàng</Text>
-                  <Text style={styles.menuCardDescStore}>Quản lý bàn ăn, thực đơn món ăn, thanh toán bàn, doanh thu cửa hàng</Text>
+                  <Text style={styles.menuCardTitleStore}>Quản lý nhà hàng</Text>
+                  <Text style={styles.menuCardDescStore}>Quản lý bàn ăn, thực đơn món ăn, thanh toán bàn, doanh thu nhà hàng</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {auth.hasPermission('canManageShop') && (
+              <TouchableOpacity
+                style={[styles.menuCard, styles.menuCardActiveShop]}
+                onPress={() => {
+                  router.push('/shop');
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.menuCardIconBgShop}>
+                  <Text style={styles.menuCardIcon}>🏪</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={styles.menuCardTitleShop}>Quản lý cửa hàng</Text>
+                  <Text style={styles.menuCardDescShop}>Tính tiền theo giờ (bida, karaoke, giặt đồ...), phụ thu dịch vụ và báo cáo doanh thu</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {auth.hasPermission('canManageInventory') && (
+              <TouchableOpacity
+                style={[styles.menuCard, styles.menuCardActiveInventory]}
+                onPress={() => {
+                  router.push('/inventory');
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.menuCardIconBgInventory}>
+                  <Text style={styles.menuCardIcon}>📦</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={styles.menuCardTitleInventory}>Quản lý kho</Text>
+                  <Text style={styles.menuCardDescInventory}>Xem danh sách tồn kho, thêm sản phẩm và tổng giá trị kho hàng</Text>
                 </View>
               </TouchableOpacity>
             )}
@@ -3439,6 +3475,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#EF4444',
   },
+  workspaceButtonMini: {
+    width: 98,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F3FF', // Tông màu tím nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  workspaceTextMini: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#7C3AED', // Màu chữ tím đậm
+  },
   backButtonNew: {
     width: 90,
     height: 32,
@@ -3663,6 +3714,56 @@ const styles = StyleSheet.create({
   menuCardDescStore: {
     fontSize: 12,
     color: '#7C3AED',
+    lineHeight: 18,
+  },
+  // ── CSS cho Quản lý Cửa hàng Tính giờ (Shop) ───────────────
+  menuCardActiveShop: {
+    borderColor: '#99F6E4', // Viền xanh teal nhạt
+    backgroundColor: '#F0FDFA',
+  },
+  menuCardIconBgShop: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#CCFBF1', // Xanh teal nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  menuCardTitleShop: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0F766E', // Xanh teal đậm
+    marginBottom: 4,
+  },
+  menuCardDescShop: {
+    fontSize: 12,
+    color: '#0D9488',
+    lineHeight: 18,
+  },
+  // ── CSS cho Quản lý Kho (Inventory) ────────────────────────
+  menuCardActiveInventory: {
+    borderColor: '#BFDBFE', // Viền xanh nhạt
+    backgroundColor: '#EFF6FF',
+  },
+  menuCardIconBgInventory: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#DBEAFE', // Xanh nhạt
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  menuCardTitleInventory: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1E40AF', // Xanh dương đậm
+    marginBottom: 4,
+  },
+  menuCardDescInventory: {
+    fontSize: 12,
+    color: '#2563EB',
     lineHeight: 18,
   },
   headerEmployee: {

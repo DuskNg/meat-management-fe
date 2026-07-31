@@ -439,7 +439,7 @@ export default function StoreDashboardScreen() {
         {/* Danh sách các bàn ăn */}
         <View style={styles.listSectionHeader}>
           <Text style={styles.listTitle}>📋 QUẢN LÝ BÀN ({tables.length})</Text>
-          <Text style={styles.legendText}>🟢 Xanh: còn trống  |  🔴 Đỏ: đã có người ngồi</Text>
+          <Text style={styles.legendText}>🟢 Xanh: còn trống  |  🔴 Đỏ: đã đầy</Text>
         </View>
 
         <FlatList

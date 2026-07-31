@@ -187,7 +187,7 @@ const AddMenuModal = forwardRef(({ onRefresh }, ref) => {
   const handleDeleteProduct = async (productId, productName) => {
     popupModalRef.current?.show({
       title: 'Xác nhận xóa món',
-      message: `Bạn có chắc chắn muốn ẩn món ăn "${productName}" khỏi danh mục thực đơn cửa hàng?`,
+      message: `Bạn có chắc chắn muốn ẩn món ăn "${productName}" khỏi danh mục thực đơn nhà hàng?`,
       type: 'confirm',
       confirmText: 'Ẩn đi',
       cancelText: 'Hủy',
@@ -220,7 +220,7 @@ const AddMenuModal = forwardRef(({ onRefresh }, ref) => {
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
         <View style={styles.modalView}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>🏪 QUẢN LÝ THỰC ĐƠN CỬA HÀNG</Text>
+            <Text style={styles.modalTitle}>🏪 QUẢN LÝ THỰC ĐƠN NHÀ HÀNG</Text>
             <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
               <Text style={styles.closeHeaderText}>✕</Text>
             </TouchableOpacity>

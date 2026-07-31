@@ -22,6 +22,9 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
   const [canManageDebt, setCanManageDebt] = useState(false);
   const [canManageBadDebt, setCanManageBadDebt] = useState(false);
   const [canManageEmployees, setCanManageEmployees] = useState(false);
+  const [canManageStore, setCanManageStore] = useState(false);
+  const [canManageInventory, setCanManageInventory] = useState(false);
+  const [canManageShop, setCanManageShop] = useState(false);
 
   // Phơi bày các hàm điều khiển cho component cha gọi qua ref
   useImperativeHandle(ref, () => ({
@@ -31,6 +34,9 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
       setCanManageDebt(targetUser.canManageDebt);
       setCanManageBadDebt(targetUser.canManageBadDebt);
       setCanManageEmployees(targetUser.canManageEmployees);
+      setCanManageStore(targetUser.canManageStore);
+      setCanManageInventory(targetUser.canManageInventory);
+      setCanManageShop(targetUser.canManageShop);
       setErrorMsg('');
       setVisible(true);
     },
@@ -38,6 +44,27 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
       setVisible(false);
     },
   }));
+
+  // Trạng thái tính toán xem đã chọn toàn bộ quyền chưa
+  const isAllSelected = 
+    canManageCustomers && 
+    canManageDebt && 
+    canManageBadDebt && 
+    canManageEmployees && 
+    canManageStore && 
+    canManageInventory &&
+    canManageShop;
+
+  // Bật hoặc tắt toàn bộ quyền
+  const handleToggleAll = (value) => {
+    setCanManageCustomers(value);
+    setCanManageDebt(value);
+    setCanManageBadDebt(value);
+    setCanManageEmployees(value);
+    setCanManageStore(value);
+    setCanManageInventory(value);
+    setCanManageShop(value);
+  };
 
   // Xử lý gửi cập nhật quyền lên server
   const handleSubmit = async () => {
@@ -51,6 +78,9 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
         canManageDebt,
         canManageBadDebt,
         canManageEmployees,
+        canManageStore,
+        canManageInventory,
+        canManageShop,
       });
 
       if (response.data && response.data.success) {
@@ -88,6 +118,20 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
               <Text style={styles.errorText}>{errorMsg}</Text>
             </View>
           ) : null}
+
+          {/* Dòng điều khiển phân quyền: Toàn bộ quyền */}
+          <View style={[styles.row, { borderBottomWidth: 2, borderBottomColor: '#475569', paddingBottom: 16, marginBottom: 8 }]}>
+            <View style={styles.infoCol}>
+              <Text style={[styles.label, { color: '#38BDF8', fontWeight: 'bold' }]}>Toàn bộ quyền</Text>
+              <Text style={styles.desc}>Bật hoặc tắt toàn bộ các quyền hạn của tài khoản.</Text>
+            </View>
+            <Switch
+              value={isAllSelected}
+              onValueChange={handleToggleAll}
+              trackColor={{ false: '#334155', true: '#38BDF8' }}
+              thumbColor={isAllSelected ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
 
           {/* Dòng điều khiển phân quyền 1 */}
           <View style={styles.row}>
@@ -142,6 +186,48 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
               onValueChange={setCanManageEmployees}
               trackColor={{ false: '#334155', true: '#0EA5E9' }}
               thumbColor={canManageEmployees ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
+
+          {/* Dòng điều khiển phân quyền 5 */}
+          <View style={styles.row}>
+            <View style={styles.infoCol}>
+              <Text style={styles.label}>Quản lý nhà hàng</Text>
+              <Text style={styles.desc}>Cho phép quản lý sơ đồ bàn ăn, thực đơn món ăn, đặt món và thanh toán nhà hàng.</Text>
+            </View>
+            <Switch
+              value={canManageStore}
+              onValueChange={setCanManageStore}
+              trackColor={{ false: '#334155', true: '#0EA5E9' }}
+              thumbColor={canManageStore ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
+
+          {/* Dòng điều khiển phân quyền 6 */}
+          <View style={styles.row}>
+            <View style={styles.infoCol}>
+              <Text style={styles.label}>Quản lý kho</Text>
+              <Text style={styles.desc}>Cho phép xem danh sách tồn kho, thêm sản phẩm và theo dõi tổng giá trị kho hàng.</Text>
+            </View>
+            <Switch
+              value={canManageInventory}
+              onValueChange={setCanManageInventory}
+              trackColor={{ false: '#334155', true: '#0EA5E9' }}
+              thumbColor={canManageInventory ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
+
+          {/* Dòng điều khiển phân quyền 7 */}
+          <View style={styles.row}>
+            <View style={styles.infoCol}>
+              <Text style={styles.label}>Quản lý cửa hàng tính giờ</Text>
+              <Text style={styles.desc}>Cho phép quản lý bàn/phòng chơi bida, karaoke, giặt đồ, tính tiền theo giờ và phụ thu...</Text>
+            </View>
+            <Switch
+              value={canManageShop}
+              onValueChange={setCanManageShop}
+              trackColor={{ false: '#334155', true: '#14B8A6' }}
+              thumbColor={canManageShop ? '#FFFFFF' : '#94A3B8'}
             />
           </View>
 

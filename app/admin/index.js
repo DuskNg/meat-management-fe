@@ -9,12 +9,15 @@ import {
   ActivityIndicator,
   SafeAreaView,
   StatusBar,
+  Alert,
+  Platform,
 } from 'react-native';
 import { useAuthStore } from '../../src/store/authStore';
 import { api } from '../../src/api/client';
 import AdminPermissionModal from '../../src/components/AdminPermissionModal';
 import AdminLogsModal from '../../src/components/AdminLogsModal';
 import AdminAiUsageModal from '../../src/components/AdminAiUsageModal';
+import PopupModal from '../../src/components/PopupModal';
 
 export default function AdminDashboard() {
   const authStore = useAuthStore();
@@ -26,6 +29,7 @@ export default function AdminDashboard() {
   const permissionModalRef = useRef(null);
   const logsModalRef = useRef(null);
   const aiUsageModalRef = useRef(null);
+  const popupModalRef = useRef(null);
 
   // Tải danh sách người dùng
   const fetchUsers = async () => {
@@ -55,6 +59,81 @@ export default function AdminDashboard() {
     setUsers((prevUsers) =>
       prevUsers.map((u) => (u.id === updatedUser.id ? { ...u, ...updatedUser.permissions } : u))
     );
+  };
+
+  // Tính số ngày còn lại trước khi xóa vĩnh viễn (tối đa 7 ngày)
+  const getRemainingDays = (deletedAt) => {
+    if (!deletedAt) return 7;
+    const deletedTime = new Date(deletedAt).getTime();
+    const nowTime = new Date().getTime();
+    const diffMs = nowTime - deletedTime;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const remaining = 7 - diffDays;
+    return remaining > 0 ? remaining : 0;
+  };
+
+  // Xử lý xóa mềm tài khoản
+  const handleDeleteUser = (item) => {
+    popupModalRef.current?.show({
+      title: '🗑️ Xóa tạm thời',
+      message: `Bạn có chắc chắn muốn xóa tạm thời tài khoản của **${item.name}** (${item.phone}) không? Tài khoản sẽ bị khóa và xóa vĩnh viễn sau 7 ngày nếu không được khôi phục.`,
+      type: 'confirm',
+      confirmText: 'XÓA TẠM THỜI',
+      cancelText: 'HỦY BỎ',
+      onConfirm: async () => {
+        try {
+          const response = await api.delete(`/admin/users/${item.id}`);
+          if (response.data && response.data.success) {
+            popupModalRef.current?.show({
+              title: 'Thành công',
+              message: `Đã xóa tạm thời tài khoản của **${item.name}**.`,
+              type: 'success',
+              confirmText: 'ĐÓNG',
+            });
+            fetchUsers();
+          }
+        } catch (err) {
+          popupModalRef.current?.show({
+            title: 'Thất bại',
+            message: err.response?.data?.message || 'Lỗi kết nối khi xóa tài khoản.',
+            type: 'error',
+            confirmText: 'ĐÓNG',
+          });
+        }
+      },
+    });
+  };
+
+  // Xử lý khôi phục tài khoản đã xóa mềm
+  const handleRestoreUser = (item) => {
+    popupModalRef.current?.show({
+      title: '🛡️ Khôi phục tài khoản',
+      message: `Bạn muốn khôi phục lại tài khoản của **${item.name}** (${item.phone}) chứ?`,
+      type: 'confirm',
+      confirmText: 'KHÔI PHỤC',
+      cancelText: 'HỦY BỎ',
+      onConfirm: async () => {
+        try {
+          const response = await api.post(`/admin/users/${item.id}/restore`);
+          if (response.data && response.data.success) {
+            popupModalRef.current?.show({
+              title: 'Thành công',
+              message: `Đã khôi phục hoạt động tài khoản của **${item.name}**.`,
+              type: 'success',
+              confirmText: 'ĐÓNG',
+            });
+            fetchUsers();
+          }
+        } catch (err) {
+          popupModalRef.current?.show({
+            title: 'Thất bại',
+            message: err.response?.data?.message || 'Lỗi kết nối khi khôi phục tài khoản.',
+            type: 'error',
+            confirmText: 'ĐÓNG',
+          });
+        }
+      },
+    });
   };
 
   return (
@@ -101,94 +180,172 @@ export default function AdminDashboard() {
               <Text style={styles.emptyText}>Chưa có tài khoản người dùng nào đăng ký.</Text>
             </View>
           ) : (
-            users.map((item) => (
-              <View key={item.id} style={styles.userCard}>
-                <View style={styles.cardHeader}>
-                  <View style={styles.userInfo}>
-                    <Text style={styles.userName}>{item.name}</Text>
-                    <Text style={styles.userPhone}>{item.phone}</Text>
-                  </View>
-                  <View style={[styles.roleBadge, item.isAdmin && styles.adminRoleBadge]}>
-                    <Text style={styles.roleBadgeText}>{item.isAdmin ? 'ADMIN' : 'CHỦ BUÔN'}</Text>
-                  </View>
-                </View>
+            users.map((item) => {
+              const isDeleted = item.isActive === false;
 
-                {/* Danh sách các quyền được cấp */}
-                {!item.isAdmin && (
-                  <View style={styles.permissionsList}>
-                    <Text style={styles.permissionsTitle}>Quyền hiện có:</Text>
-                    <View style={styles.badgesContainer}>
-                      {item.canManageCustomers ? (
-                        <View style={[styles.badge, styles.activeBadge]}>
-                          <Text style={styles.badgeText}>Khách hàng</Text>
-                        </View>
-                      ) : (
-                        <View style={[styles.badge, styles.inactiveBadge]}>
-                          <Text style={styles.badgeText}>Khách hàng</Text>
+              return (
+                <View key={item.id} style={[styles.userCard, isDeleted && { opacity: 0.7, borderColor: '#EF444450' }]}>
+                  <View style={styles.cardHeader}>
+                    <View style={styles.userInfo}>
+                      <Text style={[styles.userName, isDeleted && { color: '#94A3B8', textDecorationLine: 'line-through' }]}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.userPhone}>{item.phone}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      {isDeleted && (
+                        <View style={styles.deletedBadge}>
+                          <Text style={styles.deletedBadgeText}>Còn {getRemainingDays(item.deletedAt)} ngày</Text>
                         </View>
                       )}
-
-                      {item.canManageDebt ? (
-                        <View style={[styles.badge, styles.activeBadge]}>
-                          <Text style={styles.badgeText}>Công nợ</Text>
-                        </View>
-                      ) : (
-                        <View style={[styles.badge, styles.inactiveBadge]}>
-                          <Text style={styles.badgeText}>Công nợ</Text>
-                        </View>
-                      )}
-
-                      {item.canManageBadDebt ? (
-                        <View style={[styles.badge, styles.activeBadge]}>
-                          <Text style={styles.badgeText}>Nợ xấu</Text>
-                        </View>
-                      ) : (
-                        <View style={[styles.badge, styles.inactiveBadge]}>
-                          <Text style={styles.badgeText}>Nợ xấu</Text>
-                        </View>
-                      )}
-
-                      {item.canManageEmployees ? (
-                        <View style={[styles.badge, styles.activeBadge]}>
-                          <Text style={styles.badgeText}>Nhân viên</Text>
-                        </View>
-                      ) : (
-                        <View style={[styles.badge, styles.inactiveBadge]}>
-                          <Text style={styles.badgeText}>Nhân viên</Text>
-                        </View>
-                      )}
+                      <View style={[styles.roleBadge, item.isAdmin && styles.adminRoleBadge]}>
+                        <Text style={styles.roleBadgeText}>{item.isAdmin ? 'ADMIN' : 'CHỦ BUÔN'}</Text>
+                      </View>
                     </View>
                   </View>
-                )}
 
-                {/* Các nút hành động */}
-                {!item.isAdmin && (
-                  <View style={styles.actions}>
-                    <TouchableOpacity
-                      style={styles.permissionBtn}
-                      onPress={() => permissionModalRef.current?.open(item)}
-                    >
-                      <Text style={styles.actionBtnText}>Phân quyền</Text>
-                    </TouchableOpacity>
+                  {/* Danh sách các quyền được cấp (hoặc thông báo xóa mềm) */}
+                  {isDeleted ? (
+                    <View style={styles.permissionsList}>
+                      <Text style={[styles.permissionsTitle, { color: '#EF4444' }]}>
+                        ⚠️ Tài khoản đang bị xóa tạm thời
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#94A3B8', fontStyle: 'italic', lineHeight: 16 }}>
+                        Dữ liệu của tài khoản này được bảo toàn đến hết 7 ngày kể từ lúc xóa, sau đó hệ thống sẽ tự động dọn dẹp vĩnh viễn.
+                      </Text>
+                    </View>
+                  ) : (
+                    !item.isAdmin && (
+                      <View style={styles.permissionsList}>
+                        <Text style={styles.permissionsTitle}>Quyền hiện có:</Text>
+                        <View style={styles.badgesContainer}>
+                          {item.canManageCustomers ? (
+                            <View style={[styles.badge, styles.activeBadge]}>
+                              <Text style={styles.badgeText}>Khách hàng</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.badge, styles.inactiveBadge]}>
+                              <Text style={styles.badgeText}>Khách hàng</Text>
+                            </View>
+                          )}
 
-                    <TouchableOpacity
-                      style={styles.logsBtn}
-                      onPress={() => logsModalRef.current?.open(item)}
-                    >
-                      <Text style={styles.actionBtnText}>Xem Logs</Text>
-                    </TouchableOpacity>
+                          {item.canManageDebt ? (
+                            <View style={[styles.badge, styles.activeBadge]}>
+                              <Text style={styles.badgeText}>Công nợ</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.badge, styles.inactiveBadge]}>
+                              <Text style={styles.badgeText}>Công nợ</Text>
+                            </View>
+                          )}
 
-                    <TouchableOpacity
-                      style={styles.aiUsageBtn}
-                      onPress={() => aiUsageModalRef.current?.open(item)}
-                    >
-                      <Text style={styles.actionBtnText}>💰 Chi phí AI</Text>
-                    </TouchableOpacity>
+                          {item.canManageBadDebt ? (
+                            <View style={[styles.badge, styles.activeBadge]}>
+                              <Text style={styles.badgeText}>Nợ xấu</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.badge, styles.inactiveBadge]}>
+                              <Text style={styles.badgeText}>Nợ xấu</Text>
+                            </View>
+                          )}
 
-                  </View>
-                )}
-              </View>
-            ))
+                          {item.canManageEmployees ? (
+                            <View style={[styles.badge, styles.activeBadge]}>
+                              <Text style={styles.badgeText}>Nhân viên</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.badge, styles.inactiveBadge]}>
+                              <Text style={styles.badgeText}>Nhân viên</Text>
+                            </View>
+                          )}
+
+                          {item.canManageStore ? (
+                            <View style={[styles.badge, styles.activeBadge]}>
+                              <Text style={styles.badgeText}>Nhà hàng</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.badge, styles.inactiveBadge]}>
+                              <Text style={styles.badgeText}>Nhà hàng</Text>
+                            </View>
+                          )}
+
+                          {item.canManageInventory ? (
+                            <View style={[styles.badge, styles.activeBadge]}>
+                              <Text style={styles.badgeText}>Kho</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.badge, styles.inactiveBadge]}>
+                              <Text style={styles.badgeText}>Kho</Text>
+                            </View>
+                          )}
+
+                          {item.canManageShop ? (
+                            <View style={[styles.badge, styles.activeBadge, { borderColor: '#14B8A6', backgroundColor: '#14B8A615' }]}>
+                              <Text style={styles.badgeText}>Cửa hàng</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.badge, styles.inactiveBadge]}>
+                              <Text style={styles.badgeText}>Cửa hàng</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    )
+                  )}
+
+                  {/* Các nút hành động */}
+                  {!item.isAdmin && (
+                    isDeleted ? (
+                      <View style={styles.actions}>
+                        <TouchableOpacity
+                          style={styles.restoreBtn}
+                          onPress={() => handleRestoreUser(item)}
+                        >
+                          <Text style={styles.actionBtnText}>🛡️ Khôi phục</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.logsBtn}
+                          onPress={() => logsModalRef.current?.open(item)}
+                        >
+                          <Text style={styles.actionBtnText}>Xem Logs</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={styles.actions}>
+                        <TouchableOpacity
+                          style={styles.permissionBtn}
+                          onPress={() => permissionModalRef.current?.open(item)}
+                        >
+                          <Text style={styles.actionBtnText}>Phân quyền</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.logsBtn}
+                          onPress={() => logsModalRef.current?.open(item)}
+                        >
+                          <Text style={styles.actionBtnText}>Logs</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.aiUsageBtn}
+                          onPress={() => aiUsageModalRef.current?.open(item)}
+                        >
+                          <Text style={styles.actionBtnText}>💰 AI</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.deleteBtn}
+                          onPress={() => handleDeleteUser(item)}
+                        >
+                          <Text style={styles.actionBtnText}>🗑️ Xóa</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )
+                  )}
+                </View>
+              );
+            })
           )}
         </ScrollView>
       )}
@@ -204,6 +361,9 @@ export default function AdminDashboard() {
       />
       <AdminAiUsageModal
         ref={aiUsageModalRef}
+      />
+      <PopupModal
+        ref={popupModalRef}
       />
     </SafeAreaView>
   );
@@ -413,6 +573,31 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 14,
     borderRadius: 6,
+  },
+  deleteBtn: {
+    backgroundColor: '#EF4444',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 6,
+  },
+  restoreBtn: {
+    backgroundColor: '#10B981',
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  deletedBadge: {
+    backgroundColor: '#EF444415',
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  deletedBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#EF4444',
   },
   actionBtnText: {
     color: '#FFFFFF',
