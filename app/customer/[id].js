@@ -1129,14 +1129,13 @@ export default function CustomerDetailScreen() {
               style={[
                 styles.actionButton,
                 styles.btnVoice,
-                isRecording && { backgroundColor: '#EF4444', borderColor: '#DC2626' },
-                scanning && styles.actionButtonDisabled,
+                { opacity: 0.5, backgroundColor: '#E2E8F0', borderColor: '#CBD5E1' } // Vô hiệu hóa nút giọng nói
               ]}
-              disabled={scanning}
+              disabled={true}
               onPress={handleVoicePress}
             >
-              <Text style={styles.actionButtonText}>
-                {scanning ? '🎤 ĐANG PHÂN TÍCH...' : isRecording ? '🔴 DỪNG GHI' : '🎤 NÓI GHI NỢ'}
+              <Text style={[styles.actionButtonText, { color: '#94A3B8' }]}>
+                🎤 NÓI GHI NỢ (ĐÃ TẮT)
               </Text>
             </TouchableOpacity>
             <TouchableOpacity

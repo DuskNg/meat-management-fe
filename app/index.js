@@ -2370,15 +2370,14 @@ export default function DashboardScreen() {
             style={[
               styles.actionRowButton,
               styles.btnVoice,
-              isRecording && { backgroundColor: '#EF4444', borderColor: '#DC2626' },
-              scanning && styles.actionRowButtonDisabled
+              { opacity: 0.5, backgroundColor: '#E2E8F0', borderColor: '#CBD5E1' } // Vô hiệu hóa nút giọng nói
             ]}
-            disabled={scanning}
+            disabled={true}
             onPress={handleVoicePress}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionRowButtonTextWhite}>
-              {scanning ? 'Đang phân tích...' : isRecording ? 'Dừng ghi 🔴' : 'Giọng nói'}
+            <Text style={[styles.actionRowButtonTextWhite, { color: '#94A3B8' }]}>
+              Giọng nói (Tắt)
             </Text>
           </TouchableOpacity>
         </View>
