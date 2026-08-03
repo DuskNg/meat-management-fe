@@ -632,10 +632,11 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    flexWrap: 'wrap',
     borderTopWidth: 1,
     borderTopColor: '#334155',
     paddingTop: 12,
-    gap: 12,
+    gap: 8,
   },
   permissionBtn: {
     backgroundColor: '#0EA5E9',
