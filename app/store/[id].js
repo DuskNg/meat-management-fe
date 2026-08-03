@@ -22,7 +22,10 @@ import ScanInvoiceModal from '../../src/components/store/ScanInvoiceModal';
 import StorePopupModal from '../../src/components/store/StorePopupModal';
 import { startNativeRecording, stopNativeRecording } from '../../src/utils/mediaActions';
 
+import { useAuthStore } from '../../src/store/authStore';
+
 export default function TableDetailScreen() {
+  const auth = useAuthStore();
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const [isRecording, setIsRecording] = useState(false);
@@ -45,6 +48,7 @@ export default function TableDetailScreen() {
       const response = await api.get(`/store/customers/${id}`);
       return response.data;
     },
+    enabled: !!id && auth.hasPermission('canManageStore'),
   });
 
   // 2. Tải danh sách đơn đặt món (giao dịch) của bàn này
@@ -58,6 +62,7 @@ export default function TableDetailScreen() {
       const response = await api.get(`/store/transactions?customerId=${id}`);
       return response.data;
     },
+    enabled: !!id && auth.hasPermission('canManageStore'),
   });
 
   // 3. Tải danh sách các đợt thanh toán của bàn này
@@ -71,6 +76,7 @@ export default function TableDetailScreen() {
       const response = await api.get(`/store/payments?customerId=${id}`);
       return response.data;
     },
+    enabled: !!id && auth.hasPermission('canManageStore'),
   });
 
   const table = tableResponse?.data;

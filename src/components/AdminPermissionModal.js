@@ -18,6 +18,7 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
   const [errorMsg, setErrorMsg] = useState('');
 
   // Trạng thái các quyền phân bổ
+  const [isWorkspaceOwner, setIsWorkspaceOwner] = useState(false);
   const [canManageCustomers, setCanManageCustomers] = useState(false);
   const [canManageDebt, setCanManageDebt] = useState(false);
   const [canManageBadDebt, setCanManageBadDebt] = useState(false);
@@ -30,6 +31,7 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
   useImperativeHandle(ref, () => ({
     open: (targetUser) => {
       setUser(targetUser);
+      setIsWorkspaceOwner(targetUser.isWorkspaceOwner || false);
       setCanManageCustomers(targetUser.canManageCustomers);
       setCanManageDebt(targetUser.canManageDebt);
       setCanManageBadDebt(targetUser.canManageBadDebt);
@@ -43,10 +45,14 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
     close: () => {
       setVisible(false);
     },
+    submit: () => {
+      handleSubmit();
+    },
   }));
 
   // Trạng thái tính toán xem đã chọn toàn bộ quyền chưa
   const isAllSelected = 
+    isWorkspaceOwner &&
     canManageCustomers && 
     canManageDebt && 
     canManageBadDebt && 
@@ -57,6 +63,7 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
 
   // Bật hoặc tắt toàn bộ quyền
   const handleToggleAll = (value) => {
+    setIsWorkspaceOwner(value);
     setCanManageCustomers(value);
     setCanManageDebt(value);
     setCanManageBadDebt(value);
@@ -64,6 +71,11 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
     setCanManageStore(value);
     setCanManageInventory(value);
     setCanManageShop(value);
+  };
+
+  // Xử lý bật/tắt quyền Chủ Workspace
+  const handleToggleWorkspaceOwner = (value) => {
+    setIsWorkspaceOwner(value);
   };
 
   // Xử lý gửi cập nhật quyền lên server
@@ -74,6 +86,7 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
 
     try {
       const response = await api.put(`/admin/users/${user.id}/permissions`, {
+        isWorkspaceOwner,
         canManageCustomers,
         canManageDebt,
         canManageBadDebt,
@@ -130,6 +143,20 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
               onValueChange={handleToggleAll}
               trackColor={{ false: '#334155', true: '#38BDF8' }}
               thumbColor={isAllSelected ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
+
+          {/* Dòng điều khiển phân quyền: Chủ Workspace */}
+          <View style={[styles.row, { borderBottomColor: '#475569', borderBottomWidth: 1, paddingBottom: 12, marginBottom: 8 }]}>
+            <View style={styles.infoCol}>
+              <Text style={[styles.label, { color: '#A78BFA', fontWeight: 'bold' }]}>👑 Quyền Chủ Workspace</Text>
+              <Text style={styles.desc}>Cho phép tạo Workspace, phát mã QR cho nhân viên và quản lý toàn bộ hệ thống.</Text>
+            </View>
+            <Switch
+              value={isWorkspaceOwner}
+              onValueChange={handleToggleWorkspaceOwner}
+              trackColor={{ false: '#334155', true: '#8B5CF6' }}
+              thumbColor={isWorkspaceOwner ? '#FFFFFF' : '#94A3B8'}
             />
           </View>
 

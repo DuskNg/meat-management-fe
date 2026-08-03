@@ -18,8 +18,11 @@ import { api } from '../../src/api/client';
 import { COLORS, FONTS, SHADOWS } from '../../src/theme';
 import AddInventoryProductModal from '../../src/components/inventory/AddInventoryProductModal';
 
+import { useAuthStore } from '../../src/store/authStore';
+
 export default function InventoryDashboardScreen() {
   const router = useRouter();
+  const auth = useAuthStore();
   const queryClient = useQueryClient();
   const modalRef = useRef(null);
 
@@ -32,6 +35,7 @@ export default function InventoryDashboardScreen() {
       const response = await api.get('/inventory/products');
       return response.data;
     },
+    enabled: auth.hasPermission('canManageInventory'),
   });
 
   const products = responseData?.data?.products || [];

@@ -1,9 +1,11 @@
-// meat-management-fe/app/_layout.js
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useAuthStore } from '../src/store/authStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import WorkspacePendingBanner from '../src/components/WorkspacePendingBanner';
+import AdminOwnerDetailModal from '../src/components/AdminOwnerDetailModal';
+import { api } from '../src/api/client';
 
 // Tạo Client cho React Query để quản lý cache dữ liệu từ API
 const queryClient = new QueryClient({
@@ -16,9 +18,10 @@ const queryClient = new QueryClient({
 });
 
 function RootLayoutNav() {
-  const { isAuthenticated, isInitialized, init } = useAuthStore();
+  const { isAuthenticated, isInitialized, init, user } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
+  const ownerModalRef = useRef(null);
 
   // 1. Nạp lại phiên đăng nhập khi mở ứng dụng lần đầu
   useEffect(() => {
@@ -29,11 +32,12 @@ function RootLayoutNav() {
   useEffect(() => {
     if (!isInitialized) return;
 
-    const user = useAuthStore.getState().user;
+    const currentUser = useAuthStore.getState().user;
 
     // Kiểm tra phân cụm màn hình hiện tại
     const inAuthGroup = segments[0] === 'login' || (segments[0] === 'admin' && segments[1] === 'login');
     const inAdminGroup = segments[0] === 'admin';
+    const inPendingScreen = segments[0] === 'workspace-pending';
 
     if (!isAuthenticated) {
       if (!inAuthGroup) {
@@ -42,18 +46,30 @@ function RootLayoutNav() {
       }
     } else {
       // Đã đăng nhập
-      if (user?.isAdmin) {
+      if (currentUser?.isAdmin) {
         // Tài khoản Admin tối cao
         if (!inAdminGroup || segments[1] === 'login') {
           // Đưa Admin về trang quản trị
           router.replace('/admin');
         }
       } else {
-        // Tài khoản chủ buôn thường
-        if (inAdminGroup || inAuthGroup) {
-          // Đưa người dùng thường về trang chủ bán hàng
-          router.replace('/');
-        }
+        // Tài khoản thường
+        // Kiểm tra xem có đang chờ duyệt Workspace không
+        api.get('/workspace/join-status').then((res) => {
+          if (res.data && res.data.status === 'pending') {
+            if (!inPendingScreen) {
+              router.replace('/workspace-pending');
+            }
+          } else {
+            if (inAdminGroup || inAuthGroup || inPendingScreen) {
+              router.replace('/');
+            }
+          }
+        }).catch(() => {
+          if (inAdminGroup || inAuthGroup) {
+            router.replace('/');
+          }
+        });
       }
     }
   }, [isAuthenticated, isInitialized, segments]);
@@ -67,7 +83,13 @@ function RootLayoutNav() {
     );
   }
 
-  return <Slot />;
+  return (
+    <View style={{ flex: 1 }}>
+      <WorkspacePendingBanner onPress={() => ownerModalRef.current?.open(user)} />
+      <Slot />
+      <AdminOwnerDetailModal ref={ownerModalRef} />
+    </View>
+  );
 }
 
 export default function RootLayout() {

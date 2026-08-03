@@ -524,6 +524,7 @@ export default function CustomerDetailScreen() {
   } = useQuery({
     queryKey: ['customer', id],
     queryFn: async () => (await api.get(`/customers/${id}`)).data,
+    enabled: !!id && auth.hasPermission('canManageCustomers'),
   });
 
   // 2. Tải lịch sử đơn ghi nợ
@@ -534,6 +535,7 @@ export default function CustomerDetailScreen() {
   } = useQuery({
     queryKey: ['transactions', id],
     queryFn: async () => (await api.get(`/transactions?customerId=${id}`)).data,
+    enabled: !!id && auth.hasPermission('canManageCustomers'),
   });
 
   // 3. Tải lịch sử thu tiền
@@ -544,6 +546,7 @@ export default function CustomerDetailScreen() {
   } = useQuery({
     queryKey: ['payments', id],
     queryFn: async () => (await api.get(`/payments?customerId=${id}`)).data,
+    enabled: !!id && auth.hasPermission('canManageCustomers'),
   });
 
   const customer = customerResponse?.data;

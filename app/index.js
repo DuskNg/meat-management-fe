@@ -21,6 +21,7 @@ import { COLORS, FONTS, SHADOWS } from '../src/theme';
 import AddCustomerModal from '../src/components/AddCustomerModal';
 import ProductListModal from '../src/components/ProductListModal';
 import ProfileModal from '../src/components/ProfileModal';
+import AdminOwnerDetailModal from '../src/components/AdminOwnerDetailModal';
 import EditCustomerModal from '../src/components/EditCustomerModal';
 import PopupModal from '../src/components/PopupModal';
 import ScanTicketModal from '../src/components/ScanTicketModal';
@@ -100,6 +101,7 @@ export default function DashboardScreen() {
   const modalRef = useRef(null);
   const productModalRef = useRef(null);
   const profileModalRef = useRef(null);
+  const workspaceModalRef = useRef(null);
   const editCustomerModalRef = useRef(null);
   const popupModalRef = useRef(null);
   const scanTicketModalRef = useRef(null);
@@ -161,6 +163,7 @@ export default function DashboardScreen() {
       const response = await api.get('/customers?isBadDebt=false');
       return response.data;
     },
+    enabled: auth.hasPermission('canManageCustomers'),
   });
 
   // 1.5. Dùng React Query tải danh sách khách hàng nợ xấu
@@ -170,6 +173,7 @@ export default function DashboardScreen() {
       const response = await api.get('/customers?isBadDebt=true');
       return response.data;
     },
+    enabled: auth.hasPermission('canManageBadDebt'),
   });
 
   const { data: paymentsResponse, isLoading: isLoadingPayments, refetch: refetchPayments } = useQuery({
@@ -178,7 +182,7 @@ export default function DashboardScreen() {
       const response = await api.get('/payments');
       return response.data;
     },
-    enabled: showDebtSummary,
+    enabled: showDebtSummary && auth.hasPermission('canManageCustomers'),
   });
 
   // Các hàm làm mới dữ liệu khách hàng kèm theo lịch sử nợ chi tiết nếu đang mở
@@ -202,6 +206,7 @@ export default function DashboardScreen() {
       const response = await api.get('/suppliers');
       return response.data;
     },
+    enabled: auth.hasPermission('canManageDebt'),
   });
 
   // 1.9. Dùng React Query tải danh sách nhân viên
@@ -211,6 +216,7 @@ export default function DashboardScreen() {
       const response = await api.get('/employees');
       return response.data;
     },
+    enabled: auth.hasPermission('canManageEmployees'),
   });
 
   // States và logic chấm công & bảng lương nhân viên
@@ -1573,15 +1579,32 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
-            {/* Chức năng 5: Quản lý Cửa hàng */}
-
-
+            {/* Chức năng: Quản lý Workspace */}
+            {auth.user?.isWorkspaceOwner && (
+              <TouchableOpacity
+                style={[styles.menuCard, { borderColor: '#8B5CF6', backgroundColor: '#8B5CF610' }]}
+                onPress={() => {
+                  workspaceModalRef.current?.open(auth.user);
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.menuCardIconBg, { backgroundColor: '#8B5CF620' }]}>
+                  <Text style={styles.menuCardIcon}>👑</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={[styles.menuCardTitle, { color: '#C084FC' }]}>Quản lý Workspace</Text>
+                  <Text style={styles.menuCardDesc}>Thiết lập mã mời QR, tuyển dụng nhân viên và phân quyền chấm công.</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
           </View>
         </View>
 
         {/* Modal Hồ sơ */}
         <ProfileModal ref={profileModalRef} />
+        {/* Modal Quản lý Workspace */}
+        <AdminOwnerDetailModal ref={workspaceModalRef} />
         {/* Popup Thông báo */}
         <PopupModal ref={popupModalRef} />
       </SafeAreaView>

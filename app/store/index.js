@@ -77,6 +77,7 @@ export default function StoreDashboardScreen() {
       const response = await api.get('/store/customers');
       return response.data;
     },
+    enabled: auth.hasPermission('canManageStore'),
   });
 
   // 2. Tải tổng doanh thu cửa hàng
@@ -86,6 +87,7 @@ export default function StoreDashboardScreen() {
       const response = await api.get('/store/revenue/total');
       return response.data;
     },
+    enabled: auth.hasPermission('canManageStore'),
   });
 
   // 3. Tải doanh thu cửa hàng theo ngày

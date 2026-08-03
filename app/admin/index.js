@@ -17,6 +17,7 @@ import { api } from '../../src/api/client';
 import AdminPermissionModal from '../../src/components/AdminPermissionModal';
 import AdminLogsModal from '../../src/components/AdminLogsModal';
 import AdminAiUsageModal from '../../src/components/AdminAiUsageModal';
+import AdminOwnerDetailModal from '../../src/components/AdminOwnerDetailModal';
 import PopupModal from '../../src/components/PopupModal';
 
 export default function AdminDashboard() {
@@ -29,6 +30,7 @@ export default function AdminDashboard() {
   const permissionModalRef = useRef(null);
   const logsModalRef = useRef(null);
   const aiUsageModalRef = useRef(null);
+  const ownerDetailModalRef = useRef(null);
   const popupModalRef = useRef(null);
 
   // Tải danh sách người dùng
@@ -136,6 +138,54 @@ export default function AdminDashboard() {
     });
   };
 
+  // Xử lý bật/tắt quyền Chủ Workspace
+  const handleToggleWorkspaceOwner = (item) => {
+    const nextStatus = !item.isWorkspaceOwner;
+    popupModalRef.current?.show({
+      title: nextStatus ? '👑 Cấp quyền Chủ Workspace' : 'Thu hồi quyền Chủ Workspace',
+      message: nextStatus
+        ? `Bạn có muốn cấp quyền **Chủ Workspace** cho tài khoản **${item.name}** (${item.phone}) không? Tài khoản này sẽ có thể tạo Workspace và phát mã QR cho nhân viên.`
+        : `Bạn có chắc muốn thu hồi quyền Chủ Workspace của **${item.name}** không?`,
+      type: 'confirm',
+      confirmText: nextStatus ? 'CẤP QUYỀN' : 'THU HỒI',
+      cancelText: 'HỦY BỎ',
+      onConfirm: async () => {
+        try {
+          const response = await api.put(`/admin/users/${item.id}/workspace-owner`, {
+            isWorkspaceOwner: nextStatus,
+          });
+          if (response.data && response.data.success) {
+            const updatedData = response.data.data;
+            popupModalRef.current?.show({
+              title: 'Thành công',
+              message: response.data.message,
+              type: 'success',
+              confirmText: 'ĐÓNG',
+            });
+            // Cập nhật state local ngay lập tức để nhận biết trạng thái CHỦ WORKSPACE
+            setUsers((prevUsers) =>
+              prevUsers.map((u) =>
+                u.id === item.id
+                  ? {
+                      ...u,
+                      isWorkspaceOwner: updatedData.isWorkspaceOwner,
+                    }
+                  : u
+              )
+            );
+          }
+        } catch (err) {
+          popupModalRef.current?.show({
+            title: 'Thất bại',
+            message: err.response?.data?.message || 'Lỗi khi cập nhật quyền Chủ Workspace.',
+            type: 'error',
+            confirmText: 'ĐÓNG',
+          });
+        }
+      },
+    });
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -192,11 +242,19 @@ export default function AdminDashboard() {
                       </Text>
                       <Text style={styles.userPhone}>{item.phone}</Text>
                     </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       {isDeleted && (
                         <View style={styles.deletedBadge}>
                           <Text style={styles.deletedBadgeText}>Còn {getRemainingDays(item.deletedAt)} ngày</Text>
                         </View>
+                      )}
+                      {item.isWorkspaceOwner && (
+                        <TouchableOpacity
+                          style={styles.workspaceBadge}
+                          onPress={() => ownerDetailModalRef.current?.open(item)}
+                        >
+                          <Text style={styles.workspaceBadgeText}>👑 CHỦ WORKSPACE</Text>
+                        </TouchableOpacity>
                       )}
                       <View style={[styles.roleBadge, item.isAdmin && styles.adminRoleBadge]}>
                         <Text style={styles.roleBadgeText}>{item.isAdmin ? 'ADMIN' : 'CHỦ BUÔN'}</Text>
@@ -219,6 +277,11 @@ export default function AdminDashboard() {
                       <View style={styles.permissionsList}>
                         <Text style={styles.permissionsTitle}>Quyền hiện có:</Text>
                         <View style={styles.badgesContainer}>
+                          {item.isWorkspaceOwner && (
+                            <View style={[styles.badge, styles.activeBadge, { backgroundColor: '#8B5CF625', borderColor: '#8B5CF6' }]}>
+                              <Text style={[styles.badgeText, { color: '#A78BFA', fontWeight: 'bold' }]}>👑 CHỦ WORKSPACE (TOÀN QUYỀN)</Text>
+                            </View>
+                          )}
                           {item.canManageCustomers ? (
                             <View style={[styles.badge, styles.activeBadge]}>
                               <Text style={styles.badgeText}>Khách hàng</Text>
@@ -321,6 +384,21 @@ export default function AdminDashboard() {
                         </TouchableOpacity>
 
                         <TouchableOpacity
+                          style={[styles.workspaceOwnerBtn, item.isWorkspaceOwner && styles.workspaceOwnerActiveBtn]}
+                          onPress={() => {
+                            if (item.isWorkspaceOwner) {
+                              ownerDetailModalRef.current?.open(item);
+                            } else {
+                              handleToggleWorkspaceOwner(item);
+                            }
+                          }}
+                        >
+                          <Text style={styles.actionBtnText}>
+                            {item.isWorkspaceOwner ? '✅ CHỦ WS (QR)' : '👑 Bật Chủ WS'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
                           style={styles.logsBtn}
                           onPress={() => logsModalRef.current?.open(item)}
                         >
@@ -350,7 +428,7 @@ export default function AdminDashboard() {
         </ScrollView>
       )}
 
-      {/* Khai báo modal phân quyền và logs sử dụng ref */}
+      {/* Khai báo modal phân quyền, logs, workspace và popup sử dụng ref */}
       <AdminPermissionModal
         ref={permissionModalRef}
         onSaveSuccess={handlePermissionSaveSuccess}
@@ -361,6 +439,9 @@ export default function AdminDashboard() {
       />
       <AdminAiUsageModal
         ref={aiUsageModalRef}
+      />
+      <AdminOwnerDetailModal
+        ref={ownerDetailModalRef}
       />
       <PopupModal
         ref={popupModalRef}
@@ -598,6 +679,28 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
     color: '#EF4444',
+  },
+  workspaceBadge: {
+    backgroundColor: '#8B5CF620',
+    borderColor: '#8B5CF6',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  workspaceBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#A78BFA',
+  },
+  workspaceOwnerBtn: {
+    backgroundColor: '#6B21A8',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  workspaceOwnerActiveBtn: {
+    backgroundColor: '#7C3AED',
   },
   actionBtnText: {
     color: '#FFFFFF',

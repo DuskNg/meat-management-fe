@@ -61,6 +61,7 @@ export default function ShopDashboardScreen() {
       const response = await api.get('/shop/tables');
       return response.data;
     },
+    enabled: auth.hasPermission('canManageShop'),
   });
 
   // 2. Tải tổng doanh thu
@@ -70,6 +71,7 @@ export default function ShopDashboardScreen() {
       const response = await api.get('/shop/revenue/total');
       return response.data;
     },
+    enabled: auth.hasPermission('canManageShop'),
   });
 
   // 3. Tải doanh thu theo ngày
@@ -79,7 +81,7 @@ export default function ShopDashboardScreen() {
       const response = await api.get('/shop/revenue/daily');
       return response.data;
     },
-    enabled: showDailyRevModal,
+    enabled: showDailyRevModal && auth.hasPermission('canManageShop'),
   });
 
   const tables = tablesResponse?.data || [];

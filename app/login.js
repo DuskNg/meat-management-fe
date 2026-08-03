@@ -10,7 +10,7 @@ import {
   Platform,
   ScrollView
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '../src/store/authStore';
 import { api } from '../src/api/client';
 import { COLORS, FONTS, SHADOWS } from '../src/theme';
@@ -18,6 +18,8 @@ import AnimatedPressable from '../src/components/AnimatedPressable';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const inviteCode = params.invite || '';
   const auth = useAuthStore();
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
@@ -107,6 +109,19 @@ export default function LoginScreen() {
         if (user && tokens) {
           // Đăng nhập trực tiếp nếu Backend trả về thông tin người dùng và tokens
           await auth.login(user, tokens);
+
+          // Nếu có mã mời gia nhập Workspace từ QR code
+          if (inviteCode) {
+            try {
+              const joinRes = await api.post('/workspace/join', { inviteCode });
+              if (joinRes.data && joinRes.data.status === 'pending') {
+                router.replace('/workspace-pending');
+                return;
+              }
+            } catch (joinErr) {
+              console.error('Lỗi khi gửi yêu cầu gia nhập Workspace:', joinErr);
+            }
+          }
         } else {
           // Trường hợp dự phòng nếu API cũ vẫn yêu cầu mã OTP
           setStep(2);
