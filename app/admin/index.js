@@ -232,6 +232,8 @@ export default function AdminDashboard() {
           ) : (
             users.map((item) => {
               const isDeleted = item.isActive === false;
+              const isLinked = item.workspaceMemberships && item.workspaceMemberships.length > 0;
+              const workspaceInfo = isLinked ? item.workspaceMemberships[0].workspace : null;
 
               return (
                 <View key={item.id} style={[styles.userCard, isDeleted && { opacity: 0.7, borderColor: '#EF444450' }]}>
@@ -241,6 +243,11 @@ export default function AdminDashboard() {
                         {item.name}
                       </Text>
                       <Text style={styles.userPhone}>{item.phone}</Text>
+                      {isLinked && workspaceInfo && (
+                        <Text style={{ fontSize: 11, color: '#38BDF8', marginTop: 4, fontWeight: '500' }}>
+                          🔗 Nhân viên của: {workspaceInfo.owner.name} ({workspaceInfo.owner.phone})
+                        </Text>
+                      )}
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       {isDeleted && (
@@ -256,8 +263,16 @@ export default function AdminDashboard() {
                           <Text style={styles.workspaceBadgeText}>👑 CHỦ WORKSPACE</Text>
                         </TouchableOpacity>
                       )}
-                      <View style={[styles.roleBadge, item.isAdmin && styles.adminRoleBadge]}>
-                        <Text style={styles.roleBadgeText}>{item.isAdmin ? 'ADMIN' : 'CHỦ BUÔN'}</Text>
+                      <View style={[
+                        styles.roleBadge, 
+                        item.isAdmin ? styles.adminRoleBadge : (isLinked ? { backgroundColor: '#0284C720', borderColor: '#0284C7', borderWidth: 1 } : null)
+                      ]}>
+                        <Text style={[
+                          styles.roleBadgeText, 
+                          item.isAdmin ? null : (isLinked ? { color: '#38BDF8' } : null)
+                        ]}>
+                          {item.isAdmin ? 'ADMIN' : (isLinked ? 'NHÂN VIÊN' : 'CHỦ BUÔN')}
+                        </Text>
                       </View>
                     </View>
                   </View>
@@ -275,7 +290,9 @@ export default function AdminDashboard() {
                   ) : (
                     !item.isAdmin && (
                       <View style={styles.permissionsList}>
-                        <Text style={styles.permissionsTitle}>Quyền hiện có:</Text>
+                        <Text style={styles.permissionsTitle}>
+                          Quyền hiện có: {isLinked && <Text style={{ color: '#38BDF8', fontWeight: 'normal', fontSize: 11 }}>(Đồng bộ theo Chủ sạp)</Text>}
+                        </Text>
                         <View style={styles.badgesContainer}>
                           {item.isWorkspaceOwner && (
                             <View style={[styles.badge, styles.activeBadge, { backgroundColor: '#8B5CF625', borderColor: '#8B5CF6' }]}>
@@ -376,27 +393,37 @@ export default function AdminDashboard() {
                       </View>
                     ) : (
                       <View style={styles.actions}>
-                        <TouchableOpacity
-                          style={styles.permissionBtn}
-                          onPress={() => permissionModalRef.current?.open(item)}
-                        >
-                          <Text style={styles.actionBtnText}>Phân quyền</Text>
-                        </TouchableOpacity>
+                        {!isLinked ? (
+                          <>
+                            <TouchableOpacity
+                              style={styles.permissionBtn}
+                              onPress={() => permissionModalRef.current?.open(item)}
+                            >
+                              <Text style={styles.actionBtnText}>Phân quyền</Text>
+                            </TouchableOpacity>
 
-                        <TouchableOpacity
-                          style={[styles.workspaceOwnerBtn, item.isWorkspaceOwner && styles.workspaceOwnerActiveBtn]}
-                          onPress={() => {
-                            if (item.isWorkspaceOwner) {
-                              ownerDetailModalRef.current?.open(item);
-                            } else {
-                              handleToggleWorkspaceOwner(item);
-                            }
-                          }}
-                        >
-                          <Text style={styles.actionBtnText}>
-                            {item.isWorkspaceOwner ? '✅ CHỦ WS (QR)' : '👑 Bật Chủ WS'}
-                          </Text>
-                        </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.workspaceOwnerBtn, item.isWorkspaceOwner && styles.workspaceOwnerActiveBtn]}
+                              onPress={() => {
+                                if (item.isWorkspaceOwner) {
+                                  ownerDetailModalRef.current?.open(item);
+                                } else {
+                                  handleToggleWorkspaceOwner(item);
+                                }
+                              }}
+                            >
+                              <Text style={styles.actionBtnText}>
+                                {item.isWorkspaceOwner ? '✅ CHỦ WS (QR)' : '👑 Bật Chủ WS'}
+                              </Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <View style={{ flex: 1, justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 11, color: '#94A3B8', fontStyle: 'italic' }}>
+                              🔄 Quyền tự động đồng bộ theo chủ Workspace
+                            </Text>
+                          </View>
+                        )}
 
                         <TouchableOpacity
                           style={styles.logsBtn}
