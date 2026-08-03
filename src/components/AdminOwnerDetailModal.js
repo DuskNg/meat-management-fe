@@ -142,7 +142,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
   const getQRValue = () => {
     if (!workspace?.inviteCode) return '';
     // QR encode URL để nhân viên quét sẽ mở app/web tại login với invite code
-    return `https://meat-management.vercel.app/login?invite=${workspace.inviteCode}`;
+    return `https://management-fe.vercel.app/login?invite=${workspace.inviteCode}`;
   };
 
   if (!visible) return null;
