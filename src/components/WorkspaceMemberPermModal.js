@@ -25,13 +25,15 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
   const [visible, setVisible] = useState(false);
   const [member, setMember] = useState(null);
   const [perms, setPerms] = useState({});
+  const [ownerPerms, setOwnerPerms] = useState({});
   const [saving, setSaving] = useState(false);
   const slideAnim = useRef(new Animated.Value(SCREEN_H)).current;
   const popupRef = useRef(null);
   const onSaveRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
-    open: (memberData, onSave) => {
+    // ownerPermissions: object chứa quyền của chủ WS, dùng để lọc quyền hiển thị
+    open: (memberData, onSave, ownerPermissions = {}) => {
       setMember(memberData);
       setPerms({
         canManageCustomers: memberData.canManageCustomers || false,
@@ -42,6 +44,7 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
         canManageInventory: memberData.canManageInventory || false,
         canManageShop: memberData.canManageShop || false,
       });
+      setOwnerPerms(ownerPermissions);
       onSaveRef.current = onSave;
       setVisible(true);
       Animated.spring(slideAnim, {
@@ -130,7 +133,8 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
           </View>
 
           <View style={styles.body}>
-            {PERMISSIONS.map((perm) => (
+            {/* Chỉ hiển thị các quyền mà chủ workspace đang được admin cấp */}
+            {PERMISSIONS.filter((perm) => ownerPerms[perm.key] === true).map((perm) => (
               <View key={perm.key} style={styles.permRow}>
                 <Text style={styles.permIcon}>{perm.icon}</Text>
                 <Text style={styles.permLabel}>{perm.label}</Text>
@@ -142,6 +146,12 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
                 />
               </View>
             ))}
+            {/* Thông báo nếu chủ không có quyền nào để phân */}
+            {PERMISSIONS.filter((perm) => ownerPerms[perm.key] === true).length === 0 && (
+              <Text style={{ color: '#64748B', fontSize: 13, textAlign: 'center', paddingVertical: 24 }}>
+                Chủ Workspace chưa được Admin cấp quyền nào để phân cho thành viên.
+              </Text>
+            )}
           </View>
 
           <View style={styles.footer}>

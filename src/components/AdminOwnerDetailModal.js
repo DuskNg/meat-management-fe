@@ -108,10 +108,20 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
   };
 
   const handleOpenMemberPerms = (member) => {
+    // Truyền thêm quyền của chủ để modal chỉ hiển thị các quyền chủ đang có
+    const ownerPermissions = {
+      canManageCustomers: user?.canManageCustomers ?? false,
+      canManageDebt: user?.canManageDebt ?? false,
+      canManageBadDebt: user?.canManageBadDebt ?? false,
+      canManageEmployees: user?.canManageEmployees ?? false,
+      canManageStore: user?.canManageStore ?? false,
+      canManageInventory: user?.canManageInventory ?? false,
+      canManageShop: user?.canManageShop ?? false,
+    };
     memberPermModalRef.current?.open(member, () => {
       // Tải lại chi tiết sau khi cập nhật quyền hoặc kick
       fetchWorkspaceDetail();
-    });
+    }, ownerPermissions);
   };
 
   const handleProcessRequest = async (requestId, action) => {
