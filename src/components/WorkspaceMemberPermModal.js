@@ -32,17 +32,19 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
   const onSaveRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
-    // ownerPermissions: object chứa quyền của chủ WS, dùng để lọc quyền hiển thị
+    // ownerPermissions: object chứa quyền của chủ WS, dùng để lọc và tích mặc định
     open: (memberData, onSave, ownerPermissions = {}) => {
       setMember(memberData);
+      // Mặc định tích sẵn theo quyền của chủ WS;
+      // nếu thành viên đã từng được tắt một quyền (false) thì giữ nguyên false
       setPerms({
-        canManageCustomers: memberData.canManageCustomers || false,
-        canManageDebt: memberData.canManageDebt || false,
-        canManageBadDebt: memberData.canManageBadDebt || false,
-        canManageEmployees: memberData.canManageEmployees || false,
-        canManageStore: memberData.canManageStore || false,
-        canManageInventory: memberData.canManageInventory || false,
-        canManageShop: memberData.canManageShop || false,
+        canManageCustomers: memberData.canManageCustomers === true ? true : (ownerPermissions.canManageCustomers ?? false),
+        canManageDebt: memberData.canManageDebt === true ? true : (ownerPermissions.canManageDebt ?? false),
+        canManageBadDebt: memberData.canManageBadDebt === true ? true : (ownerPermissions.canManageBadDebt ?? false),
+        canManageEmployees: memberData.canManageEmployees === true ? true : (ownerPermissions.canManageEmployees ?? false),
+        canManageStore: memberData.canManageStore === true ? true : (ownerPermissions.canManageStore ?? false),
+        canManageInventory: memberData.canManageInventory === true ? true : (ownerPermissions.canManageInventory ?? false),
+        canManageShop: memberData.canManageShop === true ? true : (ownerPermissions.canManageShop ?? false),
       });
       setOwnerPerms(ownerPermissions);
       onSaveRef.current = onSave;
