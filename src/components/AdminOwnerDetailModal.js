@@ -13,34 +13,34 @@ const { height: SCREEN_H } = Dimensions.get('window');
 
 // Modal chi tiết Chủ Workspace — hiển thị QR, danh sách thành viên và yêu cầu đang chờ
 const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, ref) {
-  const auth = useAuthStore();
+  const { isAdminMode = false } = props;
   const [visible, setVisible] = useState(false);
   const [user, setUser] = useState(null);
   const [workspace, setWorkspace] = useState(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
-  const slideAnim = useRef(new Animated.Value(SCREEN_H)).current;
+  
+  // Các state hỗ trợ chỉnh sửa tên Workspace trực tiếp
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
+  const [savingName, setSavingName] = useState(false);
 
+  const slideAnim = useRef(new Animated.Value(SCREEN_H)).current;
   const memberPermModalRef = useRef(null);
   const popupModalRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
     open: (userData) => {
       setUser(userData);
-      setWorkspace(null);
+      setWorkspace(userData?.ownedWorkspace || null);
       setWorkspaceName('');
+      setIsEditingName(false); // Đặt lại trạng thái sửa tên khi mở mới
       setVisible(true);
       Animated.spring(slideAnim, {
         toValue: 0, useNativeDriver: true, tension: 65, friction: 11,
       }).start();
-      if (userData?.ownedWorkspace) {
-        setWorkspace(userData.ownedWorkspace);
-        fetchWorkspaceDetail(userData.ownedWorkspace.id);
-      } else {
-        // Lấy lại chi tiết đề phòng chủ buôn đã tự tạo từ trước
-        fetchWorkspaceDetail();
-      }
+      fetchWorkspaceDetail(userData?.id);
     },
     close: () => closeModal(),
   }));
@@ -55,11 +55,12 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
     });
   };
 
-  const fetchWorkspaceDetail = async () => {
+  const fetchWorkspaceDetail = async (targetUserId) => {
     setLoading(true);
     try {
+      const uId = targetUserId || user?.id;
       const res = await api.get('/workspace/my', {
-        headers: { 'X-User-Override': user?.id },
+        headers: { 'X-User-Override': uId },
       });
       if (res.data?.success && res.data?.data) {
         setWorkspace(res.data.data);
@@ -93,7 +94,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
           type: 'success',
           confirmText: 'ĐÓNG',
         });
-        fetchWorkspaceDetail();
+        fetchWorkspaceDetail(user?.id);
       }
     } catch (e) {
       popupModalRef.current?.show({
@@ -107,10 +108,49 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
     }
   };
 
+  const handleStartEdit = () => {
+    setEditNameValue(workspace?.name || '');
+    setIsEditingName(true);
+  };
+
+  const handleSaveName = async () => {
+    if (!editNameValue.trim()) {
+      popupModalRef.current?.show({
+        title: 'Thiếu thông tin',
+        message: 'Tên Workspace không được để trống.',
+        type: 'warning',
+        confirmText: 'ĐÓNG',
+      });
+      return;
+    }
+    setSavingName(true);
+    try {
+      const res = await api.put('/workspace/update', { name: editNameValue.trim() }, {
+        headers: { 'X-User-Override': user?.id }
+      });
+      if (res.data?.success) {
+        popupModalRef.current?.show({
+          title: 'Thành công',
+          message: 'Đã cập nhật tên Workspace thành công!',
+          type: 'success',
+          confirmText: 'ĐÓNG',
+        });
+        setIsEditingName(false);
+        fetchWorkspaceDetail(user?.id);
+      }
+    } catch (e) {
+      popupModalRef.current?.show({
+        title: 'Thất bại',
+        message: e.response?.data?.message || 'Có lỗi xảy ra khi cập nhật tên Workspace.',
+        type: 'error',
+        confirmText: 'ĐÓNG',
+      });
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   const handleOpenMemberPerms = (member) => {
-    // Hỗ trợ cả 2 cấu trúc:
-    // - auth.user có permissions lồng trong { permissions: { canManage* } }
-    // - item từ API admin có canManage* trực tiếp
     const perms = user?.permissions || user || {};
     const ownerPermissions = {
       canManageCustomers: perms.canManageCustomers ?? false,
@@ -122,8 +162,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
       canManageShop: perms.canManageShop ?? false,
     };
     memberPermModalRef.current?.open(member, () => {
-      // Tải lại chi tiết sau khi cập nhật quyền hoặc kick
-      fetchWorkspaceDetail();
+      fetchWorkspaceDetail(user?.id);
     }, ownerPermissions);
   };
 
@@ -140,7 +179,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
           type: 'success',
           confirmText: 'ĐÓNG',
         });
-        fetchWorkspaceDetail();
+        fetchWorkspaceDetail(user?.id);
       }
     } catch (e) {
       popupModalRef.current?.show({
@@ -168,7 +207,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
           {/* Header */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.headerTitle}>👑 Chi tiết Chủ Workspace</Text>
+              <Text style={styles.headerTitle}>👑 Chi tiết Workspace & Thành viên</Text>
               <Text style={styles.headerSub}>{user?.name} — {user?.phone}</Text>
             </View>
             <TouchableOpacity onPress={closeModal} style={styles.closeBtn}>
@@ -177,7 +216,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
           </View>
 
           <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
-            {loading ? (
+            {loading && !workspace ? (
               <View style={styles.center}>
                 <ActivityIndicator size="large" color="#8B5CF6" />
                 <Text style={styles.loadingText}>Đang tải thông tin Workspace...</Text>
@@ -186,40 +225,116 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
               <>
                 {/* Thông tin Workspace */}
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>🏢 Thông tin Workspace</Text>
-                  <Text style={styles.wsName}>{workspace.name}</Text>
-                  <View style={styles.inviteRow}>
-                    <View>
-                      <Text style={styles.inviteLabel}>Mã mời</Text>
-                      <Text style={styles.inviteCode}>{workspace.inviteCode}</Text>
-                    </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <Text style={styles.cardTitle}>🏢 Thông tin Workspace</Text>
                     <View style={[styles.statusBadge, workspace.isActive ? styles.activeBadge : styles.inactiveBadge]}>
                       <Text style={styles.statusBadgeText}>
                         {workspace.isActive ? 'Hoạt động' : 'Tắt'}
                       </Text>
                     </View>
                   </View>
+
+                  {isEditingName ? (
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                      <TextInput
+                        style={{
+                          flex: 1,
+                          color: '#F8FAFC',
+                          backgroundColor: '#0F172A',
+                          borderWidth: 1,
+                          borderColor: '#334155',
+                          borderRadius: 8,
+                          padding: 8,
+                          fontSize: 14,
+                        }}
+                        value={editNameValue}
+                        onChangeText={setEditNameValue}
+                        placeholder="Nhập tên Workspace mới..."
+                        placeholderTextColor="#64748B"
+                      />
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: '#10B981',
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 6,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                        onPress={handleSaveName}
+                        disabled={savingName}
+                      >
+                        {savingName ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Lưu</Text>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: '#475569',
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 6,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                        onPress={() => setIsEditingName(false)}
+                        disabled={savingName}
+                      >
+                        <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Hủy</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={styles.wsName} numberOfLines={2}>{workspace.name}</Text>
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: '#7C3AED20',
+                          borderColor: '#7C3AED',
+                          borderWidth: 1,
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 6,
+                        }}
+                        onPress={handleStartEdit}
+                      >
+                        <Text style={{ fontSize: 12, color: '#A78BFA', fontWeight: '600' }}>Sửa tên</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {!isAdminMode && (
+                    <View style={[styles.inviteRow, { marginTop: 12 }]}>
+                      <View>
+                        <Text style={styles.inviteLabel}>Mã mời</Text>
+                        <Text style={styles.inviteCode}>{workspace.inviteCode}</Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
 
-                {/* QR Code */}
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>📱 Mã QR mời nhân viên</Text>
-                  <Text style={styles.qrHint}>Nhân viên quét mã này để đăng nhập và gửi yêu cầu tham gia</Text>
-                  <View style={styles.qrContainer}>
-                    {workspace?.inviteCode ? (
-                      <Image
-                        source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(getQRValue())}` }}
-                        style={{ width: 180, height: 180 }}
-                      />
-                    ) : (
-                      <View style={styles.qrPlaceholder}>
-                        <Text style={styles.qrPlaceholderText}>📲</Text>
-                        <Text style={styles.qrPlaceholderLabel}>QR: {getQRValue()}</Text>
-                      </View>
-                    )}
+                {/* QR Code (Chỉ hiển thị với Workspace Owner thường, ẩn đối với Admin tối cao) */}
+                {!isAdminMode && (
+                  <View style={styles.card}>
+                    <Text style={styles.cardTitle}>📱 Mã QR mời nhân viên</Text>
+                    <Text style={styles.qrHint}>Nhân viên quét mã này để đăng nhập và gửi yêu cầu tham gia</Text>
+                    <View style={styles.qrContainer}>
+                      {workspace?.inviteCode ? (
+                        <Image
+                          source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(getQRValue())}` }}
+                          style={{ width: 180, height: 180 }}
+                        />
+                      ) : (
+                        <View style={styles.qrPlaceholder}>
+                          <Text style={styles.qrPlaceholderText}>📲</Text>
+                          <Text style={styles.qrPlaceholderLabel}>QR: {getQRValue()}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.qrUrl} numberOfLines={2}>{getQRValue()}</Text>
                   </View>
-                  <Text style={styles.qrUrl} numberOfLines={2}>{getQRValue()}</Text>
-                </View>
+                )}
 
                 {/* Thành viên */}
                 <View style={styles.card}>
@@ -245,7 +360,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
                     ))
                   )}
                 </View>
- 
+
                 {/* Yêu cầu đang chờ */}
                 {workspace.joinRequests && workspace.joinRequests.length > 0 && (
                   <View style={styles.card}>

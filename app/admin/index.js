@@ -469,6 +469,7 @@ export default function AdminDashboard() {
       />
       <AdminOwnerDetailModal
         ref={ownerDetailModalRef}
+        isAdminMode={true}
       />
       <PopupModal
         ref={popupModalRef}

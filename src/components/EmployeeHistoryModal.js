@@ -72,7 +72,7 @@ const EmployeeHistoryModal = forwardRef(({ employee }, ref) => {
         </View>
         <View style={[styles.badge, isPresent ? styles.badgeGreen : styles.badgeRed]}>
           <Text style={[styles.badgeText, isPresent ? styles.textGreen : styles.textRed]}>
-            {isPresent ? (isHalf ? 'Đi làm (Nửa ngày)' : 'Đi làm (Cả ngày)') : 'Nghỉ'}
+            {isPresent ? (isHalf ? 'Nghỉ nửa ngày' : 'Làm đủ') : 'Nghỉ cả ngày'}
           </Text>
         </View>
       </View>

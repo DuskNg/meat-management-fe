@@ -17,20 +17,22 @@ import {
  * - Modal 2 (slide): Chứa nội dung chính của pop-up trượt lên/xuống (slide up/down)
  *   và xử lý đẩy bàn phím (KeyboardAvoidingView) mà không làm lệch kích thước.
  */
-const SmoothModal = ({ visible, onClose, children }) => {
+const SmoothModal = ({ visible, onClose, children, isToast }) => {
   return (
     <>
-      {/* Modal 1: Hiển thị lớp nền tối tĩnh mờ dần / rõ dần */}
-      <Modal
-        transparent={true}
-        visible={visible}
-        animationType="fade"
-        onRequestClose={onClose}
-      >
-        <TouchableWithoutFeedback onPress={onClose}>
-          <View style={styles.backdropFill} />
-        </TouchableWithoutFeedback>
-      </Modal>
+      {/* Modal 1: Hiển thị lớp nền tối tĩnh mờ dần / rõ dần (chỉ hiển thị nếu KHÔNG phải dạng Toast) */}
+      {!isToast && (
+        <Modal
+          transparent={true}
+          visible={visible}
+          animationType="fade"
+          onRequestClose={onClose}
+        >
+          <TouchableWithoutFeedback onPress={onClose}>
+            <View style={styles.backdropFill} />
+          </TouchableWithoutFeedback>
+        </Modal>
+      )}
 
       {/* Modal 2: Trượt nội dung chính lên/xuống và tránh bàn phím */}
       <Modal

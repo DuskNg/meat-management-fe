@@ -135,6 +135,20 @@ export const useAuthStore = create((set) => ({
     }
   },
 
+  // 4.5. Cập nhật và đồng bộ thông tin người dùng từ Backend (bao gồm phân quyền mới)
+  updateUser: async (userInfo) => {
+    try {
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser) {
+        const updatedUser = { ...currentUser, ...userInfo };
+        await setStorageItem(USER_INFO_KEY, JSON.stringify(updatedUser));
+        set({ user: updatedUser });
+      }
+    } catch (error) {
+      console.error('Lỗi khi cập nhật thông tin user:', error);
+    }
+  },
+
   // 5. Kiểm tra quyền của người dùng hiện tại (Admin hoặc mặc định chưa cài đặt đều là true)
   hasPermission: (permissionField) => {
     const user = useAuthStore.getState().user;

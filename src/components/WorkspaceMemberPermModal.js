@@ -35,16 +35,16 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
     // ownerPermissions: object chứa quyền của chủ WS, dùng để lọc và tích mặc định
     open: (memberData, onSave, ownerPermissions = {}) => {
       setMember(memberData);
-      // Mặc định tích sẵn theo quyền của chủ WS;
-      // nếu thành viên đã từng được tắt một quyền (false) thì giữ nguyên false
+      // Sử dụng trực tiếp giá trị quyền của thành viên;
+      // nếu thuộc tính chưa được định nghĩa (ví dụ: thành viên mới) thì mặc định theo quyền của chủ WS
       setPerms({
-        canManageCustomers: memberData.canManageCustomers === true ? true : (ownerPermissions.canManageCustomers ?? false),
-        canManageDebt: memberData.canManageDebt === true ? true : (ownerPermissions.canManageDebt ?? false),
-        canManageBadDebt: memberData.canManageBadDebt === true ? true : (ownerPermissions.canManageBadDebt ?? false),
-        canManageEmployees: memberData.canManageEmployees === true ? true : (ownerPermissions.canManageEmployees ?? false),
-        canManageStore: memberData.canManageStore === true ? true : (ownerPermissions.canManageStore ?? false),
-        canManageInventory: memberData.canManageInventory === true ? true : (ownerPermissions.canManageInventory ?? false),
-        canManageShop: memberData.canManageShop === true ? true : (ownerPermissions.canManageShop ?? false),
+        canManageCustomers: memberData.canManageCustomers !== undefined ? !!memberData.canManageCustomers : (ownerPermissions.canManageCustomers ?? false),
+        canManageDebt: memberData.canManageDebt !== undefined ? !!memberData.canManageDebt : (ownerPermissions.canManageDebt ?? false),
+        canManageBadDebt: memberData.canManageBadDebt !== undefined ? !!memberData.canManageBadDebt : (ownerPermissions.canManageBadDebt ?? false),
+        canManageEmployees: memberData.canManageEmployees !== undefined ? !!memberData.canManageEmployees : (ownerPermissions.canManageEmployees ?? false),
+        canManageStore: memberData.canManageStore !== undefined ? !!memberData.canManageStore : (ownerPermissions.canManageStore ?? false),
+        canManageInventory: memberData.canManageInventory !== undefined ? !!memberData.canManageInventory : (ownerPermissions.canManageInventory ?? false),
+        canManageShop: memberData.canManageShop !== undefined ? !!memberData.canManageShop : (ownerPermissions.canManageShop ?? false),
       });
       setOwnerPerms(ownerPermissions);
       onSaveRef.current = onSave;
@@ -76,9 +76,11 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
           message: `Đã cập nhật quyền cho **${member.user?.name}**.`,
           type: 'success',
           confirmText: 'ĐÓNG',
+          onConfirm: () => {
+            closeModal();
+          },
         });
         if (onSaveRef.current) onSaveRef.current(member.id, perms);
-        closeModal();
       }
     } catch (e) {
       popupRef.current?.show({

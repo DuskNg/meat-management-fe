@@ -16,6 +16,7 @@ import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import UpdatePhoneModal from './UpdatePhoneModal';
+import ConfirmExportModal from './ConfirmExportModal';
 
 // Hàm helper để xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
 const getPaymentTargetMonth = (p) => {
@@ -51,6 +52,7 @@ const formatPaymentNote = (note, paidAt) => {
 
 const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const updatePhoneModalRef = useRef(null);
+  const confirmExportModalRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -155,7 +157,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }).format(amount).replace('₫', 'đ');
   };
 
-  // 3. Tạo file ảnh công nợ từ dữ liệu tháng được chọn bằng HTML5 Canvas (Cứ 15 dòng chia thành 1 cột, tự động giãn ngang)
+  // 3. Tạo file ảnh công nợ từ dữ liệu tháng được chọn bằng HTML5 Canvas (Cứ 16 dòng chia thành 1 cột, tự động giãn ngang)
   const generateDebtImage = (month, transList, payList, cust) => {
     if (Platform.OS !== 'web') {
       return; // Không vẽ trên môi trường Native để tránh lỗi Canvas
@@ -183,6 +185,22 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const dayMap = {};
       let totalDebtVal = 0;
       let totalPaymentVal = 0;
+
+      // Tạo trước tất cả các ngày trong tháng được chọn
+      const [mm, yyyy] = month.split('/').map(Number);
+      const daysInMonth = new Date(yyyy, mm, 0).getDate();
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateKey = `${day.toString().padStart(2, '0')}/${mm.toString().padStart(2, '0')}/${yyyy}`;
+        dayMap[dateKey] = {
+          date: new Date(yyyy, mm - 1, day),
+          dateKey,
+          debtAmount: 0,
+          paymentAmount: 0,
+          items: [],
+          notes: []
+        };
+      }
 
       filteredTrans.forEach(t => {
         const d = new Date(t.date);
@@ -323,8 +341,13 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const rowsWithLayout = sortedRows.map(row => {
         let descText = '';
         const parts = [];
-        if (row.items && row.items.length > 0) {
-          parts.push(row.items.join(', '));
+        if (row.debtAmount === 0) {
+          // Ngày không có đơn nợ
+          parts.push('Trống');
+        } else {
+          if (row.items && row.items.length > 0) {
+            parts.push(row.items.join(', '));
+          }
         }
         if (row.notes && row.notes.length > 0) {
           parts.push(row.notes.join('; '));
@@ -346,8 +369,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         };
       });
 
-      // Chia các dòng thành các cột, cứ 15 giao dịch chia 1 cột
-      const itemsPerCol = 15;
+      // Chia các dòng thành các cột, cứ 16 giao dịch chia 1 cột
+      const itemsPerCol = 16;
       const numCols = Math.max(1, Math.ceil(rowsWithLayout.length / itemsPerCol));
       const colWidth = 800;
       const width = numCols * colWidth;
@@ -448,8 +471,12 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           ctx.fillText('Không có giao dịch phát sinh trong tháng này', startX + 400, currentY + 48);
         } else {
           colRows.forEach((row, idx) => {
-            // Tô màu nền xen kẽ để dễ đọc dòng
-            ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+            // Tô màu nền đỏ nhạt cho ngày chưa có đơn nợ hoặc xen kẽ để dễ đọc dòng
+            if (row.debtAmount === 0) {
+              ctx.fillStyle = '#FEF2F2'; // Đỏ nhạt cho ngày trống đơn nợ
+            } else {
+              ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+            }
             ctx.fillRect(startX + 40, currentY, 720, row.rowHeight);
 
             ctx.strokeStyle = '#E2E8F0';
@@ -467,13 +494,34 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             ctx.fillText(`${day}/${monthStr}`, startX + colDateX, currentY + row.rowHeight / 2);
 
             // Cột Chi tiết mô tả - vẽ nhiều dòng
-            ctx.fillStyle = '#0F172A';
             ctx.textAlign = 'left';
 
             // Tính toán vị trí Y xuất phát sao cho toàn bộ cụm chữ được căn giữa theo chiều dọc của hàng
             const startTextY = currentY + row.rowHeight / 2 - ((row.descLines.length - 1) * lineHeight) / 2;
             row.descLines.forEach((line, lineIdx) => {
-              ctx.fillText(line, startX + colDescX, startTextY + lineIdx * lineHeight);
+              const textY = startTextY + lineIdx * lineHeight;
+              if (line === 'Trống') {
+                ctx.fillStyle = '#DC2626'; // Bôi đỏ chữ Trống
+                ctx.font = 'bold 15px Arial';
+                ctx.fillText(line, startX + colDescX, textY);
+              } else if (line.startsWith('Trống |')) {
+                // Vẽ chữ "Trống" màu đỏ in đậm
+                ctx.fillStyle = '#DC2626';
+                ctx.font = 'bold 15px Arial';
+                ctx.fillText('Trống', startX + colDescX, textY);
+
+                // Đo chiều rộng chữ "Trống" để vẽ tiếp phần sau
+                const trongWidth = ctx.measureText('Trống').width;
+
+                // Vẽ phần còn lại với màu chữ bình thường
+                ctx.fillStyle = '#0F172A';
+                ctx.font = '15px Arial';
+                ctx.fillText(line.substring('Trống'.length), startX + colDescX + trongWidth, textY);
+              } else {
+                ctx.fillStyle = '#0F172A';
+                ctx.font = '15px Arial';
+                ctx.fillText(line, startX + colDescX, textY);
+              }
             });
 
             // Cột tiền nợ
@@ -577,8 +625,13 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       rows.forEach(row => {
         let descText = '';
         const parts = [];
-        if (row.items && row.items.length > 0) {
-          parts.push(row.items.join(', '));
+        if (row.debtAmount === 0) {
+          // Ngày không có đơn nợ
+          parts.push('Trống');
+        } else {
+          if (row.items && row.items.length > 0) {
+            parts.push(row.items.join(', '));
+          }
         }
         if (row.notes && row.notes.length > 0) {
           parts.push(row.notes.join('; '));
@@ -666,19 +719,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
   };
 
-  // 4. Tải ảnh về máy và tự động điều hướng sang Zalo gửi cho khách hàng
-  const handleDownloadAndZalo = async () => {
+  // Thực hiện tải ảnh về máy và tự động mở Zalo gửi cho khách hàng
+  const executeDownloadAndZalo = async () => {
     const targetPhone = customer?.phone;
-
-    // Kiểm tra SĐT trước — nếu thiếu thì mở popup nhập, không làm gì thêm
-    if (!targetPhone) {
-      updatePhoneModalRef.current?.open(customer, (newPhone) => {
-        setCustomer(prev => ({ ...prev, phone: newPhone }));
-        if (onRefresh) onRefresh();
-        proceedZalo(newPhone);
-      });
-      return;
-    }
 
     if (Platform.OS === 'web' && imageUri) {
       const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
@@ -731,6 +774,43 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
     // Không có ảnh: chỉ mở Zalo
     proceedZalo(targetPhone);
+  };
+
+  // Kiểm tra các ngày trống đơn nợ và mở popup cảnh báo nếu có
+  const checkEmptyDaysAndProceed = (phone) => {
+    const emptyDays = rows.filter(r => r.debtAmount === 0).map(r => r.dateKey.split('/')[0]);
+    if (emptyDays.length > 0) {
+      confirmExportModalRef.current?.open(
+        emptyDays,
+        selectedMonth,
+        () => {
+          // Người dùng chọn tiếp tục xuất
+          executeDownloadAndZalo();
+        },
+        () => {
+          // Người dùng chọn hủy xuất (không làm gì)
+        }
+      );
+    } else {
+      executeDownloadAndZalo();
+    }
+  };
+
+  // 4. Tải ảnh về máy và tự động điều hướng sang Zalo gửi cho khách hàng
+  const handleDownloadAndZalo = async () => {
+    const targetPhone = customer?.phone;
+
+    // Kiểm tra SĐT trước — nếu thiếu thì mở popup nhập, không làm gì thêm
+    if (!targetPhone) {
+      updatePhoneModalRef.current?.open(customer, (newPhone) => {
+        setCustomer(prev => ({ ...prev, phone: newPhone }));
+        if (onRefresh) onRefresh();
+        checkEmptyDaysAndProceed(newPhone);
+      });
+      return;
+    }
+
+    checkEmptyDaysAndProceed(targetPhone);
   };
 
   return (
@@ -872,6 +952,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         </View>
       </SmoothModal>
       <UpdatePhoneModal ref={updatePhoneModalRef} onUpdateSuccess={onRefresh} />
+      <ConfirmExportModal ref={confirmExportModalRef} />
     </>
   );
 });
