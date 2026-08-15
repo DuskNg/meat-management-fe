@@ -30,6 +30,10 @@ export default function InventoryDashboardScreen() {
   const auth = useAuthStore();
   const user = auth.user;
 
+  // States quản lý bộ lọc và tìm kiếm
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('ALL'); // 'ALL' | 'LOW' | 'OUT'
+
   // Refs của các pop-up modal
   const addModalRef = useRef(null);
   const actionModalRef = useRef(null);
@@ -273,10 +277,6 @@ export default function InventoryDashboardScreen() {
       fetchRecentLogs();
     }
   };
-
-  // States quản lý bộ lọc và tìm kiếm
-  const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState('ALL'); // 'ALL' | 'LOW' | 'OUT'
 
   return (
     <SafeAreaView style={styles.container}>
