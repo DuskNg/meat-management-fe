@@ -813,18 +813,23 @@ export default function CustomerDetailScreen() {
   }, [transactions, payments]);
 
   // ─── Helper: định dạng tiền VNĐ ─────────────────────────────────────────
-  const formatCurrency = (amount) =>
-    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
-      .format(amount)
+  const formatCurrency = (amount) => {
+    const rounded = Math.round(parseFloat(amount) || 0);
+    const clean = Math.abs(rounded) < 1 ? 0 : rounded;
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
+      .format(clean)
       .replace('₫', 'đ');
+  };
 
   // ─── Helper: tiền rút gọn cho tile (280k / 1.5tr) ───────────────────────
   const formatAmountShort = (amount) => {
-    if (amount >= 1_000_000) {
-      const v = (amount / 1_000_000).toFixed(1).replace(/\.0$/, '');
+    const num = Math.round(parseFloat(amount) || 0);
+    if (Math.abs(num) < 1) return '0đ';
+    if (num >= 1_000_000) {
+      const v = (num / 1_000_000).toFixed(1).replace(/\.0$/, '');
       return `${v}tr`;
     }
-    return `${Math.round(amount / 1_000)}k`;
+    return `${Math.round(num / 1_000)}k`;
   };
 
   // ─── Helper: ngày/tháng ngắn (10/06) ────────────────────────────────────
@@ -1056,7 +1061,7 @@ export default function CustomerDetailScreen() {
               <View style={styles.monthGrid}>
                 {monthGroups.map((month) => {
                   // Xác định trạng thái nợ của tháng để hiển thị màu sắc phù hợp
-                  const hasDebt = month.remainingDebt > 0;
+                  const hasDebt = Math.round(month.remainingDebt) > 0;
 
                   let bgColor, bdColor, txtColor, statusLabel;
                   if (!hasDebt) {
@@ -1132,13 +1137,13 @@ export default function CustomerDetailScreen() {
               style={[
                 styles.actionButton,
                 styles.btnVoice,
-                { opacity: 0.5, backgroundColor: '#E2E8F0', borderColor: '#CBD5E1' } // Vô hiệu hóa nút giọng nói
+                isRecording && styles.btnRecording,
               ]}
-              disabled={true}
               onPress={handleVoicePress}
+              disabled={scanning}
             >
-              <Text style={[styles.actionButtonText, { color: '#94A3B8' }]}>
-                🎤 NÓI GHI NỢ (ĐÃ TẮT)
+              <Text style={styles.actionButtonText}>
+                {isRecording ? '⏹️ DỪNG NÓI' : '🎤 NÓI GHI NỢ'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity

@@ -16,16 +16,7 @@ import DatePickerInput from '../DatePickerInput';
 import StorePopupModal from './StorePopupModal';
 import { api } from '../../api/client';
 import { COLORS, FONTS, SHADOWS } from '../../theme';
-
-// Loại bỏ dấu tiếng Việt để tìm kiếm không dấu
-const removeDiacritics = (str) => {
-  if (!str) return '';
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D');
-};
+import { matchSearch, removeDiacritics } from '../../utils/searchHelper';
 
 const formatNumberString = (value) => {
   const clean = String(value).replace(/[^0-9]/g, '');
@@ -80,7 +71,7 @@ const SelectDropdown = ({ value, placeholder, options, onSelect, onInputChange, 
 
   const filtered = options.filter((opt) => {
     const label = typeof opt === 'string' ? opt : (opt.name || '');
-    return removeDiacritics(label.toLowerCase()).includes(removeDiacritics(search.toLowerCase()));
+    return matchSearch(label, search);
   });
 
   return (

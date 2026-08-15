@@ -26,6 +26,35 @@ export default function LoginScreen() {
   const [step, setStep] = useState(1); // 1: Nhập Số Điện Thoại, 2: Nhập mã OTP
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isInviteValid, setIsInviteValid] = useState(true);
+  const [validatingInvite, setValidatingInvite] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState('');
+
+  // Tự động kiểm tra tính hợp lệ của mã mời Workspace khi truy cập
+  React.useEffect(() => {
+    if (inviteCode) {
+      const checkInvite = async () => {
+        setValidatingInvite(true);
+        setError('');
+        try {
+          const res = await api.get(`/auth/validate-invite/${inviteCode}`);
+          if (res.data && res.data.success) {
+            setIsInviteValid(true);
+            setWorkspaceName(res.data.data.workspaceName);
+          } else {
+            setIsInviteValid(false);
+            setError('Mã mời Workspace không hợp lệ hoặc đã bị tắt.');
+          }
+        } catch (err) {
+          setIsInviteValid(false);
+          setError(err.response?.data?.message || 'Mã mời Workspace không hợp lệ hoặc đã bị tắt.');
+        } finally {
+          setValidatingInvite(false);
+        }
+      };
+      checkInvite();
+    }
+  }, [inviteCode]);
 
   // Tự động điền số điện thoại từ lần đăng nhập gần nhất
   React.useEffect(() => {
@@ -177,30 +206,40 @@ export default function LoginScreen() {
         <View style={styles.card}>
           {/* Logo ứng dụng cách điệu như một icon app cao cấp */}
           <View style={styles.logoBadge}>
-            <Text style={styles.logoEmoji}>🥩</Text>
+            <Text style={styles.logoEmoji}>🏬</Text>
           </View>
 
-          <Text style={styles.appName}>Quản Lý bán hàng</Text>
+          <Text style={styles.appName}>Hệ thống quản lý</Text>
 
           {/* Hộp thông báo trạng thái/lỗi luôn hiển thị cố định để tránh co rút giao diện */}
           <View style={[
             styles.statusContainer,
-            !error && phone.trim() === ''
+            validatingInvite
               ? styles.statusNeutral
-              : error
-                ? styles.statusError
-                : styles.statusSuccess
+              : !error && phone.trim() === ''
+                ? (inviteCode && workspaceName ? styles.statusSuccess : styles.statusNeutral)
+                : error
+                  ? styles.statusError
+                  : styles.statusSuccess
           ]}>
             <Text style={[
               styles.statusText,
-              !error && phone.trim() === ''
+              validatingInvite
                 ? styles.statusTextNeutral
-                : error
-                  ? styles.statusTextError
-                  : styles.statusTextSuccess
+                : !error && phone.trim() === ''
+                  ? (inviteCode && workspaceName ? styles.statusTextSuccess : styles.statusTextNeutral)
+                  : error
+                    ? styles.statusTextError
+                    : styles.statusTextSuccess
             ]}>
-              {!error && phone.trim() === '' ? (
-                'ℹ️ Nhập số điện thoại để đăng nhập.'
+              {validatingInvite ? (
+                '⏳ Đang xác thực liên kết mời...'
+              ) : !error && phone.trim() === '' ? (
+                inviteCode && workspaceName ? (
+                  `🏢 Bạn đang gia nhập Workspace: ${workspaceName}`
+                ) : (
+                  'ℹ️ Nhập số điện thoại để đăng nhập.'
+                )
               ) : error ? (
                 `⚠️ ${error}`
               ) : (
@@ -214,17 +253,24 @@ export default function LoginScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Nhập số điện thoại của bạn:</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  (!isInviteValid || validatingInvite) && { backgroundColor: '#F1F5F9', color: '#94A3B8', borderColor: '#CBD5E1' }
+                ]}
                 placeholder="Ví dụ: 0912345678"
                 placeholderTextColor={COLORS.textLight}
                 keyboardType="phone-pad"
                 value={phone}
                 onChangeText={handlePhoneChange}
+                editable={isInviteValid && !validatingInvite}
               />
               <AnimatedPressable
-                style={styles.button}
+                style={[
+                  styles.button,
+                  (!isInviteValid || validatingInvite) && { backgroundColor: '#CBD5E1', shadowColor: 'transparent' }
+                ]}
                 onPress={handleRequestOtp}
-                disabled={loading}
+                disabled={loading || !isInviteValid || validatingInvite}
                 activeOpacity={0.8}
               >
                 {loading ? (
@@ -316,13 +362,13 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#FEE2E2', // Nền đỏ hồng nhạt cho icon
+    backgroundColor: '#ECFDF5', // Nền xanh ngọc nhạt
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'center',
     marginBottom: 20,
     borderWidth: 2,
-    borderColor: '#FCA5A5',
+    borderColor: '#A7F3D0',
   },
   logoEmoji: {
     fontSize: 40,
@@ -330,7 +376,7 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#7F1D1D', // Màu đỏ đun Bordeaux sang trọng
+    color: '#065F46', // Màu xanh lục đậm ngọc lục bảo sang trọng
     textAlign: 'center',
     marginBottom: 10,
     letterSpacing: 0.5,
@@ -395,6 +441,11 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#E4E2DD',
     marginBottom: 24,
+    ...Platform.select({
+      web: {
+        outlineStyle: 'none',
+      },
+    }),
   },
   otpInput: {
     textAlign: 'center',

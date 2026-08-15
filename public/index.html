@@ -1,102 +1,109 @@
 <!DOCTYPE html>
 <html lang="vi">
-  <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    
-    <!-- Cấu hình ngăn chặn lưu bộ nhớ đệm (cache) của trình duyệt để luôn tải bản mới nhất -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-    
-    <!-- Ngăn chặn tự động thu phóng (auto-zoom) khi bấm vào ô nhập liệu trên điện thoại -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no" />
-    
-    <title>meat-management-fe</title>
-    
-    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
-    <style id="expo-reset">
-      /* These styles make the body full-height */
-      html,
-      body {
-        height: 100%;
-      }
-      /* These styles disable body scrolling if you are using <ScrollView> */
-      body {
-        overflow: hidden;
-      }
-      /* These styles make the root element full-height */
-      #root {
-        display: flex;
-        height: 100%;
-        flex: 1;
-      }
-    </style>
 
-    <!-- CSS toàn cục để ép kiểu font chữ của các ô nhập liệu tối thiểu là 16px trên Web, chống zoom của iOS Safari -->
-    <style>
-      input, textarea, select {
-        font-size: 16px !important;
-      }
-    </style>
-  </head>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 
-  <body>
-    <!-- Sử dụng chế độ render tĩnh của Expo Router để hỗ trợ chạy khi không có JavaScript -->
-    <noscript>
-      Bạn cần bật JavaScript để chạy ứng dụng này.
-    </noscript>
-    <!-- Thẻ div gốc của ứng dụng Expo -->
-    <div id="root"></div>
+  <!-- Cấu hình ngăn chặn lưu bộ nhớ đệm (cache) của trình duyệt để luôn tải bản mới nhất -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
 
-    <!-- Đăng ký Service Worker để tự động cập nhật app trên mọi thiết bị, đặc biệt giải quyết cache iOS Safari PWA -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-          var swUrl = '/sw.js';
-          navigator.serviceWorker.register(swUrl)
-            .then(function(registration) {
-              console.log('[App] Service Worker đăng ký thành công:', registration.scope);
+  <!-- Ngăn chặn tự động thu phóng (auto-zoom) khi bấm vào ô nhập liệu trên điện thoại -->
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no" />
 
-              // Lắng nghe khi có Service Worker mới đang chờ kích hoạt
-              registration.addEventListener('updatefound', function() {
-                var newWorker = registration.installing;
-                if (!newWorker) return;
+  <title>Hệ thống quản lý</title>
 
-                newWorker.addEventListener('statechange', function() {
-                  // Khi SW mới đã được cài đặt và đang chờ
-                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    console.log('[App] Phát hiện bản cập nhật mới. Đang kích hoạt...');
-                    // Ra lệnh cho SW mới kích hoạt ngay
-                    newWorker.postMessage({ type: 'SKIP_WAITING' });
-                  }
-                });
+  <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+  <style id="expo-reset">
+    /* These styles make the body full-height */
+    html,
+    body {
+      height: 100%;
+    }
+
+    /* These styles disable body scrolling if you are using <ScrollView> */
+    body {
+      overflow: hidden;
+    }
+
+    /* These styles make the root element full-height */
+    #root {
+      display: flex;
+      height: 100%;
+      flex: 1;
+    }
+  </style>
+
+  <!-- CSS toàn cục để ép kiểu font chữ của các ô nhập liệu tối thiểu là 16px trên Web, chống zoom của iOS Safari -->
+  <style>
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Sử dụng chế độ render tĩnh của Expo Router để hỗ trợ chạy khi không có JavaScript -->
+  <noscript>
+    Bạn cần bật JavaScript để chạy ứng dụng này.
+  </noscript>
+  <!-- Thẻ div gốc của ứng dụng Expo -->
+  <div id="root"></div>
+
+  <!-- Đăng ký Service Worker để tự động cập nhật app trên mọi thiết bị, đặc biệt giải quyết cache iOS Safari PWA -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        var swUrl = '/sw.js';
+        navigator.serviceWorker.register(swUrl)
+          .then(function (registration) {
+            console.log('[App] Service Worker đăng ký thành công:', registration.scope);
+
+            // Lắng nghe khi có Service Worker mới đang chờ kích hoạt
+            registration.addEventListener('updatefound', function () {
+              var newWorker = registration.installing;
+              if (!newWorker) return;
+
+              newWorker.addEventListener('statechange', function () {
+                // Khi SW mới đã được cài đặt và đang chờ
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('[App] Phát hiện bản cập nhật mới. Đang kích hoạt...');
+                  // Ra lệnh cho SW mới kích hoạt ngay
+                  newWorker.postMessage({ type: 'SKIP_WAITING' });
+                }
               });
-            })
-            .catch(function(err) {
-              console.error('[App] Đăng ký Service Worker thất bại:', err);
             });
-
-          // Lắng nghe thông báo từ Service Worker khi đã cập nhật xong
-          navigator.serviceWorker.addEventListener('message', function(event) {
-            if (event.data && event.data.type === 'SW_UPDATED') {
-              console.log('[App] Service Worker đã cập nhật lên phiên bản:', event.data.version);
-              // Tự động tải lại trang để áp dụng bản mới
-              window.location.reload(true);
-            }
+          })
+          .catch(function (err) {
+            console.error('[App] Đăng ký Service Worker thất bại:', err);
           });
 
-          // Phát hiện khi controller thay đổi (SW mới tiếp quản) và reload
-          var refreshing = false;
-          navigator.serviceWorker.addEventListener('controllerchange', function() {
-            if (!refreshing) {
-              refreshing = true;
-              console.log('[App] Controller mới đã tiếp quản. Tải lại trang...');
-              window.location.reload(true);
-            }
-          });
+        // Lắng nghe thông báo từ Service Worker khi đã cập nhật xong
+        navigator.serviceWorker.addEventListener('message', function (event) {
+          if (event.data && event.data.type === 'SW_UPDATED') {
+            console.log('[App] Service Worker đã cập nhật lên phiên bản:', event.data.version);
+            // Tự động tải lại trang để áp dụng bản mới
+            window.location.reload(true);
+          }
         });
-      }
-    </script>
-  </body>
+
+        // Phát hiện khi controller thay đổi (SW mới tiếp quản) và reload
+        var refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (!refreshing) {
+            refreshing = true;
+            console.log('[App] Controller mới đã tiếp quản. Tải lại trang...');
+            window.location.reload(true);
+          }
+        });
+      });
+    }
+  </script>
+</body>
+
 </html>

@@ -9,6 +9,7 @@ export default function Root({ children }) {
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+        <title>Quản lý hệ thống</title>
         
         {/* Ngăn chặn tự động thu phóng (auto-zoom) khi bấm vào ô nhập liệu trên điện thoại */}
         <meta 

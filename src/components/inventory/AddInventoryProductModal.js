@@ -27,7 +27,18 @@ const parseNumberString = (formattedValue) => {
   return cleanValue ? parseInt(cleanValue, 10) : 0;
 };
 
-const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
+// Chỉ cho phép nhập ký tự số (hỗ trợ số thập phân có 1 dấu chấm)
+const formatQuantityInput = (value) => {
+  if (!value) return '';
+  let clean = value.toString().replace(/,/g, '.').replace(/[^0-9.]/g, '');
+  const parts = clean.split('.');
+  if (parts.length > 2) {
+    clean = `${parts[0]}.${parts.slice(1).join('')}`;
+  }
+  return clean;
+};
+
+const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess }, ref) => {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -36,6 +47,7 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
   const [productId, setProductId] = useState(null); // null nếu thêm mới, khác null nếu sửa
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [minQuantity, setMinQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [unit, setUnit] = useState('cái');
 
@@ -46,15 +58,17 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
       if (product) {
         // Chế độ chỉnh sửa sản phẩm có sẵn
         setProductId(product.id);
-        setName(product.name);
-        setQuantity(product.quantity.toString());
-        setPrice(formatNumberString(product.price.toString()));
+        setName(product.name || '');
+        setQuantity(product.quantity !== undefined ? product.quantity.toString() : '0');
+        setMinQuantity(product.minQuantity !== undefined ? product.minQuantity.toString() : '');
+        setPrice(formatNumberString((product.price || 0).toString()));
         setUnit(product.unit || 'cái');
       } else {
         // Chế độ thêm sản phẩm mới
         setProductId(null);
         setName('');
         setQuantity('');
+        setMinQuantity('');
         setPrice('');
         setUnit('cái');
       }
@@ -78,6 +92,12 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
       return;
     }
 
+    const minQty = minQuantity.trim() ? parseFloat(minQuantity) : 0;
+    if (isNaN(minQty) || minQty < 0) {
+      setErrorMsg('Định mức tối thiểu phải lớn hơn hoặc bằng 0.');
+      return;
+    }
+
     const prc = parseNumberString(price);
     if (prc < 0) {
       setErrorMsg('Giá nhập sản phẩm phải lớn hơn hoặc bằng 0.');
@@ -92,6 +112,7 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
       const payload = {
         name: name.trim(),
         quantity: qty,
+        minQuantity: minQty,
         price: prc,
         unit: unit.trim() || 'cái',
       };
@@ -120,6 +141,39 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
     }
   };
 
+  // Xử lý Xóa sản phẩm khỏi kho (khi đang ở chế độ sửa)
+  const handleDelete = () => {
+    if (!productId) return;
+    Alert.alert(
+      'Xác nhận xóa',
+      `Bạn có chắc chắn muốn xóa sản phẩm "${name}" khỏi kho không?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa ngay',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              const res = await api.delete(`/inventory/products/${productId}`);
+              if (res.data && res.data.success) {
+                if (onDeleteSuccess) onDeleteSuccess();
+                setVisible(false);
+              } else {
+                setErrorMsg(res.data.message || 'Không thể xóa sản phẩm.');
+              }
+            } catch (err) {
+              console.error(err);
+              setErrorMsg(err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ.');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (!visible) return null;
 
   return (
@@ -137,7 +191,7 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
 
         <View style={styles.card}>
           <Text style={styles.title}>
-            {productId ? 'Chỉnh sửa sản phẩm kho' : 'Thêm sản phẩm vào kho'}
+            {productId ? '✏️ Chỉnh Sửa Sản Phẩm Kho' : '📦 Thêm Sản Phẩm Vào Kho'}
           </Text>
 
           {errorMsg ? (
@@ -160,13 +214,13 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
 
           {/* Nhập số lượng */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Số lượng *</Text>
+            <Text style={styles.label}>Số lượng tồn *</Text>
             <TextInput
               style={styles.input}
               value={quantity}
-              onChangeText={setQuantity}
+              onChangeText={(text) => setQuantity(formatQuantityInput(text))}
               placeholder="Ví dụ: 100"
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
               placeholderTextColor="#94A3B8"
             />
           </View>
@@ -200,19 +254,44 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
 
           {/* Nhập đơn giá nhập */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Giá nhập (đ/đơn vị) *</Text>
+            <Text style={styles.label}>Giá vốn / Đơn giá (đ/{unit}) *</Text>
             <TextInput
               style={styles.input}
               value={price}
               onChangeText={(text) => setPrice(formatNumberString(text))}
-              placeholder="Ví dụ: 75.000"
+              placeholder={`Ví dụ: 75.000đ/${unit}`}
               keyboardType="numeric"
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+
+          {/* Nhập định mức tồn tối thiểu để cảnh báo */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Tồn tối thiểu báo sắp hết (Tuỳ chọn)</Text>
+            <TextInput
+              style={styles.input}
+              value={minQuantity}
+              onChangeText={(text) => setMinQuantity(formatQuantityInput(text))}
+              placeholder="Ví dụ: 5 (báo vàng/đỏ khi tồn <= 5)"
+              keyboardType="decimal-pad"
               placeholderTextColor="#94A3B8"
             />
           </View>
 
           {/* Các nút hành động */}
           <View style={styles.actions}>
+            {productId ? (
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={handleDelete}
+                disabled={loading}
+              >
+                <Text style={styles.deleteBtnText}>🗑️ Xóa</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <View style={{ flex: 1 }} />
+
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={() => setVisible(false)}
@@ -222,14 +301,16 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess }, ref) => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.submitBtn}
+              style={[styles.submitBtn, productId && styles.submitBtnUpdate]}
               onPress={handleSubmit}
               disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.submitBtnText}>Xác nhận</Text>
+                <Text style={styles.submitBtnText}>
+                  {productId ? '💾 Lưu Thay Đổi' : '➕ Thêm Vào Kho'}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -299,9 +380,22 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 8,
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+  },
+  deleteBtn: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  deleteBtnText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   cancelBtn: {
     paddingVertical: 10,
@@ -322,6 +416,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  submitBtnUpdate: {
+    backgroundColor: '#0F766E', // Màu xanh ngọc cho lưu cập nhật
   },
   submitBtnText: {
     color: '#FFFFFF',

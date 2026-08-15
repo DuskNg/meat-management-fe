@@ -17,16 +17,7 @@ import ImagePreviewModal from './ImagePreviewModal'; // Import ImagePreviewModal
 import PopupModal from './PopupModal';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
-
-// Loại bỏ dấu tiếng Việt để phục vụ tìm kiếm không dấu
-const removeDiacritics = (str) => {
-  if (!str) return '';
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D');
-};
+import { matchSearch, removeDiacritics } from '../utils/searchHelper';
 
 // --- Helper: định dạng hàng nghìn dấu chấm ---
 const formatNumberString = (value) => {
@@ -60,8 +51,6 @@ const convertDisplayToIso = (displayStr) => {
   return `${parts[2]}-${parts[1]}-${parts[0]}`;
 };
 
-
-
 // --- Component Select Dropdown tái sử dụng ---
 const SelectDropdown = ({ value, placeholder, options, onSelect, onInputChange, renderOption, renderSelected, style, compact }) => {
   const [open, setOpen] = useState(false);
@@ -85,7 +74,7 @@ const SelectDropdown = ({ value, placeholder, options, onSelect, onInputChange, 
 
   const filtered = options.filter((opt) => {
     const label = typeof opt === 'string' ? opt : (opt.name || '');
-    return removeDiacritics(label.toLowerCase()).includes(removeDiacritics(search.toLowerCase()));
+    return matchSearch(label, search);
   });
 
   return (

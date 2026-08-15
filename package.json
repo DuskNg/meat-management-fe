@@ -1,5 +1,5 @@
 {
-  "name": "meat-management-fe",
+  "name": "quan-ly-he-thong",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
@@ -21,6 +21,7 @@
     "react-native-qrcode-svg": "^6.3.21",
     "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
+    "socket.io-client": "^4.8.3",
     "zustand": "^5.0.14"
   },
   "scripts": {

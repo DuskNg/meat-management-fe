@@ -2,16 +2,17 @@
 import React, { forwardRef, useImperativeHandle, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  ActivityIndicator, Modal, Animated, Dimensions, Platform, TextInput, Image,
+  ActivityIndicator, Modal, Animated, Dimensions, Platform, TextInput, Image, Share,
 } from 'react-native';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import WorkspaceMemberPermModal from './WorkspaceMemberPermModal';
+import WorkspaceMemberActionsModal from './WorkspaceMemberActionsModal';
 import PopupModal from './PopupModal';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
-// Modal chi tiết Chủ Workspace — hiển thị QR, danh sách thành viên và yêu cầu đang chờ
+// Modal chi tiết Chủ Workspace — hiển thị QR, danh sách thành viên và yêu cầu đang chờ (Giao diện Sáng)
 const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, ref) {
   const { isAdminMode = false } = props;
   const [visible, setVisible] = useState(false);
@@ -28,6 +29,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
 
   const slideAnim = useRef(new Animated.Value(SCREEN_H)).current;
   const memberPermModalRef = useRef(null);
+  const memberActionsModalRef = useRef(null);
   const popupModalRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
@@ -35,7 +37,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
       setUser(userData);
       setWorkspace(userData?.ownedWorkspace || null);
       setWorkspaceName('');
-      setIsEditingName(false); // Đặt lại trạng thái sửa tên khi mở mới
+      setIsEditingName(false);
       setVisible(true);
       Animated.spring(slideAnim, {
         toValue: 0, useNativeDriver: true, tension: 65, friction: 11,
@@ -191,10 +193,63 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
     }
   };
 
-  const getQRValue = () => {
-    if (!workspace?.inviteCode) return '';
-    // QR encode URL để nhân viên quét sẽ mở app/web tại login với invite code
+  // Hàm tạo link mời vào workspace (tự động nhận diện theo domain thực tế đang chạy)
+  const getInviteLink = () => {
+    if (!workspace || !workspace.inviteCode) return '';
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      return `${window.location.origin}/login?invite=${workspace.inviteCode}`;
+    }
     return `https://meat-management-fe.vercel.app/login?invite=${workspace.inviteCode}`;
+  };
+
+  // Xử lý chia sẻ liên kết qua giao diện hệ thống
+  const handleShare = async () => {
+    const inviteLink = getInviteLink();
+    if (!inviteLink) return;
+
+    try {
+      await Share.share({
+        message: `Liên kết tham gia Workspace của cửa hàng: ${inviteLink}`,
+        url: inviteLink,
+      });
+    } catch (error) {
+      console.error('Lỗi khi chia sẻ liên kết:', error);
+    }
+  };
+
+  // Xử lý sao chép liên kết vào bộ nhớ tạm (Clipboard)
+  const handleCopyLink = async () => {
+    const inviteLink = getInviteLink();
+    if (!inviteLink) return;
+
+    try {
+      if (Platform.OS === 'web') {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(inviteLink);
+        } else {
+          // Phương án dự phòng cho trình duyệt cũ
+          const textArea = document.createElement('textarea');
+          textArea.value = inviteLink;
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+        }
+        popupModalRef.current?.show({
+          title: 'Thành công',
+          message: 'Đã sao chép liên kết mời thành viên vào bộ nhớ tạm.',
+          type: 'success',
+        });
+      } else {
+        // Trên điện thoại, mở hộp thoại chia sẻ có sẵn tuỳ chọn sao chép
+        await Share.share({
+          message: `Liên kết tham gia Workspace: ${inviteLink}`,
+          url: inviteLink,
+        });
+      }
+    } catch (error) {
+      console.error('Lỗi khi sao chép liên kết:', error);
+    }
   };
 
   if (!visible) return null;
@@ -207,7 +262,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
           {/* Header */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.headerTitle}>👑 Chi tiết Workspace & Thành viên</Text>
+              <Text style={styles.headerTitle}>👑 Quản lý Workspace</Text>
               <Text style={styles.headerSub}>{user?.name} — {user?.phone}</Text>
             </View>
             <TouchableOpacity onPress={closeModal} style={styles.closeBtn}>
@@ -218,7 +273,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
           <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 40 }}>
             {loading && !workspace ? (
               <View style={styles.center}>
-                <ActivityIndicator size="large" color="#8B5CF6" />
+                <ActivityIndicator size="large" color="#7C3AED" />
                 <Text style={styles.loadingText}>Đang tải thông tin Workspace...</Text>
               </View>
             ) : workspace ? (
@@ -226,10 +281,10 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
                 {/* Thông tin Workspace */}
                 <View style={styles.card}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <Text style={styles.cardTitle}>🏢 Thông tin Workspace</Text>
+                    <Text style={styles.cardTitle}>🏢 THÔNG TIN WORKSPACE</Text>
                     <View style={[styles.statusBadge, workspace.isActive ? styles.activeBadge : styles.inactiveBadge]}>
                       <Text style={styles.statusBadgeText}>
-                        {workspace.isActive ? 'Hoạt động' : 'Tắt'}
+                        {workspace.isActive ? 'Đang hoạt động' : 'Tạm tắt'}
                       </Text>
                     </View>
                   </View>
@@ -237,30 +292,14 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
                   {isEditingName ? (
                     <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                       <TextInput
-                        style={{
-                          flex: 1,
-                          color: '#F8FAFC',
-                          backgroundColor: '#0F172A',
-                          borderWidth: 1,
-                          borderColor: '#334155',
-                          borderRadius: 8,
-                          padding: 8,
-                          fontSize: 14,
-                        }}
+                        style={styles.editInput}
                         value={editNameValue}
                         onChangeText={setEditNameValue}
                         placeholder="Nhập tên Workspace mới..."
-                        placeholderTextColor="#64748B"
+                        placeholderTextColor="#94A3B8"
                       />
                       <TouchableOpacity
-                        style={{
-                          backgroundColor: '#10B981',
-                          paddingHorizontal: 12,
-                          paddingVertical: 8,
-                          borderRadius: 6,
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
+                        style={styles.saveNameBtn}
                         onPress={handleSaveName}
                         disabled={savingName}
                       >
@@ -271,35 +310,21 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
                         )}
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={{
-                          backgroundColor: '#475569',
-                          paddingHorizontal: 12,
-                          paddingVertical: 8,
-                          borderRadius: 6,
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
+                        style={styles.cancelNameBtn}
                         onPress={() => setIsEditingName(false)}
                         disabled={savingName}
                       >
-                        <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>Hủy</Text>
+                        <Text style={{ color: '#475569', fontWeight: 'bold', fontSize: 13 }}>Hủy</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text style={styles.wsName} numberOfLines={2}>{workspace.name}</Text>
                       <TouchableOpacity
-                        style={{
-                          backgroundColor: '#7C3AED20',
-                          borderColor: '#7C3AED',
-                          borderWidth: 1,
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderRadius: 6,
-                        }}
+                        style={styles.editNameBtn}
                         onPress={handleStartEdit}
                       >
-                        <Text style={{ fontSize: 12, color: '#A78BFA', fontWeight: '600' }}>Sửa tên</Text>
+                        <Text style={styles.editNameBtnText}>✏️ Sửa tên</Text>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -307,42 +332,73 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
                   {!isAdminMode && (
                     <View style={[styles.inviteRow, { marginTop: 12 }]}>
                       <View>
-                        <Text style={styles.inviteLabel}>Mã mời</Text>
+                        <Text style={styles.inviteLabel}>Mã mời gia nhập:</Text>
                         <Text style={styles.inviteCode}>{workspace.inviteCode}</Text>
                       </View>
                     </View>
                   )}
                 </View>
 
+                {/* Nút bấm xem Nhật ký thao tác thành viên (Dành riêng cho Chủ Workspace) */}
+                <TouchableOpacity
+                  style={styles.actionLogsBtn}
+                  onPress={() => memberActionsModalRef.current?.open(user, 'ALL')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.actionLogsIcon}>📜</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.actionLogsTitle}>Nhật ký thao tác thành viên</Text>
+                    <Text style={styles.actionLogsSubtitle}>Xem, chỉnh sửa hoặc xóa các thao tác ghi nợ, thu tiền trong ngày</Text>
+                  </View>
+                  <Text style={styles.actionLogsArrow}>➔</Text>
+                </TouchableOpacity>
+
                 {/* QR Code (Chỉ hiển thị với Workspace Owner thường, ẩn đối với Admin tối cao) */}
                 {!isAdminMode && (
                   <View style={styles.card}>
-                    <Text style={styles.cardTitle}>📱 Mã QR mời nhân viên</Text>
+                    <Text style={styles.cardTitle}>📱 MÃ QR MỜI NHÂN VIÊN</Text>
                     <Text style={styles.qrHint}>Nhân viên quét mã này để đăng nhập và gửi yêu cầu tham gia</Text>
                     <View style={styles.qrContainer}>
                       {workspace?.inviteCode ? (
                         <Image
-                          source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(getQRValue())}` }}
+                          source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(getInviteLink())}` }}
                           style={{ width: 180, height: 180 }}
                         />
                       ) : (
                         <View style={styles.qrPlaceholder}>
                           <Text style={styles.qrPlaceholderText}>📲</Text>
-                          <Text style={styles.qrPlaceholderLabel}>QR: {getQRValue()}</Text>
+                          <Text style={styles.qrPlaceholderLabel}>QR: {getInviteLink()}</Text>
                         </View>
                       )}
                     </View>
-                    <Text style={styles.qrUrl} numberOfLines={2}>{getQRValue()}</Text>
+                    <Text style={styles.qrUrl} numberOfLines={2}>{getInviteLink()}</Text>
+
+                    <View style={styles.shareActions}>
+                      <TouchableOpacity
+                        style={styles.shareBtn}
+                        onPress={handleShare}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.shareBtnText}>📤 Chia sẻ liên kết</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.copyBtn}
+                        onPress={handleCopyLink}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.copyBtnText}>📋 Sao chép link</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 )}
 
                 {/* Thành viên */}
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>
-                    👥 Thành viên ({workspace.members?.length || 0})
+                    👥 THÀNH VIÊN ({workspace.members?.length || 0})
                   </Text>
                   {(!workspace.members || workspace.members.length === 0) ? (
-                    <Text style={styles.emptyText}>Chưa có thành viên nào</Text>
+                    <Text style={styles.emptyText}>Chưa có thành viên nào tham gia</Text>
                   ) : (
                     workspace.members.map((member) => (
                       <View key={member.id} style={styles.memberRow}>
@@ -350,12 +406,20 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
                           <Text style={styles.memberName}>{member.user?.name}</Text>
                           <Text style={styles.memberPhone}>{member.user?.phone}</Text>
                         </View>
-                        <TouchableOpacity
-                          style={styles.kickBtn}
-                          onPress={() => handleOpenMemberPerms(member)}
-                        >
-                          <Text style={styles.kickBtnText}>Xem quyền</Text>
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <TouchableOpacity
+                            style={styles.memberActionBtn}
+                            onPress={() => memberActionsModalRef.current?.open(user, member.userId)}
+                          >
+                            <Text style={styles.memberActionBtnText}>👁️ Thao tác</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.memberPermBtn}
+                            onPress={() => handleOpenMemberPerms(member)}
+                          >
+                            <Text style={styles.memberPermBtnText}>Xem quyền</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     ))
                   )}
@@ -365,7 +429,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
                 {workspace.joinRequests && workspace.joinRequests.length > 0 && (
                   <View style={styles.card}>
                     <Text style={styles.cardTitle}>
-                      ⏳ Yêu cầu chờ phê duyệt ({workspace.joinRequests.length})
+                      ⏳ YÊU CẦU CHỜ DUYỆT ({workspace.joinRequests.length})
                     </Text>
                     {workspace.joinRequests.map((req) => (
                       <View key={req.id} style={styles.requestRow}>
@@ -375,16 +439,16 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
                         </View>
                         <View style={{ flexDirection: 'row', gap: 8 }}>
                           <TouchableOpacity
-                            style={[styles.kickBtn, { backgroundColor: '#10B98120', borderColor: '#10B981' }]}
+                            style={[styles.reqBtn, styles.approveBtn]}
                             onPress={() => handleProcessRequest(req.id, 'approve')}
                           >
-                            <Text style={[styles.kickBtnText, { color: '#34D399' }]}>Duyệt</Text>
+                            <Text style={styles.approveBtnText}>Duyệt</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            style={[styles.kickBtn, { backgroundColor: '#EF444420', borderColor: '#EF4444' }]}
+                            style={[styles.reqBtn, styles.rejectBtn]}
                             onPress={() => handleProcessRequest(req.id, 'reject')}
                           >
-                            <Text style={[styles.kickBtnText, { color: '#F87171' }]}>Từ chối</Text>
+                            <Text style={styles.rejectBtnText}>Từ chối</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -395,40 +459,24 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
             ) : (
               /* Chưa có workspace - Hiển thị form tạo mới */
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>🏢 Khởi tạo Workspace mới</Text>
+                <Text style={styles.cardTitle}>🏢 KHỞI TẠO WORKSPACE MỚI</Text>
                 <Text style={styles.qrHint}>Tạo một không gian làm việc chung để nhân viên có thể đồng bộ dữ liệu với bạn.</Text>
                 <TextInput
-                  style={{
-                    color: '#F8FAFC',
-                    backgroundColor: '#0F172A',
-                    borderWidth: 1,
-                    borderColor: '#334155',
-                    borderRadius: 8,
-                    padding: 12,
-                    fontSize: 14,
-                    marginBottom: 12,
-                  }}
+                  style={styles.createInput}
                   placeholder="Nhập tên Workspace (VD: Nhà hàng Anh Tú)..."
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor="#94A3B8"
                   value={workspaceName}
                   onChangeText={setWorkspaceName}
                 />
                 <TouchableOpacity
-                  style={{
-                    backgroundColor: '#7C3AED',
-                    paddingVertical: 12,
-                    borderRadius: 8,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: 48,
-                  }}
+                  style={styles.createSubmitBtn}
                   onPress={handleCreateWorkspace}
                   disabled={creating}
                 >
                   {creating ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
-                    <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>TẠO WORKSPACE</Text>
+                    <Text style={styles.createSubmitBtnText}>TẠO WORKSPACE</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -438,6 +486,7 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
       </View>
 
       <WorkspaceMemberPermModal ref={memberPermModalRef} />
+      <WorkspaceMemberActionsModal ref={memberActionsModalRef} />
       <PopupModal ref={popupModalRef} />
     </Modal>
   );
@@ -447,9 +496,9 @@ export default AdminOwnerDetailModal;
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15, 23, 42, 0.5)' },
   sheet: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: SCREEN_H * 0.92,
@@ -460,83 +509,221 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
   },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#A78BFA' },
-  headerSub: { fontSize: 13, color: '#94A3B8', marginTop: 2 },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#7C3AED' },
+  headerSub: { fontSize: 13, color: '#64748B', marginTop: 2 },
   closeBtn: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#F1F5F9',
     width: 32, height: 32, borderRadius: 16,
     justifyContent: 'center', alignItems: 'center',
   },
-  closeBtnText: { color: '#94A3B8', fontSize: 16 },
-  body: { flex: 1 },
+  closeBtnText: { color: '#64748B', fontSize: 16, fontWeight: 'bold' },
+  body: { flex: 1, backgroundColor: '#F8FAFC' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  loadingText: { color: '#94A3B8', fontSize: 14, marginTop: 8 },
+  loadingText: { color: '#64748B', fontSize: 14, marginTop: 8 },
   card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     padding: 16,
     margin: 16,
     marginBottom: 0,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#94A3B8', marginBottom: 12 },
-  wsName: { fontSize: 20, fontWeight: 'bold', color: '#F8FAFC', marginBottom: 12 },
+  cardTitle: { fontSize: 12, fontWeight: 'bold', color: '#64748B', marginBottom: 12, letterSpacing: 0.5 },
+  wsName: { fontSize: 20, fontWeight: 'bold', color: '#0F172A', marginBottom: 6 },
+  editInput: {
+    flex: 1,
+    color: '#0F172A',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+  },
+  saveNameBtn: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelNameBtn: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editNameBtn: {
+    backgroundColor: '#FAF5FF',
+    borderColor: '#C084FC',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  editNameBtnText: { fontSize: 12, color: '#7C3AED', fontWeight: 'bold' },
   inviteRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: '#FAF5FF',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
   },
-  inviteLabel: { fontSize: 12, color: '#64748B', marginBottom: 4 },
-  inviteCode: { fontSize: 22, fontWeight: 'bold', color: '#A78BFA', letterSpacing: 3 },
+  inviteLabel: { fontSize: 12, color: '#6B7280', marginBottom: 4 },
+  inviteCode: { fontSize: 22, fontWeight: 'bold', color: '#7C3AED', letterSpacing: 3 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
-  activeBadge: { backgroundColor: '#10B98120', borderColor: '#10B981' },
-  inactiveBadge: { backgroundColor: '#EF444420', borderColor: '#EF4444' },
-  statusBadgeText: { fontSize: 11, fontWeight: 'bold', color: '#E2E8F0' },
-  qrHint: { fontSize: 12, color: '#64748B', marginBottom: 16, lineHeight: 18 },
-  qrContainer: { alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 20, marginBottom: 12 },
+  activeBadge: { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
+  inactiveBadge: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  statusBadgeText: { fontSize: 11, fontWeight: 'bold', color: '#059669' },
+  actionLogsBtn: {
+    backgroundColor: '#FAF5FF',
+    borderColor: '#C084FC',
+    borderWidth: 1.5,
+    borderRadius: 14,
+    padding: 16,
+    margin: 16,
+    marginBottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  actionLogsIcon: { fontSize: 26 },
+  actionLogsTitle: { fontSize: 15, fontWeight: 'bold', color: '#7C3AED' },
+  actionLogsSubtitle: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  actionLogsArrow: { fontSize: 16, color: '#7C3AED', fontWeight: 'bold' },
+  qrHint: { fontSize: 13, color: '#64748B', marginBottom: 16, lineHeight: 18 },
+  qrContainer: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
   qrPlaceholder: { alignItems: 'center', padding: 20 },
   qrPlaceholderText: { fontSize: 48, marginBottom: 8 },
-  qrPlaceholderLabel: { fontSize: 10, color: '#64748B', textAlign: 'center' },
-  qrUrl: { fontSize: 10, color: '#475569', textAlign: 'center', lineHeight: 14 },
-  emptyText: { fontSize: 13, color: '#64748B', fontStyle: 'italic' },
+  qrPlaceholderLabel: { fontSize: 11, color: '#64748B', textAlign: 'center' },
+  qrUrl: { fontSize: 11, color: '#64748B', textAlign: 'center', lineHeight: 16 },
+  emptyText: { fontSize: 13, color: '#94A3B8', fontStyle: 'italic', paddingVertical: 8 },
   memberRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: '#F1F5F9',
   },
   memberInfo: { flex: 1 },
-  memberName: { fontSize: 14, fontWeight: '600', color: '#F1F5F9' },
-  memberPhone: { fontSize: 12, color: '#94A3B8', marginTop: 2 },
-  kickBtn: {
-    backgroundColor: '#7C3AED20',
-    borderColor: '#7C3AED',
+  memberName: { fontSize: 14, fontWeight: 'bold', color: '#0F172A' },
+  memberPhone: { fontSize: 12, color: '#64748B', marginTop: 2 },
+  memberActionBtn: {
+    backgroundColor: '#E0F2FE',
+    borderColor: '#BAE6FD',
     borderWidth: 1,
     paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 6,
   },
-  kickBtnText: { fontSize: 12, color: '#A78BFA', fontWeight: '600' },
+  memberActionBtnText: { fontSize: 12, color: '#0284C7', fontWeight: 'bold' },
+  memberPermBtn: {
+    backgroundColor: '#FAF5FF',
+    borderColor: '#E9D5FF',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  memberPermBtnText: { fontSize: 12, color: '#7C3AED', fontWeight: 'bold' },
   requestRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: '#F1F5F9',
   },
-  pendingBadge: {
-    backgroundColor: '#F59E0B20',
-    borderColor: '#F59E0B',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  reqBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 6,
+    borderWidth: 1,
   },
-  pendingBadgeText: { fontSize: 11, fontWeight: 'bold', color: '#F59E0B' },
+  approveBtn: { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
+  approveBtnText: { fontSize: 12, color: '#059669', fontWeight: 'bold' },
+  rejectBtn: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  rejectBtnText: { fontSize: 12, color: '#DC2626', fontWeight: 'bold' },
+  createInput: {
+    color: '#0F172A',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  createSubmitBtn: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+  },
+  createSubmitBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
+  shareActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 16,
+  },
+  shareBtn: {
+    flex: 1,
+    backgroundColor: '#7C3AED',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareBtnText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  copyBtn: {
+    flex: 1,
+    backgroundColor: '#FAF5FF',
+    borderColor: '#C084FC',
+    borderWidth: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyBtnText: {
+    color: '#7C3AED',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
 });

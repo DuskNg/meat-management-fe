@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "meat-management-fe",
-    "slug": "meat-management-fe",
-    "scheme": "meatmanagementfe",
+    "name": "Quản lý hệ thống",
+    "slug": "quan-ly-he-thong",
+    "scheme": "quanlyhethong",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

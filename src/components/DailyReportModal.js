@@ -14,16 +14,7 @@ import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
-
-const normalizeText = (str) => {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D');
-};
+import { matchSearch } from '../utils/searchHelper';
 
 const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
@@ -186,12 +177,11 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     if (activeFilter === 'debt' && item.type !== 'debt') return false;
     if (activeFilter === 'payment' && item.type !== 'payment') return false;
     
-    // 2. Lọc theo từ khóa tìm kiếm (tên khách hàng, loại thịt hoặc số tiền)
+    // 2. Lọc theo từ khóa tìm kiếm (tên khách hàng, loại thịt hoặc số tiền - hỗ trợ không dấu, viết tắt, nhiều từ)
     if (searchText && searchText.trim()) {
-      const query = normalizeText(searchText);
-      const nameMatch = normalizeText(item.customerName || '').includes(query);
-      const detailMatch = normalizeText(item.details || '').includes(query);
-      const amountMatch = (item.amount || 0).toString().includes(query);
+      const nameMatch = matchSearch(item.customerName || '', searchText);
+      const detailMatch = matchSearch(item.details || '', searchText);
+      const amountMatch = (item.amount || 0).toString().includes(searchText.trim());
       
       return nameMatch || detailMatch || amountMatch;
     }

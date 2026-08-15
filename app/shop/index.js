@@ -15,6 +15,7 @@ import {
   Platform,
   useWindowDimensions,
   Alert,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -22,10 +23,14 @@ import { api } from '../../src/api/client';
 import { COLORS, FONTS, SHADOWS } from '../../src/theme';
 import AddShopTableModal from '../../src/components/shop/AddShopTableModal';
 import ShopSessionModal from '../../src/components/shop/ShopSessionModal';
+import StartTableSessionModal from '../../src/components/shop/StartTableSessionModal';
+import ShopDailyRevenueModal from '../../src/components/shop/ShopDailyRevenueModal';
 import PopupModal from '../../src/components/PopupModal';
-import SmoothModal from '../../src/components/SmoothModal';
 import ProfileModal from '../../src/components/ProfileModal';
 import { useAuthStore } from '../../src/store/authStore';
+import WorkspaceMemberActionsModal from '../../src/components/WorkspaceMemberActionsModal';
+import { matchSearch } from '../../src/utils/searchHelper';
+import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../../src/utils/socket';
 
 export default function ShopDashboardScreen() {
   const router = useRouter();
@@ -37,8 +42,6 @@ export default function ShopDashboardScreen() {
   const cardSize = Math.floor((containerWidth - 32 - 18) / 4);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [showDailyRevModal, setShowDailyRevModal] = useState(false);
-  const [selectedTable, setSelectedTable] = useState(null);
   
   // Ticker state để ép màn hình re-render cập nhật thời gian động
   const [tick, setTick] = useState(0);
@@ -46,8 +49,16 @@ export default function ShopDashboardScreen() {
   // Refs các modal
   const addShopTableModalRef = useRef(null);
   const shopSessionModalRef = useRef(null);
+  const startTableSessionModalRef = useRef(null);
+  const shopDailyRevenueModalRef = useRef(null);
   const popupModalRef = useRef(null);
   const profileModalRef = useRef(null);
+  const memberActionsModalRef = useRef(null);
+  const floatingLogRef = useRef(null);
+
+  const [showFloatingLogs, setShowFloatingLogs] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
 
   // 1. Tải danh sách bàn chơi từ API
   const {
@@ -74,19 +85,32 @@ export default function ShopDashboardScreen() {
     enabled: auth.hasPermission('canManageShop'),
   });
 
-  // 3. Tải doanh thu theo ngày
-  const { data: dailyRevResponse, refetch: refetchDailyRev } = useQuery({
-    queryKey: ['shop_daily_revenue'],
-    queryFn: async () => {
-      const response = await api.get('/shop/revenue/daily');
-      return response.data;
-    },
-    enabled: showDailyRevModal && auth.hasPermission('canManageShop'),
-  });
-
   const tables = tablesResponse?.data || [];
   const totalRevenue = totalRevResponse?.data?.totalRevenue || 0;
-  const dailyRevenues = dailyRevResponse?.data || [];
+
+  // Lắng nghe Realtime qua WebSocket để tự động đồng bộ tức thì giữa Nhân viên và Chủ quán
+  useEffect(() => {
+    // Xác định Workspace ID (nếu là nhân viên thì lấy ownerId của workspace, nếu là chủ thì lấy auth.user.id)
+    const currentWorkspaceId = auth.user?.workspaceMember?.workspace?.ownerId || auth.user?.id;
+    if (!currentWorkspaceId) return;
+
+    // Tham gia phòng Socket theo Workspace
+    joinWorkspaceRoom(currentWorkspaceId);
+
+    const socket = getSocket();
+    const handleShopTableUpdated = (payload) => {
+      // Khi có bất kỳ thay đổi nào (mở bàn, thêm món, kết thúc, thanh toán), tự động refetch ngay lập tức
+      refetchTables();
+      refetchTotalRev();
+    };
+
+    socket.on('SHOP_TABLE_UPDATED', handleShopTableUpdated);
+
+    return () => {
+      socket.off('SHOP_TABLE_UPDATED', handleShopTableUpdated);
+      leaveWorkspaceRoom(currentWorkspaceId);
+    };
+  }, [auth.user?.id, auth.user?.workspaceMember]);
 
   // Tự động kích hoạt đếm giờ re-render mỗi 10 giây
   useEffect(() => {
@@ -96,17 +120,37 @@ export default function ShopDashboardScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Lọc danh sách bàn theo ô tìm kiếm
+  // Tự động đóng nhật ký khi bấm ra ngoài (dành riêng cho Web để click xuyên qua và không bị block click đầu)
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (!showFloatingLogs) return;
+
+    const handleClickOutside = (event) => {
+      // Nếu click ra ngoài bảng nhật ký thì ẩn bảng đi
+      if (floatingLogRef.current && !floatingLogRef.current.contains(event.target)) {
+        setShowFloatingLogs(false);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [showFloatingLogs]);
+
+  // Lọc danh sách bàn theo ô tìm kiếm (hỗ trợ không dấu, viết tắt, từ rời rạc)
   const filteredTables = useMemo(() => {
     if (!searchQuery.trim()) return tables;
-    const q = searchQuery.toLowerCase().trim();
-    return tables.filter((t) => t.name.toLowerCase().includes(q));
+    return tables.filter((t) => matchSearch(t.name, searchQuery));
   }, [tables, searchQuery]);
 
   const handleRefresh = () => {
     refetchTables();
     refetchTotalRev();
-    if (showDailyRevModal) refetchDailyRev();
   };
 
   // Định dạng tiền tệ giống bên chi tiết (vi-VN, thêm chữ đ ở cuối)
@@ -149,7 +193,7 @@ export default function ShopDashboardScreen() {
 
     const hr = Math.floor(totalMinutes / 60);
     const mn = totalMinutes % 60;
-    const timeStr = hr > 0 ? `${hr}h${mn}m` : `${mn}m`;
+    const timeStr = hr > 0 ? `${hr}h ${mn} phút` : `${mn} phút`;
 
     return {
       timeStr,
@@ -160,29 +204,14 @@ export default function ShopDashboardScreen() {
 
   // Xử lý khi nhấn vào bàn chơi
   const handleTablePress = (item) => {
+    setShowFloatingLogs(false); // Tự động đóng nhật ký khi bấm vào bàn chơi
     const activeSession = item.sessions?.[0];
     if (activeSession) {
-      // Mở modal chi tiết phiên chơi
+      // Mở modal chi tiết phiên chơi đang diễn ra
       shopSessionModalRef.current?.open(item, activeSession);
     } else {
-      // Mở hộp thoại xác nhận bắt đầu phiên chơi mới
-      popupModalRef.current?.show({
-        title: `🏪 Bắt đầu phiên chơi?`,
-        message: `Bạn muốn mở bàn chơi mới cho "${item.name}"? Giờ bắt đầu sẽ được ghi nhận ngay lập tức.`,
-        type: 'confirm',
-        confirmText: 'BẮT ĐẦU CHƠI',
-        cancelText: 'HỦY',
-        onConfirm: async () => {
-          try {
-            const response = await api.post('/shop/sessions/start', { tableId: item.id });
-            if (response.data.success) {
-              handleRefresh();
-            }
-          } catch (err) {
-            Alert.alert('Thất bại', err.response?.data?.message || 'Không thể bắt đầu phiên chơi.');
-          }
-        },
-      });
+      // Mở modal xác nhận bắt đầu phiên chơi mới (có tích hợp nút xem lịch sử bàn)
+      startTableSessionModalRef.current?.open(item);
     }
   };
 
@@ -210,6 +239,112 @@ export default function ShopDashboardScreen() {
         }
       },
     });
+  };
+
+  // Các hàm định dạng và màu sắc bổ trợ cho bảng nhật ký nhanh
+  const formatTime = (dateStr) => {
+    try {
+      const d = new Date(dateStr);
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${hours}:${minutes}`;
+    } catch {
+      return '';
+    }
+  };
+
+  const getBadgeColor = (type) => {
+    switch (type) {
+      case 'TRANSACTION': return '#D97706';
+      case 'PAYMENT': return '#059669';
+      case 'CUSTOMER': return '#7C3AED';
+      case 'STORE_ORDER': return '#0284C7';
+      case 'STORE_PAYMENT': return '#0D9488';
+      case 'SHOP_SESSION': return '#DB2777';
+      case 'INVENTORY': return '#4F46E5';
+      case 'SUPPLIER_TX':
+      case 'SUPPLIER_PAYMENT': return '#CA8A04';
+      default: return '#64748B';
+    }
+  };
+
+  const getBorderLeftColor = (item) => {
+    if (item.type === 'SHOP_SESSION' && item.rawItem?.isPaid) {
+      return '#059669'; // Xanh lá khi đã thanh toán
+    }
+    return getBadgeColor(item.type);
+  };
+
+  const renderActionTitleFloating = (item) => {
+    if (item.type === 'SHOP_SESSION' && item.rawItem) {
+      const { startTime, endTime, isPaid, totalAmount, table } = item.rawItem;
+      const tableName = table?.name || 'Bàn/Phòng';
+      
+      const formatTimeOnly = (dateStr) => {
+        try {
+          const d = new Date(dateStr);
+          const hours = String(d.getHours()).padStart(2, '0');
+          const minutes = String(d.getMinutes()).padStart(2, '0');
+          return `${hours}:${minutes}`;
+        } catch {
+          return '';
+        }
+      };
+
+      const startStr = formatTimeOnly(startTime);
+      const endStr = endTime ? formatTimeOnly(endTime) : 'đang chơi';
+      const amountStr = totalAmount ? (parseFloat(totalAmount) || 0).toLocaleString('vi-VN') + 'đ' : '';
+
+      return (
+        <Text style={styles.floatingLogText} numberOfLines={2}>
+          {tableName}: {startStr} - {endStr}
+          {isPaid ? (
+            <Text style={{ color: '#059669', fontWeight: 'bold' }}> (Đã thanh toán {amountStr})</Text>
+          ) : endTime ? (
+            <Text style={{ color: '#D97706', fontWeight: 'bold' }}> (Chờ thanh toán {amountStr})</Text>
+          ) : (
+            <Text style={{ color: '#0284C7', fontWeight: 'bold' }}> (Đang chơi)</Text>
+          )}
+        </Text>
+      );
+    }
+    
+    return (
+      <Text style={styles.floatingLogText} numberOfLines={2}>
+        {item.actionTitle}
+      </Text>
+    );
+  };
+
+  // Tải nhanh 5 thao tác nhân viên mới nhất của ngày hiện tại
+  const fetchRecentLogs = async () => {
+    setLoadingLogs(true);
+    try {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      const res = await api.get('/workspace/member-actions', {
+        params: { date: dateStr },
+      });
+      if (res.data?.success && res.data?.data) {
+        setLogs(res.data.data.actions?.slice(0, 5) || []);
+      }
+    } catch (error) {
+      console.error('Lỗi khi tải nhật ký thao tác nhanh:', error);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  const handleToggleFloatingLogs = () => {
+    const nextState = !showFloatingLogs;
+    setShowFloatingLogs(nextState);
+    if (nextState) {
+      fetchRecentLogs();
+    }
   };
 
   return (
@@ -244,35 +379,32 @@ export default function ShopDashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Tổng doanh thu */}
+        {/* Tổng doanh thu (Bấm trực tiếp để xem doanh thu từng ngày) */}
         <View style={styles.summaryCard}>
           <TouchableOpacity
             style={styles.summaryMain}
-            onPress={() => setShowDailyRevModal(true)}
-            activeOpacity={0.85}
+            onPress={() => {
+              setShowFloatingLogs(false); // Tự động đóng nhật ký khi bấm xem doanh thu
+              shopDailyRevenueModalRef.current?.open({ mode: 'ALL_DAYS' });
+            }}
+            activeOpacity={0.7}
           >
             <View>
-              <Text style={styles.summaryLabel}>💰 DOANH THU CỬA HÀNG (GIỜ CHƠI):</Text>
-              <Text style={styles.summaryHint}>Bấm để xem thống kê theo ngày</Text>
+              <Text style={styles.summaryLabel}>💰 TỔNG DOANH THU:</Text>
+              <Text style={styles.summaryHint}>Bấm để xem chi tiết theo ngày</Text>
             </View>
             <Text style={styles.summaryValue}>{formatCurrency(totalRevenue)}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Thống kê doanh thu theo ngày */}
-        <TouchableOpacity
-          style={styles.dailyReportBtn}
-          onPress={() => setShowDailyRevModal(true)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.dailyReportBtnText}>📈 XEM DOANH THU THEO NGÀY</Text>
-        </TouchableOpacity>
-
         {/* Thanh công cụ quản lý */}
         <View style={styles.toolsRow}>
           <TouchableOpacity
             style={styles.addTableBtn}
-            onPress={() => addShopTableModalRef.current?.open()}
+            onPress={() => {
+              setShowFloatingLogs(false); // Tự động đóng nhật ký khi bấm thêm bàn mới
+              addShopTableModalRef.current?.open();
+            }}
             activeOpacity={0.7}
           >
             <Text style={styles.addTableBtnText}>🏪 Thêm bàn chơi mới</Text>
@@ -366,8 +498,8 @@ export default function ShopDashboardScreen() {
 
                 {liveDetails ? (
                   <>
-                    <Text style={[styles.tableName, textNameStyle]} numberOfLines={1}>
-                      {item.name} ({formatShortAmount(item.pricePerHour)}/h)
+                    <Text style={[styles.tableName, textNameStyle]} numberOfLines={1} adjustsFontSizeToFit>
+                      {item.name}
                     </Text>
                     <View style={styles.liveMeta}>
                       <Text style={styles.liveTime}>{liveDetails.timeStr}</Text>
@@ -376,10 +508,10 @@ export default function ShopDashboardScreen() {
                   </>
                 ) : (
                   <>
-                    <Text style={[styles.tableName, textNameStyle]} numberOfLines={1}>
+                    <Text style={[styles.tableName, textNameStyle]} numberOfLines={1} adjustsFontSizeToFit>
                       {item.name}
                     </Text>
-                    <Text style={styles.tablePrice} numberOfLines={1}>
+                    <Text style={styles.tablePrice} numberOfLines={1} adjustsFontSizeToFit>
                       {formatShortAmount(item.pricePerHour)}/h
                     </Text>
                   </>
@@ -390,32 +522,105 @@ export default function ShopDashboardScreen() {
         />
       </View>
 
-      {/* Modal báo cáo doanh thu ngày */}
-      <SmoothModal visible={showDailyRevModal} onClose={() => setShowDailyRevModal(false)}>
-        <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>📈 DOANH THU THEO NGÀY</Text>
-          <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
-            {dailyRevenues.map((item) => (
-              <View key={item.dateKey} style={styles.revenueItemRow}>
-                <Text style={styles.revenueItemDate}>{convertIsoToDisplay(item.dateKey)}</Text>
-                <Text style={styles.revenueItemAmount}>{formatCurrency(item.amount)}</Text>
-              </View>
-            ))}
-            {dailyRevenues.length === 0 && (
-              <Text style={styles.emptyText}>Chưa có doanh thu phát sinh.</Text>
-            )}
-          </ScrollView>
-          <TouchableOpacity style={styles.closeBtn} onPress={() => setShowDailyRevModal(false)}>
-            <Text style={styles.closeBtnText}>Đóng</Text>
-          </TouchableOpacity>
-        </View>
-      </SmoothModal>
-
-      {/* Đăng ký các modal */}
+      {/* 1. Modal Thêm/Sửa Bàn chơi */}
       <AddShopTableModal ref={addShopTableModalRef} onRefresh={handleRefresh} />
+
+      {/* 2. Modal Chi tiết Phiên chơi đang chạy */}
       <ShopSessionModal ref={shopSessionModalRef} onRefresh={handleRefresh} />
+
+      {/* 3. Modal Xác nhận Mở Bàn Chơi Mới kèm Nút Xem Lịch Sử Bàn & Chọn Món Kèm */}
+      <StartTableSessionModal
+        ref={startTableSessionModalRef}
+        onStartSession={async (table, items) => {
+          try {
+            const payload = { tableId: table.id };
+            if (items && items.length > 0) {
+              payload.items = items;
+            }
+            const response = await api.post('/shop/sessions/start', payload);
+            if (response.data.success) {
+              handleRefresh();
+            }
+          } catch (err) {
+            Alert.alert('Thất bại', err.response?.data?.message || 'Không thể bắt đầu phiên chơi.');
+          }
+        }}
+        onViewTableHistory={(table) => {
+          shopDailyRevenueModalRef.current?.open({
+            tableId: table.id,
+            tableName: table.name,
+          });
+        }}
+      />
+
+      {/* 4. Modal Báo Cáo Doanh Thu & Lịch Sử Chi Tiết Theo Ngày */}
+      <ShopDailyRevenueModal ref={shopDailyRevenueModalRef} onRefresh={handleRefresh} />
+
+      {/* 5. Modal Thông Báo & Profile */}
       <PopupModal ref={popupModalRef} />
       <ProfileModal ref={profileModalRef} />
+
+      {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
+      {auth.user?.isWorkspaceOwner && showFloatingLogs && Platform.OS !== 'web' && (
+        <TouchableWithoutFeedback onPress={() => setShowFloatingLogs(false)}>
+          <View style={[StyleSheet.absoluteFillObject, { zIndex: 9998 }]} />
+        </TouchableWithoutFeedback>
+      )}
+
+      {auth.user?.isWorkspaceOwner && (
+        <View ref={floatingLogRef} style={styles.floatingLogContainer}>
+          {showFloatingLogs && (
+            <View style={styles.floatingLogPanel}>
+              <View style={styles.floatingLogHeader}>
+                <Text style={styles.floatingLogTitle}>📋 Nhật ký hôm nay</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowFloatingLogs(false);
+                    memberActionsModalRef.current?.open(auth.user);
+                  }}
+                  style={styles.floatingLogExpandBtn}
+                >
+                  <Text style={styles.floatingLogExpandText}>Chi tiết ➔</Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={styles.floatingLogList}>
+                {loadingLogs ? (
+                  <ActivityIndicator size="small" color="#7C3AED" style={{ marginVertical: 15 }} />
+                ) : logs.length === 0 ? (
+                  <Text style={styles.floatingLogEmpty}>Không có thao tác nào trong ngày.</Text>
+                ) : (
+                  logs.map((item) => {
+                    const badgeColor = getBadgeColor(item.type);
+                    return (
+                      <View key={item.id} style={[styles.floatingLogItem, { borderLeftColor: getBorderLeftColor(item) }]}>
+                        <View style={styles.floatingLogItemHeader}>
+                          <Text style={styles.floatingLogActor}>🧑‍💼 {item.actor?.name}</Text>
+                          <Text style={styles.floatingLogTime}>{formatTime(item.createdAt)}</Text>
+                        </View>
+                        {renderActionTitleFloating(item)}
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.floatingLogButton}
+            onPress={handleToggleFloatingLogs}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.floatingLogButtonText}>
+              {showFloatingLogs ? '✕ Thu gọn' : '📜 Nhật ký nhân viên'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Modal xem nhật ký chi tiết */}
+      <WorkspaceMemberActionsModal ref={memberActionsModalRef} />
     </SafeAreaView>
   );
 }
@@ -513,7 +718,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   summaryLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#0F766E',
   },
@@ -528,24 +733,6 @@ const styles = StyleSheet.create({
     color: '#0D9488',
     textAlign: 'right',
     flexShrink: 0,
-  },
-  dailyReportBtn: {
-    height: 40,
-    backgroundColor: '#CCFBF1',
-    borderWidth: 1,
-    borderColor: '#99F6E4',
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...SHADOWS.card,
-  },
-  dailyReportBtnText: {
-    color: '#0F766E',
-    fontSize: 13,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
   },
   toolsRow: {
     marginHorizontal: 16,
@@ -681,13 +868,13 @@ const styles = StyleSheet.create({
   liveBill: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#DC2626',
     marginTop: 2,
   },
   liveBillDetail: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#DC2626',
     marginTop: 2,
   },
   liveBillEmpty: {
@@ -748,5 +935,110 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  floatingLogContainer: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    zIndex: 9999,
+    alignItems: 'flex-end',
+  },
+  floatingLogButton: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  floatingLogButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  floatingLogPanel: {
+    width: 320,
+    maxHeight: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  floatingLogHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 8,
+    marginBottom: 8,
+  },
+  floatingLogTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  floatingLogExpandBtn: {
+    backgroundColor: '#FAF5FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  floatingLogExpandText: {
+    fontSize: 11,
+    color: '#7C3AED',
+    fontWeight: 'bold',
+  },
+  floatingLogList: {
+    flex: 1,
+  },
+  floatingLogEmpty: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    paddingVertical: 20,
+  },
+  floatingLogItem: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  floatingLogItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  floatingLogActor: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#334155',
+  },
+  floatingLogTime: {
+    fontSize: 10,
+    color: '#94A3B8',
+  },
+  floatingLogText: {
+    fontSize: 12,
+    color: '#0F172A',
+    lineHeight: 16,
   },
 });

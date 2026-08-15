@@ -23,6 +23,7 @@ import ProductListModal from '../src/components/ProductListModal';
 import ProfileModal from '../src/components/ProfileModal';
 import AdminOwnerDetailModal from '../src/components/AdminOwnerDetailModal';
 import EditCustomerModal from '../src/components/EditCustomerModal';
+import WorkspaceMemberActionsModal from '../src/components/WorkspaceMemberActionsModal';
 import PopupModal from '../src/components/PopupModal';
 import ScanTicketModal from '../src/components/ScanTicketModal';
 import ExportDebtModal from '../src/components/ExportDebtModal';
@@ -43,6 +44,8 @@ import SalaryAdvanceModal from '../src/components/SalaryAdvanceModal';
 import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
 import EditEmployeeModal from '../src/components/EditEmployeeModal';
 import AnimatedPressable from '../src/components/AnimatedPressable';
+import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../src/utils/socket';
+import { matchItemSearch } from '../src/utils/searchHelper';
 import { captureTicketImage, selectTicketImages, startNativeRecording, stopNativeRecording } from '../src/utils/mediaActions';
 
 // Giữ nguyên markup/action hiện có nhưng bổ sung feedback scale cho toàn bộ nút của dashboard.
@@ -122,6 +125,11 @@ export default function DashboardScreen() {
   const salaryAdvanceModalRef = useRef(null);
   const employeeHistoryModalRef = useRef(null);
   const editEmployeeModalRef = useRef(null);
+  const memberActionsModalRef = useRef(null);
+
+  const [showFloatingLogs, setShowFloatingLogs] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
 
   const [currentView, setCurrentView] = useState(params.view || 'menu'); // 'menu' hoặc 'customers' để điều hướng
   const [search, setSearch] = useState('');
@@ -171,6 +179,112 @@ export default function DashboardScreen() {
     }
   }, [auth.accessToken]);
 
+  // Các hàm định dạng và màu sắc bổ trợ cho bảng nhật ký nhanh
+  const formatTime = (dateStr) => {
+    try {
+      const d = new Date(dateStr);
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${hours}:${minutes}`;
+    } catch {
+      return '';
+    }
+  };
+
+  const getBadgeColor = (type) => {
+    switch (type) {
+      case 'TRANSACTION': return '#D97706';
+      case 'PAYMENT': return '#059669';
+      case 'CUSTOMER': return '#7C3AED';
+      case 'STORE_ORDER': return '#0284C7';
+      case 'STORE_PAYMENT': return '#0D9488';
+      case 'SHOP_SESSION': return '#DB2777';
+      case 'INVENTORY': return '#4F46E5';
+      case 'SUPPLIER_TX':
+      case 'SUPPLIER_PAYMENT': return '#CA8A04';
+      default: return '#64748B';
+    }
+  };
+
+  const getBorderLeftColor = (item) => {
+    if (item.type === 'SHOP_SESSION' && item.rawItem?.isPaid) {
+      return '#059669'; // Xanh lá khi đã thanh toán
+    }
+    return getBadgeColor(item.type);
+  };
+
+  const renderActionTitleFloating = (item) => {
+    if (item.type === 'SHOP_SESSION' && item.rawItem) {
+      const { startTime, endTime, isPaid, totalAmount, table } = item.rawItem;
+      const tableName = table?.name || 'Bàn/Phòng';
+      
+      const formatTimeOnly = (dateStr) => {
+        try {
+          const d = new Date(dateStr);
+          const hours = String(d.getHours()).padStart(2, '0');
+          const minutes = String(d.getMinutes()).padStart(2, '0');
+          return `${hours}:${minutes}`;
+        } catch {
+          return '';
+        }
+      };
+
+      const startStr = formatTimeOnly(startTime);
+      const endStr = endTime ? formatTimeOnly(endTime) : 'đang chơi';
+      const amountStr = totalAmount ? (parseFloat(totalAmount) || 0).toLocaleString('vi-VN') + 'đ' : '';
+
+      return (
+        <Text style={styles.floatingLogText} numberOfLines={2}>
+          {tableName}: {startStr} - {endStr}
+          {isPaid ? (
+            <Text style={{ color: '#059669', fontWeight: 'bold' }}> (Đã thanh toán {amountStr})</Text>
+          ) : endTime ? (
+            <Text style={{ color: '#D97706', fontWeight: 'bold' }}> (Chờ thanh toán {amountStr})</Text>
+          ) : (
+            <Text style={{ color: '#0284C7', fontWeight: 'bold' }}> (Đang chơi)</Text>
+          )}
+        </Text>
+      );
+    }
+    
+    return (
+      <Text style={styles.floatingLogText} numberOfLines={2}>
+        {item.actionTitle}
+      </Text>
+    );
+  };
+
+  // Tải nhanh 5 thao tác nhân viên mới nhất của ngày hiện tại
+  const fetchRecentLogs = async () => {
+    setLoadingLogs(true);
+    try {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      const res = await api.get('/workspace/member-actions', {
+        params: { date: dateStr },
+      });
+      if (res.data?.success && res.data?.data) {
+        setLogs(res.data.data.actions?.slice(0, 5) || []);
+      }
+    } catch (error) {
+      console.error('Lỗi khi tải nhật ký thao tác nhanh:', error);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  const handleToggleFloatingLogs = () => {
+    const nextState = !showFloatingLogs;
+    setShowFloatingLogs(nextState);
+    if (nextState) {
+      fetchRecentLogs();
+    }
+  };
+
   // 1. Dùng React Query tải danh sách khách hàng và cache lại
   const { data: customersResponse, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['customers'],
@@ -213,6 +327,29 @@ export default function DashboardScreen() {
     refetchBad();
     customerDebtHistoryModalRef.current?.refresh();
   };
+
+  // Lắng nghe sự kiện realtime CUSTOMER_UPDATED từ Socket.IO
+  React.useEffect(() => {
+    const socket = getSocket();
+    const currentWorkspaceId = auth.user?.workspaceMember?.workspace?.ownerId || auth.user?.id;
+
+    if (socket && currentWorkspaceId) {
+      joinWorkspaceRoom(currentWorkspaceId);
+
+      const handleCustomerUpdate = (data) => {
+        console.log('[SOCKET] Nhận thông báo cập nhật khách hàng/ghi nợ:', data);
+        refetch();
+        refetchBad();
+        customerDebtHistoryModalRef.current?.refresh();
+      };
+
+      socket.on('CUSTOMER_UPDATED', handleCustomerUpdate);
+
+      return () => {
+        socket.off('CUSTOMER_UPDATED', handleCustomerUpdate);
+      };
+    }
+  }, [auth.user?.id, auth.user?.workspaceMember?.workspace?.ownerId]);
 
   // 1.8. Dùng React Query tải danh sách nhà cung cấp
   const { data: suppliersResponse, isLoading: isLoadingSuppliers, refetch: refetchSuppliers, isRefetching: isRefetchingSuppliers } = useQuery({
@@ -861,13 +998,9 @@ export default function DashboardScreen() {
     .map(([dateKey, amount]) => ({ dateKey, amount }))
     .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
 
-  // 3. Bộ lọc tìm kiếm nhanh theo tên hoặc SĐT khách hàng (không xét dấu tiếng Việt) và sắp xếp
+  // 3. Bộ lọc tìm kiếm nhanh theo tên hoặc SĐT khách hàng (hỗ trợ không dấu, viết tắt, nhiều từ rời rạc) và sắp xếp
   const filteredCustomers = customers
-    .filter((c) => {
-      const nameNorm = removeDiacritics(c.name.toLowerCase());
-      const searchNorm = removeDiacritics(search.toLowerCase());
-      return nameNorm.includes(searchNorm) || (c.phone && c.phone.includes(search));
-    })
+    .filter((c) => matchItemSearch(c, search, ['name', 'phone', 'address', 'note']))
     .sort((a, b) => {
       const debtA = a.debt || 0;
       const debtB = b.debt || 0;
@@ -889,11 +1022,7 @@ export default function DashboardScreen() {
   const totalBadDebt = badCustomers.reduce((sum, c) => sum + (c.debt || 0), 0);
 
   const filteredBadCustomers = badCustomers
-    .filter((c) => {
-      const nameNorm = removeDiacritics(c.name.toLowerCase());
-      const searchNorm = removeDiacritics(search.toLowerCase());
-      return nameNorm.includes(searchNorm) || (c.phone && c.phone.includes(search));
-    })
+    .filter((c) => matchItemSearch(c, search, ['name', 'phone', 'address', 'note']))
     .sort((a, b) => {
       const debtA = a.debt || 0;
       const debtB = b.debt || 0;
@@ -913,11 +1042,7 @@ export default function DashboardScreen() {
   const totalSupplierDebt = suppliers.reduce((sum, s) => sum + (s.debt || 0), 0);
 
   const filteredSuppliers = suppliers
-    .filter((s) => {
-      const nameNorm = removeDiacritics(s.name.toLowerCase());
-      const searchNorm = removeDiacritics(search.toLowerCase());
-      return nameNorm.includes(searchNorm) || (s.phone && s.phone.includes(search));
-    })
+    .filter((s) => matchItemSearch(s, search, ['name', 'phone', 'address', 'note']))
     .sort((a, b) => {
       const debtA = a.debt || 0;
       const debtB = b.debt || 0;
@@ -1097,7 +1222,7 @@ export default function DashboardScreen() {
                   <Text style={[styles.debtValueLabel, { marginBottom: 0 }]}>Lương thực lĩnh:</Text>
                   <Text style={[
                     styles.debtValueAmount,
-                    { 
+                    {
                       color: item.isPaid ? '#10B981' : (remainingSalary < 0 ? '#EF4444' : '#0369A1'),
                       fontSize: remainingSalary < 0 ? 11 : 15
                     }
@@ -1493,11 +1618,30 @@ export default function DashboardScreen() {
           </View>
 
           {/* Danh sách các chức năng chính có thể cuộn */}
-          <ScrollView 
-            style={{ flex: 1 }} 
+          <ScrollView
+            style={{ flex: 1 }}
             contentContainerStyle={styles.menuContainer}
             showsVerticalScrollIndicator={true}
           >
+
+            {/* Chức năng: Quản lý Workspace */}
+            {auth.user?.isWorkspaceOwner && (
+              <TouchableOpacity
+                style={[styles.menuCard, { borderColor: '#8B5CF6', backgroundColor: '#8B5CF610' }]}
+                onPress={() => {
+                  workspaceModalRef.current?.open(auth.user);
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.menuCardIconBg, { backgroundColor: '#8B5CF620' }]}>
+                  <Text style={styles.menuCardIcon}>👑</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={[styles.menuCardTitle, { color: '#C084FC' }]}>Quản lý Workspace</Text>
+                  <Text style={styles.menuCardDesc}>Thiết lập mã mời QR, tuyển dụng nhân viên và phân quyền chấm công.</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
             {/* Chức năng 1: Quản lý khách hàng */}
             {auth.hasPermission('canManageCustomers') && (
@@ -1629,27 +1773,68 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
-            {/* Chức năng: Quản lý Workspace */}
-            {auth.user?.isWorkspaceOwner && (
-              <TouchableOpacity
-                style={[styles.menuCard, { borderColor: '#8B5CF6', backgroundColor: '#8B5CF610' }]}
-                onPress={() => {
-                  workspaceModalRef.current?.open(auth.user);
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.menuCardIconBg, { backgroundColor: '#8B5CF620' }]}>
-                  <Text style={styles.menuCardIcon}>👑</Text>
-                </View>
-                <View style={styles.menuCardContent}>
-                  <Text style={[styles.menuCardTitle, { color: '#C084FC' }]}>Quản lý Workspace</Text>
-                  <Text style={styles.menuCardDesc}>Thiết lập mã mời QR, tuyển dụng nhân viên và phân quyền chấm công.</Text>
-                </View>
-              </TouchableOpacity>
-            )}
+
 
           </ScrollView>
         </View>
+
+        {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
+        {auth.user?.isWorkspaceOwner && (
+          <View style={styles.floatingLogContainer}>
+            {showFloatingLogs && (
+              <View style={styles.floatingLogPanel}>
+                <View style={styles.floatingLogHeader}>
+                  <Text style={styles.floatingLogTitle}>📋 Nhật ký hôm nay</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowFloatingLogs(false);
+                      memberActionsModalRef.current?.open(auth.user);
+                    }}
+                    style={styles.floatingLogExpandBtn}
+                  >
+                    <Text style={styles.floatingLogExpandText}>Chi tiết ➔</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.floatingLogList}>
+                  {loadingLogs ? (
+                    <ActivityIndicator size="small" color="#7C3AED" style={{ marginVertical: 15 }} />
+                  ) : logs.length === 0 ? (
+                    <Text style={styles.floatingLogEmpty}>Không có thao tác nào trong ngày.</Text>
+                  ) : (
+                    logs.map((item) => {
+                      const badgeColor = getBadgeColor(item.type);
+                      return (
+                        <View key={item.id} style={[styles.floatingLogItem, { borderLeftColor: badgeColor }]}>
+                          <View style={styles.floatingLogItemHeader}>
+                            <Text style={styles.floatingLogActor}>🧑‍💼 {item.actor?.name}</Text>
+                            <Text style={styles.floatingLogTime}>{formatTime(item.createdAt)}</Text>
+                          </View>
+                          <Text style={styles.floatingLogText} numberOfLines={2}>
+                            {item.actionTitle}
+                          </Text>
+                        </View>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.floatingLogButton}
+              onPress={handleToggleFloatingLogs}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.floatingLogButtonText}>
+                {showFloatingLogs ? '✕ Thu gọn' : '📜 Nhật ký nhân viên'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Modal xem nhật ký chi tiết */}
+        <WorkspaceMemberActionsModal ref={memberActionsModalRef} />
 
         {/* Modal Hồ sơ */}
         <ProfileModal ref={profileModalRef} />
@@ -1776,17 +1961,73 @@ export default function DashboardScreen() {
         />
         <EditDebtModal ref={editDebtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshBadAll} />
         <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshBadAll} />
+
+        {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
+        {auth.user?.isWorkspaceOwner && (
+          <View style={styles.floatingLogContainer}>
+            {showFloatingLogs && (
+              <View style={styles.floatingLogPanel}>
+                <View style={styles.floatingLogHeader}>
+                  <Text style={styles.floatingLogTitle}>📋 Nhật ký hôm nay</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowFloatingLogs(false);
+                      memberActionsModalRef.current?.open(auth.user);
+                    }}
+                    style={styles.floatingLogExpandBtn}
+                  >
+                    <Text style={styles.floatingLogExpandText}>Chi tiết ➔</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.floatingLogList}>
+                  {loadingLogs ? (
+                    <ActivityIndicator size="small" color="#7C3AED" style={{ marginVertical: 15 }} />
+                  ) : logs.length === 0 ? (
+                    <Text style={styles.floatingLogEmpty}>Không có thao tác nào trong ngày.</Text>
+                  ) : (
+                    logs.map((item) => {
+                      const badgeColor = getBadgeColor(item.type);
+                      return (
+                        <View key={item.id} style={[styles.floatingLogItem, { borderLeftColor: badgeColor }]}>
+                          <View style={styles.floatingLogItemHeader}>
+                            <Text style={styles.floatingLogActor}>🧑‍💼 {item.actor?.name}</Text>
+                            <Text style={styles.floatingLogTime}>{formatTime(item.createdAt)}</Text>
+                          </View>
+                          <Text style={styles.floatingLogText} numberOfLines={2}>
+                            {item.actionTitle}
+                          </Text>
+                        </View>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.floatingLogButton}
+              onPress={handleToggleFloatingLogs}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.floatingLogButtonText}>
+                {showFloatingLogs ? '✕ Thu gọn' : '📜 Nhật ký nhân viên'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Modal xem nhật ký chi tiết */}
+        <WorkspaceMemberActionsModal ref={memberActionsModalRef} />
       </SafeAreaView>
     );
   }
 
   if (currentView === 'employees') {
-    // Lọc danh sách nhân viên phục vụ tìm kiếm nhanh
+    // Lọc danh sách nhân viên phục vụ tìm kiếm nhanh (hỗ trợ không dấu, viết tắt, nhiều từ)
     const employees = employeesResponse?.data || [];
     const filteredEmployees = employees.filter((emp) => {
-      const nameNorm = removeDiacritics(emp.name.toLowerCase());
-      const searchNorm = removeDiacritics(search.toLowerCase());
-      return nameNorm.includes(searchNorm) || (emp.phone && emp.phone.includes(search));
+      return matchItemSearch(emp, search, ['name', 'phone', 'role', 'note']);
     });
 
     // Thay đổi ngày chấm công
@@ -2054,6 +2295,64 @@ export default function DashboardScreen() {
         <EditEmployeeModal ref={editEmployeeModalRef} onRefresh={refetchEmployees} />
         <SalaryAdvanceModal ref={salaryAdvanceModalRef} employee={selectedEmployee} onRefresh={refetchEmployees} />
         <EmployeeHistoryModal ref={employeeHistoryModalRef} employee={selectedEmployee} />
+
+        {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
+        {auth.user?.isWorkspaceOwner && (
+          <View style={styles.floatingLogContainer}>
+            {showFloatingLogs && (
+              <View style={styles.floatingLogPanel}>
+                <View style={styles.floatingLogHeader}>
+                  <Text style={styles.floatingLogTitle}>📋 Nhật ký hôm nay</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowFloatingLogs(false);
+                      memberActionsModalRef.current?.open(auth.user);
+                    }}
+                    style={styles.floatingLogExpandBtn}
+                  >
+                    <Text style={styles.floatingLogExpandText}>Chi tiết ➔</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.floatingLogList}>
+                  {loadingLogs ? (
+                    <ActivityIndicator size="small" color="#7C3AED" style={{ marginVertical: 15 }} />
+                  ) : logs.length === 0 ? (
+                    <Text style={styles.floatingLogEmpty}>Không có thao tác nào trong ngày.</Text>
+                  ) : (
+                    logs.map((item) => {
+                      const badgeColor = getBadgeColor(item.type);
+                      return (
+                        <View key={item.id} style={[styles.floatingLogItem, { borderLeftColor: badgeColor }]}>
+                          <View style={styles.floatingLogItemHeader}>
+                            <Text style={styles.floatingLogActor}>🧑‍💼 {item.actor?.name}</Text>
+                            <Text style={styles.floatingLogTime}>{formatTime(item.createdAt)}</Text>
+                          </View>
+                          <Text style={styles.floatingLogText} numberOfLines={2}>
+                            {item.actionTitle}
+                          </Text>
+                        </View>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.floatingLogButton}
+              onPress={handleToggleFloatingLogs}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.floatingLogButtonText}>
+                {showFloatingLogs ? '✕ Thu gọn' : '📜 Nhật ký nhân viên'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Modal xem nhật ký chi tiết */}
+        <WorkspaceMemberActionsModal ref={memberActionsModalRef} />
       </SafeAreaView>
     );
   }
@@ -2156,6 +2455,64 @@ export default function DashboardScreen() {
         <SupplierDebtModal ref={supplierDebtModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
         <SupplierPaymentModal ref={supplierPaymentModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
         <SupplierHistoryModal ref={supplierHistoryModalRef} supplier={selectedSupplier} />
+
+        {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
+        {auth.user?.isWorkspaceOwner && (
+          <View style={styles.floatingLogContainer}>
+            {showFloatingLogs && (
+              <View style={styles.floatingLogPanel}>
+                <View style={styles.floatingLogHeader}>
+                  <Text style={styles.floatingLogTitle}>📋 Nhật ký hôm nay</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowFloatingLogs(false);
+                      memberActionsModalRef.current?.open(auth.user);
+                    }}
+                    style={styles.floatingLogExpandBtn}
+                  >
+                    <Text style={styles.floatingLogExpandText}>Chi tiết ➔</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.floatingLogList}>
+                  {loadingLogs ? (
+                    <ActivityIndicator size="small" color="#7C3AED" style={{ marginVertical: 15 }} />
+                  ) : logs.length === 0 ? (
+                    <Text style={styles.floatingLogEmpty}>Không có thao tác nào trong ngày.</Text>
+                  ) : (
+                    logs.map((item) => {
+                      const badgeColor = getBadgeColor(item.type);
+                      return (
+                        <View key={item.id} style={[styles.floatingLogItem, { borderLeftColor: badgeColor }]}>
+                          <View style={styles.floatingLogItemHeader}>
+                            <Text style={styles.floatingLogActor}>🧑‍💼 {item.actor?.name}</Text>
+                            <Text style={styles.floatingLogTime}>{formatTime(item.createdAt)}</Text>
+                          </View>
+                          <Text style={styles.floatingLogText} numberOfLines={2}>
+                            {item.actionTitle}
+                          </Text>
+                        </View>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.floatingLogButton}
+              onPress={handleToggleFloatingLogs}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.floatingLogButtonText}>
+                {showFloatingLogs ? '✕ Thu gọn' : '📜 Nhật ký nhân viên'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Modal xem nhật ký chi tiết */}
+        <WorkspaceMemberActionsModal ref={memberActionsModalRef} />
       </SafeAreaView>
     );
   }
@@ -2345,14 +2702,13 @@ export default function DashboardScreen() {
             style={[
               styles.actionRowButton,
               styles.btnVoice,
-              { opacity: 0.5, backgroundColor: '#E2E8F0', borderColor: '#CBD5E1' } // Vô hiệu hóa nút giọng nói
+              isRecording && styles.btnVoiceRecording,
             ]}
-            disabled={true}
             onPress={handleVoicePress}
             activeOpacity={0.7}
           >
-            <Text style={[styles.actionRowButtonTextWhite, { color: '#94A3B8' }]}>
-              Giọng nói (Tắt)
+            <Text style={styles.actionRowButtonTextWhite}>
+              {isRecording ? '⏹️ Dừng' : 'Giọng nói'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -2459,6 +2815,62 @@ export default function DashboardScreen() {
       <EditDebtModal ref={editDebtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshAll} />
       <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} />
       <DailyReportModal ref={dailyReportModalRef} onRefresh={handleRefreshAll} />
+
+      {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
+      {auth.user?.isWorkspaceOwner && (
+        <View style={styles.floatingLogContainer}>
+          {showFloatingLogs && (
+            <View style={styles.floatingLogPanel}>
+              <View style={styles.floatingLogHeader}>
+                <Text style={styles.floatingLogTitle}>📋 Nhật ký hôm nay</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowFloatingLogs(false);
+                    memberActionsModalRef.current?.open(auth.user);
+                  }}
+                  style={styles.floatingLogExpandBtn}
+                >
+                  <Text style={styles.floatingLogExpandText}>Chi tiết ➔</Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={styles.floatingLogList}>
+                {loadingLogs ? (
+                  <ActivityIndicator size="small" color="#7C3AED" style={{ marginVertical: 15 }} />
+                ) : logs.length === 0 ? (
+                  <Text style={styles.floatingLogEmpty}>Không có thao tác nào trong ngày.</Text>
+                ) : (
+                  logs.map((item) => {
+                    const badgeColor = getBadgeColor(item.type);
+                    return (
+                      <View key={item.id} style={[styles.floatingLogItem, { borderLeftColor: getBorderLeftColor(item) }]}>
+                        <View style={styles.floatingLogItemHeader}>
+                          <Text style={styles.floatingLogActor}>🧑‍💼 {item.actor?.name}</Text>
+                          <Text style={styles.floatingLogTime}>{formatTime(item.createdAt)}</Text>
+                        </View>
+                        {renderActionTitleFloating(item)}
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.floatingLogButton}
+            onPress={handleToggleFloatingLogs}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.floatingLogButtonText}>
+              {showFloatingLogs ? '✕ Thu gọn' : '📜 Nhật ký nhân viên'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Modal xem nhật ký chi tiết */}
+      <WorkspaceMemberActionsModal ref={memberActionsModalRef} />
     </SafeAreaView>
   );
 }
@@ -4138,5 +4550,110 @@ const styles = StyleSheet.create({
   employeeOptionsDropdownDivider: {
     height: 1,
     backgroundColor: '#F1F5F9',
+  },
+  floatingLogContainer: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    zIndex: 9999,
+    alignItems: 'flex-end',
+  },
+  floatingLogButton: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  floatingLogButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  floatingLogPanel: {
+    width: 320,
+    maxHeight: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  floatingLogHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 8,
+    marginBottom: 8,
+  },
+  floatingLogTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  floatingLogExpandBtn: {
+    backgroundColor: '#FAF5FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  floatingLogExpandText: {
+    fontSize: 11,
+    color: '#7C3AED',
+    fontWeight: 'bold',
+  },
+  floatingLogList: {
+    flex: 1,
+  },
+  floatingLogEmpty: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    paddingVertical: 20,
+  },
+  floatingLogItem: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  floatingLogItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  floatingLogActor: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#334155',
+  },
+  floatingLogTime: {
+    fontSize: 10,
+    color: '#94A3B8',
+  },
+  floatingLogText: {
+    fontSize: 12,
+    color: '#0F172A',
+    lineHeight: 16,
   },
 });

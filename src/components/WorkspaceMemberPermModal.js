@@ -20,7 +20,7 @@ const PERMISSIONS = [
   { key: 'canManageShop', label: 'Cửa hàng giờ', icon: '🎱' },
 ];
 
-// Modal phân quyền thành viên workspace — chủ nhà hàng sử dụng
+// Modal phân quyền thành viên workspace — chủ nhà hàng sử dụng (Giao diện Sáng)
 const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_, ref) {
   const [visible, setVisible] = useState(false);
   const [member, setMember] = useState(null);
@@ -32,11 +32,8 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
   const onSaveRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
-    // ownerPermissions: object chứa quyền của chủ WS, dùng để lọc và tích mặc định
     open: (memberData, onSave, ownerPermissions = {}) => {
       setMember(memberData);
-      // Sử dụng trực tiếp giá trị quyền của thành viên;
-      // nếu thuộc tính chưa được định nghĩa (ví dụ: thành viên mới) thì mặc định theo quyền của chủ WS
       setPerms({
         canManageCustomers: memberData.canManageCustomers !== undefined ? !!memberData.canManageCustomers : (ownerPermissions.canManageCustomers ?? false),
         canManageDebt: memberData.canManageDebt !== undefined ? !!memberData.canManageDebt : (ownerPermissions.canManageDebt ?? false),
@@ -145,12 +142,11 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
                 <Switch
                   value={!!perms[perm.key]}
                   onValueChange={(val) => setPerms((p) => ({ ...p, [perm.key]: val }))}
-                  trackColor={{ false: '#334155', true: '#7C3AED50' }}
-                  thumbColor={perms[perm.key] ? '#8B5CF6' : '#64748B'}
+                  trackColor={{ false: '#E2E8F0', true: '#DDD6FE' }}
+                  thumbColor={perms[perm.key] ? '#7C3AED' : '#94A3B8'}
                 />
               </View>
             ))}
-            {/* Thông báo nếu chủ không có quyền nào để phân */}
             {PERMISSIONS.filter((perm) => ownerPerms[perm.key] === true).length === 0 && (
               <Text style={{ color: '#64748B', fontSize: 13, textAlign: 'center', paddingVertical: 24 }}>
                 Chủ Workspace chưa được Admin cấp quyền nào để phân cho thành viên.
@@ -185,9 +181,9 @@ export default WorkspaceMemberPermModal;
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15, 23, 42, 0.5)' },
   sheet: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
   },
@@ -197,43 +193,45 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
   },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#A78BFA' },
-  headerSub: { fontSize: 13, color: '#94A3B8', marginTop: 2 },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#7C3AED' },
+  headerSub: { fontSize: 13, color: '#64748B', marginTop: 2 },
   closeBtn: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#F1F5F9',
     width: 32, height: 32, borderRadius: 16,
     justifyContent: 'center', alignItems: 'center',
   },
-  closeBtnText: { color: '#94A3B8', fontSize: 16 },
-  body: { padding: 16 },
+  closeBtnText: { color: '#64748B', fontSize: 16, fontWeight: 'bold' },
+  body: { padding: 16, backgroundColor: '#FFFFFF' },
   permRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#F1F5F9',
   },
   permIcon: { fontSize: 18, marginRight: 12 },
-  permLabel: { flex: 1, fontSize: 15, color: '#E2E8F0', fontWeight: '500' },
+  permLabel: { flex: 1, fontSize: 15, color: '#0F172A', fontWeight: '500' },
   footer: {
     flexDirection: 'row',
     padding: 16,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: '#1E293B',
+    borderTopColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
   },
   kickBtn: {
     flex: 1,
-    backgroundColor: '#EF444420',
-    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
     borderWidth: 1,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
   },
-  kickBtnText: { color: '#F87171', fontSize: 13, fontWeight: '600' },
+  kickBtnText: { color: '#DC2626', fontSize: 13, fontWeight: '600' },
   saveBtn: {
     flex: 1,
     backgroundColor: '#7C3AED',

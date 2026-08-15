@@ -19,6 +19,7 @@ import DatePickerInput from './DatePickerInput';
 import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
+import { matchItemSearch } from '../utils/searchHelper';
 
 const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, ref) => {
   // ─── Helper: Chuyển ISO date string/Date object sang DD/MM/YYYY ───────────
@@ -108,9 +109,8 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   const products = (productsResponse?.data || []).filter(
     (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
   );
-  const normalizedProductSearch = productSearch.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const filteredProducts = products.filter((product) =>
-    product.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(normalizedProductSearch)
+    matchItemSearch(product, productSearch, ['name', 'unit'])
   );
 
   // ─── Phơi bày open/close ra ngoài cho component cha ───────────────────

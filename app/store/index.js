@@ -26,9 +26,10 @@ import StorePopupModal from '../../src/components/store/StorePopupModal';
 import OrderModal from '../../src/components/store/OrderModal';
 import TablePaymentModal from '../../src/components/store/TablePaymentModal';
 import SmoothModal from '../../src/components/SmoothModal';
-import { useAuthStore } from '../../src/store/authStore';
 import ProfileModal from '../../src/components/ProfileModal';
 import { startNativeRecording, stopNativeRecording } from '../../src/utils/mediaActions';
+import { matchSearch } from '../../src/utils/searchHelper';
+import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../../src/utils/socket';
 
 const formatShortAmount = (val) => {
   const num = parseFloat(val) || 0;
@@ -104,11 +105,10 @@ export default function StoreDashboardScreen() {
   const totalRevenue = totalRevResponse?.data?.totalRevenue || 0;
   const dailyRevenues = dailyRevResponse?.data || [];
 
-  // Lọc danh sách bàn theo từ khóa tìm kiếm
+  // Lọc danh sách bàn theo từ khóa tìm kiếm (hỗ trợ không dấu, viết tắt, từ rời rạc)
   const filteredTables = useMemo(() => {
     if (!searchQuery.trim()) return tables;
-    const q = searchQuery.toLowerCase().trim();
-    return tables.filter((t) => t.name.toLowerCase().includes(q));
+    return tables.filter((t) => matchSearch(t.name, searchQuery));
   }, [tables, searchQuery]);
 
   const handleRefresh = () => {
@@ -116,6 +116,29 @@ export default function StoreDashboardScreen() {
     refetchTotalRev();
     if (showDailyRevModal) refetchDailyRev();
   };
+
+  // Lắng nghe sự kiện realtime STORE_UPDATED từ Socket.IO
+  React.useEffect(() => {
+    const socket = getSocket();
+    const currentWorkspaceId = auth.user?.workspaceMember?.workspace?.ownerId || auth.user?.id;
+
+    if (socket && currentWorkspaceId) {
+      joinWorkspaceRoom(currentWorkspaceId);
+
+      const handleStoreUpdate = (data) => {
+        console.log('[SOCKET] Nhận thông báo cập nhật nhà hàng/bàn ăn:', data);
+        refetchTables();
+        refetchTotalRev();
+        refetchDailyRev();
+      };
+
+      socket.on('STORE_UPDATED', handleStoreUpdate);
+
+      return () => {
+        socket.off('STORE_UPDATED', handleStoreUpdate);
+      };
+    }
+  }, [auth.user?.id, auth.user?.workspaceMember?.workspace?.ownerId]);
 
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })

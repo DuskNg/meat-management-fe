@@ -10,8 +10,10 @@ import {
   ActivityIndicator,
   TextInput,
   Platform,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { api } from '../api/client';
+import { matchSearch } from '../utils/searchHelper';
 
 const ACTION_TRANSLATIONS = {
   'ALL': 'Tất cả hoạt động',
@@ -151,6 +153,10 @@ const AdminLogsModal = forwardRef((props, ref) => {
       onRequestClose={() => setVisible(false)}
     >
       <View style={styles.overlay}>
+        <TouchableWithoutFeedback onPress={() => setVisible(false)}>
+          <View style={StyleSheet.absoluteFillObject} />
+        </TouchableWithoutFeedback>
+
         <View style={styles.card}>
           <Text style={styles.title}>Nhật ký hoạt động</Text>
           <Text style={styles.subtitle}>Tài khoản: {user.name} ({user.phone})</Text>
@@ -249,10 +255,9 @@ const AdminLogsModal = forwardRef((props, ref) => {
                   if (!matchesAction) return false;
 
                   if (!searchText.trim()) return true;
-                  const query = searchText.toLowerCase().trim();
-                  const translatedAction = (ACTION_TRANSLATIONS[log.action] || '').toLowerCase();
-                  const details = (log.details || '').toLowerCase();
-                  return details.includes(query) || translatedAction.includes(query);
+                  const translatedAction = ACTION_TRANSLATIONS[log.action] || log.action;
+                  const details = log.details || '';
+                  return matchSearch(details, searchText) || matchSearch(translatedAction, searchText);
                 });
 
                 if (filteredLogs.length === 0) {

@@ -54,25 +54,31 @@ function RootLayoutNav() {
         }
       } else {
         // Tài khoản thường
-        // Kiểm tra xem có đang chờ duyệt Workspace không
+        // Kiểm tra xem có phải nhân viên hoặc đang chờ duyệt Workspace không
         api.get('/workspace/join-status').then((res) => {
-          if (res.data && res.data.status === 'pending') {
+          const isEmployee = res.data && (res.data.status === 'pending' || res.data.status === 'approved');
+          
+          if (isEmployee && currentUser?.name === 'Chủ buôn mới') {
+            if (segments[0] !== 'set-name') {
+              router.replace('/set-name');
+            }
+          } else if (res.data && res.data.status === 'pending') {
             if (!inPendingScreen) {
               router.replace('/workspace-pending');
             }
           } else {
-            if (inAdminGroup || inAuthGroup || inPendingScreen) {
+            if (inAdminGroup || inAuthGroup || inPendingScreen || segments[0] === 'set-name') {
               router.replace('/');
             }
           }
         }).catch(() => {
-          if (inAdminGroup || inAuthGroup) {
+          if (inAdminGroup || inAuthGroup || segments[0] === 'set-name') {
             router.replace('/');
           }
         });
       }
     }
-  }, [isAuthenticated, isInitialized, segments]);
+  }, [isAuthenticated, isInitialized, segments, user]);
 
   // Hiển thị vòng xoay chờ khi chưa tải xong trạng thái từ SecureStore
   if (!isInitialized) {

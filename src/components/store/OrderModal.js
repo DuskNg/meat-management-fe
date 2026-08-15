@@ -18,15 +18,7 @@ import PinInputModal from '../PinInputModal';
 import PinSetupModal from '../PinSetupModal';
 import { hasPin, isSessionValid } from '../../store/pinStore';
 import { useRouter } from 'expo-router';
-
-const removeDiacritics = (str) => {
-  if (!str) return '';
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D');
-};
+import { matchItemSearch } from '../../utils/searchHelper';
 
 const OrderModal = forwardRef(({ customerId: propCustomerId, onRefresh }, ref) => {
   const router = useRouter();
@@ -112,9 +104,7 @@ const OrderModal = forwardRef(({ customerId: propCustomerId, onRefresh }, ref) =
   );
 
   const filteredProducts = products.filter((p) => {
-    const nameNorm = removeDiacritics((p.name || '').toLowerCase());
-    const searchNorm = removeDiacritics((productSearch || '').toLowerCase().trim());
-    return nameNorm.includes(searchNorm);
+    return matchItemSearch(p, productSearch, ['name', 'unit']);
   });
 
   const originalQuantitiesRef = useRef({});
