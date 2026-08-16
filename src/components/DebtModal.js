@@ -20,6 +20,7 @@ import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
 import { matchItemSearch } from '../utils/searchHelper';
+import { useResourceLock } from '../hooks/useResourceLock';
 
 const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   // ─── Helper: lấy ngày hôm nay dạng DD/MM/YYYY ──────────────────────────
@@ -66,8 +67,10 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       .format(amount)
       .replace('₫', 'đ');
 
-  // ─── State ──────────────────────────────────────────────────────────────
   const [visible, setVisible] = useState(false);
+
+  // Khóa khách hàng khi mở modal ghi nợ
+  useResourceLock('CUSTOMER', customerId, visible);
 
   // Giỏ hàng: danh sách mặt hàng đã thêm vào đơn
   const [cartItems, setCartItems] = useState([]);

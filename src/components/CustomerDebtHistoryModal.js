@@ -14,6 +14,7 @@ import {
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
+import { useResourceLock } from '../hooks/useResourceLock';
 
 // Kích hoạt tính năng LayoutAnimation trên thiết bị Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -29,6 +30,9 @@ const CustomerDebtHistoryModal = forwardRef(({
 }, ref) => {
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
+
+  // Khóa khách hàng khi mở xem lịch sử nợ
+  useResourceLock('CUSTOMER', customer?.id, visible);
   const [loading, setLoading] = useState(false);
   const [monthGroups, setMonthGroups] = useState([]);
   const [gridWidth, setGridWidth] = useState(0);

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { api } from '../../api/client';
 import { COLORS, SHADOWS } from '../../theme';
+import { useResourceLock } from '../../hooks/useResourceLock';
 
 // Định dạng tiền tệ VND
 const formatVND = (num) => {
@@ -24,6 +25,9 @@ const formatVND = (num) => {
 const StartTableSessionModal = forwardRef(({ onStartSession, onViewTableHistory }, ref) => {
   const [visible, setVisible] = useState(false);
   const [table, setTable] = useState(null);
+
+  // Tự động khóa bàn khi mở modal mở bàn mới
+  useResourceLock('SHOP_TABLE', table?.id, visible);
   const [loading, setLoading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
 

@@ -14,6 +14,7 @@ import { api } from '../../api/client';
 import { COLORS, FONTS, SHADOWS } from '../../theme';
 import SmoothModal from '../SmoothModal';
 import AddShopSessionItemModal from './AddShopSessionItemModal';
+import { useResourceLock } from '../../hooks/useResourceLock';
 
 /**
  * Component ShopSessionModal quản lý phiên chơi:
@@ -26,6 +27,9 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [table, setTable] = useState(null);
   const [session, setSession] = useState(null);
+
+  // Tự động khóa bàn cho người dùng khác thấy khi mở modal phiên chơi
+  useResourceLock('SHOP_TABLE', table?.id, visible);
 
   // States phụ thu thủ công (nếu có thêm phụ thu ngoài)
   const [extraAmount, setExtraAmount] = useState('0');

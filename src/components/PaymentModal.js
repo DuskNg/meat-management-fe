@@ -15,9 +15,13 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
+import { useResourceLock } from '../hooks/useResourceLock';
 
 const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
+
+  // Tự động khóa khách hàng khi mở modal thu tiền
+  useResourceLock('CUSTOMER', customerId, visible);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);

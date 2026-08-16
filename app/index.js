@@ -43,7 +43,8 @@ import AddEmployeeModal from '../src/components/AddEmployeeModal';
 import SalaryAdvanceModal from '../src/components/SalaryAdvanceModal';
 import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
 import EditEmployeeModal from '../src/components/EditEmployeeModal';
-import AnimatedPressable from '../src/components/AnimatedPressable';
+import { useLockStore } from '../src/store/lockStore';
+import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
 import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../src/utils/socket';
 import { matchItemSearch } from '../src/utils/searchHelper';
 import { captureTicketImage, selectTicketImages, startNativeRecording, stopNativeRecording } from '../src/utils/mediaActions';
@@ -99,8 +100,9 @@ const getDaysInMonthFromStr = (monthStr) => {
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
   const auth = useAuthStore();
+  const { setLock, removeLock, getLock, syncLocks } = useLockStore();
+  const params = useLocalSearchParams();
   const modalRef = useRef(null);
   const productModalRef = useRef(null);
   const profileModalRef = useRef(null);
@@ -328,7 +330,7 @@ export default function DashboardScreen() {
     customerDebtHistoryModalRef.current?.refresh();
   };
 
-  // Lắng nghe sự kiện realtime CUSTOMER_UPDATED từ Socket.IO
+  // Lắng nghe sự kiện realtime CUSTOMER_UPDATED & lock events từ Socket.IO
   React.useEffect(() => {
     const socket = getSocket();
     const currentWorkspaceId = auth.user?.workspaceMember?.workspace?.ownerId || auth.user?.id;
@@ -343,10 +345,29 @@ export default function DashboardScreen() {
         customerDebtHistoryModalRef.current?.refresh();
       };
 
+      // Đồng bộ danh sách locks khi mới kết nối
+      const handleLocksSync = ({ locks }) => {
+        syncLocks(locks.filter((l) => l.type === 'CUSTOMER'));
+      };
+
+      // Cập nhật trạng thái khóa khi có người mở/đóng thao tác với khách hàng
+      const handleLockChanged = ({ action, lockInfo }) => {
+        if (lockInfo.type !== 'CUSTOMER') return;
+        if (action === 'LOCKED') {
+          setLock(lockInfo.type, lockInfo.resourceId, lockInfo);
+        } else if (action === 'UNLOCKED') {
+          removeLock(lockInfo.type, lockInfo.resourceId);
+        }
+      };
+
       socket.on('CUSTOMER_UPDATED', handleCustomerUpdate);
+      socket.on('RESOURCE_LOCKS_SYNC', handleLocksSync);
+      socket.on('RESOURCE_LOCK_CHANGED', handleLockChanged);
 
       return () => {
         socket.off('CUSTOMER_UPDATED', handleCustomerUpdate);
+        socket.off('RESOURCE_LOCKS_SYNC', handleLocksSync);
+        socket.off('RESOURCE_LOCK_CHANGED', handleLockChanged);
       };
     }
   }, [auth.user?.id, auth.user?.workspaceMember?.workspace?.ownerId]);
@@ -1385,6 +1406,9 @@ export default function DashboardScreen() {
     const avatarBg = avatarBgColors[colorIdx];
     const avatarText = avatarTextColors[colorIdx];
 
+    const activeLock = getLock('CUSTOMER', item.id);
+    const isLockedByOther = activeLock && activeLock.userId !== auth.user?.id;
+
     return (
       <View
         style={[
@@ -1397,6 +1421,10 @@ export default function DashboardScreen() {
           activeMenuId === item.id && { zIndex: 10, elevation: 10 }
         ]}
       >
+        {/* Lớp phủ Overlay nếu khách hàng này đang có người khác xử lý */}
+        {isLockedByOther ? (
+          <ResourceLockOverlay lockInfo={activeLock} borderRadius={12} />
+        ) : null}
         <TouchableOpacity
           style={styles.customerCardClickable}
           onPress={() => router.push(`/customer/${item.id}`)}

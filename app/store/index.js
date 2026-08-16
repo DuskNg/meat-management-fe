@@ -27,6 +27,9 @@ import OrderModal from '../../src/components/store/OrderModal';
 import TablePaymentModal from '../../src/components/store/TablePaymentModal';
 import SmoothModal from '../../src/components/SmoothModal';
 import ProfileModal from '../../src/components/ProfileModal';
+import { useAuthStore } from '../../src/store/authStore';
+import { useLockStore } from '../../src/store/lockStore';
+import ResourceLockOverlay from '../../src/components/ResourceLockOverlay';
 import { startNativeRecording, stopNativeRecording } from '../../src/utils/mediaActions';
 import { matchSearch } from '../../src/utils/searchHelper';
 import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../../src/utils/socket';
@@ -57,6 +60,7 @@ export default function StoreDashboardScreen() {
   const [activeMenuId, setActiveMenuId] = useState(null);
 
   const auth = useAuthStore();
+  const { setLock, removeLock, getLock, syncLocks } = useLockStore();
   const addTableModalRef = useRef(null);
   const addMenuModalRef = useRef(null);
   const scanInvoiceModalRef = useRef(null);
@@ -132,10 +136,29 @@ export default function StoreDashboardScreen() {
         refetchDailyRev();
       };
 
+      // Đồng bộ danh sách locks khi mới kết nối
+      const handleLocksSync = ({ locks }) => {
+        syncLocks(locks.filter((l) => l.type === 'STORE_TABLE'));
+      };
+
+      // Cập nhật trạng thái khóa khi có người mở/đóng bàn
+      const handleLockChanged = ({ action, lockInfo }) => {
+        if (lockInfo.type !== 'STORE_TABLE') return;
+        if (action === 'LOCKED') {
+          setLock(lockInfo.type, lockInfo.resourceId, lockInfo);
+        } else if (action === 'UNLOCKED') {
+          removeLock(lockInfo.type, lockInfo.resourceId);
+        }
+      };
+
       socket.on('STORE_UPDATED', handleStoreUpdate);
+      socket.on('RESOURCE_LOCKS_SYNC', handleLocksSync);
+      socket.on('RESOURCE_LOCK_CHANGED', handleLockChanged);
 
       return () => {
         socket.off('STORE_UPDATED', handleStoreUpdate);
+        socket.off('RESOURCE_LOCKS_SYNC', handleLocksSync);
+        socket.off('RESOURCE_LOCK_CHANGED', handleLockChanged);
       };
     }
   }, [auth.user?.id, auth.user?.workspaceMember?.workspace?.ownerId]);
@@ -482,6 +505,9 @@ export default function StoreDashboardScreen() {
           }
           renderItem={({ item }) => {
             const hasDebt = item.debt > 0;
+            const activeLock = getLock('STORE_TABLE', item.id.toString());
+            const isLockedByOther = activeLock && activeLock.userId !== auth.user?.id;
+
             return (
               <TouchableOpacity
                 style={[
@@ -508,6 +534,11 @@ export default function StoreDashboardScreen() {
                 delayLongPress={500}
                 activeOpacity={0.7}
               >
+                {/* Lớp phủ Overlay nếu bàn này đang có người khác xử lý */}
+                {isLockedByOther ? (
+                  <ResourceLockOverlay lockInfo={activeLock} borderRadius={12} />
+                ) : null}
+
                 {/* Dấu tròn trạng thái ở góc trên bên phải */}
                 <View style={[styles.statusDot, { backgroundColor: hasDebt ? '#EF4444' : '#10B981' }]} />
 

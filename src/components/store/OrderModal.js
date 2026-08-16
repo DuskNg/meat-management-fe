@@ -16,9 +16,10 @@ import { api } from '../../api/client';
 import { COLORS, FONTS, SHADOWS } from '../../theme';
 import PinInputModal from '../PinInputModal';
 import PinSetupModal from '../PinSetupModal';
-import { hasPin, isSessionValid } from '../../store/pinStore';
+import { isSessionValid, hasPin } from '../../store/pinStore';
 import { useRouter } from 'expo-router';
 import { matchItemSearch } from '../../utils/searchHelper';
+import { useResourceLock } from '../../hooks/useResourceLock';
 
 const OrderModal = forwardRef(({ customerId: propCustomerId, onRefresh }, ref) => {
   const router = useRouter();
@@ -61,6 +62,9 @@ const OrderModal = forwardRef(({ customerId: propCustomerId, onRefresh }, ref) =
   const [showPayButton, setShowPayButton] = useState(false);
 
   const finalCustomerId = selectedTable?.id || propCustomerId;
+
+  // Tự động khóa bàn khi mở modal gọi món
+  useResourceLock('STORE_TABLE', finalCustomerId?.toString(), visible);
 
   // Tải danh mục thực đơn món ăn
   const { data: productsResponse, isLoading: isLoadingProducts } = useQuery({

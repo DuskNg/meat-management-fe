@@ -15,6 +15,7 @@ import { COLORS, FONTS, SHADOWS } from '../../theme';
 import PinInputModal from '../PinInputModal';
 import PinSetupModal from '../PinSetupModal';
 import { hasPin, isSessionValid } from '../../store/pinStore';
+import { useResourceLock } from '../../hooks/useResourceLock';
 
 /**
  * Component TablePaymentModal độc lập phục vụ việc ghi nhận thanh toán hóa đơn của từng bàn ăn.
@@ -22,6 +23,9 @@ import { hasPin, isSessionValid } from '../../store/pinStore';
  */
 const TablePaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
+
+  // Tự động khóa bàn khi mở modal thanh toán
+  useResourceLock('STORE_TABLE', customerId?.toString(), visible);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);

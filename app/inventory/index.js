@@ -22,7 +22,7 @@ import InventoryHistoryModal from '../../src/components/inventory/InventoryHisto
 import { useAuthStore } from '../../src/store/authStore';
 import { useLockStore } from '../../src/store/lockStore';
 import WorkspaceMemberActionsModal from '../../src/components/WorkspaceMemberActionsModal';
-import ResourceLockBadge from '../../src/components/ResourceLockBadge';
+import ResourceLockOverlay from '../../src/components/ResourceLockOverlay';
 import { matchItemSearch } from '../../src/utils/searchHelper';
 import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../../src/utils/socket';
 
@@ -482,12 +482,12 @@ export default function InventoryDashboardScreen() {
                     )}
                   </View>
 
-                  {/* Badge hiển thị khi có người khác đang thao tác với sản phẩm này */}
+                  {/* Overlay hiển thị và chặn thao tác khi có người khác đang xử lý sản phẩm này */}
                   {(() => {
                     const activeLock = getLock('INVENTORY_PRODUCT', item.id);
                     const isLockedByOther = activeLock && activeLock.userId !== user?.id;
                     return isLockedByOther ? (
-                      <ResourceLockBadge lockInfo={activeLock} style={styles.lockBadge} />
+                      <ResourceLockOverlay lockInfo={activeLock} borderRadius={12} />
                     ) : null;
                   })()}
 
@@ -780,6 +780,8 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    position: 'relative',
+    overflow: 'hidden',
     ...SHADOWS.card,
   },
   cardLow: {

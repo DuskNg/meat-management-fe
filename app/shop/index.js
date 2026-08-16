@@ -28,13 +28,16 @@ import ShopDailyRevenueModal from '../../src/components/shop/ShopDailyRevenueMod
 import PopupModal from '../../src/components/PopupModal';
 import ProfileModal from '../../src/components/ProfileModal';
 import { useAuthStore } from '../../src/store/authStore';
+import { useLockStore } from '../../src/store/lockStore';
 import WorkspaceMemberActionsModal from '../../src/components/WorkspaceMemberActionsModal';
+import ResourceLockOverlay from '../../src/components/ResourceLockOverlay';
 import { matchSearch } from '../../src/utils/searchHelper';
 import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../../src/utils/socket';
 
 export default function ShopDashboardScreen() {
   const router = useRouter();
   const auth = useAuthStore();
+  const { setLock, removeLock, getLock, syncLocks } = useLockStore();
   const { width: windowWidth } = useWindowDimensions();
 
   // Tính toán kích thước ô vuông cho grid bàn chơi
@@ -104,10 +107,29 @@ export default function ShopDashboardScreen() {
       refetchTotalRev();
     };
 
+    // Đồng bộ danh sách locks khi mới kết nối
+    const handleLocksSync = ({ locks }) => {
+      syncLocks(locks.filter((l) => l.type === 'SHOP_TABLE'));
+    };
+
+    // Cập nhật trạng thái khóa khi có người mở/đóng bàn
+    const handleLockChanged = ({ action, lockInfo }) => {
+      if (lockInfo.type !== 'SHOP_TABLE') return;
+      if (action === 'LOCKED') {
+        setLock(lockInfo.type, lockInfo.resourceId, lockInfo);
+      } else if (action === 'UNLOCKED') {
+        removeLock(lockInfo.type, lockInfo.resourceId);
+      }
+    };
+
     socket.on('SHOP_TABLE_UPDATED', handleShopTableUpdated);
+    socket.on('RESOURCE_LOCKS_SYNC', handleLocksSync);
+    socket.on('RESOURCE_LOCK_CHANGED', handleLockChanged);
 
     return () => {
       socket.off('SHOP_TABLE_UPDATED', handleShopTableUpdated);
+      socket.off('RESOURCE_LOCKS_SYNC', handleLocksSync);
+      socket.off('RESOURCE_LOCK_CHANGED', handleLockChanged);
       leaveWorkspaceRoom(currentWorkspaceId);
     };
   }, [auth.user?.id, auth.user?.workspaceMember]);
@@ -471,6 +493,9 @@ export default function ShopDashboardScreen() {
               statusDotColor = '#EF4444';
             }
 
+            const activeLock = getLock('SHOP_TABLE', item.id);
+            const isLockedByOther = activeLock && activeLock.userId !== auth.user?.id;
+
             return (
               <TouchableOpacity
                 style={[
@@ -493,6 +518,11 @@ export default function ShopDashboardScreen() {
                 delayLongPress={500}
                 activeOpacity={0.7}
               >
+                {/* Lớp phủ Overlay nếu bàn này đang có người khác xử lý */}
+                {isLockedByOther ? (
+                  <ResourceLockOverlay lockInfo={activeLock} borderRadius={12} />
+                ) : null}
+
                 {/* Dấu chấm trạng thái */}
                 <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
 

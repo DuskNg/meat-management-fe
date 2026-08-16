@@ -12,10 +12,14 @@ import {
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
+import { useResourceLock } from '../hooks/useResourceLock';
 
 const EditCustomerModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
+
+  // Khóa khách hàng khi mở modal chỉnh sửa thông tin
+  useResourceLock('CUSTOMER', customer?.id, visible);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');

@@ -36,10 +36,14 @@ import MonthDetailDrawer from '../../src/components/MonthDetailDrawer';
 import ScanTicketModal from '../../src/components/ScanTicketModal';
 import PopupModal from '../../src/components/PopupModal';
 import { startNativeRecording, stopNativeRecording } from '../../src/utils/mediaActions';
+import { useResourceLock } from '../../src/hooks/useResourceLock';
 
 export default function CustomerDetailScreen() {
   const auth = useAuthStore();
   const { id } = useLocalSearchParams();
+
+  // Khóa khách hàng khi bất kỳ người dùng nào truy cập vào trang chi tiết khách hàng này
+  useResourceLock('CUSTOMER', id, true);
   const router = useRouter();
   const { width } = useWindowDimensions();
 

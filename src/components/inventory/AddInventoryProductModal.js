@@ -10,9 +10,11 @@ import {
   ActivityIndicator,
   TouchableWithoutFeedback,
   Keyboard,
+  Alert,
 } from 'react-native';
 import { api } from '../../api/client';
 import { COLORS, FONTS, SHADOWS } from '../../theme';
+import { useResourceLock } from '../../hooks/useResourceLock';
 
 // Định dạng chuỗi nhập số có dấu chấm phân cách hàng nghìn
 const formatNumberString = (value) => {
@@ -50,6 +52,9 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess },
   const [minQuantity, setMinQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [unit, setUnit] = useState('cái');
+
+  // Tự động khóa sản phẩm khi mở modal sửa sản phẩm kho
+  useResourceLock('INVENTORY_PRODUCT', productId, visible);
 
   // Phơi bày các phương thức điều khiển cho parent component
   useImperativeHandle(ref, () => ({
