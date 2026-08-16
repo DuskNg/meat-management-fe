@@ -12,7 +12,7 @@ export const getSocket = () => {
   if (!socket) {
     console.log('[SOCKET] Initializing Socket.IO connection to:', API_HOST);
     socket = io(API_HOST, {
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'], // Bắt buộc dùng websocket trực tiếp trên production để tránh lỗi CORS/Handshake khi polling
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 10,

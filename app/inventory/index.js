@@ -463,7 +463,7 @@ export default function InventoryDashboardScreen() {
                   <View style={styles.cardActionsRow}>
                     <TouchableOpacity
                       style={[styles.quickBtn, styles.btnAdjust]}
-                      onPress={() => actionModalRef.current?.open(item, 'ADJUST')}
+                      onPress={() => actionModalRef.current?.open(item, 'IN')}
                       activeOpacity={0.7}
                     >
                       <Text style={styles.btnAdjustText}>⚖️ Kiểm kê</Text>
