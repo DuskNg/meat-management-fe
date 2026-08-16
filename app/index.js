@@ -43,6 +43,7 @@ import AddEmployeeModal from '../src/components/AddEmployeeModal';
 import SalaryAdvanceModal from '../src/components/SalaryAdvanceModal';
 import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
 import EditEmployeeModal from '../src/components/EditEmployeeModal';
+import AnimatedPressable from '../src/components/AnimatedPressable';
 import { useLockStore } from '../src/store/lockStore';
 import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
 import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../src/utils/socket';
