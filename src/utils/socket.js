@@ -69,3 +69,38 @@ export const leaveWorkspaceRoom = (workspaceId) => {
     console.log('[SOCKET] Left workspace room:', workspaceId);
   }
 };
+
+// Gửi yêu cầu khóa đối tượng khi người dùng bắt đầu thao tác (mở modal)
+export const lockResource = (type, resourceId) => {
+  const s = getSocket();
+  const user = useAuthStore.getState().user;
+  const workspaceId = user?.workspaceMember?.workspace?.ownerId || user?.id;
+
+  if (s && s.connected && type && resourceId && workspaceId && user) {
+    const userName = user.name || user.fullName || user.phone || 'Người dùng';
+    s.emit('lock_resource', {
+      type,
+      resourceId,
+      workspaceId,
+      userId: user.id,
+      userName,
+    });
+    console.log(`[SOCKET] Locked resource: ${type}:${resourceId}`);
+  }
+};
+
+// Gửi yêu cầu giải phóng khóa khi người dùng kết thúc thao tác (đóng modal)
+export const unlockResource = (type, resourceId) => {
+  const s = getSocket();
+  const user = useAuthStore.getState().user;
+  const workspaceId = user?.workspaceMember?.workspace?.ownerId || user?.id;
+
+  if (s && type && resourceId && workspaceId) {
+    s.emit('unlock_resource', {
+      type,
+      resourceId,
+      workspaceId,
+    });
+    console.log(`[SOCKET] Unlocked resource: ${type}:${resourceId}`);
+  }
+};

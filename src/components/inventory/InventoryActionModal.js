@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { api } from '../../api/client';
 import { COLORS, FONTS, SHADOWS } from '../../theme';
+import { useResourceLock } from '../../hooks/useResourceLock';
 
 // Định dạng chuỗi nhập số có dấu chấm phân cách hàng nghìn
 const formatNumberString = (value) => {
@@ -60,6 +61,9 @@ const InventoryActionModal = forwardRef(({ onSuccess }, ref) => {
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [reason, setReason] = useState('');
+
+  // Theo dõi lock: khi modal mở, tự động lock sản phẩm cho người dùng khác thấy
+  const { activeLock } = useResourceLock('INVENTORY_PRODUCT', product?.id, visible);
 
   // Phơi bày phương thức open/close cho parent
   useImperativeHandle(ref, () => ({
@@ -183,6 +187,17 @@ const InventoryActionModal = forwardRef(({ onSuccess }, ref) => {
               <Text style={styles.closeHeaderText}>✕</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Cảnh báo khi có người khác đang thao tác với sản phẩm này cùng lúc */}
+          {activeLock && (
+            <View style={styles.lockWarning}>
+              <Text style={styles.lockWarningIcon}>⚠️</Text>
+              <Text style={styles.lockWarningText}>
+                <Text style={styles.lockWarningName}>{activeLock.userName}</Text>
+                {' '}đang thao tác với sản phẩm này. Hãy cẩn thận khi chỉnh sửa!
+              </Text>
+            </View>
+          )}
 
           {/* Thanh chuyển đổi Tab: Nhập / Xuất / Kiểm kê */}
           <View style={styles.tabContainer}>
@@ -571,6 +586,32 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',
+  },
+  // Style cho banner cảnh báo khi có người khác đang thao tác cùng lúc
+  lockWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  lockWarningIcon: {
+    fontSize: 16,
+  },
+  lockWarningText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 17,
+  },
+  lockWarningName: {
+    fontWeight: 'bold',
+    color: '#B45309',
   },
 });
 

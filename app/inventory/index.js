@@ -20,7 +20,9 @@ import AddInventoryProductModal from '../../src/components/inventory/AddInventor
 import InventoryActionModal from '../../src/components/inventory/InventoryActionModal';
 import InventoryHistoryModal from '../../src/components/inventory/InventoryHistoryModal';
 import { useAuthStore } from '../../src/store/authStore';
+import { useLockStore } from '../../src/store/lockStore';
 import WorkspaceMemberActionsModal from '../../src/components/WorkspaceMemberActionsModal';
+import ResourceLockBadge from '../../src/components/ResourceLockBadge';
 import { matchItemSearch } from '../../src/utils/searchHelper';
 import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../../src/utils/socket';
 
@@ -29,6 +31,7 @@ export default function InventoryDashboardScreen() {
   const queryClient = useQueryClient();
   const auth = useAuthStore();
   const user = auth.user;
+  const { setLock, removeLock, getLock, syncLocks } = useLockStore();
 
   // States quản lý bộ lọc và tìm kiếm
   const [search, setSearch] = useState('');
@@ -52,7 +55,7 @@ export default function InventoryDashboardScreen() {
     },
   });
 
-  // Lắng nghe sự kiện realtime INVENTORY_UPDATED từ Socket.IO
+  // Lắng nghe sự kiện realtime từ Socket.IO (cập nhật kho + resource locking)
   React.useEffect(() => {
     const socket = getSocket();
     const currentWorkspaceId = user?.workspaceMember?.workspace?.ownerId || user?.id;
@@ -60,16 +63,36 @@ export default function InventoryDashboardScreen() {
     if (socket && currentWorkspaceId) {
       joinWorkspaceRoom(currentWorkspaceId);
 
+      // Cập nhật danh sách sản phẩm khi có thay đổi từ người dùng khác
       const handleInventoryUpdate = (data) => {
         console.log('[SOCKET] Nhận thông báo cập nhật kho hàng:', data);
         refetch();
         queryClient.invalidateQueries(['inventoryProducts']);
       };
 
+      // Đồng bộ danh sách locks khi mới kết nối (nhận trạng thái hiện tại từ server)
+      const handleLocksSync = ({ locks }) => {
+        syncLocks(locks.filter((l) => l.type === 'INVENTORY_PRODUCT'));
+      };
+
+      // Cập nhật trạng thái khóa khi có người mở/đóng thao tác với sản phẩm
+      const handleLockChanged = ({ action, lockInfo }) => {
+        if (lockInfo.type !== 'INVENTORY_PRODUCT') return;
+        if (action === 'LOCKED') {
+          setLock(lockInfo.type, lockInfo.resourceId, lockInfo);
+        } else if (action === 'UNLOCKED') {
+          removeLock(lockInfo.type, lockInfo.resourceId);
+        }
+      };
+
       socket.on('INVENTORY_UPDATED', handleInventoryUpdate);
+      socket.on('RESOURCE_LOCKS_SYNC', handleLocksSync);
+      socket.on('RESOURCE_LOCK_CHANGED', handleLockChanged);
 
       return () => {
         socket.off('INVENTORY_UPDATED', handleInventoryUpdate);
+        socket.off('RESOURCE_LOCKS_SYNC', handleLocksSync);
+        socket.off('RESOURCE_LOCK_CHANGED', handleLockChanged);
       };
     }
   }, [user?.id, user?.workspaceMember?.workspace?.ownerId]);
@@ -459,6 +482,15 @@ export default function InventoryDashboardScreen() {
                     )}
                   </View>
 
+                  {/* Badge hiển thị khi có người khác đang thao tác với sản phẩm này */}
+                  {(() => {
+                    const activeLock = getLock('INVENTORY_PRODUCT', item.id);
+                    const isLockedByOther = activeLock && activeLock.userId !== user?.id;
+                    return isLockedByOther ? (
+                      <ResourceLockBadge lockInfo={activeLock} style={styles.lockBadge} />
+                    ) : null;
+                  })()}
+
                   {/* Hàng 3: 3 nút thao tác: Kiểm kê / Sửa / Thẻ kho */}
                   <View style={styles.cardActionsRow}>
                     <TouchableOpacity
@@ -842,6 +874,9 @@ const styles = StyleSheet.create({
   minStockHint: {
     fontSize: 11,
     color: '#D97706',
+  },
+  lockBadge: {
+    marginBottom: 6,
   },
   cardActionsRow: {
     flexDirection: 'row',
