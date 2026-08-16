@@ -43,7 +43,7 @@ const SmoothModal = ({ visible, onClose, children, isToast }) => {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.centeredView}
+          style={[styles.centeredView, isToast && { justifyContent: 'flex-start' }]}
         >
           {/* Lớp nền trong suốt click ngoài để đóng - pointerEvents="box-only" để không chặn children */}
           <TouchableOpacity

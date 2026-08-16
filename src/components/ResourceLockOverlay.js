@@ -72,9 +72,9 @@ const ResourceLockOverlay = ({ lockInfo, style, borderRadius = 12 }) => {
         {/* Nội dung thông báo người dùng đang thao tác */}
         <View style={styles.infoContainer}>
           <Text style={styles.userNameText} numberOfLines={1}>
-            🔒 {lockInfo.userName}
+            {lockInfo.userName}
           </Text>
-          <Text style={styles.statusText}>đang xử lý đối tượng này...</Text>
+          <Text style={styles.statusText}>đang thao tác...</Text>
         </View>
       </View>
     </Pressable>
@@ -84,7 +84,7 @@ const ResourceLockOverlay = ({ lockInfo, style, borderRadius = 12 }) => {
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)', // Nền tối làm mờ mờ đối tượng bên dưới
+    backgroundColor: 'rgba(15, 23, 42, 0.38)', // Nền tối nhẹ nhàng làm mờ mờ đối tượng bên dưới
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 999, // Đảm bảo đè lên trên tất cả các nút trong card
