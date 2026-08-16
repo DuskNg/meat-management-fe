@@ -693,7 +693,7 @@
   resolved "https://registry.yarnpkg.com/@expo/dom-webview/-/dom-webview-56.0.6.tgz#0ad1b7ca2070a273c16dd751a0071c0678a22df9"
   integrity sha512-DQY3Tj5nrPbpIfEQiD9xbyEFTu25yEORa02Eyzl5rXszDzxDT4VkZDHkyErNQOyE1qjublJHNFhE5bDm4tRfqA==
 
-"@expo/env@^2.3.1":
+"@expo/env@^2.3.1", "@expo/env@~2.4.2":
   version "2.4.2"
   resolved "https://registry.yarnpkg.com/@expo/env/-/env-2.4.2.tgz#c180fd577e664b6090029157ae0e1b7ddfd66fac"
   integrity sha512-28pqaEqwnmLduZ00Pq9HkSzE5wbj1MTwp5/n8nm8rD8MCjR9eUnVOwmNksPI3Be2ReAPO/DbPn1puy0mvoocsQ==
@@ -2231,6 +2231,13 @@ expo-av@^16.0.8:
   resolved "https://registry.yarnpkg.com/expo-av/-/expo-av-16.0.8.tgz#b1671127f3b2ecaeb9c69fc2301cf791d4504dd6"
   integrity sha512-cmVPftGR/ca7XBgs7R6ky36lF3OC0/MM/lpgX/yXqfv0jASTsh7AYX9JxHCwFmF+Z6JEB1vne9FDx4GiLcGreQ==
 
+expo-constants@^57.0.11, expo-constants@~57.0.11:
+  version "57.0.11"
+  resolved "https://registry.yarnpkg.com/expo-constants/-/expo-constants-57.0.11.tgz#7a51e8d588e267641e2390148f46fdb0f266f940"
+  integrity sha512-gpSZ13Nfx0BOc9ALjG1SMhks5csb8Z6ncEVdhDgv0NRrmJcHPRvyUlWaKjRjzwW730XrQ6PIXFRcnNmAxOLj5A==
+  dependencies:
+    "@expo/env" "~2.4.2"
+
 expo-constants@~56.0.23:
   version "56.0.23"
   resolved "https://registry.yarnpkg.com/expo-constants/-/expo-constants-56.0.23.tgz#0e72392d40f818b546d319836f0dacd6380ef88a"
@@ -2242,6 +2249,13 @@ expo-file-system@~56.0.8, expo-file-system@~56.0.9:
   version "56.0.9"
   resolved "https://registry.yarnpkg.com/expo-file-system/-/expo-file-system-56.0.9.tgz#bd65520f9a9b1604f32a59e19a67faaa3b96ad47"
   integrity sha512-5M1a7+ffiJGhn/IN5kRcM8uG8V0REMciwEUPUvKykNvjFHyfKfV4USeWhuIjLvTWvDtsPiqdk56uvhFXrhR7nQ==
+
+expo-font@^57.0.1:
+  version "57.0.1"
+  resolved "https://registry.yarnpkg.com/expo-font/-/expo-font-57.0.1.tgz#7932576f74a22b4259d0f27bf61425f41bbd5a79"
+  integrity sha512-QyS9L1Kh9sKJg4gfU6rdbpxpmH+DyzBX8z6jVvXMUDoqLr1GqmkO/Wu379KCXjL///kWbhpNlbi7AgBuj4VdIQ==
+  dependencies:
+    fontfaceobserver "^2.1.0"
 
 expo-font@~56.0.7:
   version "56.0.7"
@@ -2271,6 +2285,14 @@ expo-keep-awake@~56.0.3:
   version "56.0.3"
   resolved "https://registry.yarnpkg.com/expo-keep-awake/-/expo-keep-awake-56.0.3.tgz#88991b4859c77af73cf68c500839a18fe5d8febe"
   integrity sha512-CLMJXtEiMKknD3Rpm8CRwE6ZJUzu2yCEmRk1sgfHAJ1zIbuEWY3dpPDubtsnuzWm+2k6Sru+yaFbYsvPWmTiBA==
+
+expo-linking@^57.0.6:
+  version "57.0.6"
+  resolved "https://registry.yarnpkg.com/expo-linking/-/expo-linking-57.0.6.tgz#ad7d37ae8cb3668c1c2f54b730b97850126af263"
+  integrity sha512-NdKjEGk+ywwGRNvgQCq9KettM1eVHfR1+uLov+0ohb6rmmMEgnstfLcc3f0DKMQ0PnROsY5G5+ZkNeiairYRXA==
+  dependencies:
+    expo-constants "~57.0.11"
+    invariant "^2.2.4"
 
 expo-local-authentication@^56.0.4:
   version "56.0.5"
