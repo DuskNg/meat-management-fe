@@ -4,6 +4,9 @@ import { useAuthStore } from '../store/authStore';
 
 const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 
+// Phân biệt môi trường local và production để chọn transport phù hợp
+const isLocal = API_HOST.includes('localhost') || API_HOST.includes('127.0.0.1');
+
 let socket = null;
 let currentRoomWorkspaceId = null;
 
@@ -12,7 +15,9 @@ export const getSocket = () => {
   if (!socket) {
     console.log('[SOCKET] Initializing Socket.IO connection to:', API_HOST);
     socket = io(API_HOST, {
-      transports: ['websocket'], // Bắt buộc dùng websocket trực tiếp trên production để tránh lỗi CORS/Handshake khi polling
+      // Local dùng cả polling + websocket để đảm bảo hoạt động tốt
+      // Production chỉ dùng websocket để tránh lỗi CORS/Handshake khi HTTP polling
+      transports: isLocal ? ['websocket', 'polling'] : ['websocket'],
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 10,
