@@ -15,9 +15,8 @@ export const getSocket = () => {
   if (!socket) {
     console.log('[SOCKET] Initializing Socket.IO connection to:', API_HOST);
     socket = io(API_HOST, {
-      // Local dùng cả polling + websocket để đảm bảo hoạt động tốt
-      // Production chỉ dùng websocket để tránh lỗi CORS/Handshake khi HTTP polling
-      transports: isLocal ? ['websocket', 'polling'] : ['websocket'],
+      // Local: polling+websocket. Production: polling trước để HTTP handshake thành công, sau đó Socket.IO tự upgrade lên websocket
+      transports: ['polling', 'websocket'],
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 10,
