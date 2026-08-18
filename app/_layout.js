@@ -6,6 +6,7 @@ import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import WorkspacePendingBanner from '../src/components/WorkspacePendingBanner';
 import AdminOwnerDetailModal from '../src/components/AdminOwnerDetailModal';
 import { api } from '../src/api/client';
+import { recordUserActivity } from '../src/hooks/useResourceLock';
 
 // Tạo Client cho React Query để quản lý cache dữ liệu từ API
 const queryClient = new QueryClient({
@@ -90,7 +91,7 @@ function RootLayoutNav() {
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1 }} onTouchStart={recordUserActivity}>
       <WorkspacePendingBanner onPress={() => ownerModalRef.current?.open(user)} />
       <Slot />
       <AdminOwnerDetailModal ref={ownerModalRef} />

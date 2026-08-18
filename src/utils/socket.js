@@ -1,6 +1,7 @@
 // meat-management-fe/src/utils/socket.js
 import { io } from 'socket.io-client';
 import { useAuthStore } from '../store/authStore';
+import { Alert } from 'react-native';
 
 const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 
@@ -43,6 +44,63 @@ export const getSocket = () => {
 
     socket.on('disconnect', (reason) => {
       console.log('[SOCKET] Disconnected from server, reason:', reason);
+    });
+
+    // Lắng nghe sự kiện cập nhật quyền realtime từ chủ Workspace
+    socket.on('MEMBER_PERMISSIONS_UPDATED', ({ memberId, permissions, kicked }) => {
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser && currentUser.id === memberId) {
+        console.log('[SOCKET] Nhận thông báo cập nhật quyền từ server:', permissions);
+
+        if (kicked) {
+          // Reset toàn bộ quyền và trạng thái thành viên workspace
+          const resetPermissions = {
+            canManageCustomers: false,
+            canManageDebt: false,
+            canManageBadDebt: false,
+            canManageEmployees: false,
+            canManageStore: false,
+            canManageInventory: false,
+            canManageShop: false,
+          };
+          useAuthStore.getState().updateUser({
+            ...resetPermissions,
+            permissions: resetPermissions,
+            workspaceMember: null,
+          });
+          Alert.alert('Workspace', 'Tài khoản của bạn đã bị loại khỏi Workspace.');
+          return;
+        }
+
+        const newPermissions = {
+          canManageCustomers: permissions.canManageCustomers,
+          canManageDebt: permissions.canManageDebt,
+          canManageBadDebt: permissions.canManageBadDebt,
+          canManageEmployees: permissions.canManageEmployees,
+          canManageStore: permissions.canManageStore,
+          canManageInventory: permissions.canManageInventory,
+          canManageShop: permissions.canManageShop,
+        };
+
+        const updatedWorkspaceMember = currentUser.workspaceMember ? {
+          ...currentUser.workspaceMember,
+          canManageCustomers: permissions.canManageCustomers,
+          canManageDebt: permissions.canManageDebt,
+          canManageBadDebt: permissions.canManageBadDebt,
+          canManageEmployees: permissions.canManageEmployees,
+          canManageStore: permissions.canManageStore,
+          canManageInventory: permissions.canManageInventory,
+          canManageShop: permissions.canManageShop,
+        } : null;
+
+        useAuthStore.getState().updateUser({
+          ...newPermissions,
+          permissions: newPermissions,
+          workspaceMember: updatedWorkspaceMember,
+        });
+
+        Alert.alert('Cập nhật quyền', 'Quyền hạn tài khoản của bạn đã được chủ Workspace thay đổi.');
+      }
     });
   }
   return socket;

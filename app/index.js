@@ -34,6 +34,7 @@ import EditDebtModal from '../src/components/EditDebtModal';
 import EditPaymentModal from '../src/components/EditPaymentModal';
 import CustomerDebtHistoryModal from '../src/components/CustomerDebtHistoryModal';
 import DailyReportModal from '../src/components/DailyReportModal';
+import EmployeeDailyDebtModal from '../src/components/EmployeeDailyDebtModal';
 import AddBadDebtModal from '../src/components/AddBadDebtModal';
 import AddSupplierModal from '../src/components/AddSupplierModal';
 import SupplierDebtModal from '../src/components/SupplierDebtModal';
@@ -129,6 +130,7 @@ export default function DashboardScreen() {
   const employeeHistoryModalRef = useRef(null);
   const editEmployeeModalRef = useRef(null);
   const memberActionsModalRef = useRef(null);
+  const employeeDailyDebtModalRef = useRef(null); // Modal danh sách ghi nợ trong ngày (chỉ dùng cho tk thành viên)
 
   const [showFloatingLogs, setShowFloatingLogs] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -324,11 +326,15 @@ export default function DashboardScreen() {
       refetchPayments();
     }
     customerDebtHistoryModalRef.current?.refresh();
+    // Làm mới danh sách ghi nợ trong ngày của nhân viên nếu đang hiển thị
+    employeeDailyDebtModalRef.current?.refresh();
   };
 
   const handleRefreshBadAll = () => {
     refetchBad();
     customerDebtHistoryModalRef.current?.refresh();
+    // Làm mới danh sách ghi nợ trong ngày của nhân viên nếu đang hiển thị
+    employeeDailyDebtModalRef.current?.refresh();
   };
 
   // Lắng nghe sự kiện realtime CUSTOMER_UPDATED & lock events từ Socket.IO
@@ -344,6 +350,8 @@ export default function DashboardScreen() {
         refetch();
         refetchBad();
         customerDebtHistoryModalRef.current?.refresh();
+        // Tự động cập nhật danh sách nợ trong ngày của nhân viên qua socket
+        employeeDailyDebtModalRef.current?.refresh();
       };
 
       // Đồng bộ danh sách locks khi mới kết nối
@@ -1396,6 +1404,8 @@ export default function DashboardScreen() {
   const renderCustomerItem = ({ item }) => {
     const hasDebt = item.debt > 0;
     const isBadDebtCustomer = item.isBadDebt === true;
+    // Nhân viên là tài khoản có workspaceMember (thành viên workspace của chủ)
+    const isEmployee = !!auth.user?.workspaceMember;
     // Lấy chữ cái đầu của tên khách hàng làm avatar
     const firstLetter = (item.name || 'K').trim().charAt(0).toUpperCase();
 
@@ -1448,24 +1458,26 @@ export default function DashboardScreen() {
               </Text>
             </View>
 
-            {/* Trạng thái công nợ bên phải */}
-            <View style={styles.cardDebtStatusSection}>
-              {isBadDebtCustomer ? (
-                <View style={styles.badDebtValueContainer}>
-                  <Text style={styles.badDebtValueAmount}>{formatCurrency(item.debt)}</Text>
-                  <Text style={styles.badDebtValueLabel}>NỢ XẤU ⚠️</Text>
-                </View>
-              ) : hasDebt ? (
-                <View style={styles.debtValueContainer}>
-                  <Text style={styles.debtValueAmount}>{formatCurrency(item.debt)}</Text>
-                  <Text style={styles.debtValueLabel}>còn nợ ⚠️</Text>
-                </View>
-              ) : (
-                <View style={styles.noDebtBadge}>
-                  <Text style={styles.noDebtBadgeText}>Hết nợ ✅</Text>
-                </View>
-              )}
-            </View>
+            {/* Trạng thái công nợ bên phải: Ẩn hoàn toàn với nhân viên */}
+            {!isEmployee && (
+              <View style={styles.cardDebtStatusSection}>
+                {isBadDebtCustomer ? (
+                  <View style={styles.badDebtValueContainer}>
+                    <Text style={styles.badDebtValueAmount}>{formatCurrency(item.debt)}</Text>
+                    <Text style={styles.badDebtValueLabel}>NỢ XẤU ⚠️</Text>
+                  </View>
+                ) : hasDebt ? (
+                  <View style={styles.debtValueContainer}>
+                    <Text style={styles.debtValueAmount}>{formatCurrency(item.debt)}</Text>
+                    <Text style={styles.debtValueLabel}>còn nợ ⚠️</Text>
+                  </View>
+                ) : (
+                  <View style={styles.noDebtBadge}>
+                    <Text style={styles.noDebtBadgeText}>Hết nợ ✅</Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
 
           {/* Đường phân cách nét đứt nhẹ */}
@@ -1497,6 +1509,21 @@ export default function DashboardScreen() {
                   ]}>
                     {item.debt <= 0 ? '✅ Đã trả đủ' : '💰 Đã trả'}
                   </Text>
+                </TouchableOpacity>
+              ) : isEmployee ? (
+                // Nhân viên: chỉ hiện nút Ghi nợ, ẩn Xem nợ và Xuất nợ
+                <TouchableOpacity
+                  style={styles.addDebtBtn}
+                  onPress={(e) => {
+                    if (e && e.stopPropagation) {
+                      e.stopPropagation();
+                    }
+                    setSelectedCustomerId(item.id);
+                    debtModalRef.current?.open();
+                  }}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.addDebtBtnText}>🔴 Ghi nợ</Text>
                 </TouchableOpacity>
               ) : (
                 <>
@@ -1543,50 +1570,53 @@ export default function DashboardScreen() {
                 </>
               )}
 
-              <View style={styles.actionMenuContainer}>
-                <TouchableOpacity
-                  style={styles.threeDotsBtn}
-                  onPress={(e) => {
-                    if (e && e.stopPropagation) {
-                      e.stopPropagation();
-                    }
-                    setActiveMenuId(activeMenuId === item.id ? null : item.id);
-                  }}
-                  activeOpacity={0.6}
-                >
-                  <Text style={styles.threeDotsText}>⋮</Text>
-                </TouchableOpacity>
+              {/* Nút 3 chấm Sửa & Xóa: chỉ hiện với chủ tài khoản */}
+              {!isEmployee && (
+                <View style={styles.actionMenuContainer}>
+                  <TouchableOpacity
+                    style={styles.threeDotsBtn}
+                    onPress={(e) => {
+                      if (e && e.stopPropagation) {
+                        e.stopPropagation();
+                      }
+                      setActiveMenuId(activeMenuId === item.id ? null : item.id);
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.threeDotsText}>⋮</Text>
+                  </TouchableOpacity>
 
-                {activeMenuId === item.id && (
-                  <View style={styles.dropdownMenu}>
-                    <TouchableOpacity
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (e && e.stopPropagation) {
-                          e.stopPropagation();
-                        }
-                        setActiveMenuId(null);
-                        editCustomerModalRef.current?.open(item);
-                      }}
-                    >
-                      <Text style={styles.dropdownItemText}>✏️ Sửa</Text>
-                    </TouchableOpacity>
-                    <View style={styles.menuDivider} />
-                    <TouchableOpacity
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (e && e.stopPropagation) {
-                          e.stopPropagation();
-                        }
-                        setActiveMenuId(null);
-                        confirmDeleteCustomer(item.id, item.name);
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, styles.deleteText]}>🗑️ Xóa</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
+                  {activeMenuId === item.id && (
+                    <View style={styles.dropdownMenu}>
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (e && e.stopPropagation) {
+                            e.stopPropagation();
+                          }
+                          setActiveMenuId(null);
+                          editCustomerModalRef.current?.open(item);
+                        }}
+                      >
+                        <Text style={styles.dropdownItemText}>✏️ Sửa</Text>
+                      </TouchableOpacity>
+                      <View style={styles.menuDivider} />
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (e && e.stopPropagation) {
+                            e.stopPropagation();
+                          }
+                          setActiveMenuId(null);
+                          confirmDeleteCustomer(item.id, item.name);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, styles.deleteText]}>🗑️ Xóa</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           </View>
         </TouchableOpacity>
@@ -2580,8 +2610,8 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* TỔNG TIỀN NỢ: To rõ, thu hút sự chú ý ngay */}
-        <View style={styles.summaryCard}>
+        {/* TỔNG TIỀN NỢ: Chỉ hiện với chủ tài khoản, ẩn với tài khoản thành viên */}
+        {!auth.user?.workspaceMember && <View style={styles.summaryCard}>
           <TouchableOpacity
             style={styles.summaryMainRow}
             onPress={() => setShowDebtSummary((prev) => !prev)}
@@ -2690,16 +2720,29 @@ export default function DashboardScreen() {
               )}
             </View>
           )}
-        </View>
+        </View>}
 
-        {/* NÚT THỐNG KÊ TRONG NGÀY */}
-        <TouchableOpacity
-          style={styles.dailyReportButton}
-          onPress={() => dailyReportModalRef.current?.open()}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.dailyReportButtonText}>📈 THỐNG KÊ CÔNG NỢ TRONG NGÀY</Text>
-        </TouchableOpacity>
+        {/* NÚT THỐNG KÊ TRONG NGÀY: Ẩn với tài khoản thành viên */}
+        {!auth.user?.workspaceMember && (
+          <TouchableOpacity
+            style={styles.dailyReportButton}
+            onPress={() => dailyReportModalRef.current?.open()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dailyReportButtonText}>📈 THỐNG KÊ CÔNG NỢ</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* NÚT DANH SÁCH GHI NỢ TRONG NGÀY: Chỉ hiện với tài khoản thành viên */}
+        {auth.user?.workspaceMember && (
+          <TouchableOpacity
+            style={styles.employeeDailyDebtButton}
+            onPress={() => employeeDailyDebtModalRef.current?.open(auth.user?.id)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.employeeDailyDebtButtonText}>📋 DANH SÁCH GHI NỢ TRONG NGÀY</Text>
+          </TouchableOpacity>
+        )}
 
         {/* HÀNG 4 NÚT TIỆN ÍCH AI & QUẢN LÝ */}
         <View style={styles.actionRowContainer}>
@@ -2813,8 +2856,6 @@ export default function DashboardScreen() {
       {/* MODAL QUẢN LÝ DANH MỤC THỊT (Ẩn) */}
       <ProductListModal ref={productModalRef} />
 
-      {/* POPUP THÔNG BÁO DÙNG CHUNG (Ẩn) */}
-      <PopupModal ref={popupModalRef} />
 
       {/* MODAL KẾT QUẢ GHI NỢ GIỌNG NÓI (Ẩn) */}
       <ScanTicketModal ref={scanTicketModalRef} onRefresh={handleRefreshAll} />
@@ -2841,9 +2882,21 @@ export default function DashboardScreen() {
         onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
         onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
       />
+      {/* Modal danh sách ghi nợ trong ngày dành cho nhân viên - render TRƯỚC EditDebtModal để EditDebtModal nằm đè trên khi cùng mở */}
+      <EmployeeDailyDebtModal
+        ref={employeeDailyDebtModalRef}
+        popupModalRef={popupModalRef}
+        onRefresh={handleRefreshAll}
+        onEditTransaction={(transaction) => {
+          setSelectedCustomerId(transaction.customerId);
+          editDebtModalRef.current?.open(transaction);
+        }}
+      />
       <EditDebtModal ref={editDebtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshAll} />
       <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} />
       <DailyReportModal ref={dailyReportModalRef} onRefresh={handleRefreshAll} />
+      {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
+      <PopupModal ref={popupModalRef} />
 
       {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
       {auth.user?.isWorkspaceOwner && (
@@ -3658,6 +3711,26 @@ const styles = StyleSheet.create({
   },
   dailyReportButtonText: {
     color: '#1E40AF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  // Nút danh sách ghi nợ trong ngày (chỉ dùng cho tài khoản thành viên)
+  employeeDailyDebtButton: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+    borderWidth: 1.5,
+    marginTop: 12,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  employeeDailyDebtButtonText: {
+    color: '#15803D',
     fontSize: 14,
     fontWeight: 'bold',
     letterSpacing: 0.5,

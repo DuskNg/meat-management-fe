@@ -72,7 +72,7 @@ const PopupModal = forwardRef((props, ref) => {
             config.onConfirm();
           }
           timerRef.current = null;
-        }, 2000); // Thành công: ẩn sau 2 giây
+        }, 3000); // Thành công: ẩn sau 3 giây
       } else if (typeVal === 'error') {
         timerRef.current = setTimeout(() => {
           setVisible(false);
@@ -161,9 +161,10 @@ const PopupModal = forwardRef((props, ref) => {
   const toastBgColor = options.type === 'success' ? '#10B981' : '#EF4444';
 
   return (
-    <SmoothModal visible={visible} onClose={handleCancel} isToast={isToast}>
-      <View style={isToast ? styles.toastWrapper : styles.modalWrapper}>
-        {isToast ? (
+    <>
+      {/* SmoothModal cho dạng Toast (success/error) - isToast=true cố định, portal không bao giờ remount */}
+      <SmoothModal visible={visible && isToast} onClose={handleCancel} isToast={true}>
+        <View style={styles.toastWrapper}>
           <View style={[styles.toastContent, { backgroundColor: toastBgColor }]}>
             <Text style={styles.toastIcon}>{icon}</Text>
             <View style={styles.toastTextContainer}>
@@ -173,7 +174,13 @@ const PopupModal = forwardRef((props, ref) => {
               <Text style={styles.toastMessageText}>{renderMessage(options.message)}</Text>
             </View>
           </View>
-        ) : (
+        </View>
+      </SmoothModal>
+
+      {/* SmoothModal cho dạng Dialog (confirm/warning/info/error) - isToast=false cố định,
+          portal Modal fade backdrop luôn ở trong React tree, không bao giờ unmount/remount */}
+      <SmoothModal visible={visible && !isToast} onClose={handleCancel} isToast={false}>
+        <View style={styles.modalWrapper}>
           <View style={styles.modalContent}>
             {/* Vùng hiển thị Icon lớn, trực quan */}
             <View style={[styles.iconContainer, { backgroundColor: primaryColor + '15' }]}>
@@ -221,9 +228,9 @@ const PopupModal = forwardRef((props, ref) => {
               </AnimatedPressable>
             </View>
           </View>
-        )}
-      </View>
-    </SmoothModal>
+        </View>
+      </SmoothModal>
+    </>
   );
 });
 

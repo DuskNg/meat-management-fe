@@ -19,7 +19,7 @@ const EditCustomerModal = forwardRef(({ onRefresh }, ref) => {
   const [customer, setCustomer] = useState(null);
 
   // Khóa khách hàng khi mở modal chỉnh sửa thông tin
-  useResourceLock('CUSTOMER', customer?.id, visible);
+  useResourceLock('CUSTOMER', customer?.id, visible, () => setVisible(false));
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');

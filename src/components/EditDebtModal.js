@@ -20,6 +20,7 @@ import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
 import { matchItemSearch } from '../utils/searchHelper';
+import ProductSelector from './ProductSelector';
 
 const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, ref) => {
   // ─── Helper: Chuyển ISO date string/Date object sang DD/MM/YYYY ───────────
@@ -403,61 +404,22 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
 
         {/* ── CHỌN LOẠI THỊT ── */}
         <Text style={styles.label}>
-          {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua (lướt ngang để xem loại thịt):'}
+          {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua:'}
         </Text>
-        <View style={styles.productsContainer}>
-          {products.length > 0 && (
-            <TextInput
-              style={styles.productSearchInput}
-              placeholder="🔍 Tìm nhanh loại thịt..."
-              placeholderTextColor={COLORS.textLight}
-              value={productSearch}
-              onChangeText={setProductSearch}
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-          )}
-          {products.length === 0 ? (
-            <TouchableOpacity
-              style={[styles.productBadge, styles.addProductBadge]}
-              onPress={() => productModalRef.current?.open()}
-            >
-              <Text style={styles.addProductBadgeText}>➕ Thêm thịt</Text>
-              <Text style={styles.productBadgePrice}>Tạo mới</Text>
-            </TouchableOpacity>
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {/* Nút thêm loại thịt mới nhanh */}
-              <TouchableOpacity
-                style={[styles.productBadge, styles.addProductBadge]}
-                onPress={() => productModalRef.current?.open()}
-              >
-                <Text style={addProductBadgeText => styles.addProductBadgeText}>➕ Thêm thịt</Text>
-                <Text style={styles.productBadgePrice}>Tạo mới</Text>
-              </TouchableOpacity>
-              {filteredProducts.map((p) => {
-                const isSelected = currentProduct?.id === p.id;
-                return (
-                  <TouchableOpacity
-                    key={p.id}
-                    style={[styles.productBadge, isSelected && styles.productBadgeSelected]}
-                    onPress={() => handleSelectProduct(p)}
-                  >
-                    <Text style={[styles.productBadgeText, isSelected && styles.productBadgeTextSelected]}>
-                      {p.name}
-                    </Text>
-                    <Text style={styles.productBadgePrice}>
-                      {formatCurrency(p.defaultPrice)}/{p.unit}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          )}
-          {products.length > 0 && filteredProducts.length === 0 && (
-            <Text style={styles.noProductSearchText}>Không tìm thấy loại thịt phù hợp.</Text>
-          )}
-        </View>
+        <ProductSelector
+          products={products}
+          currentProduct={currentProduct}
+          onSelectProduct={handleSelectProduct}
+          onClearProduct={() => {
+            setCurrentProduct(null);
+            setCurrentPrice('');
+            setProductSearch('');
+          }}
+          onAddProduct={() => productModalRef.current?.open()}
+          formatCurrency={formatCurrency}
+          hasError={error && error.toLowerCase().includes('thịt')}
+          error={error}
+        />
 
         <>
           {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
@@ -477,7 +439,11 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
                   placeholderTextColor={COLORS.textLight}
                   keyboardType="decimal-pad"
                   value={currentQuantity}
-                  onChangeText={setCurrentQuantity}
+                  onChangeText={(text) => {
+                    // Chỉ cho phép số, dấu chấm và dấu phẩy
+                    const filtered = text.replace(/[^0-9.,]/g, '');
+                    setCurrentQuantity(filtered);
+                  }}
                 />
                 <Text style={styles.unitText}>{currentProduct.unit}</Text>
               </View>

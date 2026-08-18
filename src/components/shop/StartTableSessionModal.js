@@ -27,7 +27,7 @@ const StartTableSessionModal = forwardRef(({ onStartSession, onViewTableHistory 
   const [table, setTable] = useState(null);
 
   // Tự động khóa bàn khi mở modal mở bàn mới
-  useResourceLock('SHOP_TABLE', table?.id, visible);
+  useResourceLock('SHOP_TABLE', table?.id, visible, () => setVisible(false));
   const [loading, setLoading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
 

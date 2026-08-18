@@ -208,7 +208,7 @@ const WorkspaceMemberActionsModal = forwardRef(function WorkspaceMemberActionsMo
   // Mở modal sửa thao tác
   const handleEditAction = (item) => {
     editModalRef.current?.open(item, () => {
-      fetchActions(dateInput, selectedMemberId, selectedType);
+      fetchActions(dateInput, selectedMemberId);
     });
   };
 
@@ -248,7 +248,7 @@ const WorkspaceMemberActionsModal = forwardRef(function WorkspaceMemberActionsMo
             type: 'success',
             confirmText: 'ĐÓNG',
             onConfirm: () => {
-              fetchActions(dateInput, selectedMemberId, selectedType);
+              fetchActions(dateInput, selectedMemberId);
             },
           });
         } catch (err) {

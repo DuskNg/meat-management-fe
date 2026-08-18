@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/DailyReportModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -20,8 +20,10 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(''); // Định dạng DD/MM/YYYY
-  const [transactions, setTransactions] = useState([]);
-  const [payments, setPayments] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(''); // Định dạng MM/YYYY
+  const [activeReportTab, setActiveReportTab] = useState('day'); // 'day' hoặc 'month'
+  const [rawTransactions, setRawTransactions] = useState([]);
+  const [rawPayments, setRawPayments] = useState([]);
   const [error, setError] = useState('');
   // Bộ lọc loại giao dịch đang chọn: 'all' (tất cả), 'debt' (nợ phát sinh), 'payment' (tiền đã thu)
   const [activeFilter, setActiveFilter] = useState('all');
@@ -35,14 +37,17 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       const mm = String(today.getMonth() + 1).padStart(2, '0');
       const yyyy = today.getFullYear();
       const todayStr = `${dd}/${mm}/${yyyy}`;
+      const thisMonthStr = `${mm}/${yyyy}`;
       
       setSelectedDate(todayStr);
+      setSelectedMonth(thisMonthStr);
+      setActiveReportTab('day');
       setVisible(true);
       setError('');
       // Reset bộ lọc và thanh tìm kiếm khi mở modal
       setActiveFilter('all');
       setSearchText('');
-      fetchDailyData(todayStr);
+      fetchReportData();
     },
     close: () => {
       setVisible(false);
@@ -66,6 +71,16 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     const mm = (d.getMonth() + 1).toString().padStart(2, '0');
     const yyyy = d.getFullYear();
     return `${dd}/${mm}/${yyyy}`;
+  };
+
+  // Helper kiểm tra xem ngày có thuộc tháng mục tiêu không
+  const isDateInMonth = (dateStr, targetMonthYear) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${yyyy}` === targetMonthYear;
   };
 
   const formatPaymentNote = (note, paidAt) => {
@@ -101,29 +116,22 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     return `${mm}/${yyyy}`;
   };
 
-  // 2. Tải toàn bộ giao dịch & thu tiền để lọc theo ngày
-  const fetchDailyData = async (dateStr) => {
+  // 2. Tải toàn bộ giao dịch & thu tiền từ API
+  const fetchReportData = async () => {
     setLoading(true);
     setError('');
     try {
-      // Gọi API lấy toàn bộ giao dịch và thanh toán của chủ buôn (không lọc theo customerId)
+      // Gọi API lấy toàn bộ giao dịch và thanh toán của chủ buôn
       const [transRes, payRes] = await Promise.all([
         api.get('/transactions'),
         api.get('/payments')
       ]);
 
-      const transList = transRes.data?.data || [];
-      const payList = payRes.data?.data || [];
-
-      // Lọc các giao dịch phát sinh trong ngày được chọn
-      const dailyTrans = transList.filter(t => toDateKey(t.date) === dateStr);
-      const dailyPays = payList.filter(p => toDateKey(p.paidAt) === dateStr);
-
-      setTransactions(dailyTrans);
-      setPayments(dailyPays);
+      setRawTransactions(transRes.data?.data || []);
+      setRawPayments(payRes.data?.data || []);
     } catch (err) {
       console.error('[DAILY REPORT FETCH ERROR]', err);
-      setError('Không thể tải dữ liệu thống kê trong ngày.');
+      setError('Không thể tải dữ liệu thống kê.');
     } finally {
       setLoading(false);
     }
@@ -132,64 +140,281 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
   // Xử lý khi người dùng đổi ngày trên DatePicker
   const handleDateChange = (newDateStr) => {
     setSelectedDate(newDateStr);
-    fetchDailyData(newDateStr);
+    fetchReportData();
   };
 
-  // Tính tổng nợ phát sinh và tổng đã thu trong ngày
-  const totalDebtCreated = transactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
-  const totalPaymentReceived = payments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  // Các hàm xử lý đổi tháng cho bộ chọn tháng
+  const handlePrevMonth = () => {
+    const [m, y] = selectedMonth.split('/').map(Number);
+    let prevM = m - 1;
+    let prevY = y;
+    if (prevM === 0) {
+      prevM = 12;
+      prevY = y - 1;
+    }
+    setSelectedMonth(`${String(prevM).padStart(2, '0')}/${prevY}`);
+    fetchReportData();
+  };
+
+  const handleNextMonth = () => {
+    const [m, y] = selectedMonth.split('/').map(Number);
+    let nextM = m + 1;
+    let nextY = y;
+    if (nextM === 13) {
+      nextM = 1;
+      nextY = y + 1;
+    }
+    setSelectedMonth(`${String(nextM).padStart(2, '0')}/${nextY}`);
+    fetchReportData();
+  };
+
+  // Lọc danh sách giao dịch và thanh toán theo tab hiện tại
+  const currentTransactions = useMemo(() => {
+    if (activeReportTab === 'day') {
+      return rawTransactions.filter(t => toDateKey(t.date) === selectedDate);
+    } else {
+      return rawTransactions.filter(t => isDateInMonth(t.date, selectedMonth));
+    }
+  }, [rawTransactions, activeReportTab, selectedDate, selectedMonth]);
+
+  const currentPayments = useMemo(() => {
+    if (activeReportTab === 'day') {
+      return rawPayments.filter(p => toDateKey(p.paidAt) === selectedDate);
+    } else {
+      return rawPayments.filter(p => isDateInMonth(p.paidAt, selectedMonth));
+    }
+  }, [rawPayments, activeReportTab, selectedDate, selectedMonth]);
+
+  // Tính tổng nợ phát sinh và tổng đã thu trong khoảng thời gian được chọn
+  const totalDebtCreated = useMemo(() => {
+    return currentTransactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
+  }, [currentTransactions]);
+
+  const totalPaymentReceived = useMemo(() => {
+    return currentPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  }, [currentPayments]);
 
   // Gộp chung giao dịch và thanh toán thành một dòng thời gian hiển thị (tiền đã thu lên đầu, sau đó đến nợ phát sinh)
-  const timelineItems = [
-    ...payments.map(p => ({
-      id: p.id,
-      type: 'payment',
-      time: p.paidAt,
-      customerName: p.customer?.name || 'Khách ẩn danh',
-      amount: parseFloat(p.amount || 0),
-      note: p.note,
-      details: formatPaymentNote(p.note, p.paidAt)
-    })),
-    ...transactions.map(t => ({
-      id: t.id,
-      type: 'debt',
-      time: t.date,
-      customerName: t.customer?.name || 'Khách ẩn danh',
-      amount: parseFloat(t.totalAmount || 0),
-      note: t.note,
-      details: t.items?.map(item => {
-        const qty = parseFloat(item.quantity);
-        const name = item.product?.name || 'Thịt';
-        return `${qty}${item.product?.unit || 'kg'} ${name}`;
-      }).join(', ')
-    }))
-  ].sort((a, b) => {
-    // Sắp xếp tiền đã thu (payment) lên đầu, nợ phát sinh (debt) ở sau
-    if (a.type === 'payment' && b.type === 'debt') return -1;
-    if (a.type === 'debt' && b.type === 'payment') return 1;
-    // Cùng loại thì xếp theo thời gian mới nhất lên đầu
-    return new Date(b.time) - new Date(a.time);
-  });
+  const timelineItems = useMemo(() => {
+    return [
+      ...currentPayments.map(p => ({
+        id: p.id,
+        type: 'payment',
+        time: p.paidAt,
+        customerName: p.customer?.name || 'Khách ẩn danh',
+        amount: parseFloat(p.amount || 0),
+        note: p.note,
+        details: formatPaymentNote(p.note, p.paidAt)
+      })),
+      ...currentTransactions.map(t => ({
+        id: t.id,
+        type: 'debt',
+        time: t.date,
+        customerName: t.customer?.name || 'Khách ẩn danh',
+        amount: parseFloat(t.totalAmount || 0),
+        note: t.note,
+        details: t.items?.map(item => {
+          const qty = parseFloat(item.quantity);
+          const name = item.product?.name || 'Thịt';
+          return `${qty}${item.product?.unit || 'kg'} ${name}`;
+        }).join(', ')
+      }))
+    ].sort((a, b) => {
+      // Sắp xếp tiền đã thu (payment) lên đầu, nợ phát sinh (debt) ở sau
+      if (a.type === 'payment' && b.type === 'debt') return -1;
+      if (a.type === 'debt' && b.type === 'payment') return 1;
+      // Cùng loại thì xếp theo thời gian mới nhất lên đầu
+      return new Date(b.time) - new Date(a.time);
+    });
+  }, [currentTransactions, currentPayments]);
+
+  // Nhóm nợ theo khách hàng và lọc khách còn nợ trong tháng được chọn
+  const customerMonthlyDebts = useMemo(() => {
+    if (activeReportTab !== 'month') return [];
+
+    // 1. Phân loại transactions và payments theo từng khách hàng
+    const customerTransactionsMap = {};
+    const customerPaymentsList = {};
+
+    rawTransactions.forEach(t => {
+      const cId = t.customerId;
+      if (!cId) return;
+      if (!customerTransactionsMap[cId]) {
+        customerTransactionsMap[cId] = [];
+      }
+      customerTransactionsMap[cId].push({
+        id: t.id,
+        customerId: cId,
+        date: t.date,
+        totalAmount: parseFloat(t.totalAmount || 0),
+        paidAmount: 0,
+      });
+    });
+
+    rawPayments.forEach(p => {
+      const cId = p.customerId;
+      if (!cId) return;
+      if (!customerPaymentsList[cId]) {
+        customerPaymentsList[cId] = [];
+      }
+      customerPaymentsList[cId].push({
+        id: p.id,
+        customerId: cId,
+        paidAt: p.paidAt,
+        amount: parseFloat(p.amount || 0),
+        note: p.note,
+        targetMonth: getPaymentTargetMonth(p),
+      });
+    });
+
+    // 2. Chạy thuật toán cấn trừ nợ cho từng khách hàng
+    const allCustomerIds = new Set([
+      ...Object.keys(customerTransactionsMap),
+      ...Object.keys(customerPaymentsList)
+    ]);
+
+    const allocatedTransactions = {};
+
+    allCustomerIds.forEach(cId => {
+      const txs = customerTransactionsMap[cId] || [];
+      const payments = customerPaymentsList[cId] || [];
+
+      // Sắp xếp transactions theo ngày tăng dần để cấn trừ FIFO cho các đơn cũ trước
+      txs.sort((a, b) => new Date(a.date) - new Date(b.date));
+      // Sắp xếp payments theo ngày tăng dần
+      payments.sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt));
+
+      // Bước A: Cấn trừ các payments có ghi chú chỉ định cụ thể tháng
+      payments.forEach(p => {
+        if (!p.targetMonth) return;
+
+        let remainingPayment = p.amount;
+
+        txs.forEach(t => {
+          if (remainingPayment <= 0) return;
+
+          const tDate = new Date(t.date);
+          const tMonth = (tDate.getMonth() + 1).toString().padStart(2, '0');
+          const tYear = tDate.getFullYear();
+          const tMonthYearStr = `${tMonth}/${tYear}`;
+
+          if (tMonthYearStr === p.targetMonth) {
+            const needed = t.totalAmount - t.paidAmount;
+            if (needed > 0) {
+              const allocated = Math.min(needed, remainingPayment);
+              t.paidAmount += allocated;
+              remainingPayment -= allocated;
+            }
+          }
+        });
+
+        p.remainingAmount = remainingPayment;
+      });
+
+      // Bước B: Cấn trừ FIFO cho các payments tự do HOẶC phần dư thừa từ bước A
+      payments.forEach(p => {
+        let remainingPayment = p.targetMonth ? (p.remainingAmount || 0) : p.amount;
+        if (remainingPayment <= 0) return;
+
+        txs.forEach(t => {
+          if (remainingPayment <= 0) return;
+
+          const needed = t.totalAmount - t.paidAmount;
+          if (needed > 0) {
+            const allocated = Math.min(needed, remainingPayment);
+            t.paidAmount += allocated;
+            remainingPayment -= allocated;
+          }
+        });
+      });
+
+      allocatedTransactions[cId] = txs;
+    });
+
+    // 3. Gom nhóm theo tháng được chọn
+    const [selM, selY] = selectedMonth.split('/').map(Number);
+    const targetMonthStr = `${String(selM).padStart(2, '0')}/${selY}`;
+
+    const customerMap = {};
+
+    Object.keys(allocatedTransactions).forEach(cId => {
+      const txs = allocatedTransactions[cId];
+      
+      txs.forEach(t => {
+        const tDate = new Date(t.date);
+        const tMonth = (tDate.getMonth() + 1).toString().padStart(2, '0');
+        const tYear = tDate.getFullYear();
+        const tMonthYearStr = `${tMonth}/${tYear}`;
+
+        if (tMonthYearStr === targetMonthStr) {
+          if (!customerMap[cId]) {
+            const firstTx = rawTransactions.find(rt => rt.customerId === cId);
+            const customerName = firstTx?.customer?.name || 'Khách ẩn danh';
+
+            customerMap[cId] = {
+              customerId: cId,
+              customerName,
+              totalDebt: 0,
+              totalPaid: 0,
+            };
+          }
+
+          customerMap[cId].totalDebt += t.totalAmount;
+          customerMap[cId].totalPaid += t.paidAmount;
+        }
+      });
+    });
+
+    // 4. Chuyển sang mảng kết quả, lọc và sắp xếp theo số nợ còn lại trong tháng
+    return Object.values(customerMap)
+      .map(c => {
+        const txs = allocatedTransactions[c.customerId] || [];
+        const currentGlobalRemaining = txs.reduce((sum, t) => sum + (t.totalAmount - t.paidAmount), 0);
+
+        return {
+          ...c,
+          remainingDebt: currentGlobalRemaining, // Tổng nợ tích lũy toàn thời gian thực tế hiện tại
+          remainingInMonth: c.totalDebt - c.totalPaid, // Số nợ chưa trả của riêng tháng được chọn
+        };
+      })
+      // Lọc: Chỉ hiển thị khách hàng có số nợ chưa trả của tháng được chọn > 0
+      .filter(c => c.remainingInMonth > 0)
+      .sort((a, b) => b.remainingInMonth - a.remainingInMonth); // Sắp xếp nợ tháng này nhiều nhất lên đầu
+  }, [rawTransactions, rawPayments, activeReportTab, selectedMonth]);
 
   // Lọc danh sách giao dịch hiển thị dựa trên bộ lọc đang chọn và từ khóa tìm kiếm
-  const displayItems = timelineItems.filter(item => {
-    // 1. Lọc theo tab/loại giao dịch
-    if (activeFilter === 'debt' && item.type !== 'debt') return false;
-    if (activeFilter === 'payment' && item.type !== 'payment') return false;
-    
-    // 2. Lọc theo từ khóa tìm kiếm (tên khách hàng, loại thịt hoặc số tiền - hỗ trợ không dấu, viết tắt, nhiều từ)
-    if (searchText && searchText.trim()) {
-      const nameMatch = matchSearch(item.customerName || '', searchText);
-      const detailMatch = matchSearch(item.details || '', searchText);
-      const amountMatch = (item.amount || 0).toString().includes(searchText.trim());
-      
-      return nameMatch || detailMatch || amountMatch;
+  const displayItems = useMemo(() => {
+    if (activeReportTab === 'day') {
+      return timelineItems.filter(item => {
+        // 1. Lọc theo tab/loại giao dịch
+        if (activeFilter === 'debt' && item.type !== 'debt') return false;
+        if (activeFilter === 'payment' && item.type !== 'payment') return false;
+        
+        // 2. Lọc theo từ khóa tìm kiếm (tên khách hàng, loại thịt hoặc số tiền - hỗ trợ không dấu, viết tắt, nhiều từ)
+        if (searchText && searchText.trim()) {
+          const nameMatch = matchSearch(item.customerName || '', searchText);
+          const detailMatch = matchSearch(item.details || '', searchText);
+          const amountMatch = (item.amount || 0).toString().includes(searchText.trim());
+          
+          return nameMatch || detailMatch || amountMatch;
+        }
+        
+        return true;
+      });
+    } else {
+      // Tab Theo tháng: Lọc danh sách khách còn nợ theo từ khóa tìm kiếm
+      return customerMonthlyDebts.filter(item => {
+        if (searchText && searchText.trim()) {
+          const nameMatch = matchSearch(item.customerName || '', searchText);
+          const amountMatch = item.remainingInMonth.toString().includes(searchText.trim());
+          return nameMatch || amountMatch;
+        }
+        return true;
+      });
     }
-    
-    return true;
-  });
+  }, [timelineItems, customerMonthlyDebts, activeReportTab, activeFilter, searchText]);
 
-  // Xử lý xuất công nợ trong ngày dạng ảnh bằng Canvas HTML5 (Cứ 15 giao dịch chia làm 1 cột, tự động tăng chiều rộng)
+  // Xử lý xuất công nợ dạng ảnh bằng Canvas HTML5 (Cứ 15 giao dịch chia làm 1 cột, tự động tăng chiều rộng)
   const handleExportImage = () => {
     if (Platform.OS !== 'web') {
       alert('Chức năng xuất ảnh hiện hỗ trợ trên giao diện Web.');
@@ -243,16 +468,22 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       ctx.lineTo(width - 12, 142);
       ctx.stroke();
 
-      // Tiêu đề
+      // Tiêu đề và ngày/tháng báo cáo tùy theo tab đang chọn
+      const reportTitle = activeReportTab === 'day' ? 'BÁO CÁO CÔNG NỢ TRONG NGÀY' : 'BÁO CÁO CÔNG NỢ THEO THÁNG';
+      const reportSubTitle = activeReportTab === 'day' ? `Ngày thống kê: ${selectedDate}` : `Tháng thống kê: Tháng ${selectedMonth}`;
+      const reportFilename = activeReportTab === 'day' 
+        ? `CongNo_Ngay_${selectedDate.replace(/\//g, '_')}` 
+        : `CongNo_Thang_${selectedMonth.replace(/\//g, '_')}`;
+
       ctx.fillStyle = '#065F46';
       ctx.font = 'bold 22px Arial, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('BÁO CÁO CÔNG NỢ TRONG NGÀY', width / 2, 55);
+      ctx.fillText(reportTitle, width / 2, 55);
 
-      // Ngày báo cáo
+      // Ngày/tháng báo cáo
       ctx.fillStyle = '#047857';
       ctx.font = 'bold 16px Arial, sans-serif';
-      ctx.fillText(`Ngày thống kê: ${selectedDate}`, width / 2, 90);
+      ctx.fillText(reportSubTitle, width / 2, 90);
 
       // Lời chào/Thời gian xuất
       const now = new Date();
@@ -277,7 +508,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       ctx.fillStyle = '#991B1B';
       ctx.font = 'bold 12px Arial, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('🔴 Nợ phát sinh trong ngày', boxPadding + 15, boxY + 25);
+      ctx.fillText(activeReportTab === 'day' ? '🔴 Nợ phát sinh trong ngày' : '🔴 Nợ phát sinh trong tháng', boxPadding + 15, boxY + 25);
       ctx.font = 'bold 18px Arial, sans-serif';
       ctx.fillText(formatCurrency(totalDebtCreated), boxPadding + 15, boxY + 52);
 
@@ -291,7 +522,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       
       ctx.fillStyle = '#166534';
       ctx.font = 'bold 12px Arial, sans-serif';
-      ctx.fillText('🟢 Tiền đã thu trong ngày', rightBoxX + 15, boxY + 25);
+      ctx.fillText(activeReportTab === 'day' ? '🟢 Tiền đã thu trong ngày' : '🟢 Tiền đã thu trong tháng', rightBoxX + 15, boxY + 25);
       ctx.font = 'bold 18px Arial, sans-serif';
       ctx.fillText(formatCurrency(totalPaymentReceived), rightBoxX + 15, boxY + 52);
 
@@ -307,7 +538,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
         ctx.fillStyle = '#64748B';
         ctx.font = 'italic 14px Arial, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Không có giao dịch công nợ phát sinh trong ngày.', width / 2, currentY + 45);
+        ctx.fillText(activeReportTab === 'day' ? 'Không có giao dịch công nợ phát sinh trong ngày.' : 'Không có giao dịch công nợ phát sinh trong tháng.', width / 2, currentY + 45);
       } else {
         // Vẽ các đường kẻ ngang phân tách các hàng
         for (let r = 0; r <= numRows; r++) {
@@ -333,7 +564,6 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
         }
 
         displayItems.forEach((item, index) => {
-          const isDebt = item.type === 'debt';
           const colIndex = Math.floor(index / itemsPerCol);
           const rowIndex = index % itemsPerCol;
           
@@ -348,17 +578,32 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
           ctx.textAlign = 'left';
           ctx.fillText(item.customerName, textLeftX, itemY + 24);
 
-          // Chi tiết (mặt hàng/ghi chú)
-          ctx.fillStyle = '#64748B';
-          ctx.font = '12px Arial, sans-serif';
-          ctx.fillText(isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`, textLeftX, itemY + 45);
+          if (activeReportTab === 'day') {
+            const isDebt = item.type === 'debt';
+            // Chi tiết (mặt hàng/ghi chú)
+            ctx.fillStyle = '#64748B';
+            ctx.font = '12px Arial, sans-serif';
+            ctx.fillText(isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`, textLeftX, itemY + 45);
 
-          // Số tiền (căn phải)
-          ctx.fillStyle = isDebt ? '#DC2626' : '#16A34A';
-          ctx.font = 'bold 14px Arial, sans-serif';
-          ctx.textAlign = 'right';
-          const amtStr = `${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`;
-          ctx.fillText(amtStr, textRightX, itemY + 34);
+            // Số tiền (căn phải)
+            ctx.fillStyle = isDebt ? '#DC2626' : '#16A34A';
+            ctx.font = 'bold 14px Arial, sans-serif';
+            ctx.textAlign = 'right';
+            const amtStr = `${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`;
+            ctx.fillText(amtStr, textRightX, itemY + 34);
+          } else {
+            // Chi tiết tổng nợ / đã trả theo tháng
+            ctx.fillStyle = '#64748B';
+            ctx.font = '12px Arial, sans-serif';
+            ctx.fillText(`Tổng nợ: ${formatCurrency(item.totalDebt)}  |  Đã trả: ${formatCurrency(item.totalPaid)}`, textLeftX, itemY + 45);
+
+            // Số tiền nợ còn lại (căn phải, hiển thị màu đỏ)
+            ctx.fillStyle = '#DC2626';
+            ctx.font = 'bold 14px Arial, sans-serif';
+            ctx.textAlign = 'right';
+            const amtStr = `Còn nợ: ${formatCurrency(item.remainingInMonth)}`;
+            ctx.fillText(amtStr, textRightX, itemY + 34);
+          }
         });
       }
 
@@ -380,7 +625,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       // 6. Thực hiện download ảnh
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
-      link.download = `CongNo_Ngay_${selectedDate.replace(/\//g, '_')}.png`;
+      link.download = `${reportFilename}.png`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
@@ -389,7 +634,7 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Xử lý xuất báo cáo công nợ trong ngày ra file Excel dạng CSV hỗ trợ tiếng Việt có dấu
+  // Xử lý xuất báo cáo công nợ ra file Excel dạng CSV hỗ trợ tiếng Việt có dấu
   const handleExportExcel = () => {
     if (Platform.OS !== 'web') {
       alert('Chức năng xuất Excel hiện hỗ trợ trên giao diện Web.');
@@ -400,45 +645,64 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
       // Sử dụng byte order mark (BOM) UTF-8 để Excel hiển thị đúng dấu tiếng Việt
       let csvContent = '\uFEFF';
       
+      const csvReportTitle = activeReportTab === 'day' ? 'BÁO CÁO CÔNG NỢ TRONG NGÀY' : 'BÁO CÁO CÔNG NỢ THEO THÁNG';
+      const csvReportSubTitle = activeReportTab === 'day' ? `Ngày thống kê: ${selectedDate}` : `Tháng thống kê: Tháng ${selectedMonth}`;
+      const csvDebtSummaryLabel = activeReportTab === 'day' ? 'Tổng nợ phát sinh trong ngày' : 'Tổng nợ phát sinh trong tháng';
+      const csvPaymentSummaryLabel = activeReportTab === 'day' ? 'Tổng tiền đã thu trong ngày' : 'Tổng tiền đã thu trong tháng';
+      const csvDiffLabel = activeReportTab === 'day' ? 'Chênh lệch nợ ròng' : 'Chênh lệch nợ ròng trong tháng';
+      const csvFilename = activeReportTab === 'day' 
+        ? `BaoCao_CongNo_Ngay_${selectedDate.replace(/\//g, '_')}.csv` 
+        : `BaoCao_CongNo_Thang_${selectedMonth.replace(/\//g, '_')}.csv`;
+
       // Tiêu đề báo cáo
-      csvContent += `BÁO CÁO CÔNG NỢ TRONG NGÀY\r\n`;
-      csvContent += `Ngày thống kê: ${selectedDate}\r\n`;
+      csvContent += `${csvReportTitle}\r\n`;
+      csvContent += `${csvReportSubTitle}\r\n`;
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} - ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
       csvContent += `Thời gian xuất: ${timeStr}\r\n\r\n`;
       
-      // Tiêu đề cột
-      csvContent += 'Thời gian,Khách hàng,Loại giao dịch,Chi tiết giao dịch,Số tiền (đ)\r\n';
-      
-      // Duyệt qua danh sách để điền thông tin chi tiết
-      displayItems.forEach(item => {
-        const isDebt = item.type === 'debt';
-        const typeStr = isDebt ? 'Nợ phát sinh' : 'Tiền đã thu';
+      if (activeReportTab === 'day') {
+        // Tiêu đề cột cho ngày
+        csvContent += 'Thời gian,Khách hàng,Loại giao dịch,Chi tiết giao dịch,Số tiền (đ)\r\n';
         
-        const tDate = new Date(item.time);
-        const hour = String(tDate.getHours()).padStart(2, '0');
-        const minute = String(tDate.getMinutes()).padStart(2, '0');
-        const timeFormatted = `${hour}:${minute}`;
+        // Duyệt qua danh sách để điền thông tin chi tiết
+        displayItems.forEach(item => {
+          const isDebt = item.type === 'debt';
+          const typeStr = isDebt ? 'Nợ phát sinh' : 'Tiền đã thu';
+          
+          const tDate = new Date(item.time);
+          const hour = String(tDate.getHours()).padStart(2, '0');
+          const minute = String(tDate.getMinutes()).padStart(2, '0');
+          const timeFormatted = `${hour}:${minute}`;
+          
+          const customerNameEscaped = `"${(item.customerName || '').replace(/"/g, '""')}"`;
+          const detailsEscaped = `"${(item.details || '').replace(/"/g, '""')}"`;
+          const amountVal = isDebt ? item.amount : -item.amount;
+          
+          csvContent += `${timeFormatted},${customerNameEscaped},${typeStr},${detailsEscaped},${amountVal}\r\n`;
+        });
+      } else {
+        // Tiêu đề cột cho tháng (thống kê khách còn nợ)
+        csvContent += 'Khách hàng,Tổng nợ phát sinh trong tháng (đ),Đã trả trong tháng (đ),Số nợ còn lại (đ)\r\n';
         
-        const customerNameEscaped = `"${(item.customerName || '').replace(/"/g, '""')}"`;
-        const detailsEscaped = `"${(item.details || '').replace(/"/g, '""')}"`;
-        const amountVal = isDebt ? item.amount : -item.amount;
-        
-        csvContent += `${timeFormatted},${customerNameEscaped},${typeStr},${detailsEscaped},${amountVal}\r\n`;
-      });
+        displayItems.forEach(item => {
+          const customerNameEscaped = `"${(item.customerName || '').replace(/"/g, '""')}"`;
+          csvContent += `${customerNameEscaped},${item.totalDebt},${item.totalPaid},${item.remainingInMonth}\r\n`;
+        });
+      }
       
       // Phần tổng kết báo cáo
       csvContent += '\r\n';
-      csvContent += `Tổng nợ phát sinh trong ngày,,,,,${totalDebtCreated}\r\n`;
-      csvContent += `Tổng tiền đã thu trong ngày,,,,,${totalPaymentReceived}\r\n`;
-      csvContent += `Chênh lệch nợ ròng,,,,,${totalDebtCreated - totalPaymentReceived}\r\n`;
+      csvContent += `${csvDebtSummaryLabel},,,,,${totalDebtCreated}\r\n`;
+      csvContent += `${csvPaymentSummaryLabel},,,,,${totalPaymentReceived}\r\n`;
+      csvContent += `${csvDiffLabel},,,,,${totalDebtCreated - totalPaymentReceived}\r\n`;
       
       // Tải tệp tin về trình duyệt
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `BaoCao_CongNo_Ngay_${selectedDate.replace(/\//g, '_')}.csv`;
+      link.download = csvFilename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -454,17 +718,64 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <View style={styles.dragBar} />
-        <Text style={styles.modalTitle}>📊 THỐNG KÊ CÔNG NỢ TRONG NGÀY</Text>
+        <Text style={styles.modalTitle}>
+          {activeReportTab === 'day' ? '📊 THỐNG KÊ CÔNG NỢ TRONG NGÀY' : '📊 THỐNG KÊ CÔNG NỢ THEO THÁNG'}
+        </Text>
 
-        {/* Thanh chọn ngày */}
-        <View style={styles.datePickerContainer}>
-          <Text style={styles.sectionLabel}>Chọn ngày xem thống kê:</Text>
-          <DatePickerInput
-            value={selectedDate}
-            onChange={handleDateChange}
-            allowFuture={true}
-          />
+        {/* Thanh chọn tab thống kê */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tabButton, activeReportTab === 'day' && styles.tabButtonActive]}
+            onPress={() => {
+              setActiveReportTab('day');
+              setError('');
+              setSearchText('');
+            }}
+          >
+            <Text style={[styles.tabButtonText, activeReportTab === 'day' && styles.tabButtonTextActive]}>
+              📅 Theo ngày
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeReportTab === 'month' && styles.tabButtonActive]}
+            onPress={() => {
+              setActiveReportTab('month');
+              setError('');
+              setSearchText('');
+            }}
+          >
+            <Text style={[styles.tabButtonText, activeReportTab === 'month' && styles.tabButtonTextActive]}>
+              📅 Theo tháng
+            </Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Bộ chọn thời gian (Ngày hoặc Tháng) */}
+        {activeReportTab === 'day' ? (
+          <View style={styles.datePickerContainer}>
+            <Text style={styles.sectionLabel}>Chọn ngày xem thống kê:</Text>
+            <DatePickerInput
+              value={selectedDate}
+              onChange={handleDateChange}
+              allowFuture={true}
+            />
+          </View>
+        ) : (
+          <View style={styles.datePickerContainer}>
+            <Text style={styles.sectionLabel}>Chọn tháng xem thống kê:</Text>
+            <View style={styles.monthSelectorRow}>
+              <TouchableOpacity style={styles.monthSelectorArrow} onPress={handlePrevMonth}>
+                <Text style={styles.monthSelectorArrowText}>◀</Text>
+              </TouchableOpacity>
+              <View style={styles.monthValueContainer}>
+                <Text style={styles.monthValueText}>Tháng {selectedMonth}</Text>
+              </View>
+              <TouchableOpacity style={styles.monthSelectorArrow} onPress={handleNextMonth}>
+                <Text style={styles.monthSelectorArrowText}>▶</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Thanh tìm kiếm nhanh dạng text */}
         {!loading && !error && (
@@ -494,39 +805,47 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
             <Text style={styles.errorText}>⚠️ {error}</Text>
             <TouchableOpacity
               style={[styles.button, styles.retryButton]}
-              onPress={() => fetchDailyData(selectedDate)}
+              onPress={() => fetchReportData()}
             >
               <Text style={styles.retryButtonText}>TẢI LẠI DỮ LIỆU</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.mainContent}>
-            {/* Hộp tổng kết nhanh trong ngày */}
+            {/* Hộp tổng kết nhanh */}
             <View style={styles.summaryContainer}>
               <TouchableOpacity
                 style={[
                   styles.summaryBox,
                   styles.debtBox,
-                  activeFilter === 'debt' && styles.activeDebtBox,
-                  activeFilter === 'payment' && styles.inactiveBox
+                  activeReportTab === 'day' && activeFilter === 'debt' && styles.activeDebtBox,
+                  activeReportTab === 'day' && activeFilter === 'payment' && styles.inactiveBox
                 ]}
-                onPress={() => setActiveFilter(prev => prev === 'debt' ? 'all' : 'debt')}
-                activeOpacity={0.7}
+                onPress={() => {
+                  if (activeReportTab === 'day') {
+                    setActiveFilter(prev => prev === 'debt' ? 'all' : 'debt');
+                  }
+                }}
+                activeOpacity={activeReportTab === 'day' ? 0.7 : 1}
               >
-                <Text style={styles.summaryBoxLabel}>🔴 Nợ phát sinh</Text>
+                <Text style={styles.summaryBoxLabel}>{activeReportTab === 'day' ? '🔴 Nợ phát sinh' : '🔴 Tổng nợ trong tháng'}</Text>
                 <Text style={styles.summaryBoxValue}>{formatCurrency(totalDebtCreated)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
                   styles.summaryBox,
                   styles.paymentBox,
-                  activeFilter === 'payment' && styles.activePaymentBox,
-                  activeFilter === 'debt' && styles.inactiveBox
+                  activeReportTab === 'day' && activeFilter === 'payment' && styles.activePaymentBox,
+                  activeReportTab === 'day' && activeFilter === 'debt' && styles.inactiveBox
                 ]}
-                onPress={() => setActiveFilter(prev => prev === 'payment' ? 'all' : 'payment')}
-                activeOpacity={0.7}
+                onPress={() => {
+                  if (activeReportTab === 'day') {
+                    setActiveFilter(prev => prev === 'payment' ? 'all' : 'payment');
+                  }
+                }}
+                activeOpacity={activeReportTab === 'day' ? 0.7 : 1}
               >
-                <Text style={styles.summaryBoxLabel}>🟢 Tiền đã thu</Text>
+                <Text style={styles.summaryBoxLabel}>{activeReportTab === 'day' ? '🟢 Tiền đã thu' : '🟢 Đã thu trong tháng'}</Text>
                 <Text style={styles.summaryBoxValue}>{formatCurrency(totalPaymentReceived)}</Text>
               </TouchableOpacity>
             </View>
@@ -536,34 +855,62 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
 
             {displayItems.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>Không có giao dịch công nợ phát sinh trong ngày này.</Text>
+                <Text style={styles.emptyText}>
+                  {activeReportTab === 'day' 
+                    ? 'Không có giao dịch công nợ phát sinh trong ngày này.' 
+                    : 'Không có giao dịch công nợ phát sinh trong tháng này.'}
+                </Text>
               </View>
             ) : (
               <ScrollView style={styles.scrollList} showsVerticalScrollIndicator={false}>
                 {displayItems.map((item) => {
-                  const isDebt = item.type === 'debt';
-                  return (
-                    <View
-                      key={item.id}
-                      style={[
-                        styles.itemCard,
-                        isDebt ? styles.itemCardDebt : styles.itemCardPayment
-                      ]}
-                    >
-                      <View style={styles.itemHeader}>
-                        <Text style={styles.customerName}>{item.customerName}</Text>
-                        <Text style={[styles.itemAmount, isDebt ? styles.amountDebt : styles.amountPayment]}>
-                          {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
+                  if (activeReportTab === 'day') {
+                    const isDebt = item.type === 'debt';
+                    return (
+                      <View
+                        key={item.id}
+                        style={[
+                          styles.itemCard,
+                          isDebt ? styles.itemCardDebt : styles.itemCardPayment
+                        ]}
+                      >
+                        <View style={styles.itemHeader}>
+                          <Text style={styles.customerName}>{item.customerName}</Text>
+                          <Text style={[styles.itemAmount, isDebt ? styles.amountDebt : styles.amountPayment]}>
+                            {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
+                          </Text>
+                        </View>
+                        
+                        {item.details ? (
+                          <Text style={styles.itemDetails} numberOfLines={2}>
+                            {isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  } else {
+                    // Render danh sách khách hàng còn nợ trong tab Theo tháng
+                    return (
+                      <View
+                        key={item.customerId}
+                        style={[
+                          styles.itemCard,
+                          styles.itemCardDebt // Mặc định dùng viền nợ màu đỏ
+                        ]}
+                      >
+                        <View style={styles.itemHeader}>
+                          <Text style={styles.customerName}>{item.customerName}</Text>
+                          <Text style={[styles.itemAmount, styles.amountDebt]}>
+                            Còn nợ: {formatCurrency(item.remainingInMonth)}
+                          </Text>
+                        </View>
+                        
+                        <Text style={styles.itemDetails}>
+                          {`Tổng nợ: ${formatCurrency(item.totalDebt)}   |   Đã trả: ${formatCurrency(item.totalPaid)}`}
                         </Text>
                       </View>
-                      
-                      {item.details ? (
-                        <Text style={styles.itemDetails} numberOfLines={2}>
-                          {isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`}
-                        </Text>
-                      ) : null}
-                    </View>
-                  );
+                    );
+                  }
                 })}
               </ScrollView>
             )}
@@ -866,5 +1213,66 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.textLight,
     fontWeight: 'bold',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 16,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  tabButtonActive: {
+    backgroundColor: '#FFFFFF',
+    ...SHADOWS.small,
+  },
+  tabButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  tabButtonTextActive: {
+    color: COLORS.primaryDark,
+    fontWeight: 'bold',
+  },
+  monthSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  monthSelectorArrow: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  monthSelectorArrowText: {
+    fontSize: 16,
+    color: COLORS.text,
+    fontWeight: 'bold',
+  },
+  monthValueContainer: {
+    flex: 1,
+    height: 44,
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  monthValueText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.text,
   },
 });

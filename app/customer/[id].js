@@ -43,7 +43,12 @@ export default function CustomerDetailScreen() {
   const { id } = useLocalSearchParams();
 
   // Khóa khách hàng khi bất kỳ người dùng nào truy cập vào trang chi tiết khách hàng này
-  useResourceLock('CUSTOMER', id, true);
+  useResourceLock('CUSTOMER', id, true, () => {
+    router.replace({
+      pathname: '/',
+      params: { view: 'customers' }
+    });
+  });
   const router = useRouter();
   const { width } = useWindowDimensions();
 

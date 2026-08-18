@@ -395,7 +395,9 @@ export default function ShopDashboardScreen() {
               </Text>
             </View>
             <View style={styles.profileDetails}>
-              <Text style={styles.profileGreeting}>Chủ cửa hàng 👋</Text>
+              <Text style={styles.profileGreeting}>
+                {auth.user?.workspaceMember ? 'Nhân viên 👋' : 'Chủ tài khoản 👋'}
+              </Text>
               <Text style={styles.profileName}>{auth.user?.name || 'Chủ quán'}</Text>
             </View>
           </TouchableOpacity>

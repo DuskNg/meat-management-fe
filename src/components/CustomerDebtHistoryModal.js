@@ -32,7 +32,7 @@ const CustomerDebtHistoryModal = forwardRef(({
   const [customer, setCustomer] = useState(null);
 
   // Khóa khách hàng khi mở xem lịch sử nợ
-  useResourceLock('CUSTOMER', customer?.id, visible);
+  useResourceLock('CUSTOMER', customer?.id, visible, () => setVisible(false));
   const [loading, setLoading] = useState(false);
   const [monthGroups, setMonthGroups] = useState([]);
   const [gridWidth, setGridWidth] = useState(0);

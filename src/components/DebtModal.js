@@ -19,8 +19,9 @@ import DatePickerInput from './DatePickerInput';
 import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
-import { matchItemSearch } from '../utils/searchHelper';
+import ProductSelector from './ProductSelector';
 import { useResourceLock } from '../hooks/useResourceLock';
+import { matchItemSearch } from '../utils/searchHelper';
 
 const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   // ─── Helper: lấy ngày hôm nay dạng DD/MM/YYYY ──────────────────────────
@@ -70,7 +71,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
 
   // Khóa khách hàng khi mở modal ghi nợ
-  useResourceLock('CUSTOMER', customerId, visible);
+  useResourceLock('CUSTOMER', customerId, visible, () => setVisible(false));
 
   // Giỏ hàng: danh sách mặt hàng đã thêm vào đơn
   const [cartItems, setCartItems] = useState([]);
@@ -527,122 +528,20 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
             <Text style={styles.label}>
               {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt:'}
             </Text>
-            <View style={styles.productsContainer}>
-              {/* Hàng tìm kiếm + nút Thêm thịt cùng dòng */}
-              <View style={styles.selectRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.selectTrigger,
-                    dropdownOpen && styles.selectTriggerActive,
-                    currentProduct && styles.selectTriggerSelected,
-                  ]}
-                  onPress={() => setDropdownOpen((prev) => !prev)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[
-                    styles.selectTriggerText,
-                    !currentProduct && styles.selectTriggerPlaceholder,
-                  ]}>
-                    {currentProduct ? currentProduct.name : '🔍 Chọn loại thịt...'}
-                  </Text>
-                  {currentProduct ? (
-                    <TouchableOpacity
-                      style={styles.selectClearBtn}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        setCurrentProduct(null);
-                        setCurrentPrice('');
-                        setProductSearch('');
-                        setDropdownOpen(false);
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={styles.selectClearText}>✕</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <Text style={styles.selectChevron}>{dropdownOpen ? '▲' : '▼'}</Text>
-                  )}
-                </TouchableOpacity>
-
-                {/* Nút thêm thịt cùng dòng */}
-                <TouchableOpacity
-                  style={styles.addProductBtn}
-                  onPress={() => productModalRef.current?.open()}
-                >
-                  <Text style={styles.addProductBtnText}>＋ Thêm thịt</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Dropdown list thịt */}
-              {dropdownOpen && (
-                <View style={styles.dropdownContainer}>
-                  {/* Ô tìm kiếm bên trong dropdown */}
-                  <View style={styles.dropdownSearchRow}>
-                    <TextInput
-                      style={styles.dropdownSearchInput}
-                      placeholder="🔍 Tìm thịt..."
-                      placeholderTextColor={COLORS.textLight}
-                      value={productSearch}
-                      onChangeText={setProductSearch}
-                      autoCorrect={false}
-                      autoFocus={true}
-                    />
-                    {productSearch.length > 0 && (
-                      <TouchableOpacity
-                        style={styles.dropdownClearBtn}
-                        onPress={() => setProductSearch('')}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                      >
-                        <Text style={styles.dropdownClearText}>✕</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  {/* Danh sách sản phẩm */}
-                  <ScrollView style={styles.dropdownList} nestedScrollEnabled={true} keyboardShouldPersistTaps="handled">
-                    {filteredProducts.length === 0 ? (
-                      <Text style={styles.noProductSearchText}>Không tìm thấy loại thịt phù hợp.</Text>
-                    ) : (
-                      filteredProducts.map((p) => {
-                        const isSelected = currentProduct?.id === p.id;
-                        return (
-                          <TouchableOpacity
-                            key={p.id}
-                            style={[
-                              styles.dropdownItem,
-                              isSelected && styles.dropdownItemSelected,
-                            ]}
-                            onPress={() => {
-                              handleSelectProduct(p);
-                              setDropdownOpen(false);
-                              setProductSearch('');
-                            }}
-                          >
-                            <Text style={[
-                              styles.dropdownItemText,
-                              isSelected && styles.dropdownItemTextSelected,
-                            ]}>
-                              {p.name}
-                            </Text>
-                            <Text style={styles.dropdownItemPrice}>
-                              {formatCurrency(p.defaultPrice)}/{p.unit}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-
-              {/* Khi không có sản phẩm nào */}
-              {products.length === 0 && (
-                <Text style={[styles.noProductSearchText, { color: COLORS.dangerDark }]}>
-                  Chưa có loại thịt. Bấm ＋ để thêm.
-                </Text>
-              )}
-            </View>
-            {errorField === 'product' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
+            <ProductSelector
+              products={products}
+              currentProduct={currentProduct}
+              onSelectProduct={handleSelectProduct}
+              onClearProduct={() => {
+                setCurrentProduct(null);
+                setCurrentPrice('');
+                setProductSearch('');
+              }}
+              onAddProduct={() => productModalRef.current?.open()}
+              formatCurrency={formatCurrency}
+              hasError={errorField === 'product'}
+              error={error}
+            />
 
             <>
               {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
@@ -664,7 +563,9 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                       keyboardType="decimal-pad"
                       value={currentQuantity}
                       onChangeText={(text) => {
-                        setCurrentQuantity(text);
+                        // Chỉ cho phép số, dấu chấm và dấu phẩy
+                        const filtered = text.replace(/[^0-9.,]/g, '');
+                        setCurrentQuantity(filtered);
                         if (errorField === 'quantity') {
                           setError('');
                           setErrorField('');

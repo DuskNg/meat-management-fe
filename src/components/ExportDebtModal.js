@@ -186,11 +186,19 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       let totalDebtVal = 0;
       let totalPaymentVal = 0;
 
-      // Tạo trước tất cả các ngày trong tháng được chọn
+      // Tạo trước các ngày trong tháng được chọn (chỉ liệt kê các ngày trống đến ngày hiện tại nếu là tháng hiện tại)
       const [mm, yyyy] = month.split('/').map(Number);
       const daysInMonth = new Date(yyyy, mm, 0).getDate();
 
-      for (let day = 1; day <= daysInMonth; day++) {
+      const currentDate = new Date();
+      const currentMonth = currentDate.getMonth() + 1;
+      const currentYear = currentDate.getFullYear();
+      const currentDay = currentDate.getDate();
+
+      const isCurrentMonth = (mm === currentMonth && yyyy === currentYear);
+      const maxDay = isCurrentMonth ? Math.min(daysInMonth, currentDay) : daysInMonth;
+
+      for (let day = 1; day <= maxDay; day++) {
         const dateKey = `${day.toString().padStart(2, '0')}/${mm.toString().padStart(2, '0')}/${yyyy}`;
         dayMap[dateKey] = {
           date: new Date(yyyy, mm - 1, day),
@@ -341,8 +349,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const rowsWithLayout = sortedRows.map(row => {
         let descText = '';
         const parts = [];
-        if (row.debtAmount === 0) {
-          // Ngày không có đơn nợ
+        if (row.debtAmount === 0 && row.paymentAmount === 0) {
+          // Ngày không có cả đơn nợ và thanh toán
           parts.push('Trống');
         } else {
           if (row.items && row.items.length > 0) {
@@ -369,16 +377,21 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         };
       });
 
-      // Chia các dòng thành các cột, cứ 16 giao dịch chia 1 cột
-      const itemsPerCol = 16;
-      const numCols = Math.max(1, Math.ceil(rowsWithLayout.length / itemsPerCol));
+      // Chia các dòng thành các cột:
+      // Nếu tổng số dòng >= 20, chia thành 2 cột bằng nhau. Nếu lẻ thì cột bên trái nhiều hơn cột bên phải 1 sản phẩm.
+      // Nếu tổng số dòng < 20, chỉ chia làm 1 cột.
+      const totalRowsCount = rowsWithLayout.length;
+      const columns = [];
+      if (totalRowsCount >= 20) {
+        const leftColSize = Math.ceil(totalRowsCount / 2);
+        columns.push(rowsWithLayout.slice(0, leftColSize));
+        columns.push(rowsWithLayout.slice(leftColSize));
+      } else {
+        columns.push(rowsWithLayout);
+      }
+      const numCols = columns.length;
       const colWidth = 800;
       const width = numCols * colWidth;
-
-      const columns = [];
-      for (let i = 0; i < numCols; i++) {
-        columns.push(rowsWithLayout.slice(i * itemsPerCol, (i + 1) * itemsPerCol));
-      }
 
       // Tính chiều cao nội dung cao nhất trong các cột
       const colHeights = columns.map(col => {
@@ -471,9 +484,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           ctx.fillText('Không có giao dịch phát sinh trong tháng này', startX + 400, currentY + 48);
         } else {
           colRows.forEach((row, idx) => {
-            // Tô màu nền đỏ nhạt cho ngày chưa có đơn nợ hoặc xen kẽ để dễ đọc dòng
-            if (row.debtAmount === 0) {
-              ctx.fillStyle = '#FEF2F2'; // Đỏ nhạt cho ngày trống đơn nợ
+            // Tô màu nền đỏ nhạt cho ngày hoàn toàn trống (không có đơn nợ và không có thanh toán)
+            if (row.debtAmount === 0 && row.paymentAmount === 0) {
+              ctx.fillStyle = '#FEF2F2'; // Đỏ nhạt cho ngày trống
             } else {
               ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
             }
@@ -625,8 +638,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       rows.forEach(row => {
         let descText = '';
         const parts = [];
-        if (row.debtAmount === 0) {
-          // Ngày không có đơn nợ
+        if (row.debtAmount === 0 && row.paymentAmount === 0) {
+          // Ngày không có cả đơn nợ và thanh toán
           parts.push('Trống');
         } else {
           if (row.items && row.items.length > 0) {
@@ -778,7 +791,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
   // Kiểm tra các ngày trống đơn nợ và mở popup cảnh báo nếu có
   const checkEmptyDaysAndProceed = (phone) => {
-    const emptyDays = rows.filter(r => r.debtAmount === 0).map(r => r.dateKey.split('/')[0]);
+    const emptyDays = rows.filter(r => r.debtAmount === 0 && r.paymentAmount === 0).map(r => r.dateKey.split('/')[0]);
     if (emptyDays.length > 0) {
       confirmExportModalRef.current?.open(
         emptyDays,

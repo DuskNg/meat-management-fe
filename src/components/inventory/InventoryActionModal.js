@@ -63,7 +63,7 @@ const InventoryActionModal = forwardRef(({ onSuccess }, ref) => {
   const [reason, setReason] = useState('');
 
   // Theo dõi lock: khi modal mở, tự động lock sản phẩm cho người dùng khác thấy
-  const { activeLock } = useResourceLock('INVENTORY_PRODUCT', product?.id, visible);
+  const { activeLock } = useResourceLock('INVENTORY_PRODUCT', product?.id, visible, () => setVisible(false));
 
   // Phơi bày phương thức open/close cho parent
   useImperativeHandle(ref, () => ({

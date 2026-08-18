@@ -25,7 +25,7 @@ const TablePaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
 
   // Tự động khóa bàn khi mở modal thanh toán
-  useResourceLock('STORE_TABLE', customerId?.toString(), visible);
+  useResourceLock('STORE_TABLE', customerId?.toString(), visible, () => setVisible(false));
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);

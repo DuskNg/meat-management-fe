@@ -21,7 +21,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
 
   // Tự động khóa khách hàng khi mở modal thu tiền
-  useResourceLock('CUSTOMER', customerId, visible);
+  useResourceLock('CUSTOMER', customerId, visible, () => setVisible(false));
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);

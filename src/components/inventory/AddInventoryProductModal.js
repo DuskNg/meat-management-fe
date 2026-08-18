@@ -54,7 +54,7 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess },
   const [unit, setUnit] = useState('cái');
 
   // Tự động khóa sản phẩm khi mở modal sửa sản phẩm kho
-  useResourceLock('INVENTORY_PRODUCT', productId, visible);
+  useResourceLock('INVENTORY_PRODUCT', productId, visible, () => setVisible(false));
 
   // Phơi bày các phương thức điều khiển cho parent component
   useImperativeHandle(ref, () => ({

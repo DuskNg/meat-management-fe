@@ -1,6 +1,6 @@
 // meat-management-fe/src/components/ResourceLockOverlay.js
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, Pressable, Alert } from 'react-native';
 import { FONTS } from '../theme';
 
 /**
@@ -13,6 +13,7 @@ import { FONTS } from '../theme';
  */
 const ResourceLockOverlay = ({ lockInfo, style, borderRadius = 12 }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [containerWidth, setContainerWidth] = useState(0);
 
   // Hiệu ứng nhịp đập cho biểu tượng khóa
   useEffect(() => {
@@ -47,36 +48,66 @@ const ResourceLockOverlay = ({ lockInfo, style, borderRadius = 12 }) => {
     .toUpperCase()
     .slice(0, 2);
 
+  const handleLayout = (event) => {
+    const { width } = event.nativeEvent.layout;
+    setContainerWidth(width);
+  };
+
+  const isNarrow = containerWidth > 0 && containerWidth < 140;
+
   return (
     <Pressable
       style={[styles.overlay, { borderRadius }, style]}
+      onLayout={handleLayout}
       onPress={(e) => {
         // Chặn hoàn toàn sự kiện bấm lây lan xuống đối tượng bên dưới
         if (e && e.stopPropagation) e.stopPropagation();
+
+        // Hiển thị thông báo chi tiết khi người dùng nhấn vào đối tượng đang bị khóa
+        Alert.alert(
+          'Đang bị khóa',
+          `Tài khoản "${lockInfo.userName}" đang thao tác trên mục này. Vui lòng quay lại sau.`
+        );
       }}
     >
-      <View style={styles.badgeCard}>
-        {/* Avatar hiển thị chữ cái đầu với màu unique */}
+      {containerWidth === 0 ? null : isNarrow ? (
+        /* Giao diện thu gọn cho ô/card nhỏ (ví dụ: bàn ăn) */
         <Animated.View
           style={[
-            styles.avatar,
+            styles.avatarNarrow,
             {
               backgroundColor: lockInfo.userColor || '#EF4444',
               transform: [{ scale: pulseAnim }],
             },
           ]}
         >
-          <Text style={styles.avatarText}>{initials}</Text>
+          <Text style={styles.avatarTextNarrow}>{initials}</Text>
         </Animated.View>
+      ) : (
+        /* Giao diện đầy đủ cho card lớn */
+        <View style={styles.badgeCard}>
+          {/* Avatar hiển thị chữ cái đầu với màu unique */}
+          <Animated.View
+            style={[
+              styles.avatar,
+              {
+                backgroundColor: lockInfo.userColor || '#EF4444',
+                transform: [{ scale: pulseAnim }],
+              },
+            ]}
+          >
+            <Text style={styles.avatarText}>{initials}</Text>
+          </Animated.View>
 
-        {/* Nội dung thông báo người dùng đang thao tác */}
-        <View style={styles.infoContainer}>
-          <Text style={styles.userNameText} numberOfLines={1}>
-            {lockInfo.userName}
-          </Text>
-          <Text style={styles.statusText}>đang thao tác...</Text>
+          {/* Nội dung thông báo người dùng đang thao tác */}
+          <View style={styles.infoContainer}>
+            <Text style={styles.userNameText} numberOfLines={1}>
+              {lockInfo.userName}
+            </Text>
+            <Text style={styles.statusText}>đang thao tác...</Text>
+          </View>
         </View>
-      </View>
+      )}
     </Pressable>
   );
 };
@@ -88,7 +119,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 999, // Đảm bảo đè lên trên tất cả các nút trong card
-    padding: 8,
+    padding: 4,
   },
   badgeCard: {
     flexDirection: 'row',
@@ -115,6 +146,25 @@ const styles = StyleSheet.create({
   avatarText: {
     color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: FONTS.weightBold,
+  },
+  avatarNarrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  avatarTextNarrow: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: FONTS.weightBold,
   },
   infoContainer: {

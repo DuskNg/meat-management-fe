@@ -64,7 +64,7 @@ const OrderModal = forwardRef(({ customerId: propCustomerId, onRefresh }, ref) =
   const finalCustomerId = selectedTable?.id || propCustomerId;
 
   // Tự động khóa bàn khi mở modal gọi món
-  useResourceLock('STORE_TABLE', finalCustomerId?.toString(), visible);
+  useResourceLock('STORE_TABLE', finalCustomerId?.toString(), visible, () => setVisible(false));
 
   // Tải danh mục thực đơn món ăn
   const { data: productsResponse, isLoading: isLoadingProducts } = useQuery({

@@ -29,7 +29,7 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
   const [session, setSession] = useState(null);
 
   // Tự động khóa bàn cho người dùng khác thấy khi mở modal phiên chơi
-  useResourceLock('SHOP_TABLE', table?.id, visible);
+  useResourceLock('SHOP_TABLE', table?.id, visible, () => setVisible(false));
 
   // States phụ thu thủ công (nếu có thêm phụ thu ngoài)
   const [extraAmount, setExtraAmount] = useState('0');
