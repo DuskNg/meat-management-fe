@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import { api } from '../../api/client';
 import { COLORS, FONTS, SHADOWS } from '../../theme';
@@ -284,6 +285,28 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
   const handleDeleteItem = (item) => {
     if (!session) return;
 
+    const performDelete = () => {
+      setDeletedItemIds(prev => {
+        const next = new Set(prev);
+        next.add(item.id);
+        return next;
+      });
+      // Xóa khỏi thay đổi số lượng nếu có
+      setLocalQuantities(prev => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(`Bạn có chắc chắn muốn hủy "${item.product?.name || 'món ăn'}"? Món này sẽ được đánh dấu để xóa khỏi phòng/bàn.`);
+      if (confirmed) {
+        performDelete();
+      }
+      return;
+    }
+
     Alert.alert(
       'Hủy món',
       `Bạn có chắc chắn muốn hủy "${item.product?.name || 'món ăn'}"? Món này sẽ được đánh dấu để xóa khỏi phòng/bàn.`,
@@ -292,19 +315,7 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
         {
           text: 'Xóa tạm',
           style: 'destructive',
-          onPress: () => {
-            setDeletedItemIds(prev => {
-              const next = new Set(prev);
-              next.add(item.id);
-              return next;
-            });
-            // Xóa khỏi thay đổi số lượng nếu có
-            setLocalQuantities(prev => {
-              const next = { ...prev };
-              delete next[item.id];
-              return next;
-            });
-          },
+          onPress: performDelete,
         },
       ]
     );
