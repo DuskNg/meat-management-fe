@@ -257,7 +257,11 @@ export default function ShopDashboardScreen() {
             handleRefresh();
           }
         } catch (err) {
-          Alert.alert('Lỗi', err.response?.data?.message || 'Không thể xóa bàn chơi.');
+          popupModalRef.current?.show({
+            title: 'Lỗi',
+            message: err.response?.data?.message || 'Không thể xóa bàn chơi.',
+            type: 'error',
+          });
         }
       },
     });
@@ -574,7 +578,11 @@ export default function ShopDashboardScreen() {
               handleRefresh();
             }
           } catch (err) {
-            Alert.alert('Thất bại', err.response?.data?.message || 'Không thể bắt đầu phiên chơi.');
+            popupModalRef.current?.show({
+              title: 'Thất bại',
+              message: err.response?.data?.message || 'Không thể bắt đầu phiên chơi.',
+              type: 'error',
+            });
           }
         }}
         onViewTableHistory={(table) => {

@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/shop/AddShopSessionItemModal.js
-import React, { useState, forwardRef, useImperativeHandle, useMemo } from 'react';
+import React, { useState, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { api } from '../../api/client';
 import { COLORS, FONTS, SHADOWS } from '../../theme';
+import PopupModal from '../PopupModal';
 import { matchItemSearch } from '../../utils/searchHelper';
 
 // Định dạng tiền tệ VND
@@ -33,6 +34,7 @@ const AddShopSessionItemModal = forwardRef(({ onAdded }, ref) => {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const popupModalRef = useRef(null);
 
   // Lưu trữ số lượng đã chọn theo từng sản phẩm: { [productId]: quantity }
   const [selectedQuantities, setSelectedQuantities] = useState({});
@@ -82,14 +84,22 @@ const AddShopSessionItemModal = forwardRef(({ onAdded }, ref) => {
   const handleIncrease = (product) => {
     const stock = parseFloat(product.quantity || 0);
     if (stock <= 0) {
-      Alert.alert('Hết hàng', `Sản phẩm "${product.name}" hiện tại đã hết tồn kho.`);
+      popupModalRef.current?.show({
+        title: 'Hết hàng',
+        message: `Sản phẩm "**${product.name}**" hiện tại đã hết tồn kho.`,
+        type: 'warning',
+      });
       return;
     }
 
     setSelectedQuantities((prev) => {
       const current = prev[product.id] || 0;
       if (current + 1 > stock) {
-        Alert.alert('Đạt giới hạn tồn kho', `Kho chỉ còn ${stock} ${product.unit}.`);
+        popupModalRef.current?.show({
+          title: 'Đạt giới hạn tồn kho',
+          message: `Kho chỉ còn **${stock}** ${product.unit}.`,
+          type: 'warning',
+        });
         return prev;
       }
       return {
@@ -146,10 +156,11 @@ const AddShopSessionItemModal = forwardRef(({ onAdded }, ref) => {
         if (!prod) continue;
         const stock = parseFloat(prod.quantity || 0);
         if (stock < qty) {
-          Alert.alert(
-            'Không đủ hàng',
-            `Sản phẩm "${prod.name}" trong kho chỉ còn ${stock} ${prod.unit}, không đủ để phục vụ ${qty} ${prod.unit}.`
-          );
+          popupModalRef.current?.show({
+            title: 'Không đủ hàng',
+            message: `Sản phẩm "**${prod.name}**" trong kho chỉ còn **${stock}** ${prod.unit}, không đủ để phục vụ ${qty} ${prod.unit}.`,
+            type: 'warning',
+          });
           return;
         }
         itemsToAdd.push({
@@ -174,11 +185,19 @@ const AddShopSessionItemModal = forwardRef(({ onAdded }, ref) => {
         }
         setVisible(false);
       } else {
-        Alert.alert('Thất bại', response.data.message || 'Lỗi thêm món.');
+        popupModalRef.current?.show({
+          title: 'Thất bại',
+          message: response.data.message || 'Lỗi thêm món.',
+          type: 'error',
+        });
       }
     } catch (err) {
       console.error('Lỗi thêm món vào bàn:', err);
-      Alert.alert('Lỗi', err.response?.data?.message || 'Không thể thêm món.');
+      popupModalRef.current?.show({
+        title: 'Lỗi',
+        message: err.response?.data?.message || 'Không thể thêm món.',
+        type: 'error',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -384,6 +403,9 @@ const AddShopSessionItemModal = forwardRef(({ onAdded }, ref) => {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Modal Cảnh báo/Xác nhận dùng chung */}
+        <PopupModal ref={popupModalRef} />
       </View>
     </Modal>
   );

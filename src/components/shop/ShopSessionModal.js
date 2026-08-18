@@ -15,6 +15,7 @@ import { api } from '../../api/client';
 import { COLORS, FONTS, SHADOWS } from '../../theme';
 import SmoothModal from '../SmoothModal';
 import AddShopSessionItemModal from './AddShopSessionItemModal';
+import PopupModal from '../PopupModal';
 import { useResourceLock } from '../../hooks/useResourceLock';
 
 /**
@@ -47,6 +48,7 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
 
   const timerRef = useRef(null);
   const addItemModalRef = useRef(null);
+  const popupModalRef = useRef(null);
 
   // Lưu số lượng thay đổi của các item khi nhấn + hoặc -
   const [localQuantities, setLocalQuantities] = useState({});
@@ -221,10 +223,11 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
     const maxQty = parseFloat(item.quantity) + parseFloat(item.product?.quantity || 0);
 
     if (nextQty > maxQty) {
-      Alert.alert(
-        'Không đủ hàng',
-        `Kho chỉ còn lại tối đa ${parseFloat(item.product?.quantity || 0)} ${item.product?.unit || 'đơn vị'} sản phẩm này.`
-      );
+      popupModalRef.current?.show({
+        title: 'Không đủ hàng',
+        message: `Kho chỉ còn lại tối đa **${parseFloat(item.product?.quantity || 0)}** ${item.product?.unit || 'đơn vị'} sản phẩm này.`,
+        type: 'warning',
+      });
       return;
     }
 
@@ -272,7 +275,11 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
       setDeletedItemIds(new Set());
       if (onRefresh) onRefresh();
 
-      Alert.alert('Thành công', 'Đã lưu mọi thay đổi thành công.');
+      popupModalRef.current?.show({
+        title: 'Thành công',
+        message: 'Đã lưu mọi thay đổi thành công.',
+        type: 'success',
+      });
     } catch (err) {
       console.error('Lỗi khi lưu thay đổi:', err);
       setError(err.response?.data?.message || 'Có lỗi xảy ra khi lưu thay đổi.');
@@ -285,40 +292,26 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
   const handleDeleteItem = (item) => {
     if (!session) return;
 
-    const performDelete = () => {
-      setDeletedItemIds(prev => {
-        const next = new Set(prev);
-        next.add(item.id);
-        return next;
-      });
-      // Xóa khỏi thay đổi số lượng nếu có
-      setLocalQuantities(prev => {
-        const next = { ...prev };
-        delete next[item.id];
-        return next;
-      });
-    };
-
-    if (Platform.OS === 'web') {
-      const confirmed = window.confirm(`Bạn có chắc chắn muốn hủy "${item.product?.name || 'món ăn'}"? Món này sẽ được đánh dấu để xóa khỏi phòng/bàn.`);
-      if (confirmed) {
-        performDelete();
-      }
-      return;
-    }
-
-    Alert.alert(
-      'Hủy món',
-      `Bạn có chắc chắn muốn hủy "${item.product?.name || 'món ăn'}"? Món này sẽ được đánh dấu để xóa khỏi phòng/bàn.`,
-      [
-        { text: 'Không', style: 'cancel' },
-        {
-          text: 'Xóa tạm',
-          style: 'destructive',
-          onPress: performDelete,
-        },
-      ]
-    );
+    popupModalRef.current?.show({
+      title: 'Hủy món',
+      message: `Bạn có chắc chắn muốn hủy "**${item.product?.name || 'món ăn'}**"? Món này sẽ được đánh dấu để xóa khỏi phòng/bàn.`,
+      type: 'confirm',
+      confirmText: 'Xóa tạm',
+      cancelText: 'Không',
+      onConfirm: () => {
+        setDeletedItemIds(prev => {
+          const next = new Set(prev);
+          next.add(item.id);
+          return next;
+        });
+        // Xóa khỏi thay đổi số lượng nếu có
+        setLocalQuantities(prev => {
+          const next = { ...prev };
+          delete next[item.id];
+          return next;
+        });
+      },
+    });
   };
 
   // Cập nhật phụ thu thủ công lên server
@@ -658,6 +651,9 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
           if (onRefresh) onRefresh();
         }}
       />
+
+      {/* Modal Cảnh báo/Xác nhận dùng chung */}
+      <PopupModal ref={popupModalRef} />
     </SmoothModal>
   );
 });

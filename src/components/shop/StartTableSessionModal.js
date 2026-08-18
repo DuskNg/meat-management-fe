@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/shop/StartTableSessionModal.js
-import React, { useState, forwardRef, useImperativeHandle, useMemo } from 'react';
+import React, { useState, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { api } from '../../api/client';
 import { COLORS, SHADOWS } from '../../theme';
+import PopupModal from '../PopupModal';
 import { useResourceLock } from '../../hooks/useResourceLock';
 
 // Định dạng tiền tệ VND
@@ -30,6 +31,7 @@ const StartTableSessionModal = forwardRef(({ onStartSession, onViewTableHistory 
   useResourceLock('SHOP_TABLE', table?.id, visible, () => setVisible(false));
   const [loading, setLoading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
+  const popupModalRef = useRef(null);
 
   // Danh sách sản phẩm kho và số lượng đã chọn: { [productId]: quantity }
   const [products, setProducts] = useState([]);
@@ -78,14 +80,22 @@ const StartTableSessionModal = forwardRef(({ onStartSession, onViewTableHistory 
   const handleIncrease = (prod) => {
     const stock = parseFloat(prod.quantity || 0);
     if (stock <= 0) {
-      Alert.alert('Hết hàng', `Sản phẩm "${prod.name}" trong kho đã hết.`);
+      popupModalRef.current?.show({
+        title: 'Hết hàng',
+        message: `Sản phẩm "**${prod.name}**" trong kho đã hết.`,
+        type: 'warning',
+      });
       return;
     }
 
     setSelectedQuantities((prev) => {
       const cur = prev[prod.id] || 0;
       if (cur + 1 > stock) {
-        Alert.alert('Đạt giới hạn tồn kho', `Kho chỉ còn ${stock} ${prod.unit}.`);
+        popupModalRef.current?.show({
+          title: 'Đạt giới hạn tồn kho',
+          message: `Kho chỉ còn **${stock}** ${prod.unit}.`,
+          type: 'warning',
+        });
         return prev;
       }
       return { ...prev, [prod.id]: cur + 1 };
@@ -344,6 +354,9 @@ const StartTableSessionModal = forwardRef(({ onStartSession, onViewTableHistory 
             </TouchableOpacity>
           </View>
         </View>
+        
+        {/* Modal Cảnh báo/Xác nhận dùng chung */}
+        <PopupModal ref={popupModalRef} />
       </View>
     </Modal>
   );
