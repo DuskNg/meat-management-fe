@@ -177,6 +177,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       setDateStr(getTodayFormatted());
       setActiveTab('quick');
       setError('');
+      setCustProductsMap({});
       isLoadedCacheRef.current = false;
       fetchData();
     },
@@ -455,6 +456,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       // CHỈ XÓA BẢN NHÁP KHI ĐÃ LƯU THÀNH CÔNG VÀO DATABASE
       await clearDraftCache();
+      setCustProductsMap({});
 
       if (onRefresh) onRefresh();
 
