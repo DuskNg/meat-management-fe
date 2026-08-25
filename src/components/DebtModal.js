@@ -342,6 +342,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           customerId,
           date: isoDate,
           note: note.trim() || null,
+          source: 'MANUAL_SINGLE',
           // Gửi toàn bộ mặt hàng trong giỏ hàng lên cùng 1 lần
           items: cartItems.map((item) => ({
             productId: item.product.id,
@@ -390,6 +391,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           customerId,
           date: isoDate,
           note: note.trim() || 'Ghi nợ nhanh',
+          source: 'MANUAL_SINGLE',
           // Ghi nợ nhanh chỉ gửi 1 mặt hàng giả lập sản phẩm tên "Tiền hàng"
           items: [
             {

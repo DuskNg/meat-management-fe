@@ -405,6 +405,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
             customerId: row.selectedCustomerId,
             date: isoDate,
             note: 'Ghi nợ nhanh hàng loạt',
+            source: 'BATCH_QUICK',
+            isBatch: true,
             items: [
               {
                 productName: 'Tiền hàng',
@@ -425,7 +427,9 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
           return api.post('/transactions', {
             customerId: row.selectedCustomerId,
             date: isoDate,
-            note: null,
+            note: 'Ghi nợ chi tiết hàng loạt',
+            source: 'BATCH_DETAIL',
+            isBatch: true,
             items: formattedItems,
           });
         }
