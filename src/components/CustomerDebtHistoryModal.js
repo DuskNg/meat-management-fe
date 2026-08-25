@@ -330,11 +330,7 @@ const CustomerDebtHistoryModal = forwardRef(({
 
       setMonthGroups(sortedMonths);
 
-      // Tự động mở rộng tháng đầu tiên nếu có dữ liệu kèm hiệu ứng hoạt họa mượt mà
-      if (sortedMonths.length > 0) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setExpandedMonth(sortedMonths[0].monthKey);
-      }
+      // Không tự động mở rộng tháng đầu tiên khi hiển thị chi tiết nợ
     } catch (err) {
       console.error('Lỗi tải lịch sử công nợ:', err);
     } finally {
@@ -383,7 +379,9 @@ const CustomerDebtHistoryModal = forwardRef(({
             <Text style={styles.emptyText}>📋 Khách hàng này chưa phát sinh giao dịch nào.</Text>
           </View>
         ) : (
-          <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+          <>
+            <Text style={styles.helperText}>• Bấm vào từng tháng để xem chi tiết</Text>
+            <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
             {monthGroups.map((month) => {
               const isExpanded = expandedMonth === month.monthKey;
               const hasDebt = month.remainingDebt > 0;
@@ -510,6 +508,7 @@ const CustomerDebtHistoryModal = forwardRef(({
               );
             })}
           </ScrollView>
+          </>
         )}
 
         <TouchableOpacity
@@ -768,5 +767,12 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  helperText: {
+    fontSize: 13,
+    color: COLORS.textLight,
+    fontStyle: 'italic',
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
 });

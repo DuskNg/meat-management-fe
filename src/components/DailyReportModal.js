@@ -16,7 +16,7 @@ import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
 import { matchSearch } from '../utils/searchHelper';
 
-const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
+const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(''); // Định dạng DD/MM/YYYY
@@ -216,6 +216,11 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
         details: t.items?.map(item => {
           const qty = parseFloat(item.quantity);
           const name = item.product?.name || 'Thịt';
+          // Nếu là ghi nợ nhanh (sản phẩm là Tiền hàng hoặc bắt đầu bằng Tiền), không hiển thị số lượng và đơn vị
+          const isQuick = name === 'Tiền hàng' || name.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
+          if (isQuick) {
+            return name;
+          }
           return `${qty}${item.product?.unit || 'kg'} ${name}`;
         }).join(', ')
       }))
@@ -862,7 +867,11 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
                 </Text>
               </View>
             ) : (
-              <ScrollView style={styles.scrollList} showsVerticalScrollIndicator={false}>
+              <ScrollView
+                style={styles.scrollList}
+                contentContainerStyle={styles.scrollListContent}
+                showsVerticalScrollIndicator={false}
+              >
                 {displayItems.map((item) => {
                   if (activeReportTab === 'day') {
                     const isDebt = item.type === 'debt';
@@ -908,6 +917,17 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
                         <Text style={styles.itemDetails}>
                           {`Tổng nợ: ${formatCurrency(item.totalDebt)}   |   Đã trả: ${formatCurrency(item.totalPaid)}`}
                         </Text>
+
+                        {/* Nút hành động xuất nợ & gửi Zalo cho từng khách hàng */}
+                        <View style={styles.cardActionsContainer}>
+                          <TouchableOpacity
+                            style={styles.zaloButton}
+                            onPress={() => onExportDebt?.(item.customerId, selectedMonth)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.zaloButtonText}>📸 Xuất ảnh & Gửi Zalo 💬</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     );
                   }
@@ -919,23 +939,6 @@ const DailyReportModal = forwardRef(({ onRefresh }, ref) => {
 
         {/* Nhóm nút hành động dưới đáy */}
         <View style={styles.footerButtons}>
-          {Platform.OS === 'web' && !loading && !error && displayItems.length > 0 && (
-            <TouchableOpacity
-              style={[
-                styles.exportButton,
-                displayItems.length > 100 && styles.excelButton
-              ]}
-              onPress={displayItems.length > 100 ? handleExportExcel : handleExportImage}
-              activeOpacity={0.7}
-            >
-              <Text style={[
-                styles.exportButtonText,
-                displayItems.length > 100 && styles.excelButtonText
-              ]}>
-                {displayItems.length > 100 ? 'XUẤT EXCEL BÁO CÁO 📊' : 'XUẤT ẢNH BÁO CÁO 📸'}
-              </Text>
-            </TouchableOpacity>
-          )}
           <TouchableOpacity
             style={styles.closeButtonNew}
             onPress={() => setVisible(false)}
@@ -1083,7 +1086,8 @@ const styles = StyleSheet.create({
   itemCard: {
     borderRadius: 10,
     borderWidth: 1,
-    padding: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     marginBottom: 8,
     flexDirection: 'column',
     gap: 4,
@@ -1274,5 +1278,27 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     color: COLORS.text,
+  },
+  scrollListContent: {
+    paddingBottom: 24, // Khoảng đệm ở đáy để đảm bảo cuộn hết nút bấm của phần tử cuối cùng
+  },
+  cardActionsContainer: {
+    marginTop: 4,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  zaloButton: {
+    backgroundColor: '#0068FF', // Màu xanh Zalo thương hiệu
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zaloButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });

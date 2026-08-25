@@ -59,7 +59,8 @@ const InventoryActionModal = forwardRef(({ onSuccess }, ref) => {
 
   // Form nhập liệu
   const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
+  const [price, setPrice] = useState(''); // Giá nhập đợt này
+  const [sellingPrice, setSellingPrice] = useState(''); // Giá bán ra
   const [reason, setReason] = useState('');
 
   // Theo dõi lock: khi modal mở, tự động lock sản phẩm cho người dùng khác thấy
@@ -72,7 +73,10 @@ const InventoryActionModal = forwardRef(({ onSuccess }, ref) => {
       setProduct(prod);
       setActiveTab(initialTab);
       setQuantity('');
-      setPrice(prod?.price ? formatNumberString(prod.price) : '');
+      const impP = prod?.importPrice || prod?.price || 0;
+      const sellP = prod?.sellingPrice || 0;
+      setPrice(impP ? formatNumberString(impP) : '');
+      setSellingPrice(sellP ? formatNumberString(sellP) : '');
       setReason('');
       setVisible(true);
     },
@@ -127,6 +131,7 @@ const InventoryActionModal = forwardRef(({ onSuccess }, ref) => {
     }
 
     const parsedPrice = price ? parseNumberString(price) : undefined;
+    const parsedSellingPrice = sellingPrice ? parseNumberString(sellingPrice) : undefined;
 
     setLoading(true);
     setErrorMsg('');
@@ -136,6 +141,8 @@ const InventoryActionModal = forwardRef(({ onSuccess }, ref) => {
         type: activeTab,
         quantity: inputQty,
         price: parsedPrice,
+        importPrice: parsedPrice,
+        sellingPrice: parsedSellingPrice,
         reason: reason.trim() || undefined,
       };
 
@@ -180,7 +187,7 @@ const InventoryActionModal = forwardRef(({ onSuccess }, ref) => {
             <View style={{ flex: 1 }}>
               <Text style={styles.productTitle}>{product.name}</Text>
               <Text style={styles.productSubtitle}>
-                Tồn hiện tại: <Text style={styles.stockHighlight}>{currentStock} {product.unit}</Text> | Giá vốn: {formatVND(product.price)}
+                Tồn hiện tại: <Text style={styles.stockHighlight}>{currentStock} {product.unit}</Text> | Vốn: {formatVND(product.importPrice || product.price)} | Bán: {formatVND(product.sellingPrice)}
               </Text>
             </View>
             <TouchableOpacity style={styles.closeHeaderBtn} onPress={() => setVisible(false)}>
@@ -268,18 +275,60 @@ const InventoryActionModal = forwardRef(({ onSuccess }, ref) => {
               />
             </View>
 
-            {/* Giá nhập mới (Chỉ hiển thị khi Nhập hàng) */}
+            {/* Giá nhập & Giá bán (Chỉ hiển thị khi Nhập hàng) */}
             {activeTab === 'IN' && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Đơn giá nhập đợt này (đ/{product.unit})</Text>
-                <TextInput
-                  style={styles.input}
-                  value={price}
-                  onChangeText={(t) => setPrice(formatNumberString(t))}
-                  placeholder="Giá nhập mới"
-                  keyboardType="numeric"
-                  placeholderTextColor="#94A3B8"
-                />
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Giá nhập (đ/{product.unit})</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={price}
+                    onChangeText={(t) => setPrice(formatNumberString(t))}
+                    placeholder="Ví dụ: 75.000đ"
+                    keyboardType="numeric"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Giá bán (đ/{product.unit})</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={sellingPrice}
+                    onChangeText={(t) => setSellingPrice(formatNumberString(t))}
+                    placeholder="Ví dụ: 100.000đ"
+                    keyboardType="numeric"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+
+                {/* Thẻ xem trước lợi nhuận sống động khi nhập hàng */}
+                {(() => {
+                  const numImp = price ? parseNumberString(price) : 0;
+                  const numSell = sellingPrice ? parseNumberString(sellingPrice) : 0;
+                  const profitIn = numSell - numImp;
+                  const marginIn = numImp > 0 ? Math.round((profitIn / numImp) * 100) : 0;
+
+                  if (numImp <= 0 && numSell <= 0) return null;
+
+                  return (
+                    <View style={[styles.profitPreviewCard, profitIn >= 0 ? styles.profitBgGreen : styles.profitBgRed]}>
+                      <Text style={[styles.profitPreviewLabel, profitIn >= 0 ? styles.textProfitGreenDark : styles.textProfitRedDark]}>
+                        💡 Lãi dự kiến / 1 {product.unit}:
+                      </Text>
+                      <View style={styles.profitValueRow}>
+                        <Text style={[styles.profitPreviewValue, profitIn >= 0 ? styles.textGreen : styles.textRed]}>
+                          {profitIn >= 0 ? '+' : ''}{(profitIn || 0).toLocaleString('vi-VN')} đ
+                        </Text>
+                        <View style={[styles.profitMarginBadge, profitIn >= 0 ? styles.profitMarginBadgeGreen : styles.profitMarginBadgeRed]}>
+                          <Text style={[styles.profitMarginText, profitIn >= 0 ? styles.textGreen : styles.textRed]}>
+                            {marginIn >= 0 ? '+' : ''}{marginIn}%
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })()}
               </View>
             )}
 
@@ -612,6 +661,59 @@ const styles = StyleSheet.create({
   lockWarningName: {
     fontWeight: 'bold',
     color: '#B45309',
+  },
+  // Style cho thẻ xem trước lợi nhuận khi nhập hàng
+  profitPreviewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  profitBgGreen: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  profitBgRed: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  profitPreviewLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  textProfitGreenDark: {
+    color: '#065F46',
+  },
+  textProfitRedDark: {
+    color: '#991B1B',
+  },
+  profitValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  profitPreviewValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  profitMarginBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  profitMarginBadgeGreen: {
+    backgroundColor: '#D1FAE5',
+  },
+  profitMarginBadgeRed: {
+    backgroundColor: '#FEE2E2',
+  },
+  profitMarginText: {
+    fontSize: 11,
+    fontWeight: 'bold',
   },
 });
 

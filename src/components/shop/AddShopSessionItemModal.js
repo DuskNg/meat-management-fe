@@ -137,7 +137,9 @@ const AddShopSessionItemModal = forwardRef(({ onAdded }, ref) => {
         units += qty;
         const prod = products.find((p) => p.id === prodId);
         if (prod) {
-          amount += qty * parseFloat(prod.price || 0);
+          // Ưu tiên Giá bán (sellingPrice), fallback về Giá nhập (price)
+          const sellPrice = parseFloat(prod.sellingPrice || 0) > 0 ? parseFloat(prod.sellingPrice) : parseFloat(prod.price || 0);
+          amount += qty * sellPrice;
         }
       }
     });
@@ -163,10 +165,12 @@ const AddShopSessionItemModal = forwardRef(({ onAdded }, ref) => {
           });
           return;
         }
+        // Gửi đơn giá bán
+        const itemSellingPrice = parseFloat(prod.sellingPrice || 0) > 0 ? parseFloat(prod.sellingPrice) : parseFloat(prod.price || 0);
         itemsToAdd.push({
           productId: prod.id,
           quantity: qty,
-          price: prod.price,
+          price: itemSellingPrice,
         });
       }
     }
@@ -274,6 +278,7 @@ const AddShopSessionItemModal = forwardRef(({ onAdded }, ref) => {
                 const isOut = stock <= 0;
                 const qty = selectedQuantities[item.id] || 0;
                 const isSelected = qty > 0;
+                const displayPrice = parseFloat(item.sellingPrice || 0) > 0 ? parseFloat(item.sellingPrice) : parseFloat(item.price || 0);
 
                 return (
                   <View
@@ -294,7 +299,7 @@ const AddShopSessionItemModal = forwardRef(({ onAdded }, ref) => {
                       </Text>
                       <View style={styles.metaRow}>
                         <Text style={styles.productPriceText}>
-                          {formatVND(item.price)}
+                          {formatVND(displayPrice)}
                         </Text>
                         <Text style={styles.productUnitText}>/{item.unit}</Text>
 

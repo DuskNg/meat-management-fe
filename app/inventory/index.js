@@ -99,26 +99,55 @@ export default function InventoryDashboardScreen() {
 
   const products = responseData?.data?.products || [];
 
-  // Tính toán thống kê nhanh cho Header
+  // Tính toán thống kê nhanh cho Header (bao gồm tổng vốn, doanh thu dự kiến, lợi nhuận dự kiến và lợi nhuận thực tế)
   const stats = useMemo(() => {
-    let totalValue = 0;
+    let totalImportValue = responseData?.data?.totalImportValue ?? 0;
+    let totalSellingValue = responseData?.data?.totalSellingValue ?? 0;
+    let totalProfit = responseData?.data?.totalProfit ?? 0;
+    let totalRealizedProfit = responseData?.data?.totalRealizedProfit ?? 0;
+    let totalRealizedRevenue = responseData?.data?.totalRealizedRevenue ?? 0;
+
     let lowCount = 0;
     let outCount = 0;
 
+    if (!responseData?.data?.totalImportValue) {
+      // Tính thủ công nếu BE chưa gửi trường thống kê mới
+      totalImportValue = 0;
+      totalSellingValue = 0;
+      totalProfit = 0;
+      totalRealizedProfit = 0;
+      totalRealizedRevenue = 0;
+
+      products.forEach((p) => {
+        const qty = parseFloat(p.quantity) || 0;
+        const usedQty = parseFloat(p.usedQuantity) || 0;
+        const impP = parseFloat(p.importPrice || p.price) || 0;
+        const sellP = parseFloat(p.sellingPrice) || 0;
+
+        totalImportValue += qty * impP;
+        totalSellingValue += qty * sellP;
+        totalProfit += qty * (sellP - impP);
+        totalRealizedRevenue += usedQty * sellP;
+        totalRealizedProfit += usedQty * (sellP - impP);
+      });
+    }
+
     products.forEach((p) => {
-      const val = (parseFloat(p.quantity) || 0) * (parseFloat(p.price) || 0);
-      totalValue += val;
       if (p.isLowStock) lowCount++;
       if (p.isOutOfStock) outCount++;
     });
 
     return {
-      totalValue,
+      totalImportValue,
+      totalSellingValue,
+      totalProfit,
+      totalRealizedProfit,
+      totalRealizedRevenue,
       total: products.length,
       lowCount,
       outCount,
     };
-  }, [products]);
+  }, [products, responseData]);
 
   // Lọc sản phẩm theo từ khóa tìm kiếm (hỗ trợ không dấu, viết tắt, nhiều từ rời rạc) và chip bộ lọc
   const filteredProducts = useMemo(() => {
@@ -320,10 +349,38 @@ export default function InventoryDashboardScreen() {
       </View>
 
       <View style={styles.content}>
-        {/* Thẻ Summary: Hiển thị tổng giá trị kho và thống kê trạng thái */}
+        {/* Thẻ Summary: Hiển thị tổng vốn kho, tổng doanh thu dự kiến, tổng lợi nhuận dự kiến và lợi nhuận thực tế */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>💰 TỔNG GIÁ TRỊ KHO HÀNG</Text>
-          <Text style={styles.summaryValue}>{formatVND(stats.totalValue)}</Text>
+          <View style={styles.summaryHeaderRow}>
+            <View style={styles.summaryCol}>
+              <Text style={styles.summaryLabel}>💰 TỔNG VỐN KHO</Text>
+              <Text style={styles.summaryValue}>{formatVND(stats.totalImportValue)}</Text>
+            </View>
+
+            <View style={styles.summaryDividerVert} />
+
+            <View style={styles.summaryCol}>
+              <Text style={[styles.summaryLabel, { color: '#0369A1' }]}>📈 DOANH THU DỰ KIẾN</Text>
+              <Text style={[styles.summaryValue, { color: '#0284C7' }]}>{formatVND(stats.totalSellingValue)}</Text>
+            </View>
+
+            <View style={styles.summaryDividerVert} />
+
+            <View style={styles.summaryCol}>
+              <Text style={[styles.summaryLabel, { color: '#047857' }]}>❇️ LỢI NHUẬN DỰ KIẾN</Text>
+              <Text style={[styles.summaryValue, stats.totalProfit >= 0 ? { color: '#059669' } : { color: '#DC2626' }]}>
+                {formatVND(stats.totalProfit)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Dòng hiển thị Lợi nhuận thực tế từ sản phẩm đã xuất / tiêu thụ */}
+          <View style={styles.realizedBanner}>
+            <Text style={styles.realizedBannerText}>💵 Lãi thực tế (Đã tiêu thụ):</Text>
+            <Text style={[styles.realizedBannerValue, stats.totalRealizedProfit >= 0 ? styles.textProfitGreen : styles.textRed]}>
+              {stats.totalRealizedProfit >= 0 ? '+' : ''}{formatVND(stats.totalRealizedProfit)}
+            </Text>
+          </View>
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -463,24 +520,39 @@ export default function InventoryDashboardScreen() {
                     </Text>
                   </View>
 
-                  {/* Hàng 2: Giá vốn • Tổng giá trị • Đã dùng */}
+                  {/* Hàng 2: Giá vốn • Giá bán ra • Lợi nhuận/ĐV */}
                   <View style={styles.cardSubRow}>
                     <Text style={styles.subMetaText}>
-                      Giá: <Text style={styles.subMetaVal}>{formatVND(item.price)}</Text>
+                      Vốn: <Text style={styles.subMetaVal}>{formatVND(item.importPrice || item.price)}</Text>
                     </Text>
                     <Text style={styles.subMetaDot}>•</Text>
                     <Text style={styles.subMetaText}>
-                      Tổng: <Text style={styles.subMetaValHighlight}>{formatVND(item.amount)}</Text>
+                      Bán: <Text style={styles.subMetaValHighlight}>{formatVND(item.sellingPrice)}</Text>
                     </Text>
-                    {usedQty > 0 && (
-                      <>
-                        <Text style={styles.subMetaDot}>•</Text>
-                        <Text style={styles.subMetaText}>
-                          Đã dùng: <Text style={styles.usedHighlight}>{Number(usedQty.toFixed(3))}/{Number(totalQty.toFixed(3))}</Text>
-                        </Text>
-                      </>
-                    )}
+                    <Text style={styles.subMetaDot}>•</Text>
+                    <Text style={styles.subMetaText}>
+                      Lãi/ĐV: <Text style={(item.unitProfit !== undefined ? item.unitProfit : (item.sellingPrice - (item.importPrice || item.price))) >= 0 ? styles.textProfitGreen : styles.textRed}>
+                        {(item.unitProfit !== undefined ? item.unitProfit : (item.sellingPrice - (item.importPrice || item.price))) >= 0 ? '+' : ''}
+                        {formatVND(item.unitProfit !== undefined ? item.unitProfit : (item.sellingPrice - (item.importPrice || item.price)))}
+                      </Text>
+                    </Text>
                   </View>
+
+                  {/* Hàng 2.5: Đã tiêu thụ & Lãi thực tế đã thu được */}
+                  {usedQty > 0 && (
+                    <View style={[styles.cardSubRow, { marginTop: 2 }]}>
+                      <Text style={styles.subMetaText}>
+                        Đã dùng: <Text style={styles.usedHighlight}>{Number(usedQty.toFixed(3))} {item.unit}</Text>
+                      </Text>
+                      <Text style={styles.subMetaDot}>•</Text>
+                      <Text style={styles.subMetaText}>
+                        Lãi thực tế: <Text style={(item.realizedProfit !== undefined ? item.realizedProfit : (usedQty * (item.sellingPrice - (item.importPrice || item.price)))) >= 0 ? styles.textProfitGreen : styles.textRed}>
+                          {(item.realizedProfit !== undefined ? item.realizedProfit : (usedQty * (item.sellingPrice - (item.importPrice || item.price)))) >= 0 ? '+' : ''}
+                          {formatVND(item.realizedProfit !== undefined ? item.realizedProfit : (usedQty * (item.sellingPrice - (item.importPrice || item.price))))}
+                        </Text>
+                      </Text>
+                    </View>
+                  )}
 
                   {/* Overlay hiển thị và chặn thao tác khi có người khác đang xử lý sản phẩm này */}
                   {(() => {
@@ -654,21 +726,64 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
     borderColor: '#BFDBFE',
-    alignItems: 'center',
     marginBottom: 10,
     ...SHADOWS.card,
   },
+  summaryHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    width: '100%',
+    paddingBottom: 6,
+  },
+  summaryCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  summaryDividerVert: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#BFDBFE',
+  },
   summaryLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold',
     color: '#1E40AF',
     marginBottom: 2,
     letterSpacing: 0.5,
   },
   summaryValue: {
-    fontSize: 18,
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#1D4ED8',
+  },
+  // Style cho banner Lợi nhuận thực tế trong Summary Card
+  realizedBanner: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  realizedBannerText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#065F46',
+  },
+  realizedBannerValue: {
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  textProfitGreen: {
+    color: '#059669',
+    fontWeight: 'bold',
   },
   statsRow: {
     flexDirection: 'row',

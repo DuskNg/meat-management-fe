@@ -50,7 +50,8 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess },
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState('');
   const [minQuantity, setMinQuantity] = useState('');
-  const [price, setPrice] = useState('');
+  const [importPrice, setImportPrice] = useState(''); // Giá nhập (vốn)
+  const [sellingPrice, setSellingPrice] = useState(''); // Giá bán ra
   const [unit, setUnit] = useState('cái');
 
   // Tự động khóa sản phẩm khi mở modal sửa sản phẩm kho
@@ -62,11 +63,15 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess },
       setErrorMsg('');
       if (product) {
         // Chế độ chỉnh sửa sản phẩm có sẵn
+        const impP = product.importPrice || product.price || 0;
+        const sellP = product.sellingPrice || 0;
+
         setProductId(product.id);
         setName(product.name || '');
         setQuantity(product.quantity !== undefined ? product.quantity.toString() : '0');
         setMinQuantity(product.minQuantity !== undefined ? product.minQuantity.toString() : '');
-        setPrice(formatNumberString((product.price || 0).toString()));
+        setImportPrice(impP ? formatNumberString(impP.toString()) : '');
+        setSellingPrice(sellP ? formatNumberString(sellP.toString()) : '');
         setUnit(product.unit || 'cái');
       } else {
         // Chế độ thêm sản phẩm mới
@@ -74,7 +79,8 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess },
         setName('');
         setQuantity('');
         setMinQuantity('');
-        setPrice('');
+        setImportPrice('');
+        setSellingPrice('');
         setUnit('cái');
       }
       setVisible(true);
@@ -83,6 +89,12 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess },
       setVisible(false);
     },
   }));
+
+  // Tính toán lợi nhuận đơn vị và tỷ lệ % lợi nhuận để hiển thị xem trước
+  const numericImportPrice = parseNumberString(importPrice);
+  const numericSellingPrice = parseNumberString(sellingPrice);
+  const unitProfit = numericSellingPrice - numericImportPrice;
+  const profitMargin = numericImportPrice > 0 ? Math.round((unitProfit / numericImportPrice) * 100) : 0;
 
   // Xử lý lưu thông tin sản phẩm (gửi lên API backend)
   const handleSubmit = async () => {
@@ -103,9 +115,13 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess },
       return;
     }
 
-    const prc = parseNumberString(price);
-    if (prc < 0) {
+    if (numericImportPrice < 0) {
       setErrorMsg('Giá nhập sản phẩm phải lớn hơn hoặc bằng 0.');
+      return;
+    }
+
+    if (numericSellingPrice < 0) {
+      setErrorMsg('Giá bán sản phẩm phải lớn hơn hoặc bằng 0.');
       return;
     }
 
@@ -118,7 +134,9 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess },
         name: name.trim(),
         quantity: qty,
         minQuantity: minQty,
-        price: prc,
+        price: numericImportPrice, // Giữ tương thích backend cũ
+        importPrice: numericImportPrice,
+        sellingPrice: numericSellingPrice,
         unit: unit.trim() || 'cái',
       };
 
@@ -257,18 +275,79 @@ const AddInventoryProductModal = forwardRef(({ onSaveSuccess, onDeleteSuccess },
             </View>
           </View>
 
-          {/* Nhập đơn giá nhập */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Giá vốn / Đơn giá (đ/{unit}) *</Text>
-            <TextInput
-              style={styles.input}
-              value={price}
-              onChangeText={(text) => setPrice(formatNumberString(text))}
-              placeholder={`Ví dụ: 75.000đ/${unit}`}
-              keyboardType="numeric"
-              placeholderTextColor="#94A3B8"
-            />
+          {/* Nhập Giá nhập & Giá bán ra trên 2 cột */}
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.label}>Giá nhập (đ/{unit}) *</Text>
+              <TextInput
+                style={styles.input}
+                value={importPrice}
+                onChangeText={(text) => setImportPrice(formatNumberString(text))}
+                placeholder={`Ví dụ: 75.000đ`}
+                keyboardType="numeric"
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.label}>Giá bán (đ/{unit}) *</Text>
+              <TextInput
+                style={styles.input}
+                value={sellingPrice}
+                onChangeText={(text) => setSellingPrice(formatNumberString(text))}
+                placeholder={`Ví dụ: 100.000đ`}
+                keyboardType="numeric"
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
           </View>
+
+          {/* Xem trước lợi nhuận tính toán live */}
+          {(numericImportPrice > 0 || numericSellingPrice > 0) && (
+            <View
+              style={[
+                styles.profitPreviewCard,
+                unitProfit >= 0 ? styles.profitBgGreen : styles.profitBgRed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.profitPreviewLabel,
+                  unitProfit >= 0 ? styles.textProfitGreenDark : styles.textProfitRedDark,
+                ]}
+              >
+                💡 Lãi dự kiến / 1 {unit}:
+              </Text>
+
+              <View style={styles.profitValueRow}>
+                <Text
+                  style={[
+                    styles.profitPreviewValue,
+                    unitProfit >= 0 ? styles.textProfitGreen : styles.textProfitRed,
+                  ]}
+                >
+                  {unitProfit >= 0 ? '+' : ''}
+                  {(unitProfit || 0).toLocaleString('vi-VN')} đ
+                </Text>
+
+                <View
+                  style={[
+                    styles.profitMarginBadge,
+                    unitProfit >= 0 ? styles.profitMarginBadgeGreen : styles.profitMarginBadgeRed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.profitMarginText,
+                      unitProfit >= 0 ? styles.textProfitGreen : styles.textProfitRed,
+                    ]}
+                  >
+                    {profitMargin >= 0 ? '+' : ''}{profitMargin}%
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
 
           {/* Nhập định mức tồn tối thiểu để cảnh báo */}
           <View style={styles.inputGroup}>
@@ -455,6 +534,65 @@ const styles = StyleSheet.create({
   },
   unitBadgeTextSelected: {
     color: '#1D4ED8', // Xanh dương đậm
+  },
+  // Style cho thẻ xem trước lợi nhuận
+  profitPreviewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  profitBgGreen: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  profitBgRed: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  profitPreviewLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  textProfitGreenDark: {
+    color: '#065F46',
+  },
+  textProfitRedDark: {
+    color: '#991B1B',
+  },
+  profitValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  profitPreviewValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  profitMarginBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  profitMarginBadgeGreen: {
+    backgroundColor: '#D1FAE5',
+  },
+  profitMarginBadgeRed: {
+    backgroundColor: '#FEE2E2',
+  },
+  profitMarginText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  textProfitGreen: {
+    color: '#059669',
+  },
+  textProfitRed: {
+    color: '#DC2626',
   },
 });
 

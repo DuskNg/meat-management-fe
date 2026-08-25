@@ -51,88 +51,7 @@ const convertDisplayToIso = (displayStr) => {
   return `${parts[2]}-${parts[1]}-${parts[0]}`;
 };
 
-// --- Component Select Dropdown tái sử dụng ---
-const SelectDropdown = ({ value, placeholder, options, onSelect, onInputChange, renderOption, renderSelected, style, compact }) => {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const dropdownRef = useRef(null);
-  const valueLabel = value ? (renderSelected ? renderSelected(value) : (value.name || value)) : '';
-
-  useEffect(() => {
-    if (!open || Platform.OS !== 'web' || typeof document === 'undefined') return undefined;
-
-    const closeOnOutsideClick = (event) => {
-      if (!dropdownRef.current?.contains(event.target)) {
-        setOpen(false);
-        setSearch('');
-      }
-    };
-
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
-  }, [open]);
-
-  const filtered = options.filter((opt) => {
-    const label = typeof opt === 'string' ? opt : (opt.name || '');
-    return matchSearch(label, search);
-  });
-
-  return (
-    <View ref={dropdownRef} style={[styles.selectWrapper, style]}>
-      {/* Nút hiển thị giá trị đã chọn / placeholder */}
-      <View style={[styles.selectTrigger, compact && styles.selectTriggerCompact, open && styles.selectTriggerOpen]}>
-        <TextInput
-          style={[styles.selectTriggerInput, compact && styles.selectTriggerTextCompact, !valueLabel && styles.selectPlaceholder]}
-          value={open ? search : valueLabel}
-          placeholder={placeholder}
-          placeholderTextColor={COLORS.textLight}
-          onFocus={() => { setOpen(true); setSearch(valueLabel); }}
-          onChangeText={(text) => {
-            setSearch(text);
-            onInputChange && onInputChange(text);
-          }}
-          onSubmitEditing={() => setOpen(false)}
-          blurOnSubmit={false}
-          numberOfLines={1}
-        />
-        <TouchableOpacity
-          onPress={() => { setOpen(!open); setSearch(''); }}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-        >
-          <Text style={styles.selectArrow}>{open ? '▲' : '▼'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Dropdown list */}
-      {open && (
-        <View style={styles.selectDropdown}>
-          <ScrollView style={styles.selectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-            {filtered.length === 0 ? (
-              <Text style={styles.selectEmptyText}>Không tìm thấy kết quả</Text>
-            ) : (
-              filtered.map((opt, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={[styles.selectOption, compact && styles.selectOptionCompact]}
-                  onPress={() => {
-                    onSelect(opt);
-                    setOpen(false);
-                    setSearch(typeof opt === 'string' ? opt : opt.name);
-                  }}
-                >
-                  {renderOption ? renderOption(opt) : (
-                    <Text style={[styles.selectOptionText, compact && styles.selectTriggerTextCompact]}>{typeof opt === 'string' ? opt : opt.name}</Text>
-                  )}
-                </TouchableOpacity>
-              ))
-            )}
-          </ScrollView>
-        </View>
-      )}
-    </View>
-  );
-};
+import CustomSelect from './CustomSelect';
 
 // --- Component một mặt hàng trong đơn nợ ---
 const DebtItem = ({ item, products, onUpdate, onRemove }) => {
@@ -304,7 +223,7 @@ const DebtOrder = ({ order, customers, products, onUpdateOrder, onUpdateItem, on
           <View style={styles.ticketMetadataRow}>
             {/* Chọn khách */}
             <View style={{ flex: 1.3, marginRight: 8, zIndex: 20, elevation: 20 }}>
-              <SelectDropdown
+              <CustomSelect
                 value={displayedCustomer}
                 placeholder="Chọn khách..."
                 options={customers}

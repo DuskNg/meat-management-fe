@@ -1,5 +1,5 @@
 // meat-management-fe/app/index.js
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -26,6 +26,7 @@ import EditCustomerModal from '../src/components/EditCustomerModal';
 import WorkspaceMemberActionsModal from '../src/components/WorkspaceMemberActionsModal';
 import PopupModal from '../src/components/PopupModal';
 import ScanTicketModal from '../src/components/ScanTicketModal';
+import BatchDebtModal from '../src/components/BatchDebtModal';
 import ExportDebtModal from '../src/components/ExportDebtModal';
 import DebtModal from '../src/components/DebtModal';
 import PaymentModal from '../src/components/PaymentModal';
@@ -112,6 +113,7 @@ export default function DashboardScreen() {
   const editCustomerModalRef = useRef(null);
   const popupModalRef = useRef(null);
   const scanTicketModalRef = useRef(null);
+  const batchDebtModalRef = useRef(null);
   const exportDebtModalRef = useRef(null);
   const customerDebtHistoryModalRef = useRef(null);
   const debtModalRef = useRef(null);
@@ -143,6 +145,22 @@ export default function DashboardScreen() {
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [showDebtSummary, setShowDebtSummary] = useState(false);
+  const [showDebtToolsMenu, setShowDebtToolsMenu] = useState(false); // State quản lý menu công cụ ghi nợ AI
+  const debtToolsMenuRef = useRef(null); // Ref bọc container menu tính năng để tự đóng khi click ngoài
+
+  // Lắng nghe sự kiện click ngoài để đóng dropdown menu tính năng trên Web
+  useEffect(() => {
+    if (!showDebtToolsMenu || Platform.OS !== 'web' || typeof document === 'undefined') return undefined;
+
+    const handleOutsideClick = (event) => {
+      if (debtToolsMenuRef.current && !debtToolsMenuRef.current.contains(event.target)) {
+        setShowDebtToolsMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showDebtToolsMenu]);
   const [selectedRevenueMonth, setSelectedRevenueMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
@@ -222,7 +240,7 @@ export default function DashboardScreen() {
     if (item.type === 'SHOP_SESSION' && item.rawItem) {
       const { startTime, endTime, isPaid, totalAmount, table } = item.rawItem;
       const tableName = table?.name || 'Bàn/Phòng';
-      
+
       const formatTimeOnly = (dateStr) => {
         try {
           const d = new Date(dateStr);
@@ -251,7 +269,7 @@ export default function DashboardScreen() {
         </Text>
       );
     }
-    
+
     return (
       <Text style={styles.floatingLogText} numberOfLines={2}>
         {item.actionTitle}
@@ -316,15 +334,25 @@ export default function DashboardScreen() {
       const response = await api.get('/payments');
       return response.data;
     },
-    enabled: showDebtSummary && auth.hasPermission('canManageCustomers'),
+    // Luôn tải danh sách thanh toán khi ở tab khách hàng để hiển thị doanh thu trên thẻ tổng hợp
+    enabled: currentView === 'customers' && auth.hasPermission('canManageCustomers'),
+  });
+
+  const { data: transactionsResponse, isLoading: isLoadingTransactions, refetch: refetchTransactions } = useQuery({
+    queryKey: ['customer_transactions_summary'],
+    queryFn: async () => {
+      const response = await api.get('/transactions');
+      return response.data;
+    },
+    // Luôn tải danh sách giao dịch khi ở tab khách hàng để hiển thị tổng tiền trên thẻ tổng hợp
+    enabled: currentView === 'customers' && auth.hasPermission('canManageCustomers'),
   });
 
   // Các hàm làm mới dữ liệu khách hàng kèm theo lịch sử nợ chi tiết nếu đang mở
   const handleRefreshAll = () => {
     refetch();
-    if (showDebtSummary) {
-      refetchPayments();
-    }
+    refetchPayments(); // Luôn cập nhật lại cả lịch sử thanh toán để đảm bảo doanh thu mới nhất
+    refetchTransactions(); // Luôn cập nhật lại giao dịch để đảm bảo tổng tiền mới nhất
     customerDebtHistoryModalRef.current?.refresh();
     // Làm mới danh sách ghi nợ trong ngày của nhân viên nếu đang hiển thị
     employeeDailyDebtModalRef.current?.refresh();
@@ -335,6 +363,25 @@ export default function DashboardScreen() {
     customerDebtHistoryModalRef.current?.refresh();
     // Làm mới danh sách ghi nợ trong ngày của nhân viên nếu đang hiển thị
     employeeDailyDebtModalRef.current?.refresh();
+  };
+
+  const handleExportDebtFromReport = (customerId, month) => {
+    // Tìm khách hàng trong danh sách đã tải
+    const customerObj = (customersResponse?.data || []).find((c) => c.id === customerId);
+    if (customerObj) {
+      exportDebtModalRef.current?.open(customerObj, month);
+    } else {
+      // Tải chi tiết khách hàng từ API nếu chưa có trong danh sách
+      api.get(`/customers/${customerId}`)
+        .then((res) => {
+          if (res.data?.success && res.data?.data) {
+            exportDebtModalRef.current?.open(res.data.data, month);
+          }
+        })
+        .catch((err) => {
+          console.error('[REPORT] Không thể tải thông tin khách hàng:', err);
+        });
+    }
   };
 
   // Lắng nghe sự kiện realtime CUSTOMER_UPDATED & lock events từ Socket.IO
@@ -349,6 +396,8 @@ export default function DashboardScreen() {
         console.log('[SOCKET] Nhận thông báo cập nhật khách hàng/ghi nợ:', data);
         refetch();
         refetchBad();
+        refetchPayments(); // Cập nhật lại lịch sử thanh toán qua socket
+        refetchTransactions(); // Cập nhật lại giao dịch qua socket
         customerDebtHistoryModalRef.current?.refresh();
         // Tự động cập nhật danh sách nợ trong ngày của nhân viên qua socket
         employeeDailyDebtModalRef.current?.refresh();
@@ -1005,6 +1054,12 @@ export default function DashboardScreen() {
   const customerIdSet = new Set(customers.map((c) => c.id));
   const customerPayments = (paymentsResponse?.data || []).filter((payment) => customerIdSet.has(payment.customerId));
 
+  // Helper lấy định dạng tháng/năm dạng ngắn MM/YYYY
+  const getShortMonthYear = (monthKey) => {
+    const [year, month] = monthKey.split('-');
+    return `${month}/${year}`;
+  };
+
   // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
   const totalDebt = customers.reduce((sum, c) => sum + (c.debt || 0), 0);
   const selectedMonthPayments = customerPayments.filter((payment) => {
@@ -1014,6 +1069,17 @@ export default function DashboardScreen() {
     return monthKey === selectedRevenueMonth;
   });
   const totalCollectedInSelectedMonth = selectedMonthPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+
+  // Tính tổng giao dịch (tiền hàng nợ phát sinh) của tháng được chọn
+  const customerTransactions = (transactionsResponse?.data || []).filter((t) => customerIdSet.has(t.customerId));
+  const selectedMonthTransactions = customerTransactions.filter((transaction) => {
+    const tDate = transaction.date ? new Date(transaction.date) : null;
+    if (!tDate || isNaN(tDate.getTime())) return false;
+    const monthKey = `${tDate.getFullYear()}-${(tDate.getMonth() + 1).toString().padStart(2, '0')}`;
+    return monthKey === selectedRevenueMonth;
+  });
+  const totalTransactionsInSelectedMonth = selectedMonthTransactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
+
   const totalCollected = customerPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
   const totalOriginalDebt = totalDebt + totalCollected;
   const collectedByDay = selectedMonthPayments.reduce((groups, payment) => {
@@ -2613,38 +2679,40 @@ export default function DashboardScreen() {
         {/* TỔNG TIỀN NỢ: Chỉ hiện với chủ tài khoản, ẩn với tài khoản thành viên */}
         {!auth.user?.workspaceMember && <View style={styles.summaryCard}>
           <TouchableOpacity
-            style={styles.summaryMainRow}
             onPress={() => setShowDebtSummary((prev) => !prev)}
             activeOpacity={0.85}
           >
-            <View>
-              <Text style={styles.summaryLabel}>💰 TỔNG TIỀN NỢ:</Text>
-              <Text style={styles.summaryHint}>{showDebtSummary ? 'Bấm để thu gọn' : 'Bấm để xem chi tiết'}</Text>
+            {/* Chia giao diện thành 2 phần cùng hàng */}
+            <View style={styles.summaryColumnsRow}>
+              {/* Phần bên trái: Tổng nợ */}
+              <View style={styles.summaryColumn}>
+                <Text style={styles.summaryColumnLabel}>💰 TỔNG TIỀN NỢ</Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryColumnValue}>
+                  {formatCurrency(totalDebt)}
+                </Text>
+              </View>
+
+              {/* Đường vạch chia dọc giữa hai cột */}
+              <View style={styles.summaryVerticalDivider} />
+
+              {/* Phần bên phải: Doanh thu */}
+              <View style={styles.summaryColumn}>
+                <Text style={styles.summaryColumnLabelRevenue}>
+                  📈 DOANH THU {getShortMonthYear(selectedRevenueMonth)}
+                </Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryColumnValueRevenue}>
+                  {isLoadingPayments ? '...' : formatCurrency(totalCollectedInSelectedMonth)}
+                </Text>
+              </View>
             </View>
-            <Text style={styles.summaryValue}>{formatCurrency(totalDebt)}</Text>
           </TouchableOpacity>
 
           {showDebtSummary && (
             <View style={styles.debtSummaryDetail}>
-              {isLoadingPayments ? (
+              {isLoadingPayments || isLoadingTransactions ? (
                 <ActivityIndicator size="small" color={COLORS.dangerDark} style={styles.summaryLoader} />
               ) : (
                 <>
-                  <View style={styles.debtSummaryGrid}>
-                    <View style={styles.debtSummaryBox}>
-                      <Text style={styles.debtSummaryBoxLabel}>Tổng tiền</Text>
-                      <Text style={styles.debtSummaryBoxValue}>{formatCurrency(totalOriginalDebt)}</Text>
-                    </View>
-                    <View style={styles.debtSummaryBox}>
-                      <Text style={styles.debtSummaryBoxLabel}>Đã thu</Text>
-                      <Text style={[styles.debtSummaryBoxValue, styles.collectedValue]}>{formatCurrency(totalCollectedInSelectedMonth)}</Text>
-                    </View>
-                    <View style={styles.debtSummaryBox}>
-                      <Text style={styles.debtSummaryBoxLabel}>Nợ còn lại</Text>
-                      <Text style={styles.debtSummaryBoxValue}>{formatCurrency(totalDebt)}</Text>
-                    </View>
-                  </View>
-
                   <View style={styles.monthPickerSection}>
                     <Text style={styles.monthPickerLabel}>Chọn tháng xem doanh thu</Text>
                     <View style={styles.monthPickerRow}>
@@ -2695,9 +2763,13 @@ export default function DashboardScreen() {
                         <Text style={styles.monthArrowText}>{'>'}</Text>
                       </TouchableOpacity>
                     </View>
-                    <Text style={styles.monthRevenueText}>
-                      Tổng doanh thu {formatRevenueMonth(selectedRevenueMonth).toLowerCase()}: {formatCurrency(totalCollectedInSelectedMonth)}
-                    </Text>
+
+                    <View style={styles.monthTotalSalesBox}>
+                      <Text style={styles.monthTotalSalesLabel}>🥩 Tổng tiền hàng trong tháng:</Text>
+                      <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.monthTotalSalesValue}>
+                        {formatCurrency(totalTransactionsInSelectedMonth)}
+                      </Text>
+                    </View>
                   </View>
 
                   <View style={styles.dailyCollectedSection}>
@@ -2722,65 +2794,122 @@ export default function DashboardScreen() {
           )}
         </View>}
 
-        {/* NÚT THỐNG KÊ TRONG NGÀY: Ẩn với tài khoản thành viên */}
-        {!auth.user?.workspaceMember && (
+        {/* HÀNG THỐNG KÊ & TÍNH NĂNG CHUNG (MỖI NÚT 1 NỬA 50%) */}
+        <View style={styles.topControlRowGroup}>
+          {/* Nút 1: Thống Kê / Báo Cáo */}
+
+
+          {/* Nút 2: Tính Năng AI & Thêm Khách/Thịt */}
+          <View ref={debtToolsMenuRef} style={{ flex: 1, position: 'relative', zIndex: 1000, elevation: 1000 }}>
+            <TouchableOpacity
+              style={styles.topControlHalfBtnRight}
+              onPress={() => setShowDebtToolsMenu((prev) => !prev)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.topControlHalfBtnRightText}>
+                {isRecording ? '🎙️ Đang ghi...' : '⚡ TÍNH NĂNG ▼'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Dropdown Menu chứa tất cả 5 tính năng */}
+            {showDebtToolsMenu && (
+              <View style={styles.smartDebtDropdownMenu}>
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    batchDebtModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>⚡</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Nhập công nợ hàng loạt</Text>
+                    <Text style={styles.smartDebtMenuSub}>Nhập công nợ số lượng lớn</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    handleScanTicket();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>📷</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Chụp ảnh tích kê </Text>
+                    <Text style={styles.smartDebtMenuSub}>Quét ảnh tích kê để nhập nhanh công nợ</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    handleVoicePress();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🎤</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>
+                      {isRecording ? '⏹️ Dừng ghi âm' : 'Nhập công nợ bằng giọng nói'}
+                    </Text>
+                    <Text style={styles.smartDebtMenuSub}>Phân tích và thêm công nợ bằng giọng nói</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    modalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>👤</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Thêm khách hàng mới</Text>
+                    <Text style={styles.smartDebtMenuSub}>Tạo hồ sơ người mua nợ mới</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    productModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🥩</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Thêm loại thịt mới</Text>
+                    <Text style={styles.smartDebtMenuSub}>Cập nhật bảng giá sản phẩm</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
           <TouchableOpacity
-            style={styles.dailyReportButton}
-            onPress={() => dailyReportModalRef.current?.open()}
+            style={styles.topControlHalfBtnLeft}
+            onPress={() => {
+              if (auth.user?.workspaceMember) {
+                employeeDailyDebtModalRef.current?.open(auth.user?.id);
+              } else {
+                dailyReportModalRef.current?.open();
+              }
+            }}
             activeOpacity={0.8}
           >
-            <Text style={styles.dailyReportButtonText}>📈 THỐNG KÊ CÔNG NỢ</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* NÚT DANH SÁCH GHI NỢ TRONG NGÀY: Chỉ hiện với tài khoản thành viên */}
-        {auth.user?.workspaceMember && (
-          <TouchableOpacity
-            style={styles.employeeDailyDebtButton}
-            onPress={() => employeeDailyDebtModalRef.current?.open(auth.user?.id)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.employeeDailyDebtButtonText}>📋 DANH SÁCH GHI NỢ TRONG NGÀY</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* HÀNG 4 NÚT TIỆN ÍCH AI & QUẢN LÝ */}
-        <View style={styles.actionRowContainer}>
-          <TouchableOpacity
-            style={[styles.actionRowButton, styles.btnMeat]}
-            onPress={() => productModalRef.current?.open()}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionRowButtonTextWhite}>Thêm thịt</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionRowButton, styles.btnCustomer]}
-            onPress={() => modalRef.current?.open()}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionRowButtonTextWhite}>Thêm khách</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionRowButton, styles.btnScan]}
-            onPress={handleScanTicket}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionRowButtonTextWhite}>Chụp tích kê</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.actionRowButton,
-              styles.btnVoice,
-              isRecording && styles.btnVoiceRecording,
-            ]}
-            onPress={handleVoicePress}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionRowButtonTextWhite}>
-              {isRecording ? '⏹️ Dừng' : 'Giọng nói'}
+            <Text style={styles.topControlHalfBtnLeftText}>
+              {auth.user?.workspaceMember ? '📋 NỢ TRONG NGÀY' : '📈 THỐNG KÊ NỢ'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -2859,6 +2988,9 @@ export default function DashboardScreen() {
 
       {/* MODAL KẾT QUẢ GHI NỢ GIỌNG NÓI (Ẩn) */}
       <ScanTicketModal ref={scanTicketModalRef} onRefresh={handleRefreshAll} />
+
+      {/* MODAL NHẬP NỢ HÀNG LOẠT (Ẩn) */}
+      <BatchDebtModal ref={batchDebtModalRef} onRefresh={handleRefreshAll} />
 
       {/* MODAL XUẤT CÔNG NỢ DẠNG ẢNH (Ẩn) */}
       <ExportDebtModal ref={exportDebtModalRef} onRefresh={handleRefreshAll} />
@@ -3035,44 +3167,83 @@ const styles = StyleSheet.create({
     color: '#EF4444',
   },
   summaryCard: {
-    backgroundColor: COLORS.dangerLight,
+    backgroundColor: '#FFFFFF', // Đổi nền trắng premium
     marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 10,
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: '#E2E8F0', // Đổi viền sang xám Slate mảnh dẻ
     ...SHADOWS.card,
   },
-  summaryMainRow: {
+  summaryColumnsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  summaryColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryVerticalDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 8,
+    opacity: 0.8,
+  },
+  summaryColumnLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: COLORS.dangerDark,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  summaryColumnValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.danger,
+    textAlign: 'center',
+  },
+  summaryColumnLabelRevenue: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: COLORS.primaryDark,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  summaryColumnValueRevenue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.primaryDark,
+    textAlign: 'center',
+  },
+  debtSummaryDetail: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  monthTotalSalesBox: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
   },
-  summaryLabel: {
+  monthTotalSalesLabel: {
     fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  monthTotalSalesValue: {
+    fontSize: 15,
     fontWeight: 'bold',
-    color: COLORS.dangerDark,
-  },
-  summaryHint: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginTop: 3,
-  },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.danger,
-    textAlign: 'right',
-    flexShrink: 0,
-  },
-  debtSummaryDetail: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#FECACA',
+    color: '#0F172A', // Màu Slate tối
   },
   summaryLoader: {
     marginVertical: 8,
@@ -3107,18 +3278,13 @@ const styles = StyleSheet.create({
     color: '#047857',
   },
   monthPickerSection: {
-    marginTop: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
-    padding: 10,
+    marginTop: 10,
   },
   monthPickerLabel: {
     fontSize: 12,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   monthPickerRow: {
     flexDirection: 'row',
@@ -3164,12 +3330,10 @@ const styles = StyleSheet.create({
     color: '#047857',
   },
   dailyCollectedSection: {
-    marginTop: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
-    padding: 10,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
   },
   dailyCollectedScroll: {
     maxHeight: 150, // Giới hạn chiều cao để xuất hiện thanh cuộn khi có nhiều dòng
@@ -3178,7 +3342,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   dailyCollectedRow: {
     flexDirection: 'row',
@@ -4757,5 +4921,103 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#0F172A',
     lineHeight: 16,
+  },
+  /* STYLES HÀNG ĐIỀU KHUYỂN 2 NÚT BAN ĐẦU (50-50) */
+  topControlRowGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    gap: 10,
+    position: 'relative',
+    zIndex: 1000,
+    elevation: 1000,
+  },
+  topControlHalfBtnLeft: {
+    flex: 1,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.small,
+  },
+  topControlHalfBtnLeftText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    letterSpacing: 0.2,
+  },
+  topControlHalfBtnRight: {
+    backgroundColor: '#7C3AED',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.small,
+  },
+  topControlHalfBtnRightText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  smartDebtDropdownMenu: {
+    position: 'absolute',
+    top: '105%',
+    left: 0,
+    width: 280,
+    minWidth: 280,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 6,
+    ...SHADOWS.large,
+    boxShadow: '0px 10px 30px rgba(15, 23, 42, 0.25)',
+    zIndex: 99999,
+    elevation: 99999,
+  },
+  smartDebtMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 10,
+    cursor: 'pointer',
+  },
+  smartDebtMenuIcon: {
+    fontSize: 18,
+  },
+  smartDebtMenuTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  smartDebtMenuSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  smartDebtMenuDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+  },
+  compactConfigBtn: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  compactConfigBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
   },
 });

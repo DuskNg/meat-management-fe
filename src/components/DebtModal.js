@@ -18,6 +18,7 @@ import ProductListModal from './ProductListModal';
 import DatePickerInput from './DatePickerInput';
 import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
+import PopupModal from './PopupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
 import ProductSelector from './ProductSelector';
 import { useResourceLock } from '../hooks/useResourceLock';
@@ -103,6 +104,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
+  const popupRef = useRef(null);
   const isSubmittingRef = useRef(false);
 
   // ─── Tải danh mục sản phẩm (chỉ khi modal đang mở, có kèm theo customerId để lấy giá riêng) ───
@@ -349,8 +351,13 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         });
 
         if (response.data.success) {
-          setVisible(false);
+          // Hiển thị toast thành công, đóng modal và refresh sau khi toast tự ẩn
           if (onRefresh) onRefresh();
+          popupRef.current?.show({
+            type: 'success',
+            message: 'Đã ghi nợ thành công.',
+            onConfirm: () => setVisible(false),
+          });
         } else {
           setError(response.data.message || 'Lỗi ghi nợ. Vui lòng thử lại.');
         }
@@ -394,8 +401,13 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         });
 
         if (response.data.success) {
-          setVisible(false);
+          // Hiển thị toast thành công, đóng modal và refresh sau khi toast tự ẩn
           if (onRefresh) onRefresh();
+          popupRef.current?.show({
+            type: 'success',
+            message: 'Đã ghi nợ nhanh thành công.',
+            onConfirm: () => setVisible(false),
+          });
         } else {
           setError(response.data.message || 'Lỗi ghi nợ. Vui lòng thử lại.');
         }
@@ -750,6 +762,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       <PinInputModal ref={pinInputRef} />
       {/* Modal tạo PIN lần đầu */}
       <PinSetupModal ref={pinSetupRef} />
+      {/* Toast thông báo ghi nợ thành công */}
+      <PopupModal ref={popupRef} />
     </SmoothModal>
   );
 });

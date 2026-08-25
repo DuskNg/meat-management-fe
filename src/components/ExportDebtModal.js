@@ -69,16 +69,16 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
   // 1. Phơi bày các hàm điều khiển ra bên ngoài
   useImperativeHandle(ref, () => ({
-    open: (c) => {
+    open: (c, targetMonth) => {
       setCustomer(c);
       setVisible(true);
-      setSelectedMonth('');
+      setSelectedMonth(targetMonth || '');
       setAvailableMonths([]);
       setTransactions([]);
       setPayments([]);
       setImageUri(null);
       setError('');
-      fetchData(c.id, c);
+      fetchData(c.id, c, targetMonth);
     },
     close: () => {
       setVisible(false);
@@ -86,7 +86,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   }));
 
   // 2. Tải toàn bộ giao dịch & thu tiền để trích xuất các tháng khả dụng
-  const fetchData = async (customerId, currentCust) => {
+  const fetchData = async (customerId, currentCust, targetMonth) => {
     setLoading(true);
     setError('');
     try {
@@ -124,20 +124,22 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       setAvailableMonths(monthsArray);
 
-      // Chọn tháng mặc định là tháng gần nhất có giao dịch
-      let defaultMonth = '';
-      if (monthsArray.length > 0) {
-        defaultMonth = monthsArray[0];
-      } else {
-        const d = new Date();
-        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-        const yyyy = d.getFullYear();
-        defaultMonth = `${mm}/${yyyy}`;
+      // Chọn tháng mặc định là tháng được chỉ định (hoặc tháng gần nhất có giao dịch)
+      let defaultMonth = targetMonth;
+      if (!defaultMonth) {
+        if (monthsArray.length > 0) {
+          defaultMonth = monthsArray[0];
+        } else {
+          const d = new Date();
+          const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+          const yyyy = d.getFullYear();
+          defaultMonth = `${mm}/${yyyy}`;
+        }
       }
       setSelectedMonth(defaultMonth);
 
       // Tự động tạo ảnh công nợ ngay khi tải xong dữ liệu
-      if (monthsArray.length > 0) {
+      if (monthsArray.length > 0 || targetMonth) {
         generateDebtImage(defaultMonth, transList, payList, currentCust);
       }
 
