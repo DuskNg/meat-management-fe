@@ -132,6 +132,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   // Danh mục từ API
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
+  // Quản lý giá thịt riêng theo từng khách hàng { [customerId]: productListWithCustomPrices }
+  const [custProductsMap, setCustProductsMap] = useState({});
 
   // State độc lập cho 2 tab Nợ nhanh & Nợ chi tiết
   const [quickRows, setQuickRows] = useState([]);
@@ -153,6 +155,20 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   const mainScrollRef = useRef(null);
   const isSubmittingRef = useRef(false);
   const isLoadedCacheRef = useRef(false);
+
+  // Tải danh mục thịt kèm giá riêng cho 1 khách hàng
+  const fetchProductsForCustomer = async (customerId) => {
+    if (!customerId || custProductsMap[customerId]) return;
+    try {
+      const res = await api.get(`/products?customerId=${customerId}`);
+      const custProds = (res.data?.data || []).filter(
+        (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+      );
+      setCustProductsMap((prev) => ({ ...prev, [customerId]: custProds }));
+    } catch (e) {
+      console.error('[FETCH CUST PRODUCTS ERROR]', e);
+    }
+  };
 
   // Phơi bày hàm điều khiển ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -607,7 +623,10 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                           value={selectedCust}
                           placeholder="Chọn khách hàng nợ..."
                           options={customers}
-                          onSelect={(c) => handleUpdateRow(row.tempId, { selectedCustomerId: c.id })}
+                          onSelect={(c) => {
+                            handleUpdateRow(row.tempId, { selectedCustomerId: c.id });
+                            fetchProductsForCustomer(c.id);
+                          }}
                           renderSelected={(c) => c.name}
                           renderOption={(c) => (
                             <View style={styles.custOptionRow}>
@@ -641,37 +660,39 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                         <View style={{ width: 24 }} />
                       </View>
 
-                      {row.items.map((item, itemIdx) => {
-                        const selectedProd = products.find((p) => p.id === item.productId);
-                        const q = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
-                        const p = parseNumberString(item.price);
-                        const itemSubtotal = Math.round(q * p);
-                        const itemZIndex = (row.items.length - itemIdx) * 10;
+                      {(() => {
+                        const availableProducts = (row.selectedCustomerId && custProductsMap[row.selectedCustomerId]) || products;
+                        return row.items.map((item, itemIdx) => {
+                          const selectedProd = availableProducts.find((p) => p.id === item.productId) || products.find((p) => p.id === item.productId);
+                          const q = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
+                          const p = parseNumberString(item.price);
+                          const itemSubtotal = Math.round(q * p);
+                          const itemZIndex = (row.items.length - itemIdx) * 10;
 
-                        return (
-                          <View key={item.tempItemId} style={[styles.meatTableRow, { zIndex: itemZIndex, elevation: itemZIndex }]}>
-                            <View style={{ flex: 2, marginRight: 4 }}>
-                              <CustomSelect
-                                value={selectedProd}
-                                placeholder="Chọn thịt..."
-                                options={products}
-                                onSelect={(prod) => {
-                                  handleUpdateRowItem(row.tempId, item.tempItemId, {
-                                    productId: prod.id,
-                                    price: formatNumberString(prod.defaultPrice || 0),
-                                    unit: prod.unit || 'kg',
-                                  });
-                                }}
-                                renderSelected={(prod) => prod.name}
-                                renderOption={(prod) => (
-                                  <View style={styles.custOptionRow}>
-                                    <Text style={styles.custOptionName}>{prod.name}</Text>
-                                    <Text style={styles.custOptionPhone}>{formatCurrency(prod.defaultPrice)}/{prod.unit}</Text>
-                                  </View>
-                                )}
-                                compact={true}
-                              />
-                            </View>
+                          return (
+                            <View key={item.tempItemId} style={[styles.meatTableRow, { zIndex: itemZIndex, elevation: itemZIndex }]}>
+                              <View style={{ flex: 2, marginRight: 4 }}>
+                                <CustomSelect
+                                  value={selectedProd}
+                                  placeholder="Chọn thịt..."
+                                  options={availableProducts}
+                                  onSelect={(prod) => {
+                                    handleUpdateRowItem(row.tempId, item.tempItemId, {
+                                      productId: prod.id,
+                                      price: formatNumberString(prod.defaultPrice || 0),
+                                      unit: prod.unit || 'kg',
+                                    });
+                                  }}
+                                  renderSelected={(prod) => prod.name}
+                                  renderOption={(prod) => (
+                                    <View style={styles.custOptionRow}>
+                                      <Text style={styles.custOptionName}>{prod.name}</Text>
+                                      <Text style={styles.custOptionPhone}>{formatCurrency(prod.defaultPrice)}/{prod.unit}</Text>
+                                    </View>
+                                  )}
+                                  compact={true}
+                                />
+                              </View>
 
                             <View style={{ flex: 1, marginRight: 4 }}>
                               <TextInput
@@ -714,7 +735,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                             </TouchableOpacity>
                           </View>
                         );
-                      })}
+                        });
+                      })()}
 
                       <TouchableOpacity
                         style={styles.addMeatBtn}
