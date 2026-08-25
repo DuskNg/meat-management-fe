@@ -7,6 +7,7 @@ import WorkspacePendingBanner from '../src/components/WorkspacePendingBanner';
 import AdminOwnerDetailModal from '../src/components/AdminOwnerDetailModal';
 import { api } from '../src/api/client';
 import { recordUserActivity } from '../src/hooks/useResourceLock';
+import GlobalToast from '../src/components/GlobalToast';
 
 // Tạo Client cho React Query để quản lý cache dữ liệu từ API
 const queryClient = new QueryClient({
@@ -95,6 +96,7 @@ function RootLayoutNav() {
       <WorkspacePendingBanner onPress={() => ownerModalRef.current?.open(user)} />
       <Slot />
       <AdminOwnerDetailModal ref={ownerModalRef} />
+      <GlobalToast />
     </View>
   );
 }

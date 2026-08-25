@@ -18,6 +18,7 @@ import PopupModal from './PopupModal';
 import { api } from '../api/client';
 import { COLORS, SHADOWS } from '../theme';
 import { hasPin, isSessionValid } from '../store/pinStore';
+import { showGlobalToast } from '../store/toastStore';
 import { matchSearch } from '../utils/searchHelper';
 
 // --- Helper: định dạng số hàng nghìn dấu chấm ---
@@ -460,12 +461,14 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       if (onRefresh) onRefresh();
 
-      popupRef.current?.show({
-        type: 'success',
-        title: 'Thành công',
-        message: `Đã lưu thành công ${validRows.length} đơn nợ mới với tổng tiền ${formatCurrency(totalBatchAmount)}.`,
-        onConfirm: () => setVisible(false),
-      });
+      // Đóng modal ngay lập tức không bắt người dùng bấm popup xác nhận thêm
+      setVisible(false);
+
+      // Phát thông báo Toast toàn cục (Global Toast)
+      showGlobalToast(
+        `Đã lưu thành công ${validRows.length} đơn nợ mới với tổng tiền ${formatCurrency(totalBatchAmount)}.`,
+        'success'
+      );
     } catch (err) {
       console.error('[BATCH DEBT SUBMIT ERROR]', err);
       setError(err.response?.data?.message || 'Có lỗi khi lưu ghi nợ hàng loạt. Vui lòng thử lại.');

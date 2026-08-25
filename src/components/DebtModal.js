@@ -20,6 +20,7 @@ import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import PopupModal from './PopupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
+import { showGlobalToast } from '../store/toastStore';
 import ProductSelector from './ProductSelector';
 import { useResourceLock } from '../hooks/useResourceLock';
 import { matchItemSearch } from '../utils/searchHelper';
@@ -352,13 +353,9 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         });
 
         if (response.data.success) {
-          // Hiển thị toast thành công, đóng modal và refresh sau khi toast tự ẩn
           if (onRefresh) onRefresh();
-          popupRef.current?.show({
-            type: 'success',
-            message: 'Đã ghi nợ thành công.',
-            onConfirm: () => setVisible(false),
-          });
+          setVisible(false);
+          showGlobalToast('Đã ghi nợ thành công.', 'success');
         } else {
           setError(response.data.message || 'Lỗi ghi nợ. Vui lòng thử lại.');
         }
@@ -403,13 +400,9 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         });
 
         if (response.data.success) {
-          // Hiển thị toast thành công, đóng modal và refresh sau khi toast tự ẩn
           if (onRefresh) onRefresh();
-          popupRef.current?.show({
-            type: 'success',
-            message: 'Đã ghi nợ nhanh thành công.',
-            onConfirm: () => setVisible(false),
-          });
+          setVisible(false);
+          showGlobalToast('Đã ghi nợ nhanh thành công.', 'success');
         } else {
           setError(response.data.message || 'Lỗi ghi nợ. Vui lòng thử lại.');
         }
