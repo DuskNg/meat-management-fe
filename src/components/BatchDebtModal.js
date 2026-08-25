@@ -455,13 +455,22 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       await Promise.all(promises);
 
-      // CHỈ XÓA BẢN NHÁP KHI ĐÃ LƯU THÀNH CÔNG VÀO DATABASE
+      // Đánh dấu tắt chế độ tự lưu để useEffect không ghi đè dữ liệu vừa submit vào cache
+      isLoadedCacheRef.current = false;
+
+      // Xóa sạch cache nháp trong storage
       await clearDraftCache();
       setCustProductsMap({});
 
+      // Reset state 2 tab về 4 dòng trống chuẩn bị cho lần nhập tiếp theo
+      const freshQuick = [createEmptyRow(products), createEmptyRow(products), createEmptyRow(products), createEmptyRow(products)];
+      const freshDetail = [createEmptyRow(products), createEmptyRow(products), createEmptyRow(products), createEmptyRow(products)];
+      setQuickRows(freshQuick);
+      setDetailRows(freshDetail);
+
       if (onRefresh) onRefresh();
 
-      // Đóng modal ngay lập tức không bắt người dùng bấm popup xác nhận thêm
+      // Đóng modal ngay lập tức
       setVisible(false);
 
       // Phát thông báo Toast toàn cục (Global Toast)
