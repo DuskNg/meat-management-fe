@@ -27,6 +27,7 @@ import WorkspaceMemberActionsModal from '../src/components/WorkspaceMemberAction
 import PopupModal from '../src/components/PopupModal';
 import ScanTicketModal from '../src/components/ScanTicketModal';
 import BatchDebtModal from '../src/components/BatchDebtModal';
+import BatchPaymentModal from '../src/components/BatchPaymentModal';
 import ExportDebtModal from '../src/components/ExportDebtModal';
 import DebtModal from '../src/components/DebtModal';
 import PaymentModal from '../src/components/PaymentModal';
@@ -114,6 +115,7 @@ export default function DashboardScreen() {
   const popupModalRef = useRef(null);
   const scanTicketModalRef = useRef(null);
   const batchDebtModalRef = useRef(null);
+  const batchPaymentModalRef = useRef(null);
   const exportDebtModalRef = useRef(null);
   const customerDebtHistoryModalRef = useRef(null);
   const debtModalRef = useRef(null);
@@ -2834,6 +2836,22 @@ export default function DashboardScreen() {
                   style={styles.smartDebtMenuItem}
                   onPress={() => {
                     setShowDebtToolsMenu(false);
+                    batchPaymentModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🟢</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Thu nợ hàng loạt</Text>
+                    <Text style={styles.smartDebtMenuSub}>Thu tiền trả nợ từ nhiều khách hàng cùng lúc</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
                     handleScanTicket();
                   }}
                 >
@@ -2991,6 +3009,9 @@ export default function DashboardScreen() {
 
       {/* MODAL NHẬP NỢ HÀNG LOẠT (Ẩn) */}
       <BatchDebtModal ref={batchDebtModalRef} onRefresh={handleRefreshAll} />
+
+      {/* MODAL THU NỢ HÀNG LOẠT (Ẩn) */}
+      <BatchPaymentModal ref={batchPaymentModalRef} onRefresh={handleRefreshAll} />
 
       {/* MODAL XUẤT CÔNG NỢ DẠNG ẢNH (Ẩn) */}
       <ExportDebtModal ref={exportDebtModalRef} onRefresh={handleRefreshAll} />
