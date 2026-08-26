@@ -156,6 +156,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   const mainScrollRef = useRef(null);
   const isSubmittingRef = useRef(false);
   const isLoadedCacheRef = useRef(false);
+  // Counter tăng dần đảm bảo tempId/tempItemId luôn unique dù gọi liên tiếp trong cùng 1ms
+  const rowIdCounterRef = useRef(1);
 
   // Tải danh mục thịt kèm giá riêng cho 1 khách hàng
   const fetchProductsForCustomer = async (customerId) => {
@@ -219,17 +221,34 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       setCustomers(custData);
       setProducts(prodData);
 
+      // Gán lại ID mới cho các rows từ draft để tránh duplicate key từ cache cũ
+      const sanitizeRows = (rows) => {
+        if (!Array.isArray(rows)) return rows;
+        return rows.map((r) => ({
+          ...r,
+          tempId: `row_${rowIdCounterRef.current++}`,
+          items: Array.isArray(r.items)
+            ? r.items.map((item) => ({
+                ...item,
+                tempItemId: `item_${rowIdCounterRef.current++}`,
+              }))
+            : r.items,
+        }));
+      };
+
       // Đọc bản nháp từ cache nếu có
       const draft = await loadDraftCache();
       if (draft && (draft.quickRows || draft.detailRows)) {
         if (Array.isArray(draft.quickRows) && draft.quickRows.length > 0) {
-          setQuickRows(draft.quickRows);
+          // Sanitize: gán lại ID mới để tránh duplicate key từ cache cũ
+          setQuickRows(sanitizeRows(draft.quickRows));
         } else {
           setQuickRows([createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData)]);
         }
 
         if (Array.isArray(draft.detailRows) && draft.detailRows.length > 0) {
-          setDetailRows(draft.detailRows);
+          // Sanitize: gán lại ID mới để tránh duplicate key từ cache cũ
+          setDetailRows(sanitizeRows(draft.detailRows));
         } else {
           setDetailRows([createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData)]);
         }
@@ -264,9 +283,9 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     setError('');
   };
 
-  // Helper tạo 1 dòng ghi nợ mới
+  // Helper tạo 1 dòng ghi nợ mới với ID duy nhất tuyệt đối
   const createEmptyRow = (prodList = products) => ({
-    tempId: Date.now() + Math.random(),
+    tempId: `row_${rowIdCounterRef.current++}`,
     selectedCustomerId: null,
     // Dành cho Nợ Nhanh
     quickAmount: '',
@@ -274,7 +293,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     // Dành cho Nợ Chi Tiết
     items: [
       {
-        tempItemId: Date.now() + Math.random(),
+        tempItemId: `item_${rowIdCounterRef.current++}`,
         productId: null,
         quantity: '',
         price: '',
@@ -307,7 +326,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       prev.map((r) => {
         if (r.tempId !== rowTempId) return r;
         const newItem = {
-          tempItemId: Date.now() + Math.random(),
+          // Dùng counter tăng dần thay vì Date.now() + Math.random()
+          tempItemId: `item_${rowIdCounterRef.current++}`,
           productId: null,
           quantity: '',
           price: '',
@@ -347,20 +367,31 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     );
   };
 
-  // --- Tính toán tổng tiền ---
-  const getRowTotal = (row) => {
-    if (activeTab === 'quick') {
-      return parseNumberString(row.quickAmount);
-    }
-    return row.items.reduce((sum, item) => {
+  // --- Tính toán tổng tiền theo từng loại ---
+  const getQuickRowTotal = (row) => parseNumberString(row.quickAmount);
+
+  const getDetailRowTotal = (row) =>
+    (row.items || []).reduce((sum, item) => {
       const q = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
       const p = parseNumberString(item.price);
       return sum + Math.round(q * p);
     }, 0);
+
+  // Hàm tổng quát: tính tổng tiền theo loại row
+  const getRowTotal = (row, type) => {
+    if (type === 'quick') return getQuickRowTotal(row);
+    if (type === 'detail') return getDetailRowTotal(row);
+    // Fallback: dùng activeTab
+    return activeTab === 'quick' ? getQuickRowTotal(row) : getDetailRowTotal(row);
   };
 
-  const totalBatchAmount = rows.reduce((sum, r) => sum + getRowTotal(r), 0);
-  const validRowsCount = rows.filter((r) => r.selectedCustomerId && getRowTotal(r) > 0).length;
+  // Gộp cả 2 tab để tính tổng chung hiển thị ở footer
+  const validQuickRows = quickRows.filter((r) => r.selectedCustomerId && getQuickRowTotal(r) > 0);
+  const validDetailRows = detailRows.filter((r) => r.selectedCustomerId && getDetailRowTotal(r) > 0);
+  const totalBatchAmount =
+    validQuickRows.reduce((s, r) => s + getQuickRowTotal(r), 0) +
+    validDetailRows.reduce((s, r) => s + getDetailRowTotal(r), 0);
+  const validRowsCount = validQuickRows.length + validDetailRows.length;
 
   // --- Kiểm tra PIN và Gửi dữ liệu ---
   const requirePin = async (action) => {
@@ -386,27 +417,28 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       return;
     }
 
-    const validRows = rows.filter((r) => r.selectedCustomerId && getRowTotal(r) > 0);
+    // Lấy các dòng hợp lệ từ CẢ 2 TAB
+    const validQuick = quickRows.filter((r) => r.selectedCustomerId && getQuickRowTotal(r) > 0);
+    const validDetail = detailRows.filter((r) => r.selectedCustomerId && getDetailRowTotal(r) > 0);
 
-    if (validRows.length === 0) {
-      setError('Vui lòng chọn khách hàng và nhập số tiền nợ cho ít nhất 1 dòng.');
+    if (validQuick.length === 0 && validDetail.length === 0) {
+      setError('Vui lòng chọn khách hàng và nhập số tiền nợ cho ít nhất 1 dòng (ở bất kỳ tab nào).');
       return;
     }
 
-    if (activeTab === 'detail') {
-      for (const row of validRows) {
-        const custName = customers.find((c) => c.id === row.selectedCustomerId)?.name || 'Khách hàng';
-        for (const item of row.items) {
-          const q = parseFloat((item.quantity || '0').replace(',', '.'));
-          const p = parseNumberString(item.price);
-          if (item.productId && (isNaN(q) || q <= 0)) {
-            setError(`Vui lòng nhập khối lượng > 0 cho đơn của [${custName}].`);
-            return;
-          }
-          if (item.productId && p <= 0) {
-            setError(`Vui lòng nhập đơn giá > 0 cho đơn của [${custName}].`);
-            return;
-          }
+    // Validate chi tiết: kiểm tra SL & đơn giá cho các dòng nợ chi tiết
+    for (const row of validDetail) {
+      const custName = customers.find((c) => c.id === row.selectedCustomerId)?.name || 'Khách hàng';
+      for (const item of row.items) {
+        const q = parseFloat((item.quantity || '0').replace(',', '.'));
+        const p = parseNumberString(item.price);
+        if (item.productId && (isNaN(q) || q <= 0)) {
+          setError(`Vui lòng nhập khối lượng > 0 cho đơn của [${custName}].`);
+          return;
+        }
+        if (item.productId && p <= 0) {
+          setError(`Vui lòng nhập đơn giá > 0 cho đơn của [${custName}].`);
+          return;
         }
       }
     }
@@ -416,44 +448,40 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     isSubmittingRef.current = true;
 
     try {
-      const promises = validRows.map((row) => {
-        if (activeTab === 'quick') {
-          const amount = parseNumberString(row.quickAmount);
-          return api.post('/transactions', {
-            customerId: row.selectedCustomerId,
-            date: isoDate,
-            note: 'Ghi nợ nhanh hàng loạt',
-            source: 'BATCH_QUICK',
-            isBatch: true,
-            items: [
-              {
-                productName: 'Tiền hàng',
-                quantity: 1,
-                price: amount,
-              },
-            ],
-          });
-        } else {
-          const formattedItems = row.items
-            .filter((i) => i.productId && parseFloat((i.quantity || '0').replace(',', '.')) > 0)
-            .map((i) => ({
-              productId: i.productId,
-              quantity: parseFloat((i.quantity || '0').replace(',', '.')),
-              price: parseNumberString(i.price),
-            }));
-
-          return api.post('/transactions', {
-            customerId: row.selectedCustomerId,
-            date: isoDate,
-            note: 'Ghi nợ chi tiết hàng loạt',
-            source: 'BATCH_DETAIL',
-            isBatch: true,
-            items: formattedItems,
-          });
-        }
+      // Tạo các promise cho NỢ NHANH
+      const quickPromises = validQuick.map((row) => {
+        const amount = getQuickRowTotal(row);
+        return api.post('/transactions', {
+          customerId: row.selectedCustomerId,
+          date: isoDate,
+          note: 'Ghi nợ nhanh hàng loạt',
+          source: 'BATCH_QUICK',
+          isBatch: true,
+          items: [{ productName: 'Tiền hàng', quantity: 1, price: amount }],
+        });
       });
 
-      await Promise.all(promises);
+      // Tạo các promise cho NỢ CHI TIẾT
+      const detailPromises = validDetail.map((row) => {
+        const formattedItems = row.items
+          .filter((i) => i.productId && parseFloat((i.quantity || '0').replace(',', '.')) > 0)
+          .map((i) => ({
+            productId: i.productId,
+            quantity: parseFloat((i.quantity || '0').replace(',', '.')),
+            price: parseNumberString(i.price),
+          }));
+        return api.post('/transactions', {
+          customerId: row.selectedCustomerId,
+          date: isoDate,
+          note: 'Ghi nợ chi tiết hàng loạt',
+          source: 'BATCH_DETAIL',
+          isBatch: true,
+          items: formattedItems,
+        });
+      });
+
+      // Submit tất cả cùng lúc (parallel)
+      await Promise.all([...quickPromises, ...detailPromises]);
 
       // Đánh dấu tắt chế độ tự lưu để useEffect không ghi đè dữ liệu vừa submit vào cache
       isLoadedCacheRef.current = false;
@@ -474,8 +502,9 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       setVisible(false);
 
       // Phát thông báo Toast toàn cục (Global Toast)
+      const totalSaved = validQuick.length + validDetail.length;
       showGlobalToast(
-        `Đã lưu thành công ${validRows.length} đơn nợ mới với tổng tiền ${formatCurrency(totalBatchAmount)}.`,
+        `Đã lưu thành công ${totalSaved} đơn nợ mới với tổng tiền ${formatCurrency(totalBatchAmount)}.`,
         'success'
       );
     } catch (err) {
