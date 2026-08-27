@@ -250,33 +250,42 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
   const validRows = rows.filter((r) => r.selectedCustomerId && parseNumberString(r.amount) > 0);
   const totalBatchAmount = rows.reduce((sum, r) => sum + parseNumberString(r.amount), 0);
 
-  // Kiểm tra mã PIN trước khi thu tiền hàng loạt
+  // Kiểm tra mã PIN trước khi thu tiền hàng loạt (Chặn bấm đúp / spam nút bấm)
   const requirePin = async (action) => {
-    const pinExists = await hasPin();
-    if (!pinExists) {
-      pinSetupRef.current?.open(action);
-      return;
-    }
-    const sessionOk = await isSessionValid();
-    if (sessionOk) {
-      action();
-    } else {
-      pinInputRef.current?.open(action, 'xác nhận thu nợ hàng loạt');
+    if (loading || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    try {
+      const pinExists = await hasPin();
+      if (!pinExists) {
+        isSubmittingRef.current = false;
+        pinSetupRef.current?.open(action);
+        return;
+      }
+      const sessionOk = await isSessionValid();
+      if (sessionOk) {
+        await action();
+      } else {
+        isSubmittingRef.current = false;
+        pinInputRef.current?.open(action, 'xác nhận thu nợ hàng loạt');
+      }
+    } catch (err) {
+      isSubmittingRef.current = false;
+      throw err;
     }
   };
 
   // Gửi dữ liệu thu nợ hàng loạt lên API
   const handleSubmit = async () => {
-    if (loading || isSubmittingRef.current) return;
-
     const isoDate = parseDateString(dateStr);
     if (!isoDate) {
       setError('Ngày thu tiền không đúng định dạng (VD: 25/08/2026).');
+      isSubmittingRef.current = false;
       return;
     }
 
     if (validRows.length === 0) {
       setError('Vui lòng chọn khách hàng và nhập số tiền thu nợ > 0 đ cho ít nhất 1 dòng.');
+      isSubmittingRef.current = false;
       return;
     }
 
@@ -286,6 +295,7 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
       const payAmount = parseNumberString(row.amount);
       if (cust && cust.debt > 0 && payAmount > cust.debt) {
         setError(`Số tiền thu của [${cust.name}] (${formatCurrency(payAmount)}) không được vượt quá số nợ hiện tại (${formatCurrency(cust.debt)}).`);
+        isSubmittingRef.current = false;
         return;
       }
     }
@@ -390,6 +400,16 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
               const rowZIndex = isActive ? 999999 : (rows.length - index) * 10;
               const hasDebt = selectedCust && selectedCust.debt > 0;
 
+              // Lọc bỏ những khách hàng đã được chọn ở các dòng khác (tự động ẩn khỏi danh sách của ô chọn khác)
+              const otherSelectedCustomerIds = new Set(
+                rows
+                  .filter((r) => r.tempId !== row.tempId && r.selectedCustomerId)
+                  .map((r) => r.selectedCustomerId)
+              );
+              const availableCustomers = customers.filter(
+                (c) => !otherSelectedCustomerIds.has(c.id)
+              );
+
               return (
                 <View key={row.tempId} style={[styles.tableRow, { zIndex: rowZIndex, elevation: rowZIndex }]}>
                   {/* Hàng chính: Ô chọn khách, Ô tiền và Nút xóa nằm trên cùng một hàng ngang căn chỉnh hoàn hảo */}
@@ -399,7 +419,7 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
                       <CustomSelect
                         value={selectedCust}
                         placeholder="Chọn khách hàng..."
-                        options={customers}
+                        options={availableCustomers}
                         dropUp={index >= Math.max(1, rows.length - 2)}
                         onOpenChange={(isOpen) => setActiveRowTempId(isOpen ? row.tempId : null)}
                         onSelect={(c) => {
@@ -409,7 +429,7 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
                             newAmt = formatNumberString(Math.round(c.debt).toString());
                             setError(`Số tiền thu của [${c.name}] tự động điều chỉnh về mức nợ tối đa là ${formatCurrency(c.debt)}.`);
                           }
-                          handleUpdateRow(row.tempId, { selectedCustomerId: c.id, amount: newAmt });
+                          handleUpdateRow(row.tempId, { selectedCustomerId: c?.id || null, amount: newAmt });
                         }}
                         renderSelected={(c) => c.name}
                         renderOption={(c) => (

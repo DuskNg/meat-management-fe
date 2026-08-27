@@ -18,6 +18,7 @@ import AdminPermissionModal from '../../src/components/AdminPermissionModal';
 import AdminLogsModal from '../../src/components/AdminLogsModal';
 import AdminAiUsageModal from '../../src/components/AdminAiUsageModal';
 import AdminOwnerDetailModal from '../../src/components/AdminOwnerDetailModal';
+import AdminReconciliationModal from '../../src/components/AdminReconciliationModal';
 import PopupModal from '../../src/components/PopupModal';
 
 export default function AdminDashboard() {
@@ -31,6 +32,7 @@ export default function AdminDashboard() {
   const logsModalRef = useRef(null);
   const aiUsageModalRef = useRef(null);
   const ownerDetailModalRef = useRef(null);
+  const reconciliationModalRef = useRef(null);
   const popupModalRef = useRef(null);
 
   // Tải danh sách người dùng
@@ -433,6 +435,13 @@ export default function AdminDashboard() {
                         </TouchableOpacity>
 
                         <TouchableOpacity
+                          style={[styles.aiUsageBtn, { backgroundColor: '#059669' }]}
+                          onPress={() => reconciliationModalRef.current?.open(item)}
+                        >
+                          <Text style={styles.actionBtnText}>📊 Đối soát</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
                           style={styles.aiUsageBtn}
                           onPress={() => aiUsageModalRef.current?.open(item)}
                         >
@@ -455,12 +464,15 @@ export default function AdminDashboard() {
         </ScrollView>
       )}
 
-      {/* Khai báo modal phân quyền, logs, workspace và popup sử dụng ref */}
+      {/* Khai báo modal phân quyền, đối soát, logs, workspace và popup sử dụng ref */}
       <AdminPermissionModal
         ref={permissionModalRef}
         onSaveSuccess={handlePermissionSaveSuccess}
       />
       
+      <AdminReconciliationModal
+        ref={reconciliationModalRef}
+      />
       <AdminLogsModal
         ref={logsModalRef}
       />

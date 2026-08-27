@@ -85,41 +85,50 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
     setError('');
   };
 
-  // 3. Kiểm tra PIN trước khi thực hiện thao tác tài chính nhạy cảm
+  // 3. Kiểm tra PIN trước khi thực hiện thao tác tài chính nhạy cảm (Chặn bấm đúp / spam nút bấm)
   const requirePin = async (action) => {
-    const pinExists = await hasPin();
-    if (!pinExists) {
-      // Chưa có PIN → yêu cầu tạo mới
-      pinSetupRef.current?.open(action);
-      return;
-    }
-    const sessionOk = await isSessionValid();
-    if (sessionOk) {
-      // Phiên còn hạn → thực hiện ngay không cần nhập lại PIN
-      action();
-    } else {
-      // Phiên hết hạn → yêu cầu nhập PIN
-      pinInputRef.current?.open(action, 'xác nhận thu tiền');
+    if (loading || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    try {
+      const pinExists = await hasPin();
+      if (!pinExists) {
+        isSubmittingRef.current = false;
+        pinSetupRef.current?.open(action);
+        return;
+      }
+      const sessionOk = await isSessionValid();
+      if (sessionOk) {
+        // Phiên còn hạn → thực hiện ngay không cần nhập lại PIN
+        await action();
+      } else {
+        isSubmittingRef.current = false;
+        pinInputRef.current?.open(action, 'xác nhận thu tiền');
+      }
+    } catch (err) {
+      isSubmittingRef.current = false;
+      throw err;
     }
   };
 
   // 4. Ghi nhận thu tiền khách trả nợ (gọi sau khi xác thực PIN thành công)
   const handleSubmit = async () => {
-    if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
     if (!amount || amount.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
+      isSubmittingRef.current = false;
       return;
     }
     const payAmount = parseNumberString(amount);
 
     if (payAmount <= 0) {
       setError('Số tiền trả nợ phải lớn hơn 0 (Ví dụ: 200.000).');
+      isSubmittingRef.current = false;
       return;
     }
 
     // Validate không cho phép vượt quá tổng nợ của tháng
     if (maxAmount !== null && payAmount > maxAmount) {
       setError(`Số tiền trả nợ không được vượt quá tổng nợ của tháng là ${formatCurrency(maxAmount)}.`);
+      isSubmittingRef.current = false;
       return;
     }
 
