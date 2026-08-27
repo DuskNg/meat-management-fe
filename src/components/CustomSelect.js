@@ -25,9 +25,9 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
  * Component CustomSelect dùng chung cho toàn bộ dự án:
  * - Hỗ trợ gõ tìm kiếm không dấu / tiếng Việt mượt mà.
  * - Trên Web: render dropdown qua Portal ra document.body → luôn đè lên tất cả giao diện (zIndex tối đa).
- * - Trên Mobile: dùng zIndex/elevation chuẩn React Native.
+ * - Trên Mobile: TextInput nhận focus trực tiếp → bàn phím ảo hiển thị ngay lập tức.
  * - Tự động nảy lên trên (Drop Up) khi không đủ khoảng trống phía dưới.
- * - Bấm lần 2 vào ô select để thu gọn menu.
+ * - Nút mũi tên riêng biệt để toggle đóng/mở dropdown.
  * - Tự động đóng khi click ra ngoài trên Web.
  */
 const CustomSelect = ({
@@ -56,6 +56,8 @@ const CustomSelect = ({
   // ID portal riêng biệt cho mỗi instance tránh xung đột key
   const portalIdRef = useRef(`csp-${Math.random().toString(36).slice(2)}`);
   const portalElRef = useRef(null);
+  // Ref để hủy timeout đóng dropdown từ onBlur khi người dùng bấm chọn option
+  const blurTimeoutRef = useRef(null);
 
   // Nhãn hiển thị của mục đã chọn
   const valueLabel = value ? (renderSelected ? renderSelected(value) : getOptionLabel(value)) : '';
@@ -80,10 +82,11 @@ const CustomSelect = ({
     return () => document.removeEventListener('mousedown', closeOnOutsideClick);
   }, [open, onOpenChange]);
 
-  // Cleanup: xóa DOM portal khi component bị unmount
+  // Cleanup: xóa DOM portal và hủy timeout khi component bị unmount
   useEffect(() => {
     return () => {
-      if (portalElRef.current && document.body.contains(portalElRef.current)) {
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+      if (portalElRef.current && typeof document !== 'undefined' && document.body.contains(portalElRef.current)) {
         document.body.removeChild(portalElRef.current);
         portalElRef.current = null;
       }
@@ -109,18 +112,22 @@ const CustomSelect = ({
     });
   }, [dropUp]);
 
-  const toggleOpen = useCallback((nextOpen) => {
-    if (nextOpen && !disabled) {
-      measureAndOpen();
-      setOpen(true);
-      setSearch('');
-      if (onOpenChange) onOpenChange(true);
-    } else {
-      setOpen(false);
-      setSearch('');
-      if (onOpenChange) onOpenChange(false);
-    }
+  // Mở dropdown: đo vị trí (Web) và cập nhật state
+  const openDropdown = useCallback(() => {
+    if (disabled) return;
+    if (Platform.OS === 'web') measureAndOpen();
+    setOpen(true);
+    setSearch('');
+    if (onOpenChange) onOpenChange(true);
   }, [disabled, measureAndOpen, onOpenChange]);
+
+  // Đóng dropdown
+  const closeDropdown = useCallback(() => {
+    setOpen(false);
+    setSearch('');
+    if (portalElRef.current) portalElRef.current.style.pointerEvents = 'none';
+    if (onOpenChange) onOpenChange(false);
+  }, [onOpenChange]);
 
   // Lọc danh sách tùy chọn dựa theo từ khóa tìm kiếm
   const filteredOptions = options.filter((opt) => {
@@ -128,7 +135,13 @@ const CustomSelect = ({
     return matchSearch(label, search);
   });
 
+  // Xử lý khi người dùng chọn 1 option:
+  // Phải hủy blur-timeout trước để tránh dropdown bị đóng trước khi select kịp xử lý
   const handleSelectOption = (opt) => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
     onSelect(opt);
     setOpen(false);
     setSearch('');
@@ -222,6 +235,22 @@ const CustomSelect = ({
     );
   };
 
+  // Xử lý khi nút mũi tên được bấm: toggle đóng/mở dropdown
+  const handleArrowPress = () => {
+    if (disabled) return;
+    if (open) {
+      // Đang mở → bấm mũi tên để đóng
+      inputRef.current?.blur();
+      // Web: blur không đóng dropdown (có outside-click), phải đóng thủ công
+      if (Platform.OS === 'web') {
+        closeDropdown();
+      }
+    } else {
+      // Đang đóng → focus TextInput để mở dropdown + hiện bàn phím
+      inputRef.current?.focus();
+    }
+  };
+
   return (
     <View
       ref={dropdownRef}
@@ -231,8 +260,9 @@ const CustomSelect = ({
         style,
       ]}
     >
-      {/* Ô bấm mở / thu gọn Dropdown */}
-      <TouchableOpacity
+      {/* Trigger: dùng View thường thay vì TouchableOpacity
+          để TextInput nhận sự kiện chạm trực tiếp → bàn phím ảo mobile hoạt động */}
+      <View
         style={[
           styles.selectTrigger,
           compact && styles.selectTriggerCompact,
@@ -240,20 +270,6 @@ const CustomSelect = ({
           hasError && styles.selectTriggerError,
           disabled && styles.selectTriggerDisabled,
         ]}
-        activeOpacity={0.85}
-        onPress={() => {
-          if (!disabled) {
-            const nextOpen = !open;
-            toggleOpen(nextOpen);
-            if (nextOpen) {
-              setTimeout(() => {
-                inputRef.current?.focus();
-              }, 50);
-            } else {
-              inputRef.current?.blur();
-            }
-          }
-        }}
       >
         <TextInput
           ref={inputRef}
@@ -266,18 +282,42 @@ const CustomSelect = ({
           placeholder={placeholder}
           placeholderTextColor={COLORS.textLight}
           editable={!disabled}
-          pointerEvents={open ? 'auto' : 'none'}
+          // onFocus: mở dropdown khi TextInput nhận focus (tap trực tiếp trên mobile → bàn phím hiện ngay)
+          onFocus={() => {
+            if (!disabled && !open) {
+              openDropdown();
+            }
+          }}
+          // onBlur trên Mobile: đóng dropdown sau delay 200ms để option press kịp fire trước
+          onBlur={() => {
+            if (Platform.OS !== 'web') {
+              blurTimeoutRef.current = setTimeout(() => {
+                setOpen(false);
+                setSearch('');
+                if (onOpenChange) onOpenChange(false);
+                blurTimeoutRef.current = null;
+              }, 200);
+            }
+          }}
           onChangeText={(text) => {
             setSearch(text);
             if (onInputChange) onInputChange(text);
           }}
-          onSubmitEditing={() => toggleOpen(false)}
+          onSubmitEditing={() => inputRef.current?.blur()}
           blurOnSubmit={false}
+          returnKeyType="done"
         />
-        <View style={styles.arrowContainer}>
+
+        {/* Nút mũi tên riêng biệt để toggle dropdown */}
+        <TouchableOpacity
+          onPress={handleArrowPress}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={styles.arrowContainer}
+          activeOpacity={0.6}
+        >
           <Text style={styles.selectArrow}>{open ? '▲' : '▼'}</Text>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
 
       {/* Dropdown cho Mobile (React Native thuần) */}
       {open && Platform.OS !== 'web' && (
@@ -316,10 +356,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 10,
     height: 38,
-    cursor: 'pointer',
+    ...(Platform.OS === 'web' ? { cursor: 'text' } : {}),
   },
   selectTriggerCompact: {
-    height: 28,
+    height: 34,
     paddingHorizontal: 6,
     borderColor: '#94A3B8',
   },
@@ -333,6 +373,7 @@ const styles = StyleSheet.create({
   selectTriggerDisabled: {
     backgroundColor: '#F1F5F9',
     borderColor: '#E2E8F0',
+    ...(Platform.OS === 'web' ? { cursor: 'not-allowed' } : {}),
   },
   selectTriggerInput: {
     flex: 1,
@@ -340,7 +381,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0F172A',
     padding: 0,
-    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none', cursor: 'text' } : {}),
   },
   selectTriggerTextCompact: {
     fontSize: 12,
@@ -352,6 +393,7 @@ const styles = StyleSheet.create({
   arrowContainer: {
     paddingLeft: 4,
     paddingVertical: 6,
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),
   },
   selectArrow: {
     fontSize: 10,
@@ -395,7 +437,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
-    cursor: 'pointer',
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),
   },
   selectOptionCompact: {
     paddingHorizontal: 8,

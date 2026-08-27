@@ -1013,7 +1013,7 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
     borderRadius: 6,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    height: 34,
     fontSize: 14,
     fontWeight: 'bold',
     color: '#0F172A',
