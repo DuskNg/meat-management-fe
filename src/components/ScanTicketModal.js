@@ -65,7 +65,7 @@ const DebtItem = ({ item, products, onUpdate, onRemove }) => {
     <View style={styles.debtItemRowCompact}>
       {/* Tên thịt */}
       <View style={{ flex: 2.2, marginRight: 4 }}>
-        <SelectDropdown
+        <CustomSelect
           value={selectedProduct}
           placeholder="Loại thịt..."
           options={products}
