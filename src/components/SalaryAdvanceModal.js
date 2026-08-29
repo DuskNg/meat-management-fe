@@ -1,6 +1,6 @@
 // meat-management-fe/src/components/SalaryAdvanceModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
-import { useMoneyInput } from '../hooks/useMoneyInput';
+import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
   Text,
@@ -17,7 +17,7 @@ import SmoothModal from './SmoothModal';
 // Modal cho nhân viên tạm ứng trước lương
 const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
-  const amountInput = useMoneyInput();
+  const [amountVND, setAmountVND] = useState(0);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -26,7 +26,7 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
   useImperativeHandle(ref, () => ({
     open: () => {
       setVisible(true);
-      amountInput.init(0);
+      setAmountVND(0);
       setNote('');
       setError('');
     },
@@ -48,8 +48,8 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
 
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return;
-    const advanceAmount = amountInput.getVND();
-    if (!amountInput.display || amountInput.display.trim() === '') {
+    const advanceAmount = amountVND;
+    if (!advanceAmount || advanceAmount <= 0) {
       setError('Số tiền tạm ứng không được để trống.');
       return;
     }
@@ -93,16 +93,15 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
 
         <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
           <Text style={styles.label}>Số tiền tạm ứng (VND):</Text>
-          <TextInput
-            style={[styles.input, styles.amountInput]}
-            placeholder="Ví dụ: 1.000"
-            placeholderTextColor={COLORS.textLight}
-            keyboardType="number-pad"
-            value={amountInput.display}
-            onChangeText={(text) => {
-              amountInput.onChange(text);
+          <MoneyInput
+            style={styles.amountInputContainer}
+            inputStyle={styles.amountInput}
+            value={amountVND}
+            onChangeValue={(val) => {
+              setAmountVND(val);
               setError('');
             }}
+            placeholder="Ví dụ: 1.000"
           />
 
           <Text style={styles.label}>Lý do tạm ứng / Ghi chú (Có thể bỏ qua):</Text>
@@ -193,6 +192,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     marginBottom: 12,
+  },
+  amountInputContainer: {
+    height: 48,
+    marginBottom: 12,
+    borderColor: COLORS.border,
   },
   amountInput: {
     fontSize: 20,

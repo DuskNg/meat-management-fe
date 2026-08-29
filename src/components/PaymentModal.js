@@ -1,6 +1,6 @@
 // meat-management-fe/src/components/PaymentModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
-import { useMoneyInput } from '../hooks/useMoneyInput';
+import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
   Text,
@@ -23,8 +23,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // Tự động khóa khách hàng khi mở modal thu tiền
   useResourceLock('CUSTOMER', customerId, visible, () => setVisible(false));
-  // Hook quản lý input tiền: auto hiển thị ×1000 ngay khi gõ
-  const amountInput = useMoneyInput();
+  const [amountVND, setAmountVND] = useState(0);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -51,8 +50,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setVisible(true);
       // Làm tròn số nợ đề xuất để tránh lỗi phần thập phân (float) của tiền VNĐ
       const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
-      // Khởi tạo input tiền với giá trị VNĐ (hook sẽ tự tính rawStr = numericAmount/1000)
-      amountInput.init(numericAmount);
+      setAmountVND(numericAmount);
       setMaxAmount(defaultAmount ? numericAmount : null);
       setTargetMonthKey(monthKey);
       setNote('');
@@ -67,11 +65,11 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const handleQuickAmount = (value) => {
     // Nếu số tiền chọn nhanh lớn hơn nợ tối đa của tháng, tự động gán bằng nợ tối đa và báo lỗi nhẹ
     if (maxAmount !== null && value > maxAmount) {
-      amountInput.init(maxAmount);
+      setAmountVND(maxAmount);
       setError(`Số tiền đã tự động điều chỉnh về mức nợ tối đa của tháng: ${formatCurrency(maxAmount)}`);
       return;
     }
-    amountInput.init(value);
+    setAmountVND(value);
     setError('');
   };
 
@@ -102,14 +100,8 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // 4. Ghi nhận thu tiền khách trả nợ (gọi sau khi xác thực PIN thành công)
   const handleSubmit = async () => {
-    const payAmount = amountInput.getVND();
-    if (!amountInput.display || amountInput.display.trim() === '') {
-      setError('Số tiền trả nợ không được để trống.');
-      isSubmittingRef.current = false;
-      return;
-    }
-
-    if (payAmount <= 0) {
+    const payAmount = amountVND;
+    if (!payAmount || payAmount <= 0) {
       setError('Số tiền trả nợ phải lớn hơn 0 (Ví dụ: 200.000).');
       isSubmittingRef.current = false;
       return;
@@ -169,16 +161,15 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
         <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
           {/* Nhập số tiền thu được */}
           <Text style={styles.label}>1. Số tiền khách đã trả (VND):</Text>
-          <TextInput
-            style={[styles.input, styles.amountInput]}
-            placeholder="Ví dụ: 500"
-            placeholderTextColor={COLORS.textLight}
-            keyboardType="number-pad"
-            value={amountInput.display}
-            onChangeText={(text) => {
-              amountInput.onChange(text);
+          <MoneyInput
+            style={styles.amountInputContainer}
+            inputStyle={styles.amountInput}
+            value={amountVND}
+            onChangeValue={(val) => {
+              setAmountVND(val);
               setError('');
             }}
+            placeholder="Ví dụ: 500"
           />
 
           {/* Các nút bấm điền nhanh số tiền chẵn */}
@@ -286,13 +277,15 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginBottom: 8,
   },
+  amountInputContainer: {
+    height: 60,
+    marginBottom: 16,
+    borderColor: COLORS.primary,
+  },
   amountInput: {
     fontSize: 24,
     fontWeight: 'bold',
-    textAlign: 'center',
-    height: 60,
     color: COLORS.primary,
-    borderColor: COLORS.primary,
   },
   quickAmountContainer: {
     flexDirection: 'row',

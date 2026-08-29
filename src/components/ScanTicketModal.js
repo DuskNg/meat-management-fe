@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/ScanTicketModal.js
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef, useMemo } from 'react';
+import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
   Text,
@@ -127,81 +128,44 @@ const DebtItem = ({ item, products, onUpdate, onRemove }) => {
 
       {/* Đơn giá */}
       <View style={{ flex: 1.5, marginRight: 4 }}>
-        <TextInput
-          style={styles.numInputCompact}
-          keyboardType="number-pad"
-          value={item.displayPrice}
-          selectTextOnFocus={true}
-          onChangeText={(text) => {
-            const p = parseNumberString(text);
-            const newAmt = Math.round(currentQuantityRef.current * p);
+        <MoneyInput
+          style={styles.compactMoneyContainer}
+          inputStyle={styles.numInputCompact}
+          value={item.price}
+          onChangeValue={(val) => {
+            const newAmt = Math.round(currentQuantityRef.current * val);
             onUpdate({ 
-              price: p, 
-              displayPrice: formatNumberString(text),
+              price: val, 
+              displayPrice: formatNumberString(val.toString()),
               amount: newAmt,
               displayAmount: formatNumberString(newAmt.toString())
             });
           }}
-          onBlur={() => {
-            // Dùng ref để tránh stale closure - đọc giá trị price mới nhất
-            const latestPrice = currentPriceRef.current;
-            if (latestPrice > 0 && latestPrice < 1000) {
-              const finalPrice = latestPrice * 1000;
-              const newAmt = Math.round(currentQuantityRef.current * finalPrice);
-              onUpdate({
-                price: finalPrice,
-                displayPrice: formatNumberString(finalPrice.toString()),
-                amount: newAmt,
-                displayAmount: formatNumberString(newAmt.toString())
-              });
-            }
-          }}
           placeholder="Giá"
-          placeholderTextColor={COLORS.textLight}
+          textAlign="right"
         />
       </View>
 
       {/* Thành tiền (Cho phép chỉnh sửa trực tiếp) */}
       <View style={{ flex: 1.5, marginRight: 4 }}>
-        <TextInput
-          style={[styles.numInputCompact, { textAlign: 'right', color: COLORS.danger }]}
-          keyboardType="number-pad"
-          value={item.displayAmount}
-          selectTextOnFocus={true}
-          onChangeText={(text) => {
-            const amt = parseNumberString(text);
+        <MoneyInput
+          style={styles.compactMoneyContainer}
+          inputStyle={[styles.numInputCompact, { color: COLORS.danger }]}
+          value={item.amount !== undefined ? item.amount : (item.quantity * item.price)}
+          onChangeValue={(amt) => {
             const latestPrice = currentPriceRef.current;
-            // Tính số lượng ngược từ thành tiền ÷ đơn giá (không đổi đơn giá)
             const newQty = latestPrice > 0 ? amt / latestPrice : 0;
             const roundedQty = Math.round(newQty * 100) / 100;
             const displayQty = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
             onUpdate({
               amount: amt,
-              displayAmount: formatNumberString(text),
+              displayAmount: formatNumberString(amt.toString()),
               quantity: roundedQty,
               displayQuantity: displayQty,
             });
           }}
-          onBlur={() => {
-            // Dùng ref để tránh stale closure - đọc giá trị amount mới nhất
-            const latestAmt = currentAmountRef.current;
-            if (latestAmt > 0 && latestAmt < 1000) {
-              const finalAmt = latestAmt * 1000;
-              const latestPrice = currentPriceRef.current;
-              // Tính số lượng từ thành tiền × 1000 ÷ đơn giá
-              const newQty = latestPrice > 0 ? finalAmt / latestPrice : 0;
-              const roundedQty = Math.round(newQty * 100) / 100;
-              const displayQty = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
-              onUpdate({
-                amount: finalAmt,
-                displayAmount: formatNumberString(finalAmt.toString()),
-                quantity: roundedQty,
-                displayQuantity: displayQty,
-              });
-            }
-          }}
           placeholder="T.Tiền"
-          placeholderTextColor={COLORS.textLight}
+          textAlign="right"
         />
       </View>
 
@@ -1459,9 +1423,17 @@ const styles = StyleSheet.create({
     marginTop: 3,
     outlineStyle: 'none',
   },
+  compactMoneyContainer: {
+    height: 34,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 4,
+  },
   numInputCompact: {
     width: '100%',
-    backgroundColor: COLORS.inputBg,
+    backgroundColor: '#FFFFFF',
     borderRadius: 6,
     borderWidth: 1,
     borderColor: COLORS.border,

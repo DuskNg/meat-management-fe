@@ -47,6 +47,7 @@ const CustomSelect = ({
   disabled = false,
   zIndex = 9999,
   dropUp,
+  minWidth,
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -235,7 +236,7 @@ const CustomSelect = ({
     const dropStyle = {
       position: 'absolute',
       left: dropdownPos.left,
-      width: Math.max(dropdownPos.width, 280),
+      width: dropdownStyle?.width || (minWidth !== undefined ? Math.max(dropdownPos.width, minWidth) : dropdownPos.width),
       zIndex: 999999,
       backgroundColor: '#FFFFFF',
       border: '1px solid #E2E8F0',

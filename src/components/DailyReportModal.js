@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/DailyReportModal.js
-import React, { useState, forwardRef, useImperativeHandle, useMemo } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,9 +14,11 @@ import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
+import PopupModal from './PopupModal';
 import { matchSearch } from '../utils/searchHelper';
 
-const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
+const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransaction, onEditPayment }, ref) => {
+  const popupModalRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(''); // Định dạng DD/MM/YYYY
@@ -48,10 +50,13 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
       // Reset bộ lọc và thanh tìm kiếm khi mở modal
       setActiveFilter('all');
       setSearchText('');
-      fetchReportData();
+      fetchReportData(todayStr, thisMonthStr, 'day');
     },
     close: () => {
       setVisible(false);
+    },
+    refetch: () => {
+      fetchReportData();
     },
   }));
 
@@ -117,16 +122,26 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
     return `${mm}/${yyyy}`;
   };
 
-  // 2. Tải toàn bộ giao dịch, thu tiền & khách hàng từ API
-  const fetchReportData = async () => {
+  // 2. Tải giao dịch, thu tiền & khách hàng từ API theo ngày cụ thể (hoặc tháng nếu chọn tab Tháng)
+  const fetchReportData = async (
+    targetDate = selectedDate,
+    targetMonth = selectedMonth,
+    tab = activeReportTab
+  ) => {
     setLoading(true);
     setError('');
     try {
-      // Gọi API lấy toàn bộ giao dịch, thanh toán và khách hàng của chủ buôn
+      let params = {};
+      if (tab === 'day' && targetDate) {
+        params = { date: targetDate };
+      } else if (tab === 'month' && targetMonth) {
+        params = { month: targetMonth };
+      }
+
       const [transRes, payRes, custRes] = await Promise.all([
-        api.get('/transactions'),
-        api.get('/payments'),
-        api.get('/customers')
+        api.get('/transactions', { params }),
+        api.get('/payments', { params }),
+        api.get('/customers'),
       ]);
 
       setRawTransactions(transRes.data?.data || []);
@@ -143,7 +158,13 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
   // Xử lý khi người dùng đổi ngày trên DatePicker
   const handleDateChange = (newDateStr) => {
     setSelectedDate(newDateStr);
-    fetchReportData();
+    const dateParts = newDateStr.split('/');
+    let targetMonth = selectedMonth;
+    if (dateParts.length === 3) {
+      targetMonth = `${dateParts[1]}/${dateParts[2]}`;
+      setSelectedMonth(targetMonth);
+    }
+    fetchReportData(newDateStr, targetMonth, 'day');
   };
 
   // Các hàm xử lý đổi tháng cho bộ chọn tháng
@@ -155,8 +176,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
       prevM = 12;
       prevY = y - 1;
     }
-    setSelectedMonth(`${String(prevM).padStart(2, '0')}/${prevY}`);
-    fetchReportData();
+    const newMonth = `${String(prevM).padStart(2, '0')}/${prevY}`;
+    setSelectedMonth(newMonth);
+    fetchReportData(selectedDate, newMonth, 'month');
   };
 
   const handleNextMonth = () => {
@@ -167,8 +189,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
       nextM = 1;
       nextY = y + 1;
     }
-    setSelectedMonth(`${String(nextM).padStart(2, '0')}/${nextY}`);
-    fetchReportData();
+    const newMonth = `${String(nextM).padStart(2, '0')}/${nextY}`;
+    setSelectedMonth(newMonth);
+    fetchReportData(selectedDate, newMonth, 'month');
   };
 
   // Lọc danh sách giao dịch và thanh toán theo tab hiện tại
@@ -204,6 +227,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
         id: p.id,
         type: 'payment',
         time: p.paidAt,
+        customerId: p.customerId,
+        rawObj: p,
         customerName: p.customer?.name || 'Khách ẩn danh',
         amount: parseFloat(p.amount || 0),
         note: p.note,
@@ -213,6 +238,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
         id: t.id,
         type: 'debt',
         time: t.date,
+        customerId: t.customerId,
+        rawObj: t,
         customerName: t.customer?.name || 'Khách ẩn danh',
         amount: parseFloat(t.totalAmount || 0),
         note: t.note,
@@ -235,6 +262,33 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
       return new Date(b.time) - new Date(a.time);
     });
   }, [currentTransactions, currentPayments]);
+
+  // Thao tác xóa từng đơn nợ hoặc lượt thu tiền trong báo cáo ngày
+  const handleDeleteItem = (item) => {
+    const isDebt = item.type === 'debt';
+    const typeLabel = isDebt ? 'đơn ghi nợ' : 'lượt thu tiền';
+    popupModalRef.current?.show({
+      title: `Xác nhận xóa ${typeLabel}`,
+      message: `Bạn có chắc chắn muốn xóa ${typeLabel} của ${item.customerName} không? Hành động này không thể hoàn tác.`,
+      type: 'confirm',
+      confirmText: 'Xóa',
+      cancelText: 'Hủy',
+      onConfirm: async () => {
+        try {
+          if (isDebt) {
+            await api.delete(`/transactions/${item.id}`);
+          } else {
+            await api.delete(`/payments/${item.id}`);
+          }
+          fetchReportData();
+          if (onRefresh) onRefresh();
+        } catch (err) {
+          const errMsg = err.response?.data?.message || err.message || 'Lỗi khi xóa.';
+          alert(errMsg);
+        }
+      }
+    });
+  };
 
   // Nhóm nợ theo khách hàng và lọc khách còn nợ trong tháng được chọn
   const customerMonthlyDebts = useMemo(() => {
@@ -912,116 +966,113 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
       ctx.font = 'bold 17px Arial, sans-serif';
       ctx.fillText(formatCurrency(netBalance), box3X + 10, boxY + 50);
 
-      // ─── 3. VẼ 2 CỘT CHI TIẾT (ĐƠN NỢ MỚI & THU NỢ) ───────────────────
+      // ─── 3. VẼ DANH SÁCH CHI TIẾT GIAO DỊCH (GỘP CHUNG THU NỢ & ĐƠN NỢ MỚI) ───────────────────
       let currentY = boxY + boxH + 20;
 
-      // Header Cột Đơn nợ mới
-      ctx.fillStyle = '#DC2626';
-      ctx.fillRect(leftColX, currentY, colWidth, colHeaderHeight);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 14px Arial, sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(`🔴 ĐƠN NỢ MỚI TRONG NGÀY (${newDebtOrders.length} đơn)`, leftColX + 12, currentY + 25);
+      const allDailyTx = [
+        ...newDebtOrders.map(t => ({
+          id: t.id,
+          type: 'debt',
+          customerName: t.customer?.name || 'Khách ẩn danh',
+          amount: parseFloat(t.totalAmount || 0),
+          details: t.items?.map((i) => {
+            const q = parseFloat(i.quantity);
+            const name = i.product?.name || 'Thịt';
+            const isQuick = name === 'Tiền hàng' || name.toLowerCase().startsWith('tiền');
+            return isQuick ? name : `${q}${i.product?.unit || 'kg'} ${name}`;
+          }).join(', ') || 'Nợ mới',
+        })),
+        ...paymentsCollected.map(p => ({
+          id: p.id,
+          type: 'payment',
+          customerName: p.customer?.name || 'Khách ẩn danh',
+          amount: parseFloat(p.amount || 0),
+          details: formatPaymentNote(p.note, p.paidAt),
+        })),
+      ];
 
-      // Header Cột Thu nợ
-      ctx.fillStyle = '#16A34A';
-      ctx.fillRect(rightColX, currentY, colWidth, colHeaderHeight);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillText(`🟢 THU NỢ TRONG NGÀY (${paymentsCollected.length} đợt)`, rightColX + 12, currentY + 25);
+      const totalDailyCount = allDailyTx.length;
+      const isTwoCol = totalDailyCount >= 10;
 
-      currentY += colHeaderHeight;
+      let leftItems = [];
+      let rightItems = [];
 
-      // Vẽ Hàng Cột Nợ Mới
-      let debtY = currentY;
-      if (newDebtOrders.length === 0) {
-        ctx.fillStyle = '#F8FAFC';
-        ctx.fillRect(leftColX, debtY, colWidth, rowHeight);
-        ctx.strokeStyle = '#E2E8F0';
-        ctx.strokeRect(leftColX, debtY, colWidth, rowHeight);
-
-        ctx.fillStyle = '#94A3B8';
-        ctx.font = 'italic 13px Arial, sans-serif';
-        ctx.fillText('Không có đơn nợ mới phát sinh.', leftColX + 12, debtY + 26);
-        debtY += rowHeight;
+      if (isTwoCol) {
+        const half = Math.ceil(totalDailyCount / 2);
+        leftItems = allDailyTx.slice(0, half);
+        rightItems = allDailyTx.slice(half);
       } else {
-        newDebtOrders.forEach((t, idx) => {
-          ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#FEF2F2';
-          ctx.fillRect(leftColX, debtY, colWidth, rowHeight);
-          ctx.strokeStyle = '#FECACA';
-          ctx.strokeRect(leftColX, debtY, colWidth, rowHeight);
-
-          const cName = t.customer?.name || 'Khách ẩn danh';
-          const itemsStr = t.items
-            ?.map((i) => {
-              const q = parseFloat(i.quantity);
-              const name = i.product?.name || 'Thịt';
-              const isQuick = name === 'Tiền hàng' || name.toLowerCase().startsWith('tiền');
-              return isQuick ? name : `${q}${i.product?.unit || 'kg'} ${name}`;
-            })
-            .join(', ') || 'Nợ mới';
-
-          ctx.fillStyle = '#0F172A';
-          ctx.font = 'bold 13px Arial, sans-serif';
-          ctx.fillText(`${idx + 1}. ${cName}`, leftColX + 10, debtY + 18);
-
-          ctx.fillStyle = '#64748B';
-          ctx.font = '11px Arial, sans-serif';
-          const subText = wrapText(ctx, itemsStr, colWidth - 160)[0] || '';
-          ctx.fillText(subText, leftColX + 24, debtY + 34);
-
-          ctx.fillStyle = '#DC2626';
-          ctx.font = 'bold 13px Arial, sans-serif';
-          ctx.textAlign = 'right';
-          ctx.fillText(`+${formatCurrency(t.totalAmount)}`, leftColX + colWidth - 10, debtY + 26);
-          ctx.textAlign = 'left';
-
-          debtY += rowHeight;
-        });
+        leftItems = allDailyTx;
       }
 
-      // Vẽ Hàng Cột Thu Nợ
-      let payY = currentY;
-      if (paymentsCollected.length === 0) {
-        ctx.fillStyle = '#F8FAFC';
-        ctx.fillRect(rightColX, payY, colWidth, rowHeight);
-        ctx.strokeStyle = '#E2E8F0';
-        ctx.strokeRect(rightColX, payY, colWidth, rowHeight);
+      const drawColumn = (items, startX, colW, headerTitle) => {
+        let colY = currentY;
 
-        ctx.fillStyle = '#94A3B8';
-        ctx.font = 'italic 13px Arial, sans-serif';
-        ctx.fillText('Không có khoản thu nợ nào.', rightColX + 12, payY + 26);
-        payY += rowHeight;
+        // Header cột
+        ctx.fillStyle = '#1E293B';
+        ctx.fillRect(startX, colY, colW, colHeaderHeight);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 14px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(headerTitle, startX + 12, colY + 25);
+
+        colY += colHeaderHeight;
+
+        if (items.length === 0) {
+          ctx.fillStyle = '#F8FAFC';
+          ctx.fillRect(startX, colY, colW, rowHeight);
+          ctx.strokeStyle = '#E2E8F0';
+          ctx.strokeRect(startX, colY, colW, rowHeight);
+
+          ctx.fillStyle = '#94A3B8';
+          ctx.font = 'italic 13px Arial, sans-serif';
+          ctx.fillText('Không có giao dịch nào.', startX + 12, colY + 26);
+          colY += rowHeight;
+        } else {
+          items.forEach((item, idx) => {
+            const isDebt = item.type === 'debt';
+            ctx.fillStyle = isDebt ? (idx % 2 === 0 ? '#FFFFFF' : '#FEF2F2') : (idx % 2 === 0 ? '#FFFFFF' : '#F0FDF4');
+            ctx.fillRect(startX, colY, colW, rowHeight);
+            ctx.strokeStyle = isDebt ? '#FECACA' : '#BBF7D0';
+            ctx.strokeRect(startX, colY, colW, rowHeight);
+
+            ctx.fillStyle = '#0F172A';
+            ctx.font = 'bold 13px Arial, sans-serif';
+            ctx.fillText(`${item.globalIdx || idx + 1}. ${item.customerName}`, startX + 10, colY + 18);
+
+            ctx.fillStyle = '#64748B';
+            ctx.font = '11px Arial, sans-serif';
+            const subText = wrapText(ctx, item.details || '', colW - 160)[0] || '';
+            ctx.fillText(subText, startX + 24, colY + 34);
+
+            ctx.fillStyle = isDebt ? '#DC2626' : '#16A34A';
+            ctx.font = 'bold 13px Arial, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`, startX + colW - 10, colY + 26);
+            ctx.textAlign = 'left';
+
+            colY += rowHeight;
+          });
+        }
+        return colY;
+      };
+
+      // Đánh chỉ số toàn cục (globalIdx)
+      leftItems = leftItems.map((item, idx) => ({ ...item, globalIdx: idx + 1 }));
+      rightItems = rightItems.map((item, idx) => ({ ...item, globalIdx: leftItems.length + idx + 1 }));
+
+      let endYLeft = currentY;
+      let endYRight = currentY;
+
+      if (!isTwoCol) {
+        endYLeft = drawColumn(leftItems, leftColX, width - 50, `📝 DANH SÁCH GIAO DỊCH CÔNG NỢ TRONG NGÀY (${totalDailyCount} giao dịch)`);
       } else {
-        paymentsCollected.forEach((p, idx) => {
-          ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F0FDF4';
-          ctx.fillRect(rightColX, payY, colWidth, rowHeight);
-          ctx.strokeStyle = '#BBF7D0';
-          ctx.strokeRect(rightColX, payY, colWidth, rowHeight);
-
-          const cName = p.customer?.name || 'Khách ẩn danh';
-          const noteStr = formatPaymentNote(p.note, p.paidAt);
-
-          ctx.fillStyle = '#0F172A';
-          ctx.font = 'bold 13px Arial, sans-serif';
-          ctx.fillText(`${idx + 1}. ${cName}`, rightColX + 10, payY + 18);
-
-          ctx.fillStyle = '#64748B';
-          ctx.font = '11px Arial, sans-serif';
-          const subText = wrapText(ctx, noteStr, colWidth - 160)[0] || '';
-          ctx.fillText(subText, rightColX + 24, payY + 34);
-
-          ctx.fillStyle = '#16A34A';
-          ctx.font = 'bold 13px Arial, sans-serif';
-          ctx.textAlign = 'right';
-          ctx.fillText(`-${formatCurrency(p.amount)}`, rightColX + colWidth - 10, payY + 26);
-          ctx.textAlign = 'left';
-
-          payY += rowHeight;
-        });
+        endYLeft = drawColumn(leftItems, leftColX, colWidth, `📝 CHI TIẾT GIAO DỊCH (Phần 1 - ${leftItems.length} đơn)`);
+        endYRight = drawColumn(rightItems, rightColX, colWidth, `📝 CHI TIẾT GIAO DỊCH (Phần 2 - ${rightItems.length} đơn)`);
       }
 
       // ─── 4. VẼ FOOTER CHO CANVAS 1 & TẢI XUỐNG ───────────────────
-      const footerY1 = Math.max(debtY, payY) + 20;
+      const footerY1 = Math.max(endYLeft, endYRight) + 20;
       ctx.strokeStyle = '#CBD5E1';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -1146,10 +1197,14 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
-        <View style={styles.dragBar} />
-        <Text style={styles.modalTitle}>
-          {activeReportTab === 'day' ? '📊 THỐNG KÊ CÔNG NỢ TRONG NGÀY' : '📊 THỐNG KÊ CÔNG NỢ THEO THÁNG'}
-        </Text>
+        <View style={styles.modalHeaderRow}>
+          <Text style={styles.modalTitle}>
+            {activeReportTab === 'day' ? '📊 THỐNG KÊ CÔNG NỢ TRONG NGÀY' : '📊 THỐNG KÊ CÔNG NỢ THEO THÁNG'}
+          </Text>
+          <TouchableOpacity style={styles.closeHeaderBtn} onPress={() => setVisible(false)}>
+            <Text style={styles.closeHeaderBtnText}>✕</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Thanh chọn tab thống kê */}
         <View style={styles.tabContainer}>
@@ -1159,6 +1214,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
               setActiveReportTab('day');
               setError('');
               setSearchText('');
+              fetchReportData(selectedDate, selectedMonth, 'day');
             }}
           >
             <Text style={[styles.tabButtonText, activeReportTab === 'day' && styles.tabButtonTextActive]}>
@@ -1171,6 +1227,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
               setActiveReportTab('month');
               setError('');
               setSearchText('');
+              fetchReportData(selectedDate, selectedMonth, 'month');
             }}
           >
             <Text style={[styles.tabButtonText, activeReportTab === 'month' && styles.tabButtonTextActive]}>
@@ -1182,7 +1239,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
         {/* Bộ chọn thời gian (Ngày hoặc Tháng) */}
         {activeReportTab === 'day' ? (
           <View style={styles.datePickerContainer}>
-            <Text style={styles.sectionLabel}>Chọn ngày xem thống kê:</Text>
             <DatePickerInput
               value={selectedDate}
               onChange={handleDateChange}
@@ -1291,6 +1347,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
                 </Text>
               </View>
             ) : (
+              // Hiển thị danh sách chi tiết 1 phần tử 1 hàng (full-width)
               <ScrollView
                 style={styles.scrollList}
                 contentContainerStyle={styles.scrollListContent}
@@ -1308,7 +1365,31 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
                         ]}
                       >
                         <View style={styles.itemHeader}>
-                          <Text style={styles.customerName}>{item.customerName}</Text>
+                          <View style={styles.customerNameRow}>
+                            <Text style={styles.customerName}>{item.customerName}</Text>
+                            <TouchableOpacity
+                              style={styles.itemEditBtn}
+                              onPress={() => {
+                                if (isDebt && onEditTransaction) {
+                                  onEditTransaction(item.rawObj || item);
+                                } else if (!isDebt && onEditPayment) {
+                                  onEditPayment(item.rawObj || item);
+                                }
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.itemEditBtnText}>Sửa</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.itemDeleteBtn}
+                              onPress={() => handleDeleteItem(item)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.itemDeleteBtnText}>Xóa</Text>
+                            </TouchableOpacity>
+                          </View>
+
                           <Text style={[styles.itemAmount, isDebt ? styles.amountDebt : styles.amountPayment]}>
                             {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
                           </Text>
@@ -1381,6 +1462,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt }, ref) => {
           </TouchableOpacity>
         </View>
       </View>
+      {/* Popup xác nhận xóa */}
+      <PopupModal ref={popupModalRef} />
     </SmoothModal>
   );
 });
@@ -1390,28 +1473,50 @@ export default DailyReportModal;
 const styles = StyleSheet.create({
   modalView: {
     backgroundColor: COLORS.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '90%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 12,
+    marginTop: 20,
+    maxHeight: '94%',
+    flex: 1,
   },
-  dragBar: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-    alignSelf: 'center',
-    marginBottom: 15,
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: 15,
+    flex: 1,
+  },
+  closeHeaderBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  closeHeaderBtnText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#64748B',
+  },
+  customerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    marginRight: 8,
   },
   datePickerContainer: {
-    marginBottom: 16,
+    marginBottom: 8,
   },
   sectionLabel: {
     fontSize: 13,
@@ -1446,16 +1551,19 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flexDirection: 'column',
+    flex: 1,
+    overflow: 'hidden',
   },
   summaryContainer: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 8,
   },
   summaryBox: {
     flex: 1,
-    padding: 12,
-    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
     borderWidth: 1.5,
     alignItems: 'flex-start',
     ...SHADOWS.card,
@@ -1480,30 +1588,30 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   summaryBoxLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   summaryBoxValue: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
     color: COLORS.text,
   },
   listTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 10,
+    marginBottom: 6,
   },
   emptyContainer: {
-    paddingVertical: 40,
+    paddingVertical: 30,
     alignItems: 'center',
     backgroundColor: COLORS.inputBg,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   emptyText: {
     color: COLORS.textLight,
@@ -1513,8 +1621,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   scrollList: {
-    maxHeight: 320,
-    marginBottom: 16,
+    flex: 1,
+    marginBottom: 8,
   },
   itemCard: {
     borderRadius: 10,
@@ -1524,6 +1632,36 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     flexDirection: 'column',
     gap: 4,
+  },
+  itemEditBtn: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemEditBtnText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1D4ED8',
+  },
+  itemDeleteBtn: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemDeleteBtnText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#DC2626',
   },
   itemCardDebt: {
     backgroundColor: COLORS.card,
@@ -1584,7 +1722,10 @@ const styles = StyleSheet.create({
   footerButtons: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 8,
+    marginTop: 'auto',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
   },
   exportButton: {
     flex: 1,
@@ -1625,21 +1766,20 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   searchContainer: {
-    marginBottom: 16,
+    marginBottom: 8,
     position: 'relative',
     justifyContent: 'center',
   },
   searchInput: {
     backgroundColor: COLORS.card,
-    height: 40,
-    borderRadius: 10,
-    paddingLeft: 12,
-    paddingRight: 35,
-    fontSize: 13,
+    height: 34,
+    borderRadius: 8,
+    paddingLeft: 10,
+    paddingRight: 30,
+    fontSize: 12,
     color: COLORS.text,
-    borderWidth: 1.2,
+    borderWidth: 1,
     borderColor: COLORS.border,
-    ...SHADOWS.card,
   },
   clearSearch: {
     position: 'absolute',

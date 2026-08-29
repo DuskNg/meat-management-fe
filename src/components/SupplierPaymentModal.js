@@ -1,6 +1,6 @@
 // meat-management-fe/src/components/SupplierPaymentModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
-import { useMoneyInput } from '../hooks/useMoneyInput';
+import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
   Text,
@@ -17,7 +17,7 @@ import SmoothModal from './SmoothModal';
 // Modal ghi nhận việc chủ sạp trả tiền hàng cho nhà cung cấp
 const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
-  const amountInput = useMoneyInput();
+  const [amountVND, setAmountVND] = useState(0);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -27,7 +27,7 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
     open: (defaultAmount = '') => {
       setVisible(true);
       const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
-      amountInput.init(numericAmount);
+      setAmountVND(numericAmount);
       setNote('');
       setError('');
     },
@@ -50,13 +50,9 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
   // Xác nhận lưu giao dịch trả tiền
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return;
-    const payAmount = amountInput.getVND();
-    if (!amountInput.display || amountInput.display.trim() === '') {
-      setError('Số tiền trả nợ không được để trống.');
-      return;
-    }
-    if (payAmount <= 0) {
-      setError('Số tiền trả nợ phải lớn hơn 0.');
+    const payAmount = amountVND;
+    if (!payAmount || payAmount <= 0) {
+      setError('Số tiền trả nợ không được để trống và phải lớn hơn 0.');
       return;
     }
 
@@ -95,16 +91,15 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
 
         <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
           <Text style={styles.label}>Số tiền đã trả (VND):</Text>
-          <TextInput
-            style={[styles.input, styles.amountInput]}
-            placeholder="Ví dụ: 5.000"
-            placeholderTextColor={COLORS.textLight}
-            keyboardType="number-pad"
-            value={amountInput.display}
-            onChangeText={(text) => {
-              amountInput.onChange(text);
+          <MoneyInput
+            style={styles.amountInputContainer}
+            inputStyle={styles.amountInput}
+            value={amountVND}
+            onChangeValue={(val) => {
+              setAmountVND(val);
               setError('');
             }}
+            placeholder="Ví dụ: 5.000"
           />
 
           <Text style={styles.label}>Cách thức thanh toán / Ghi chú (Có thể bỏ qua):</Text>
@@ -195,6 +190,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     marginBottom: 12,
+  },
+  amountInputContainer: {
+    height: 48,
+    marginBottom: 12,
+    borderColor: COLORS.border,
   },
   amountInput: {
     fontSize: 20,

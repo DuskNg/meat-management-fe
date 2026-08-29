@@ -22,6 +22,9 @@ import { hasPin, isSessionValid } from '../store/pinStore';
 import { matchItemSearch } from '../utils/searchHelper';
 import ProductSelector from './ProductSelector';
 
+import MoneyInput from './MoneyInput';
+import { showGlobalToast } from '../store/toastStore';
+
 const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, ref) => {
   // ─── Helper: Chuyển ISO date string/Date object sang DD/MM/YYYY ───────────
   const formatDateToDisplay = (dateInput) => {
@@ -52,13 +55,17 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
 
   // ─── Helper: định dạng hàng nghìn dấu chấm ─────────────────────────────
   const formatNumberString = (value) => {
-    const clean = value.replace(/[^0-9]/g, '');
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'number') return new Intl.NumberFormat('vi-VN').format(value);
+    const clean = String(value).replace(/[^0-9]/g, '');
     if (clean === '') return '';
     return new Intl.NumberFormat('vi-VN').format(parseInt(clean, 10));
   };
 
   const parseNumberString = (formatted) => {
-    const clean = formatted.replace(/[^0-9]/g, '');
+    if (formatted === undefined || formatted === null || formatted === '') return 0;
+    if (typeof formatted === 'number') return isNaN(formatted) ? 0 : formatted;
+    const clean = String(formatted).replace(/[^0-9]/g, '');
     return clean ? parseInt(clean, 10) : 0;
   };
 
@@ -86,6 +93,12 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   // Thông tin chung của cả hóa đơn
   const [dateStr, setDateStr] = useState('');
   const [note, setNote] = useState('');
+
+  // State hỗ trợ sửa Đơn nợ nhanh vs Đơn nợ chi tiết
+  const [activeTab, setActiveTab] = useState('manual'); // 'manual' hoặc 'quick'
+  const [quickProductName, setQuickProductName] = useState('Tiền hàng');
+  const [quickAmountVND, setQuickAmountVND] = useState(0);
+  const [quickProductId, setQuickProductId] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -121,42 +134,61 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
       setTransactionId(transaction.id);
       setCustomerId(transaction.customerId || ownerCustomerId); // Ưu tiên ID trong giao dịch, fallback sang khách hàng đang xem
       
-      // Nhóm và cộng dồn các mặt hàng cùng loại thịt từ lịch sử
-      const mergedMap = {};
-      (transaction.items || []).forEach((it) => {
-        // Tìm sản phẩm tương ứng trong danh mục để lấy thông tin đầy đủ
-        const prod = products.find((p) => p.id === it.productId) || {
-          id: it.productId,
-          name: it.product?.name || 'Sản phẩm đã bị xóa',
-          unit: it.product?.unit || 'kg',
-          defaultPrice: parseFloat(it.price),
-        };
-        const key = prod.id;
-        const qty = parseFloat(it.quantity);
-        const priceVal = parseFloat(it.price);
-        if (mergedMap[key]) {
-          // Nếu đã tồn tại loại thịt này, cộng dồn số lượng và cập nhật đơn giá mới nhất
-          mergedMap[key].quantity += qty;
-          mergedMap[key].amount = mergedMap[key].quantity * priceVal;
-          mergedMap[key].displayQuantity = mergedMap[key].quantity.toString();
-          mergedMap[key].price = priceVal;
-          mergedMap[key].displayPrice = formatNumberString(priceVal.toString());
-        } else {
-          // Nếu chưa tồn tại, khởi tạo phần tử mới
-          mergedMap[key] = {
-            tempId: it.id || Math.random(),
-            product: prod,
-            quantity: qty,
-            price: priceVal,
-            displayQuantity: it.quantity.toString(),
-            displayPrice: formatNumberString(priceVal.toString()),
-            amount: qty * priceVal,
-          };
-        }
-      });
-      const initialCart = Object.values(mergedMap);
+      // Phân loại đơn là Ghi nợ nhanh hay Ghi nợ chi tiết
+      const isQuick = (transaction.items || []).some(
+        (it) => it.product?.name === 'Tiền hàng' || (it.product?.name && it.product.name.toLowerCase().startsWith('tiền'))
+      ) || transaction.note === 'Ghi nợ nhanh';
 
-      setCartItems(initialCart);
+      if (isQuick) {
+        setActiveTab('quick');
+        const firstItem = transaction.items?.[0];
+        const itemAmount = firstItem ? parseFloat(firstItem.price) * parseFloat(firstItem.quantity || 1) : parseFloat(transaction.totalAmount || 0);
+        setQuickAmountVND(itemAmount || parseFloat(transaction.totalAmount || 0));
+        setQuickProductName(firstItem?.product?.name || 'Tiền hàng');
+        setQuickProductId(firstItem?.productId || firstItem?.product?.id || null);
+        setCartItems([]);
+      } else {
+        setActiveTab('manual');
+        setQuickAmountVND(0);
+        setQuickProductName('Tiền hàng');
+
+        // Nhóm và cộng dồn các mặt hàng cùng loại thịt từ lịch sử
+        const mergedMap = {};
+        (transaction.items || []).forEach((it) => {
+          // Tìm sản phẩm tương ứng trong danh mục để lấy thông tin đầy đủ
+          const prod = products.find((p) => p.id === it.productId) || {
+            id: it.productId,
+            name: it.product?.name || 'Sản phẩm đã bị xóa',
+            unit: it.product?.unit || 'kg',
+            defaultPrice: parseFloat(it.price),
+          };
+          const key = prod.id;
+          const qty = parseFloat(it.quantity);
+          const priceVal = parseFloat(it.price);
+          if (mergedMap[key]) {
+            // Nếu đã tồn tại loại thịt này, cộng dồn số lượng và cập nhật đơn giá mới nhất
+            mergedMap[key].quantity += qty;
+            mergedMap[key].amount = mergedMap[key].quantity * priceVal;
+            mergedMap[key].displayQuantity = mergedMap[key].quantity.toString();
+            mergedMap[key].price = priceVal;
+            mergedMap[key].displayPrice = formatNumberString(priceVal.toString());
+          } else {
+            // Nếu chưa tồn tại, khởi tạo phần tử mới
+            mergedMap[key] = {
+              tempId: it.id || Math.random(),
+              product: prod,
+              quantity: qty,
+              price: priceVal,
+              displayQuantity: it.quantity.toString(),
+              displayPrice: formatNumberString(priceVal.toString()),
+              amount: qty * priceVal,
+            };
+          }
+        });
+        const initialCart = Object.values(mergedMap);
+        setCartItems(initialCart);
+      }
+
       setCurrentProduct(null);
       setCurrentQuantity('');
       setCurrentPrice('');
@@ -285,14 +317,38 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   // ─── Lưu cập nhật đơn hàng ──────────────────────────────────
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
-    if (cartItems.length === 0) {
-      setError('Đơn hàng không được để trống. Vui lòng thêm ít nhất 1 mặt hàng.');
-      return;
-    }
+    
     const isoDate = parseDateString(dateStr);
     if (!isoDate) {
       setError('Ngày ghi nợ không hợp lệ (Ví dụ: 14/06/2026).');
       return;
+    }
+
+    let payloadItems = [];
+    if (activeTab === 'quick') {
+      const qAmt = parseNumberString(quickAmountVND);
+      if (!qAmt || qAmt <= 0) {
+        setError('Vui lòng nhập số tiền nợ hợp lệ lớn hơn 0 đ.');
+        return;
+      }
+      payloadItems = [
+        {
+          productId: quickProductId || null,
+          productName: (quickProductName || 'Tiền hàng').trim(),
+          quantity: 1,
+          price: qAmt,
+        },
+      ];
+    } else {
+      if (cartItems.length === 0) {
+        setError('Vui lòng chọn ít nhất 1 loại thịt vào danh sách.');
+        return;
+      }
+      payloadItems = cartItems.map((item) => ({
+        productId: item.product.id,
+        quantity: item.quantity,
+        price: item.price,
+      }));
     }
 
     setError('');
@@ -302,15 +358,12 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
       const response = await api.put(`/transactions/${transactionId}`, {
         date: isoDate,
         note: note.trim() || null,
-        items: cartItems.map((item) => ({
-          productId: item.product.id,
-          quantity: item.quantity,
-          price: item.price,
-        })),
+        items: payloadItems,
       });
 
       if (response.data.success) {
         setVisible(false);
+        showGlobalToast('Đã cập nhật đơn ghi nợ thành công!', 'success');
         if (onRefresh) onRefresh();
       } else {
         setError(response.data.message || 'Lỗi cập nhật. Vui lòng thử lại.');
@@ -350,7 +403,28 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
           {/* Thông báo lỗi chung */}
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
-        {/* ── NGÀY GHI NỢ ĐƯA LÊN TRÊN CÙNG ĐẦU TIÊN ── */}
+        {/* ── THANH CHUYỂN TAB CÔNG NỢ (Chi tiết / Nợ nhanh) ── */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'manual' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('manual')}
+          >
+            <Text style={[styles.tabButtonText, activeTab === 'manual' && styles.tabButtonTextActive]}>
+              🥩 Nợ chi tiết (Theo thịt)
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'quick' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('quick')}
+          >
+            <Text style={[styles.tabButtonText, activeTab === 'quick' && styles.tabButtonTextActive]}>
+              ⚡ Nợ nhanh
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── NGÀY GHI NỢ ── */}
         <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
         <DatePickerInput
           value={dateStr}
@@ -360,47 +434,79 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
 
         <View style={styles.divider} />
 
-        {/* ── GIỎ HÀNG: Danh sách mặt hàng đã thêm ── */}
-        {cartItems.length > 0 && (
-          <View style={styles.cartSection}>
-            <View style={styles.cartHeader}>
-              <Text style={styles.cartTitle}>
-                🛒 Đơn hàng ({cartItems.length} mặt hàng)
-              </Text>
-              <Text style={styles.cartTotalText}>{formatCurrency(cartTotal)}</Text>
-            </View>
-            <ScrollView style={styles.cartItemsScroll} nestedScrollEnabled={true}>
-              {cartItems.map((item) => (
-                <View key={item.tempId} style={styles.cartItem}>
-                  <TouchableOpacity style={styles.cartItemInfo} onPress={() => handleEditCartItem(item)}>
-                    <Text style={styles.cartItemText}>
-                      <Text style={styles.cartItemName}>{item.product.name}</Text>
-                      <Text style={styles.cartItemMeta}>
-                        {` - ${item.quantity} ${item.product.unit} × ${item.displayPrice}đ = `}
-                        <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>
-                          {formatCurrency(item.amount)}
-                        </Text>
-                      </Text>
-                    </Text>
-                  </TouchableOpacity>
-                  {/* Nút xóa mặt hàng khỏi giỏ */}
-                  <TouchableOpacity
-                    style={styles.cartEditBtn}
-                    onPress={() => handleEditCartItem(item)}
-                  >
-                    <Text style={styles.cartEditText}>✏️ Sửa</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.cartRemoveBtn}
-                    onPress={() => handleRemoveFromCart(item.tempId)}
-                  >
-                    <Text style={styles.cartRemoveText}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
+        {activeTab === 'quick' ? (
+          /* ── GIAO DIỆN SỬA ĐƠN NỢ NHANH ── */
+          <View style={styles.quickSection}>
+            <Text style={styles.label}>📝 Tên tiền hàng / mặt hàng:</Text>
+            <TextInput
+              style={styles.input}
+              value={quickProductName}
+              onChangeText={setQuickProductName}
+              placeholder="Tiền hàng"
+              placeholderTextColor={COLORS.textLight}
+            />
+
+            <Text style={[styles.label, { marginTop: 12 }]}>💵 Số tiền nợ (đ):</Text>
+            <MoneyInput
+              value={quickAmountVND}
+              onChangeValue={setQuickAmountVND}
+              placeholder="0"
+              textAlign="left"
+            />
+
+            <Text style={[styles.label, { marginTop: 12 }]}>📝 Ghi chú bổ sung (tuỳ chọn):</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ví dụ: Nợ tiền thịt giao buổi sáng..."
+              placeholderTextColor={COLORS.textLight}
+              value={note}
+              onChangeText={setNote}
+            />
           </View>
-        )}
+        ) : (
+          /* ── GIAO DIỆN SỬA ĐƠN NỢ CHI TIẾT ── */
+          <View>
+            {/* ── GIỎ HÀNG: Danh sách mặt hàng đã thêm ── */}
+            {cartItems.length > 0 && (
+              <View style={styles.cartSection}>
+                <View style={styles.cartHeader}>
+                  <Text style={styles.cartTitle}>
+                    🛒 Đơn hàng ({cartItems.length} mặt hàng)
+                  </Text>
+                  <Text style={styles.cartTotalText}>{formatCurrency(cartTotal)}</Text>
+                </View>
+                <ScrollView style={styles.cartItemsScroll} nestedScrollEnabled={true}>
+                  {cartItems.map((item) => (
+                    <View key={item.tempId} style={styles.cartItem}>
+                      <TouchableOpacity style={styles.cartItemInfo} onPress={() => handleEditCartItem(item)}>
+                        <Text style={styles.cartItemText}>
+                          <Text style={styles.cartItemName}>{item.product.name}</Text>
+                          <Text style={styles.cartItemMeta}>
+                            {` - ${item.quantity} ${item.product.unit} × ${item.displayPrice}đ = `}
+                            <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>
+                              {formatCurrency(item.amount)}
+                            </Text>
+                          </Text>
+                        </Text>
+                      </TouchableOpacity>
+                      {/* Nút xóa mặt hàng khỏi giỏ */}
+                      <TouchableOpacity
+                        style={styles.cartEditBtn}
+                        onPress={() => handleEditCartItem(item)}
+                      >
+                        <Text style={styles.cartEditText}>✏️ Sửa</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.cartRemoveBtn}
+                        onPress={() => handleRemoveFromCart(item.tempId)}
+                      >
+                        <Text style={styles.cartRemoveText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
 
         {/* ── CHỌN LOẠI THỊT ── */}
         <Text style={styles.label}>
@@ -421,9 +527,8 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
           error={error}
         />
 
-        <>
-          {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
-          {currentProduct ? (
+        {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
+        {currentProduct ? (
             <View>
               {/* Khối lượng */}
               <Text style={styles.label}>
@@ -501,14 +606,15 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
               />
             </View>
           )}
-        </>
+        </View>
+      )}
         </ScrollView>
 
         {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}
-        {cartItems.length > 0 && (
+        {(activeTab === 'quick' ? quickAmountVND > 0 : cartItems.length > 0) && (
           <View style={styles.totalContainer}>
             <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
-            <Text style={styles.totalValue}>{formatCurrency(cartTotal)}</Text>
+            <Text style={styles.totalValue}>{formatCurrency(activeTab === 'quick' ? quickAmountVND : cartTotal)}</Text>
           </View>
         )}
 
@@ -523,9 +629,13 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.button, styles.submitButton, cartItems.length === 0 && styles.submitDisabled]}
+            style={[
+              styles.button,
+              styles.submitButton,
+              (activeTab === 'quick' ? quickAmountVND <= 0 : cartItems.length === 0) && styles.submitDisabled
+            ]}
             onPress={() => requirePin(handleSubmit)}
-            disabled={loading || cartItems.length === 0}
+            disabled={loading || (activeTab === 'quick' ? quickAmountVND <= 0 : cartItems.length === 0)}
           >
             {loading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
@@ -574,6 +684,46 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
     paddingBottom: 8,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 12,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  tabButtonActive: {
+    backgroundColor: '#FFFFFF',
+    ...SHADOWS.small,
+  },
+  tabButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  tabButtonTextActive: {
+    color: COLORS.dangerDark,
+    fontWeight: 'bold',
+  },
+  quickSection: {
+    marginBottom: 12,
+  },
+  input: {
+    backgroundColor: COLORS.inputBg,
+    height: 44,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: 4,
   },
   modalTitle: {
     fontSize: FONTS.subtitle,

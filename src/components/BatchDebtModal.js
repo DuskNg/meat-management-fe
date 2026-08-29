@@ -1,6 +1,6 @@
 // meat-management-fe/src/components/BatchDebtModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
-import { applySmartMoneyChange, rawToDisplay, vndToRaw } from '../hooks/useMoneyInput';
+import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
   Text,
@@ -291,15 +291,11 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     // Dành cho Nợ Nhanh
     quickAmount: '',
     quickProductName: 'Tiền hàng',
-    // Dành cho Nợ Chi Tiết
+    // Dành cho Nợ Chi Tiết (mặc định sẵn 3 dòng chọn loại thịt)
     items: [
-      {
-        tempItemId: `item_${rowIdCounterRef.current++}`,
-        productId: null,
-        quantity: '',
-        price: '',
-        unit: 'kg',
-      },
+      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', unit: 'kg' },
+      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', unit: 'kg' },
+      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', unit: 'kg' },
     ],
   });
 
@@ -526,14 +522,9 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
           <View style={styles.titleRow}>
             <Text style={styles.modalTitle}>⚡ NHẬP CÔNG NỢ HÀNG LOẠT</Text>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity style={styles.clearDraftBtnHeader} onPress={handleClearDraft}>
-              <Text style={styles.clearDraftTextHeader}>🧹 Xóa nháp</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
-              <Text style={styles.closeHeaderText}>✕</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
+            <Text style={styles.closeHeaderText}>✕</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Thanh Điều Khiển: Tab Chuyển Đổi & Chọn Ngày */}
@@ -564,14 +555,20 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.datePickerWrapper}>
-            <Text style={styles.dateLabel}>📅 Ngày ghi nợ:</Text>
-            <DatePickerInput
-              value={dateStr}
-              onChange={setDateStr}
-              allowFuture={true}
-              compact={true}
-            />
+          {/* Phần Ngày ghi nợ chung 1 hàng ngang */}
+          <View style={styles.datePickerSection}>
+            <View style={styles.dateAndDraftRow}>
+              <Text style={styles.dateLabelInline}>📅 Ngày ghi nợ:</Text>
+              <DatePickerInput
+                value={dateStr}
+                onChange={setDateStr}
+                allowFuture={true}
+                compact={true}
+              />
+              <TouchableOpacity style={styles.clearDraftBtnHeader} onPress={handleClearDraft}>
+                <Text style={styles.clearDraftTextHeader}>🧹 Xóa nháp</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -625,22 +622,21 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
 
                     {/* Ô nhập số tiền nợ */}
                     <View style={{ flex: 1.2 }}>
-                      <TextInput
+                      <MoneyInput
                         style={[
-                          styles.quickAmountInput,
+                          styles.tableMoneyInputContainer,
                           amt > 0 && styles.quickAmountInputActive,
                         ]}
-                        placeholder="0 đ"
-                        placeholderTextColor="#94A3B8"
-                        keyboardType="number-pad"
-                        value={row.quickAmount}
-                        onChangeText={(text) => {
-                          const newRaw = applySmartMoneyChange(text, row.rawQuickAmount || '');
+                        inputStyle={styles.tableMoneyInputText}
+                        value={row.quickAmountVND || (row.quickAmount ? parseNumberString(row.quickAmount) : 0)}
+                        onChangeValue={(val) => {
                           handleUpdateRow(row.tempId, {
-                            quickAmount: rawToDisplay(newRaw),
-                            rawQuickAmount: newRaw,
+                            quickAmountVND: val,
+                            quickAmount: formatNumberString(val.toString()),
                           });
                         }}
+                        placeholder="0"
+                        textAlign="right"
                       />
                     </View>
 
@@ -746,7 +742,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                 />
                               </View>
 
-                            <View style={{ flex: 1, marginRight: 4 }}>
+                             <View style={{ flex: 1, marginRight: 4 }}>
                               <TextInput
                                 style={styles.compactInput}
                                 placeholder="0"
@@ -758,78 +754,77 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                   const filtered = text.replace(/[^0-9.,]/g, '');
                                   const qVal = parseFloat(filtered.replace(',', '.')) || 0;
                                   const pVal = parseNumberString(item.price);
-                                  handleUpdateRowItem(row.tempId, item.tempItemId, {
-                                    quantity: filtered,
-                                    amount: Math.round(qVal * pVal),
-                                  });
+                                  const amtVal = item.amount !== undefined ? item.amount : 0;
+
+                                  let updates = { quantity: filtered };
+
+                                  if (pVal > 0) {
+                                    // Đã có Đơn giá -> tính Thành tiền = SL * Giá
+                                    updates.amount = Math.round(qVal * pVal);
+                                  } else if (amtVal > 0 && qVal > 0) {
+                                    // Chưa có Đơn giá nhưng đã có Thành tiền -> tính Đơn giá = Thành tiền / SL
+                                    const calcPrice = Math.round(amtVal / qVal);
+                                    updates.price = formatNumberString(calcPrice.toString());
+                                  }
+
+                                  handleUpdateRowItem(row.tempId, item.tempItemId, updates);
                                 }}
                               />
                             </View>
 
                             <View style={{ flex: 1.4, marginRight: 4 }}>
-                              <TextInput
-                                style={styles.compactInput}
-                                placeholder="0"
-                                placeholderTextColor="#94A3B8"
-                                keyboardType="number-pad"
-                                value={item.price !== undefined && item.price !== null ? String(item.price) : ''}
-                                selectTextOnFocus={true}
-                                onChangeText={(text) => {
+                              <MoneyInput
+                                style={styles.subtableMoneyInputContainer}
+                                inputStyle={styles.subtableMoneyInputText}
+                                value={p}
+                                onChangeValue={(pVal) => {
                                   const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
-                                  const pVal = parseNumberString(text);
-                                  handleUpdateRowItem(row.tempId, item.tempItemId, {
-                                    price: formatNumberString(text),
-                                    amount: Math.round(qVal * pVal),
-                                  });
-                                }}
-                                onBlur={() => {
-                                  // Dùng biến p tính sẵn tại render (tránh stale closure của item.price)
-                                  if (p > 0 && p < 1000) {
-                                    const finalPrice = p * 1000;
-                                    const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
-                                    handleUpdateRowItem(row.tempId, item.tempItemId, {
-                                      price: formatNumberString(finalPrice),
-                                      amount: Math.round(qVal * finalPrice),
-                                    });
+                                  const amtVal = item.amount !== undefined ? item.amount : 0;
+
+                                  let updates = { price: formatNumberString(pVal.toString()) };
+
+                                  if (qVal > 0) {
+                                    // Đã có Số lượng -> tính Thành tiền = SL * Giá
+                                    updates.amount = Math.round(qVal * pVal);
+                                  } else if (amtVal > 0 && pVal > 0) {
+                                    // Chưa có Số lượng nhưng đã có Thành tiền -> tính Số lượng = Thành tiền / Giá
+                                    const newQty = amtVal / pVal;
+                                    const roundedQty = Math.round(newQty * 100) / 100;
+                                    updates.quantity = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
                                   }
+
+                                  handleUpdateRowItem(row.tempId, item.tempItemId, updates);
                                 }}
+                                placeholder="0"
+                                textAlign="right"
                               />
                             </View>
 
                             <View style={{ flex: 1.4, marginRight: 4 }}>
-                              <TextInput
-                                style={[styles.compactInput, { textAlign: 'right', color: '#DC2626', fontWeight: '800' }]}
-                                placeholder="0"
-                                placeholderTextColor="#94A3B8"
-                                keyboardType="number-pad"
-                                value={item.amount !== undefined && item.amount !== null ? formatNumberString(item.amount) : (itemSubtotal > 0 ? formatNumberString(itemSubtotal) : '')}
-                                selectTextOnFocus={true}
-                                onChangeText={(text) => {
-                                  const amt = parseNumberString(text);
-                                  // Tính số lượng ngược từ thành tiền ÷ đơn giá (không thay đổi đơn giá)
-                                  // p là biến đã tính sẵn từ render: const p = parseNumberString(item.price)
-                                  const newQty = p > 0 ? amt / p : 0;
-                                  const roundedQty = Math.round(newQty * 100) / 100;
-                                  const displayQty = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
-                                  handleUpdateRowItem(row.tempId, item.tempItemId, {
-                                    amount: amt,
-                                    quantity: displayQty,
-                                  });
-                                }}
-                                onBlur={() => {
-                                  // Dùng biến itemSubtotal tính sẵn tại render (tránh stale closure)
-                                  if (itemSubtotal > 0 && itemSubtotal < 1000) {
-                                    const finalAmt = itemSubtotal * 1000;
-                                    // Tính số lượng từ thành tiền × 1000 ÷ đơn giá
-                                    const newQty = p > 0 ? finalAmt / p : 0;
+                              <MoneyInput
+                                style={styles.subtableMoneyInputContainer}
+                                inputStyle={[styles.subtableMoneyInputText, { color: '#DC2626', fontWeight: '600' }]}
+                                value={item.amount !== undefined && item.amount !== null ? item.amount : itemSubtotal}
+                                onChangeValue={(amtVal) => {
+                                  const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
+
+                                  let updates = { amount: amtVal };
+
+                                  if (p > 0) {
+                                    // Đã có Đơn giá -> tính Số lượng = Thành tiền / Giá
+                                    const newQty = p > 0 ? amtVal / p : 0;
                                     const roundedQty = Math.round(newQty * 100) / 100;
-                                    const displayQty = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
-                                    handleUpdateRowItem(row.tempId, item.tempItemId, {
-                                      amount: finalAmt,
-                                      quantity: displayQty,
-                                    });
+                                    updates.quantity = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
+                                  } else if (qVal > 0) {
+                                    // Chưa có Đơn giá nhưng đã có Số lượng -> tính Đơn giá = Thành tiền / SL
+                                    const calcPrice = Math.round(amtVal / qVal);
+                                    updates.price = formatNumberString(calcPrice.toString());
                                   }
+
+                                  handleUpdateRowItem(row.tempId, item.tempItemId, updates);
                                 }}
+                                placeholder="0"
+                                textAlign="right"
                               />
                             </View>
 
@@ -968,21 +963,17 @@ const styles = StyleSheet.create({
     color: '#EF4444',
   },
   topControlRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
     marginTop: 8,
     marginBottom: 8,
     gap: 8,
-    flexWrap: 'wrap',
   },
   segmentedTabContainer: {
     flexDirection: 'row',
     backgroundColor: '#F1F5F9',
     borderRadius: 8,
     padding: 2,
-    flex: 1,
-    minWidth: 260,
+    width: '100%',
   },
   segTabBtn: {
     flex: 1,
@@ -1003,15 +994,18 @@ const styles = StyleSheet.create({
     color: '#991B1B',
     fontWeight: 'bold',
   },
-  datePickerWrapper: {
+  datePickerSection: {
+    marginTop: 4,
+  },
+  dateAndDraftRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
-  dateLabel: {
+  dateLabelInline: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
+    fontWeight: 'bold',
+    color: '#475569',
   },
   errorBanner: {
     backgroundColor: '#FEF2F2',
@@ -1070,6 +1064,19 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
     backgroundColor: '#FFFFFF',
     position: 'relative',
+  },
+  tableMoneyInputContainer: {
+    height: 34,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CBD5E1',
+    borderWidth: 1,
+  },
+  tableMoneyInputText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#DC2626',
   },
   quickAmountInput: {
     borderWidth: 1,
@@ -1168,6 +1175,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
     position: 'relative',
+  },
+  subtableMoneyInputContainer: {
+    borderWidth: 1,
+    borderColor: '#94A3B8',
+    borderRadius: 5,
+    paddingHorizontal: 4,
+    height: 26,
+    backgroundColor: '#FFFFFF',
+  },
+  subtableMoneyInputText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0F172A',
   },
   compactInput: {
     borderWidth: 1,

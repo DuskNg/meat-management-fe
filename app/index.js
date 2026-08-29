@@ -3045,9 +3045,33 @@ export default function DashboardScreen() {
           editDebtModalRef.current?.open(transaction);
         }}
       />
-      <EditDebtModal ref={editDebtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshAll} />
-      <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} />
-      <DailyReportModal ref={dailyReportModalRef} onRefresh={handleRefreshAll} />
+      <DailyReportModal
+        ref={dailyReportModalRef}
+        onRefresh={handleRefreshAll}
+        onEditTransaction={(transaction) => {
+          setSelectedCustomerId(transaction.customerId);
+          editDebtModalRef.current?.open(transaction);
+        }}
+        onEditPayment={(payment) => {
+          setSelectedCustomerId(payment.customerId);
+          editPaymentModalRef.current?.open(payment);
+        }}
+      />
+      <EditDebtModal
+        ref={editDebtModalRef}
+        customerId={selectedCustomerId}
+        onRefresh={() => {
+          handleRefreshAll();
+          dailyReportModalRef.current?.refetch();
+        }}
+      />
+      <EditPaymentModal
+        ref={editPaymentModalRef}
+        onRefresh={() => {
+          handleRefreshAll();
+          dailyReportModalRef.current?.refetch();
+        }}
+      />
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />
 

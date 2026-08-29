@@ -1,6 +1,6 @@
 // meat-management-fe/src/components/BatchPaymentModal.js
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { applySmartMoneyChange, rawToDisplay, vndToRaw } from '../hooks/useMoneyInput';
+import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
   Text,
@@ -229,25 +229,22 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   // Thay đổi số tiền thu nợ (giới hạn tối đa không vượt quá số nợ hiện tại của khách)
-  const handleAmountChange = (tempId, text, selectedCust, prevRaw = '') => {
-    const newRaw = applySmartMoneyChange(text, prevRaw);
-    const rawNum = newRaw ? parseInt(newRaw, 10) * 1000 : 0;
-
-    if (selectedCust && selectedCust.debt > 0 && rawNum > selectedCust.debt) {
-      const maxRaw = vndToRaw(Math.round(selectedCust.debt));
-      handleUpdateRow(tempId, { amount: rawToDisplay(maxRaw), rawAmount: maxRaw });
+  const handleAmountChangeVND = (tempId, val, selectedCust) => {
+    if (selectedCust && selectedCust.debt > 0 && val > selectedCust.debt) {
+      const maxVND = Math.round(selectedCust.debt);
+      handleUpdateRow(tempId, { amountVND: maxVND, amount: formatNumberString(maxVND.toString()) });
       setError(`Số tiền thu của [${selectedCust.name}] tự động điều chỉnh về mức nợ tối đa là ${formatCurrency(selectedCust.debt)}.`);
       return;
     }
     setError('');
-    handleUpdateRow(tempId, { amount: rawToDisplay(newRaw), rawAmount: newRaw });
+    handleUpdateRow(tempId, { amountVND: val, amount: formatNumberString(val.toString()) });
   };
 
   // Nút điền nhanh "Thu hết nợ hiện tại" cho khách hàng
   const handleFillAllDebt = (tempId, currentDebt) => {
     if (!currentDebt || currentDebt <= 0) return;
-    const raw = vndToRaw(Math.round(currentDebt));
-    handleUpdateRow(tempId, { amount: rawToDisplay(raw), rawAmount: raw });
+    const maxVND = Math.round(currentDebt);
+    handleUpdateRow(tempId, { amountVND: maxVND, amount: formatNumberString(maxVND.toString()) });
   };
 
   // Tính tổng số tiền thu và số khách hợp lệ
@@ -353,26 +350,27 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
           <View style={styles.titleRow}>
             <Text style={styles.modalTitle}>🟢 THU NỢ HÀNG LOẠT</Text>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity style={styles.clearDraftBtnHeader} onPress={handleClearDraft}>
-              <Text style={styles.clearDraftTextHeader}>🧹 Xóa nháp</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
-              <Text style={styles.closeHeaderText}>✕</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
+            <Text style={styles.closeHeaderText}>✕</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Thanh điều khiển trên cùng: Ngày thu tiền */}
         <View style={styles.topControlRow}>
-          <View style={styles.datePickerWrapper}>
-            <Text style={styles.dateLabel}>📅 Ngày thu tiền:</Text>
-            <DatePickerInput
-              value={dateStr}
-              onChange={setDateStr}
-              allowFuture={true}
-              compact={true}
-            />
+          <View style={styles.dateAndDraftRow}>
+            <View style={styles.dateInlineGroup}>
+              <Text style={styles.dateLabelInline}>📅 Ngày thu tiền:</Text>
+              <DatePickerInput
+                value={dateStr}
+                onChange={setDateStr}
+                allowFuture={true}
+                compact={true}
+              />
+            </View>
+
+            <TouchableOpacity style={styles.clearDraftBtnHeader} onPress={handleClearDraft}>
+              <Text style={styles.clearDraftTextHeader}>🧹 Xóa nháp</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -452,16 +450,16 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
                     {/* Ô nhập số tiền thu */}
                     <View style={{ flex: 1.5, marginRight: 8 }}>
-                      <TextInput
+                      <MoneyInput
                         style={[
-                          styles.amountInput,
+                          styles.tableMoneyInputContainer,
                           amt > 0 && styles.amountInputActive,
                         ]}
-                        placeholder="0 đ"
-                        placeholderTextColor="#94A3B8"
-                        keyboardType="number-pad"
-                        value={row.amount}
-                        onChangeText={(text) => handleAmountChange(row.tempId, text, selectedCust, row.rawAmount || '')}
+                        inputStyle={styles.tableMoneyInputText}
+                        value={row.amountVND || (row.amount ? parseNumberString(row.amount) : 0)}
+                        onChangeValue={(val) => handleAmountChangeVND(row.tempId, val, selectedCust)}
+                        placeholder="0"
+                        textAlign="right"
                       />
                     </View>
 
@@ -621,14 +619,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  datePickerWrapper: {
-    flexDirection: 'column',
+  dateAndDraftRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flex: 1,
   },
-  dateLabel: {
-    fontSize: 12,
+  dateInlineGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dateLabelInline: {
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#475569',
-    marginBottom: 4,
   },
   errorBanner: {
     backgroundColor: '#FEF2F2',
@@ -747,17 +752,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#059669',
   },
+  tableMoneyInputContainer: {
+    height: 38,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CBD5E1',
+    borderWidth: 1,
+  },
+  tableMoneyInputText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#059669',
+  },
   amountInput: {
     backgroundColor: '#FFFFFF',
     height: 38,
     borderRadius: 8,
     paddingHorizontal: 10,
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    textAlign: 'right',
+    color: '#0F172A',
     borderWidth: 1,
     borderColor: '#CBD5E1',
+    textAlign: 'right',
   },
   amountInputActive: {
     borderColor: '#10B981',

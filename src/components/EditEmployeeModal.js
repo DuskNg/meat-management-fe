@@ -1,6 +1,6 @@
 // meat-management-fe/src/components/EditEmployeeModal.js
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
-import { useMoneyInput } from '../hooks/useMoneyInput';
+import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
   Text,
@@ -22,7 +22,7 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [role, setRole] = useState('');
-  const salaryInput = useMoneyInput();
+  const [salaryVND, setSalaryVND] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -34,7 +34,7 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
       setPhone(emp.phone || '');
       setAddress(emp.address || '');
       setRole(emp.role || '');
-      salaryInput.init(emp.baseSalary || 0);
+      setSalaryVND(emp.baseSalary || 0);
       setError('');
       setVisible(true);
     },
@@ -61,11 +61,11 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
       setError('Tên nhân viên là bắt buộc.');
       return;
     }
-    if (!salaryInput.display || salaryInput.display.trim() === '') {
+    if (!salaryVND || salaryVND <= 0) {
       setError('Lương tháng cơ bản là bắt buộc.');
       return;
     }
-    const salaryVal = salaryInput.getVND();
+    const salaryVal = salaryVND;
     if (salaryVal < 0) {
       setError('Mức lương không hợp lệ.');
       return;
@@ -116,16 +116,15 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
           />
 
           <Text style={styles.label}>Lương tháng cơ bản (Bắt buộc, VND):</Text>
-          <TextInput
-            style={[styles.input, styles.salaryInput]}
-            placeholder="Ví dụ: 9.000"
-            placeholderTextColor={COLORS.textLight}
-            keyboardType="number-pad"
-            value={salaryInput.display}
-            onChangeText={(text) => {
-              salaryInput.onChange(text);
+          <MoneyInput
+            style={styles.salaryInputContainer}
+            inputStyle={styles.salaryInput}
+            value={salaryVND}
+            onChangeValue={(val) => {
+              setSalaryVND(val);
               setError('');
             }}
+            placeholder="Ví dụ: 9.000"
           />
 
           <Text style={styles.label}>Số điện thoại (Có thể bỏ qua):</Text>

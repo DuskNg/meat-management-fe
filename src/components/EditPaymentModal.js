@@ -1,6 +1,6 @@
 // meat-management-fe/src/components/EditPaymentModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
-import { useMoneyInput } from '../hooks/useMoneyInput';
+import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
   Text,
@@ -17,6 +17,7 @@ import DatePickerInput from './DatePickerInput';
 import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
+import { showGlobalToast } from '../store/toastStore';
 
 const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
   // ─── Helper: Chuyển ISO date sang DD/MM/YYYY ─────────────────────────────
@@ -62,7 +63,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
   // ─── State ──────────────────────────────────────────────────────────────
   const [visible, setVisible] = useState(false);
   const [paymentId, setPaymentId] = useState(null);
-  const amountInput = useMoneyInput();
+  const [amountVND, setAmountVND] = useState(0);
   const [dateStr, setDateStr] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -78,7 +79,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
     open: (payment) => {
       if (!payment) return;
       setPaymentId(payment.id);
-      amountInput.init(payment.amount || 0);
+      setAmountVND(payment.amount || 0);
       setDateStr(formatDateToDisplay(payment.paidAt || payment.createdAt));
       setNote(payment.note || '');
       setError('');
@@ -91,7 +92,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
   // Gợi ý điền nhanh số tiền (giúp người bán bấm nhanh các mốc chẵn)
   const handleQuickAmount = (value) => {
-    amountInput.init(value);
+    setAmountVND(value);
     setError('');
   };
 
@@ -112,9 +113,9 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
   // Xử lý gửi cập nhật lượt thu tiền
   const handleSubmit = async () => {
-    if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
-    const payAmount = amountInput.getVND();
-    if (!amountInput.display || amountInput.display.trim() === '') {
+    if (loading || isSubmittingRef.current) return;
+    const payAmount = amountVND;
+    if (!payAmount || payAmount <= 0) {
       setError('Số tiền trả nợ không được để trống.');
       isSubmittingRef.current = false;
       return;
@@ -142,6 +143,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
       if (response.data.success) {
         setVisible(false);
+        showGlobalToast('Đã cập nhật lượt thu tiền thành công!', 'success');
         if (onRefresh) onRefresh();
       } else {
         setError(response.data.message || 'Lỗi cập nhật. Vui lòng thử lại.');
@@ -164,16 +166,15 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
         <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
           {/* Nhập số tiền thu được */}
           <Text style={styles.label}>1. Số tiền khách đã trả (VND):</Text>
-          <TextInput
-            style={[styles.input, styles.amountInput]}
-            placeholder="Ví dụ: 500"
-            placeholderTextColor={COLORS.textLight}
-            keyboardType="number-pad"
-            value={amountInput.display}
-            onChangeText={(text) => {
-              amountInput.onChange(text);
+          <MoneyInput
+            style={styles.amountInputContainer}
+            inputStyle={styles.amountInput}
+            value={amountVND}
+            onChangeValue={(val) => {
+              setAmountVND(val);
               setError('');
             }}
+            placeholder="Ví dụ: 500"
           />
 
           {/* Các nút bấm điền nhanh số tiền chẵn */}

@@ -24,7 +24,7 @@ import { showGlobalToast } from '../store/toastStore';
 import ProductSelector from './ProductSelector';
 import { useResourceLock } from '../hooks/useResourceLock';
 import { matchItemSearch } from '../utils/searchHelper';
-import { useMoneyInput } from '../hooks/useMoneyInput';
+import MoneyInput from './MoneyInput';
 
 const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   // ─── Helper: lấy ngày hôm nay dạng DD/MM/YYYY ──────────────────────────
@@ -55,13 +55,17 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // ─── Helper: định dạng hàng nghìn dấu chấm ─────────────────────────────
   const formatNumberString = (value) => {
-    const clean = value.replace(/[^0-9]/g, '');
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'number') return new Intl.NumberFormat('vi-VN').format(value);
+    const clean = String(value).replace(/[^0-9]/g, '');
     if (clean === '') return '';
     return new Intl.NumberFormat('vi-VN').format(parseInt(clean, 10));
   };
 
   const parseNumberString = (formatted) => {
-    const clean = formatted.replace(/[^0-9]/g, '');
+    if (formatted === undefined || formatted === null || formatted === '') return 0;
+    if (typeof formatted === 'number') return isNaN(formatted) ? 0 : formatted;
+    const clean = String(formatted).replace(/[^0-9]/g, '');
     return clean ? parseInt(clean, 10) : 0;
   };
 
@@ -93,7 +97,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [minDate, setMinDate] = useState(null);
   const [maxDate, setMaxDate] = useState(null);
   const [quickProductName, setQuickProductName] = useState('');
-  const quickAmountInput = useMoneyInput();
+  const [quickAmountVND, setQuickAmountVND] = useState(0);
   const [note, setNote] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -141,7 +145,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       // Reset trạng thái của tab ghi nợ nhanh và mặc định chọn tab thủ công
       setActiveTab('manual');
       setQuickProductName('Tiền hàng');
-      quickAmountInput.init(0);
+      setQuickAmountVND(0);
 
       let items = null;
       let initialDateStr = getTodayFormatted();
@@ -368,8 +372,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       }
     } else {
       // Logic gửi ghi nợ nhanh
-      const qAmt = quickAmountInput.getVND();
-      if (!quickAmountInput.display || qAmt <= 0) {
+      const qAmt = quickAmountVND;
+      if (!qAmt || qAmt <= 0) {
         setError('Số tiền nợ phải lớn hơn 0.');
         setErrorField('quickAmount');
         return;
@@ -390,7 +394,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
             {
               productName: quickProductName.trim() || 'Tiền hàng',
               quantity: 1,
-              price: parsedAmt,
+              price: qAmt,
             }
           ],
         });
@@ -675,23 +679,21 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
               {/* Số tiền nợ */}
               <Text style={styles.label}>💰 Số tiền nợ (VND):</Text>
-              <TextInput
+              <MoneyInput
                 style={[
-                  styles.input,
-                  { fontSize: 20, fontWeight: 'bold', color: COLORS.danger },
+                  styles.quickAmountContainer,
                   errorField === 'quickAmount' && styles.inputError
                 ]}
-                placeholder="Nhập số tiền ghi nợ"
-                placeholderTextColor={COLORS.textLight}
-                keyboardType="number-pad"
-                value={quickAmountInput.display}
-                onChangeText={(text) => {
-                  quickAmountInput.onChange(text);
+                inputStyle={{ fontSize: 20, fontWeight: 'bold', color: COLORS.danger }}
+                value={quickAmountVND}
+                onChangeValue={(val) => {
+                  setQuickAmountVND(val);
                   if (errorField === 'quickAmount') {
                     setError('');
                     setErrorField('');
                   }
                 }}
+                placeholder="Ví dụ: 500"
               />
               {errorField === 'quickAmount' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 
@@ -731,12 +733,12 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
             style={[
               styles.button,
               styles.submitButton,
-              ((activeTab === 'manual' ? cartItems.length === 0 : !quickAmount.trim()) || loading) && styles.submitDisabled
+              ((activeTab === 'manual' ? cartItems.length === 0 : quickAmountVND <= 0) || loading) && styles.submitDisabled
             ]}
             onPress={() => requirePin(handleSubmit)}
             disabled={
               loading ||
-              (activeTab === 'manual' ? cartItems.length === 0 : !quickAmount.trim())
+              (activeTab === 'manual' ? cartItems.length === 0 : quickAmountVND <= 0)
             }
           >
             {loading ? (
@@ -1119,6 +1121,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     marginBottom: 8,
+  },
+  quickAmountContainer: {
+    height: 48,
+    marginBottom: 8,
+    borderColor: COLORS.border,
   },
   inputError: {
     borderColor: COLORS.danger,
