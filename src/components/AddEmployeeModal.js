@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/AddEmployeeModal.js
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import { useMoneyInput } from '../hooks/useMoneyInput';
 import {
   StyleSheet,
   Text,
@@ -20,7 +21,7 @@ const AddEmployeeModal = forwardRef(({ onRefresh }, ref) => {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [role, setRole] = useState('');
-  const [salary, setSalary] = useState('');
+  const salaryInput = useMoneyInput();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -31,7 +32,7 @@ const AddEmployeeModal = forwardRef(({ onRefresh }, ref) => {
       setPhone('');
       setAddress('');
       setRole('');
-      setSalary('');
+      salaryInput.init(0);
       setError('');
     },
     close: () => {
@@ -57,12 +58,13 @@ const AddEmployeeModal = forwardRef(({ onRefresh }, ref) => {
       setError('Tên nhân viên là bắt buộc.');
       return;
     }
-    if (!salary || salary.trim() === '') {
-      setError('Mức lương tháng là bắt buộc.');
+    if (!salaryInput.display || salaryInput.display.trim() === '') {
+      setError('Lương tháng cơ bản là bắt buộc.');
       return;
     }
-    const salaryVal = parseNumberString(salary);
-    if (salaryVal < 0) {
+
+    const numericSalary = salaryInput.getVND();
+    if (numericSalary < 0) {
       setError('Mức lương không hợp lệ.');
       return;
     }
@@ -114,12 +116,12 @@ const AddEmployeeModal = forwardRef(({ onRefresh }, ref) => {
           <Text style={styles.label}>Lương tháng cơ bản (Bắt buộc, VND):</Text>
           <TextInput
             style={[styles.input, styles.salaryInput]}
-            placeholder="Ví dụ: 9.000.000"
+            placeholder="Ví dụ: 9.000"
             placeholderTextColor={COLORS.textLight}
             keyboardType="number-pad"
-            value={salary}
+            value={salaryInput.display}
             onChangeText={(text) => {
-              setSalary(formatNumberString(text));
+              salaryInput.onChange(text);
               setError('');
             }}
           />

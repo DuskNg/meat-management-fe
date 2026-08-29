@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/PaymentModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import { useMoneyInput } from '../hooks/useMoneyInput';
 import {
   StyleSheet,
   Text,
@@ -22,7 +23,8 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // Tự động khóa khách hàng khi mở modal thu tiền
   useResourceLock('CUSTOMER', customerId, visible, () => setVisible(false));
-  const [amount, setAmount] = useState('');
+  // Hook quản lý input tiền: auto hiển thị ×1000 ngay khi gõ
+  const amountInput = useMoneyInput();
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -49,9 +51,10 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setVisible(true);
       // Làm tròn số nợ đề xuất để tránh lỗi phần thập phân (float) của tiền VNĐ
       const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
-      setAmount(defaultAmount ? formatNumberString(numericAmount.toString()) : '');
-      setMaxAmount(defaultAmount ? numericAmount : null); // Thiết lập giới hạn thanh toán tối đa theo nợ tháng
-      setTargetMonthKey(monthKey); // Lưu lại khóa tháng cụ thể (ví dụ: "07/2026")
+      // Khởi tạo input tiền với giá trị VNĐ (hook sẽ tự tính rawStr = numericAmount/1000)
+      amountInput.init(numericAmount);
+      setMaxAmount(defaultAmount ? numericAmount : null);
+      setTargetMonthKey(monthKey);
       setNote('');
       setError('');
     },
@@ -60,28 +63,15 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
     }
   }));
 
-  // Tự động thêm phân tách hàng nghìn bằng dấu chấm khi gõ phím
-  const formatNumberString = (value) => {
-    const cleanValue = value.replace(/[^0-9]/g, '');
-    if (cleanValue === '') return '';
-    return new Intl.NumberFormat('vi-VN').format(parseInt(cleanValue, 10));
-  };
-
-  // Chuyển chuỗi định dạng trở lại số nguyên để lưu
-  const parseNumberString = (formattedValue) => {
-    const cleanValue = formattedValue.replace(/[^0-9]/g, '');
-    return cleanValue ? parseInt(cleanValue, 10) : 0;
-  };
-
   // 2. Gợi ý điền nhanh số tiền (giúp người bán bấm nhanh các mốc chẵn)
   const handleQuickAmount = (value) => {
     // Nếu số tiền chọn nhanh lớn hơn nợ tối đa của tháng, tự động gán bằng nợ tối đa và báo lỗi nhẹ
     if (maxAmount !== null && value > maxAmount) {
-      setAmount(formatNumberString(maxAmount.toString()));
+      amountInput.init(maxAmount);
       setError(`Số tiền đã tự động điều chỉnh về mức nợ tối đa của tháng: ${formatCurrency(maxAmount)}`);
       return;
     }
-    setAmount(formatNumberString(value.toString()));
+    amountInput.init(value);
     setError('');
   };
 
@@ -112,12 +102,12 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // 4. Ghi nhận thu tiền khách trả nợ (gọi sau khi xác thực PIN thành công)
   const handleSubmit = async () => {
-    if (!amount || amount.trim() === '') {
+    const payAmount = amountInput.getVND();
+    if (!amountInput.display || amountInput.display.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
       isSubmittingRef.current = false;
       return;
     }
-    const payAmount = parseNumberString(amount);
 
     if (payAmount <= 0) {
       setError('Số tiền trả nợ phải lớn hơn 0 (Ví dụ: 200.000).');
@@ -181,12 +171,12 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
           <Text style={styles.label}>1. Số tiền khách đã trả (VND):</Text>
           <TextInput
             style={[styles.input, styles.amountInput]}
-            placeholder="Ví dụ: 500.000"
+            placeholder="Ví dụ: 500"
             placeholderTextColor={COLORS.textLight}
-            keyboardType="number-pad" // Hiển thị bàn phím số nguyên trên di động
-            value={amount}
+            keyboardType="number-pad"
+            value={amountInput.display}
             onChangeText={(text) => {
-              setAmount(formatNumberString(text));
+              amountInput.onChange(text);
               setError('');
             }}
           />

@@ -58,6 +58,14 @@ const DebtItem = ({ item, products, onUpdate, onRemove }) => {
   const selectedProduct = products.find((p) => p.id === item.selectedProductId) ||
     (item.product?.name ? { id: '__manual__', name: item.product.name, unit: item.product?.unit || 'kg' } : null);
 
+  // Dùng ref để tránh stale closure trong onBlur (giữ giá trị price/amount mới nhất)
+  const currentPriceRef = useRef(item.price);
+  const currentAmountRef = useRef(item.amount);
+  const currentQuantityRef = useRef(item.quantity);
+  currentPriceRef.current = item.price;
+  currentAmountRef.current = item.amount !== undefined ? item.amount : item.quantity * item.price;
+  currentQuantityRef.current = item.quantity;
+
   // Thành tiền
   const subtotal = item.amount !== undefined ? item.amount : (item.quantity * item.price);
 
@@ -123,15 +131,30 @@ const DebtItem = ({ item, products, onUpdate, onRemove }) => {
           style={styles.numInputCompact}
           keyboardType="number-pad"
           value={item.displayPrice}
+          selectTextOnFocus={true}
           onChangeText={(text) => {
             const p = parseNumberString(text);
-            const newAmt = Math.round(item.quantity * p);
+            const newAmt = Math.round(currentQuantityRef.current * p);
             onUpdate({ 
               price: p, 
               displayPrice: formatNumberString(text),
               amount: newAmt,
               displayAmount: formatNumberString(newAmt.toString())
             });
+          }}
+          onBlur={() => {
+            // Dùng ref để tránh stale closure - đọc giá trị price mới nhất
+            const latestPrice = currentPriceRef.current;
+            if (latestPrice > 0 && latestPrice < 1000) {
+              const finalPrice = latestPrice * 1000;
+              const newAmt = Math.round(currentQuantityRef.current * finalPrice);
+              onUpdate({
+                price: finalPrice,
+                displayPrice: formatNumberString(finalPrice.toString()),
+                amount: newAmt,
+                displayAmount: formatNumberString(newAmt.toString())
+              });
+            }
           }}
           placeholder="Giá"
           placeholderTextColor={COLORS.textLight}
@@ -144,15 +167,38 @@ const DebtItem = ({ item, products, onUpdate, onRemove }) => {
           style={[styles.numInputCompact, { textAlign: 'right', color: COLORS.danger }]}
           keyboardType="number-pad"
           value={item.displayAmount}
+          selectTextOnFocus={true}
           onChangeText={(text) => {
             const amt = parseNumberString(text);
-            const newPrice = item.quantity > 0 ? Math.round(amt / item.quantity) : amt;
+            const latestPrice = currentPriceRef.current;
+            // Tính số lượng ngược từ thành tiền ÷ đơn giá (không đổi đơn giá)
+            const newQty = latestPrice > 0 ? amt / latestPrice : 0;
+            const roundedQty = Math.round(newQty * 100) / 100;
+            const displayQty = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
             onUpdate({
               amount: amt,
               displayAmount: formatNumberString(text),
-              price: newPrice,
-              displayPrice: formatNumberString(newPrice.toString())
+              quantity: roundedQty,
+              displayQuantity: displayQty,
             });
+          }}
+          onBlur={() => {
+            // Dùng ref để tránh stale closure - đọc giá trị amount mới nhất
+            const latestAmt = currentAmountRef.current;
+            if (latestAmt > 0 && latestAmt < 1000) {
+              const finalAmt = latestAmt * 1000;
+              const latestPrice = currentPriceRef.current;
+              // Tính số lượng từ thành tiền × 1000 ÷ đơn giá
+              const newQty = latestPrice > 0 ? finalAmt / latestPrice : 0;
+              const roundedQty = Math.round(newQty * 100) / 100;
+              const displayQty = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
+              onUpdate({
+                amount: finalAmt,
+                displayAmount: formatNumberString(finalAmt.toString()),
+                quantity: roundedQty,
+                displayQuantity: displayQty,
+              });
+            }
           }}
           placeholder="T.Tiền"
           placeholderTextColor={COLORS.textLight}
@@ -427,9 +473,20 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
           const match = products.find((p) =>
             removeDiacritics(p.name.toLowerCase().trim()) === voiceName
           );
-          return match
-            ? { ...item, selectedProductId: match.id, product: match }
-            : item;
+          if (match) {
+            const finalPrice = item.price > 0 ? item.price : (match.defaultPrice || 0);
+            const finalAmt = item.amount > 0 ? item.amount : Math.round(item.quantity * finalPrice);
+            return {
+              ...item,
+              selectedProductId: match.id,
+              product: match,
+              price: finalPrice,
+              displayPrice: formatNumberString(finalPrice.toString()),
+              amount: finalAmt,
+              displayAmount: formatNumberString(finalAmt.toString()),
+            };
+          }
+          return item;
         }),
       }))
     );

@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/DebtModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -24,6 +24,7 @@ import { showGlobalToast } from '../store/toastStore';
 import ProductSelector from './ProductSelector';
 import { useResourceLock } from '../hooks/useResourceLock';
 import { matchItemSearch } from '../utils/searchHelper';
+import { useMoneyInput } from '../hooks/useMoneyInput';
 
 const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   // ─── Helper: lấy ngày hôm nay dạng DD/MM/YYYY ──────────────────────────
@@ -91,6 +92,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [disableDate, setDisableDate] = useState(false);
   const [minDate, setMinDate] = useState(null);
   const [maxDate, setMaxDate] = useState(null);
+  const [quickProductName, setQuickProductName] = useState('');
+  const quickAmountInput = useMoneyInput();
   const [note, setNote] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -100,8 +103,6 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // State phục vụ phân tách tab ghi nợ (Ghi nợ nhanh / Thủ công)
   const [activeTab, setActiveTab] = useState('manual'); // 'manual' hoặc 'quick'
-  const [quickAmount, setQuickAmount] = useState('');
-  const [quickProductName, setQuickProductName] = useState('Tiền hàng');
 
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
@@ -139,8 +140,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       
       // Reset trạng thái của tab ghi nợ nhanh và mặc định chọn tab thủ công
       setActiveTab('manual');
-      setQuickAmount('');
       setQuickProductName('Tiền hàng');
+      quickAmountInput.init(0);
 
       let items = null;
       let initialDateStr = getTodayFormatted();
@@ -367,13 +368,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       }
     } else {
       // Logic gửi ghi nợ nhanh
-      if (!quickAmount.trim()) {
-        setError('Vui lòng nhập số tiền nợ.');
-        setErrorField('quickAmount');
-        return;
-      }
-      const parsedAmt = parseNumberString(quickAmount);
-      if (parsedAmt <= 0) {
+      const qAmt = quickAmountInput.getVND();
+      if (!quickAmountInput.display || qAmt <= 0) {
         setError('Số tiền nợ phải lớn hơn 0.');
         setErrorField('quickAmount');
         return;
@@ -602,6 +598,12 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                         setErrorField('');
                       }
                     }}
+                    onBlur={() => {
+                      const pVal = parseNumberString(currentPrice);
+                      if (pVal > 0 && pVal < 1000) {
+                        setCurrentPrice(formatNumberString((pVal * 1000).toString()));
+                      }
+                    }}
                   />
                   {errorField === 'price' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 
@@ -682,9 +684,9 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                 placeholder="Nhập số tiền ghi nợ"
                 placeholderTextColor={COLORS.textLight}
                 keyboardType="number-pad"
-                value={quickAmount}
+                value={quickAmountInput.display}
                 onChangeText={(text) => {
-                  setQuickAmount(formatNumberString(text));
+                  quickAmountInput.onChange(text);
                   if (errorField === 'quickAmount') {
                     setError('');
                     setErrorField('');

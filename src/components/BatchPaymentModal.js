@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/BatchPaymentModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
+import { applySmartMoneyChange, rawToDisplay, vndToRaw } from '../hooks/useMoneyInput';
 import {
   StyleSheet,
   Text,
@@ -228,22 +229,25 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   // Thay đổi số tiền thu nợ (giới hạn tối đa không vượt quá số nợ hiện tại của khách)
-  const handleAmountChange = (tempId, text, selectedCust) => {
-    const rawNum = parseNumberString(text);
+  const handleAmountChange = (tempId, text, selectedCust, prevRaw = '') => {
+    const newRaw = applySmartMoneyChange(text, prevRaw);
+    const rawNum = newRaw ? parseInt(newRaw, 10) * 1000 : 0;
+
     if (selectedCust && selectedCust.debt > 0 && rawNum > selectedCust.debt) {
-      const maxStr = formatNumberString(Math.round(selectedCust.debt).toString());
-      handleUpdateRow(tempId, { amount: maxStr });
+      const maxRaw = vndToRaw(Math.round(selectedCust.debt));
+      handleUpdateRow(tempId, { amount: rawToDisplay(maxRaw), rawAmount: maxRaw });
       setError(`Số tiền thu của [${selectedCust.name}] tự động điều chỉnh về mức nợ tối đa là ${formatCurrency(selectedCust.debt)}.`);
       return;
     }
     setError('');
-    handleUpdateRow(tempId, { amount: formatNumberString(text) });
+    handleUpdateRow(tempId, { amount: rawToDisplay(newRaw), rawAmount: newRaw });
   };
 
   // Nút điền nhanh "Thu hết nợ hiện tại" cho khách hàng
   const handleFillAllDebt = (tempId, currentDebt) => {
     if (!currentDebt || currentDebt <= 0) return;
-    handleUpdateRow(tempId, { amount: formatNumberString(Math.round(currentDebt).toString()) });
+    const raw = vndToRaw(Math.round(currentDebt));
+    handleUpdateRow(tempId, { amount: rawToDisplay(raw), rawAmount: raw });
   };
 
   // Tính tổng số tiền thu và số khách hợp lệ
@@ -457,7 +461,7 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
                         placeholderTextColor="#94A3B8"
                         keyboardType="number-pad"
                         value={row.amount}
-                        onChangeText={(text) => handleAmountChange(row.tempId, text, selectedCust)}
+                        onChangeText={(text) => handleAmountChange(row.tempId, text, selectedCust, row.rawAmount || '')}
                       />
                     </View>
 

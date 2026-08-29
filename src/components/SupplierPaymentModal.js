@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/SupplierPaymentModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import { useMoneyInput } from '../hooks/useMoneyInput';
 import {
   StyleSheet,
   Text,
@@ -16,7 +17,7 @@ import SmoothModal from './SmoothModal';
 // Modal ghi nhận việc chủ sạp trả tiền hàng cho nhà cung cấp
 const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
-  const [amount, setAmount] = useState('');
+  const amountInput = useMoneyInput();
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -25,9 +26,8 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
   useImperativeHandle(ref, () => ({
     open: (defaultAmount = '') => {
       setVisible(true);
-      // Làm tròn số nợ đề xuất để tránh lỗi phần thập phân (float) của tiền VNĐ
       const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
-      setAmount(defaultAmount ? formatNumberString(numericAmount.toString()) : '');
+      amountInput.init(numericAmount);
       setNote('');
       setError('');
     },
@@ -50,11 +50,11 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
   // Xác nhận lưu giao dịch trả tiền
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return;
-    if (!amount || amount.trim() === '') {
+    const payAmount = amountInput.getVND();
+    if (!amountInput.display || amountInput.display.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
       return;
     }
-    const payAmount = parseNumberString(amount);
     if (payAmount <= 0) {
       setError('Số tiền trả nợ phải lớn hơn 0.');
       return;
@@ -97,12 +97,12 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
           <Text style={styles.label}>Số tiền đã trả (VND):</Text>
           <TextInput
             style={[styles.input, styles.amountInput]}
-            placeholder="Ví dụ: 5.000.000"
+            placeholder="Ví dụ: 5.000"
             placeholderTextColor={COLORS.textLight}
             keyboardType="number-pad"
-            value={amount}
+            value={amountInput.display}
             onChangeText={(text) => {
-              setAmount(formatNumberString(text));
+              amountInput.onChange(text);
               setError('');
             }}
           />

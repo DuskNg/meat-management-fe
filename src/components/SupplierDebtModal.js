@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/SupplierDebtModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import { useMoneyInput } from '../hooks/useMoneyInput';
 import {
   StyleSheet,
   Text,
@@ -16,7 +17,7 @@ import SmoothModal from './SmoothModal';
 // Modal để ghi nợ mới (chủ sạp nợ nhà cung cấp khi nhập hàng)
 const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
-  const [amount, setAmount] = useState('');
+  const amountInput = useMoneyInput();
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -25,7 +26,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
   useImperativeHandle(ref, () => ({
     open: () => {
       setVisible(true);
-      setAmount('');
+      amountInput.init(0);
       setNote('');
       setError('');
     },
@@ -49,11 +50,11 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
   // Xác nhận lưu giao dịch nhập hàng
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return;
-    if (!amount || amount.trim() === '') {
+    const debtAmount = amountInput.getVND();
+    if (!amountInput.display || amountInput.display.trim() === '') {
       setError('Số tiền hàng nhập không được để trống.');
       return;
     }
-    const debtAmount = parseNumberString(amount);
     if (debtAmount <= 0) {
       setError('Số tiền hàng nhập phải lớn hơn 0.');
       return;
@@ -96,12 +97,12 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
           <Text style={styles.label}>Số tiền hàng nhập (VND):</Text>
           <TextInput
             style={[styles.input, styles.amountInput]}
-            placeholder="Ví dụ: 10.000.000"
+            placeholder="Ví dụ: 10.000"
             placeholderTextColor={COLORS.textLight}
             keyboardType="number-pad"
-            value={amount}
+            value={amountInput.display}
             onChangeText={(text) => {
-              setAmount(formatNumberString(text));
+              amountInput.onChange(text);
               setError('');
             }}
           />

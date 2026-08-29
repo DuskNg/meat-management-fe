@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/EditEmployeeModal.js
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import { useMoneyInput } from '../hooks/useMoneyInput';
 import {
   StyleSheet,
   Text,
@@ -16,25 +17,26 @@ import SmoothModal from './SmoothModal';
 // Modal chỉnh sửa thông tin nhân viên
 const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
-  const [employeeId, setEmployeeId] = useState('');
+  const [employeeId, setEmployeeId] = useState(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [role, setRole] = useState('');
-  const [salary, setSalary] = useState('');
+  const salaryInput = useMoneyInput();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useImperativeHandle(ref, () => ({
-    open: (employee) => {
-      setVisible(true);
-      setEmployeeId(employee.id);
-      setName(employee.name || '');
-      setPhone(employee.phone || '');
-      setAddress(employee.address || '');
-      setRole(employee.role || '');
-      setSalary(employee.baseSalary ? formatNumberString(employee.baseSalary.toString()) : '');
+    open: (emp) => {
+      if (!emp) return;
+      setEmployeeId(emp.id);
+      setName(emp.name || '');
+      setPhone(emp.phone || '');
+      setAddress(emp.address || '');
+      setRole(emp.role || '');
+      salaryInput.init(emp.baseSalary || 0);
       setError('');
+      setVisible(true);
     },
     close: () => {
       setVisible(false);
@@ -59,11 +61,11 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
       setError('Tên nhân viên là bắt buộc.');
       return;
     }
-    if (!salary || salary.trim() === '') {
-      setError('Mức lương tháng là bắt buộc.');
+    if (!salaryInput.display || salaryInput.display.trim() === '') {
+      setError('Lương tháng cơ bản là bắt buộc.');
       return;
     }
-    const salaryVal = parseNumberString(salary);
+    const salaryVal = salaryInput.getVND();
     if (salaryVal < 0) {
       setError('Mức lương không hợp lệ.');
       return;
@@ -116,12 +118,12 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
           <Text style={styles.label}>Lương tháng cơ bản (Bắt buộc, VND):</Text>
           <TextInput
             style={[styles.input, styles.salaryInput]}
-            placeholder="Ví dụ: 9.000.000"
+            placeholder="Ví dụ: 9.000"
             placeholderTextColor={COLORS.textLight}
             keyboardType="number-pad"
-            value={salary}
+            value={salaryInput.display}
             onChangeText={(text) => {
-              setSalary(formatNumberString(text));
+              salaryInput.onChange(text);
               setError('');
             }}
           />

@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/SalaryAdvanceModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import { useMoneyInput } from '../hooks/useMoneyInput';
 import {
   StyleSheet,
   Text,
@@ -16,7 +17,7 @@ import SmoothModal from './SmoothModal';
 // Modal cho nhân viên tạm ứng trước lương
 const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
-  const [amount, setAmount] = useState('');
+  const amountInput = useMoneyInput();
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -25,7 +26,7 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
   useImperativeHandle(ref, () => ({
     open: () => {
       setVisible(true);
-      setAmount('');
+      amountInput.init(0);
       setNote('');
       setError('');
     },
@@ -47,11 +48,11 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
 
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return;
-    if (!amount || amount.trim() === '') {
+    const advanceAmount = amountInput.getVND();
+    if (!amountInput.display || amountInput.display.trim() === '') {
       setError('Số tiền tạm ứng không được để trống.');
       return;
     }
-    const advanceAmount = parseNumberString(amount);
     if (advanceAmount <= 0) {
       setError('Số tiền tạm ứng phải lớn hơn 0.');
       return;
@@ -94,12 +95,12 @@ const SalaryAdvanceModal = forwardRef(({ employee, onRefresh }, ref) => {
           <Text style={styles.label}>Số tiền tạm ứng (VND):</Text>
           <TextInput
             style={[styles.input, styles.amountInput]}
-            placeholder="Ví dụ: 1.000.000"
+            placeholder="Ví dụ: 1.000"
             placeholderTextColor={COLORS.textLight}
             keyboardType="number-pad"
-            value={amount}
+            value={amountInput.display}
             onChangeText={(text) => {
-              setAmount(formatNumberString(text));
+              amountInput.onChange(text);
               setError('');
             }}
           />

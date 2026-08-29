@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/BatchDebtModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
+import { applySmartMoneyChange, rawToDisplay, vndToRaw } from '../hooks/useMoneyInput';
 import {
   StyleSheet,
   Text,
@@ -374,7 +375,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     (row.items || []).reduce((sum, item) => {
       const q = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
       const p = parseNumberString(item.price);
-      return sum + Math.round(q * p);
+      const sub = item.amount !== undefined ? item.amount : Math.round(q * p);
+      return sum + sub;
     }, 0);
 
   // Hàm tổng quát: tính tổng tiền theo loại row
@@ -632,9 +634,13 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                         placeholderTextColor="#94A3B8"
                         keyboardType="number-pad"
                         value={row.quickAmount}
-                        onChangeText={(text) =>
-                          handleUpdateRow(row.tempId, { quickAmount: formatNumberString(text) })
-                        }
+                        onChangeText={(text) => {
+                          const newRaw = applySmartMoneyChange(text, row.rawQuickAmount || '');
+                          handleUpdateRow(row.tempId, {
+                            quickAmount: rawToDisplay(newRaw),
+                            rawQuickAmount: newRaw,
+                          });
+                        }}
                       />
                     </View>
 
@@ -709,7 +715,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                           const selectedProd = availableProducts.find((p) => p.id === item.productId) || products.find((p) => p.id === item.productId);
                           const q = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
                           const p = parseNumberString(item.price);
-                          const itemSubtotal = Math.round(q * p);
+                          const itemSubtotal = item.amount !== undefined ? item.amount : Math.round(q * p);
                           const itemZIndex = (row.items.length - itemIdx) * 10;
 
                           return (
@@ -720,10 +726,13 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                   placeholder="Chọn thịt..."
                                   options={availableProducts}
                                   onSelect={(prod) => {
+                                    const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
+                                    const pVal = prod.defaultPrice || 0;
                                     handleUpdateRowItem(row.tempId, item.tempItemId, {
                                       productId: prod.id,
-                                      price: formatNumberString(prod.defaultPrice || 0),
+                                      price: formatNumberString(pVal),
                                       unit: prod.unit || 'kg',
+                                      amount: Math.round(qVal * pVal),
                                     });
                                   }}
                                   renderSelected={(prod) => prod.name}
@@ -747,7 +756,12 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                 selectTextOnFocus={true}
                                 onChangeText={(text) => {
                                   const filtered = text.replace(/[^0-9.,]/g, '');
-                                  handleUpdateRowItem(row.tempId, item.tempItemId, { quantity: filtered });
+                                  const qVal = parseFloat(filtered.replace(',', '.')) || 0;
+                                  const pVal = parseNumberString(item.price);
+                                  handleUpdateRowItem(row.tempId, item.tempItemId, {
+                                    quantity: filtered,
+                                    amount: Math.round(qVal * pVal),
+                                  });
                                 }}
                               />
                             </View>
@@ -761,13 +775,62 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                 value={item.price !== undefined && item.price !== null ? String(item.price) : ''}
                                 selectTextOnFocus={true}
                                 onChangeText={(text) => {
-                                  handleUpdateRowItem(row.tempId, item.tempItemId, { price: formatNumberString(text) });
+                                  const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
+                                  const pVal = parseNumberString(text);
+                                  handleUpdateRowItem(row.tempId, item.tempItemId, {
+                                    price: formatNumberString(text),
+                                    amount: Math.round(qVal * pVal),
+                                  });
+                                }}
+                                onBlur={() => {
+                                  // Dùng biến p tính sẵn tại render (tránh stale closure của item.price)
+                                  if (p > 0 && p < 1000) {
+                                    const finalPrice = p * 1000;
+                                    const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
+                                    handleUpdateRowItem(row.tempId, item.tempItemId, {
+                                      price: formatNumberString(finalPrice),
+                                      amount: Math.round(qVal * finalPrice),
+                                    });
+                                  }
                                 }}
                               />
                             </View>
 
-                            <View style={{ flex: 1.4, justifyContent: 'center', alignItems: 'flex-end', paddingRight: 4 }}>
-                              <Text style={styles.itemSubtotalText}>{formatCurrency(itemSubtotal)}</Text>
+                            <View style={{ flex: 1.4, marginRight: 4 }}>
+                              <TextInput
+                                style={[styles.compactInput, { textAlign: 'right', color: '#DC2626', fontWeight: '800' }]}
+                                placeholder="0"
+                                placeholderTextColor="#94A3B8"
+                                keyboardType="number-pad"
+                                value={item.amount !== undefined && item.amount !== null ? formatNumberString(item.amount) : (itemSubtotal > 0 ? formatNumberString(itemSubtotal) : '')}
+                                selectTextOnFocus={true}
+                                onChangeText={(text) => {
+                                  const amt = parseNumberString(text);
+                                  // Tính số lượng ngược từ thành tiền ÷ đơn giá (không thay đổi đơn giá)
+                                  // p là biến đã tính sẵn từ render: const p = parseNumberString(item.price)
+                                  const newQty = p > 0 ? amt / p : 0;
+                                  const roundedQty = Math.round(newQty * 100) / 100;
+                                  const displayQty = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
+                                  handleUpdateRowItem(row.tempId, item.tempItemId, {
+                                    amount: amt,
+                                    quantity: displayQty,
+                                  });
+                                }}
+                                onBlur={() => {
+                                  // Dùng biến itemSubtotal tính sẵn tại render (tránh stale closure)
+                                  if (itemSubtotal > 0 && itemSubtotal < 1000) {
+                                    const finalAmt = itemSubtotal * 1000;
+                                    // Tính số lượng từ thành tiền × 1000 ÷ đơn giá
+                                    const newQty = p > 0 ? finalAmt / p : 0;
+                                    const roundedQty = Math.round(newQty * 100) / 100;
+                                    const displayQty = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
+                                    handleUpdateRowItem(row.tempId, item.tempItemId, {
+                                      amount: finalAmt,
+                                      quantity: displayQty,
+                                    });
+                                  }
+                                }}
+                              />
                             </View>
 
                             <TouchableOpacity
@@ -1111,9 +1174,9 @@ const styles = StyleSheet.create({
     borderColor: '#94A3B8',
     borderRadius: 5,
     paddingHorizontal: 6,
-    paddingVertical: 2,
-    height: 28,
-    fontSize: 12,
+    paddingVertical: 0,
+    height: 26,
+    fontSize: 11,
     fontWeight: '600',
     color: '#0F172A',
     backgroundColor: '#FFFFFF',

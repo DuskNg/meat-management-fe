@@ -1,5 +1,6 @@
 // meat-management-fe/src/components/EditPaymentModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import { useMoneyInput } from '../hooks/useMoneyInput';
 import {
   StyleSheet,
   Text,
@@ -61,7 +62,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
   // ─── State ──────────────────────────────────────────────────────────────
   const [visible, setVisible] = useState(false);
   const [paymentId, setPaymentId] = useState(null);
-  const [amount, setAmount] = useState('');
+  const amountInput = useMoneyInput();
   const [dateStr, setDateStr] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -77,8 +78,8 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
     open: (payment) => {
       if (!payment) return;
       setPaymentId(payment.id);
-      setAmount(formatNumberString(payment.amount.toString()));
-      setDateStr(formatDateToDisplay(payment.date));
+      amountInput.init(payment.amount || 0);
+      setDateStr(formatDateToDisplay(payment.paidAt || payment.createdAt));
       setNote(payment.note || '');
       setError('');
       setVisible(true);
@@ -90,7 +91,7 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
   // Gợi ý điền nhanh số tiền (giúp người bán bấm nhanh các mốc chẵn)
   const handleQuickAmount = (value) => {
-    setAmount(formatNumberString(value.toString()));
+    amountInput.init(value);
     setError('');
   };
 
@@ -112,11 +113,12 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
   // Xử lý gửi cập nhật lượt thu tiền
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
-    if (!amount || amount.trim() === '') {
+    const payAmount = amountInput.getVND();
+    if (!amountInput.display || amountInput.display.trim() === '') {
       setError('Số tiền trả nợ không được để trống.');
+      isSubmittingRef.current = false;
       return;
     }
-    const payAmount = parseNumberString(amount);
     if (payAmount <= 0) {
       setError('Số tiền trả nợ phải lớn hơn 0.');
       return;
@@ -164,12 +166,12 @@ const EditPaymentModal = forwardRef(({ onRefresh }, ref) => {
           <Text style={styles.label}>1. Số tiền khách đã trả (VND):</Text>
           <TextInput
             style={[styles.input, styles.amountInput]}
-            placeholder="Ví dụ: 500.000"
+            placeholder="Ví dụ: 500"
             placeholderTextColor={COLORS.textLight}
             keyboardType="number-pad"
-            value={amount}
+            value={amountInput.display}
             onChangeText={(text) => {
-              setAmount(formatNumberString(text));
+              amountInput.onChange(text);
               setError('');
             }}
           />

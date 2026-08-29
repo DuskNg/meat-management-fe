@@ -93,11 +93,14 @@ const CustomSelect = ({
     };
   }, []);
 
-  // Tính toán vị trí tuyệt đối của dropdown dựa trên vị trí trigger trên màn hình
+  // Tính toán vị trí tuyệt đối của dropdown dựa trên vị trí trigger và độ cuộn trang (scroll)
   const measureAndOpen = useCallback(() => {
     if (Platform.OS !== 'web' || !dropdownRef.current) return;
 
     const rect = dropdownRef.current.getBoundingClientRect();
+    const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+    const scrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft;
+
     const windowHeight = window.innerHeight || document.documentElement.clientHeight;
     const spaceBelow = windowHeight - rect.bottom;
 
@@ -105,12 +108,33 @@ const CustomSelect = ({
     let shouldDropUp = dropUp !== undefined ? !!dropUp : (spaceBelow < 220 && rect.top > 220);
 
     setDropdownPos({
-      top: shouldDropUp ? rect.top : rect.bottom,
-      left: rect.left,
+      top: shouldDropUp ? (rect.top + scrollY) : (rect.bottom + scrollY),
+      left: rect.left + scrollX,
       width: rect.width,
       isUp: shouldDropUp,
     });
   }, [dropUp]);
+
+  // Lắng nghe sự kiện scroll và resize để tự động cập nhật lại vị trí dropdown (giống Antd)
+  useEffect(() => {
+    if (!open || Platform.OS !== 'web') return;
+
+    const handleUpdate = () => {
+      measureAndOpen();
+    };
+
+    // Bắt sự kiện scroll ở bất kỳ container con nào bằng capture phase
+    window.addEventListener('scroll', handleUpdate, true);
+    window.addEventListener('resize', handleUpdate);
+
+    // Đo vị trí ngay khi mở
+    handleUpdate();
+
+    return () => {
+      window.removeEventListener('scroll', handleUpdate, true);
+      window.removeEventListener('resize', handleUpdate);
+    };
+  }, [open, measureAndOpen]);
 
   // Mở dropdown: đo vị trí (Web) và cập nhật state
   const openDropdown = useCallback(() => {
@@ -200,16 +224,16 @@ const CustomSelect = ({
     if (!portalElRef.current) {
       const el = document.createElement('div');
       el.id = portalIdRef.current;
-      el.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;z-index:999999;pointer-events:none;';
+      el.style.cssText = 'position:absolute;top:0;left:0;width:100%;z-index:999999;pointer-events:none;';
       document.body.appendChild(el);
       portalElRef.current = el;
     }
     // Bật pointer-events khi mở để có thể click vào option
     portalElRef.current.style.pointerEvents = 'auto';
 
-    // Tính vị trí hiển thị dropdown cố định theo màn hình
+    // Tính vị trí hiển thị dropdown tuyệt đối theo document body (như Antd)
     const dropStyle = {
-      position: 'fixed',
+      position: 'absolute',
       left: dropdownPos.left,
       width: Math.max(dropdownPos.width, 280),
       zIndex: 999999,
@@ -222,9 +246,11 @@ const CustomSelect = ({
     };
 
     if (dropdownPos.isUp) {
-      dropStyle.bottom = window.innerHeight - dropdownPos.top + 4;
+      dropStyle.top = dropdownPos.top - 4;
+      dropStyle.transform = 'translateY(-100%)';
     } else {
       dropStyle.top = dropdownPos.top + 4;
+      dropStyle.transform = 'none';
     }
 
     return ReactDOM.createPortal(
@@ -359,7 +385,7 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'web' ? { cursor: 'text' } : {}),
   },
   selectTriggerCompact: {
-    height: 34,
+    height: 26,
     paddingHorizontal: 6,
     borderColor: '#94A3B8',
   },
@@ -384,7 +410,7 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'web' ? { outlineStyle: 'none', cursor: 'text' } : {}),
   },
   selectTriggerTextCompact: {
-    fontSize: 12,
+    fontSize: 11,
   },
   selectPlaceholder: {
     color: '#94A3B8',
