@@ -302,13 +302,15 @@ export default function ShopDashboardScreen() {
   };
 
   const renderActionTitleFloating = (item) => {
-    if (item.type === 'SHOP_SESSION' && item.rawItem) {
-      const { startTime, endTime, isPaid, totalAmount, table } = item.rawItem;
+    if (item?.type === 'SHOP_SESSION' && item?.rawItem) {
+      const { startTime, endTime, isPaid, totalAmount, table } = item.rawItem || {};
       const tableName = table?.name || 'Bàn/Phòng';
       
       const formatTimeOnly = (dateStr) => {
+        if (!dateStr) return '';
         try {
           const d = new Date(dateStr);
+          if (isNaN(d.getTime())) return '';
           const hours = String(d.getHours()).padStart(2, '0');
           const minutes = String(d.getMinutes()).padStart(2, '0');
           return `${hours}:${minutes}`;
@@ -317,13 +319,13 @@ export default function ShopDashboardScreen() {
         }
       };
 
-      const startStr = formatTimeOnly(startTime);
+      const startStr = startTime ? formatTimeOnly(startTime) : '';
       const endStr = endTime ? formatTimeOnly(endTime) : 'đang chơi';
       const amountStr = totalAmount ? (parseFloat(totalAmount) || 0).toLocaleString('vi-VN') + 'đ' : '';
 
       return (
         <Text style={styles.floatingLogText} numberOfLines={2}>
-          {tableName}: {startStr} - {endStr}
+          {tableName}: {startStr ? `${startStr} - ${endStr}` : endStr}
           {isPaid ? (
             <Text style={{ color: '#059669', fontWeight: 'bold' }}> (Đã thanh toán {amountStr})</Text>
           ) : endTime ? (
@@ -337,7 +339,7 @@ export default function ShopDashboardScreen() {
     
     return (
       <Text style={styles.floatingLogText} numberOfLines={2}>
-        {item.actionTitle}
+        {item?.actionTitle || ''}
       </Text>
     );
   };

@@ -196,7 +196,7 @@ const ShopDailyRevenueModal = forwardRef(({ onRefresh }, ref) => {
 
     // Sắp xếp các phiên của từng bàn theo startTime tăng dần (từ sáng đến tối)
     Object.values(map).forEach((group) => {
-      group.sessions.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+      group.sessions.sort((a, b) => new Date(a?.startTime || 0) - new Date(b?.startTime || 0));
     });
 
     // Sắp xếp tự nhiên tên bàn (Bàn 1, Bàn 2, ... Bàn 7, Bàn 10)

@@ -169,13 +169,15 @@ const WorkspaceMemberActionsModal = forwardRef(function WorkspaceMemberActionsMo
 
   // Tùy chỉnh hiển thị tiêu đề hoạt động bida tính giờ
   const renderActionTitle = (item) => {
-    if (item.type === 'SHOP_SESSION' && item.rawItem) {
-      const { startTime, endTime, isPaid, totalAmount, table } = item.rawItem;
+    if (item?.type === 'SHOP_SESSION' && item?.rawItem) {
+      const { startTime, endTime, isPaid, totalAmount, table } = item.rawItem || {};
       const tableName = table?.name || 'Bàn/Phòng';
       
       const formatTimeOnly = (dateStr) => {
+        if (!dateStr) return '';
         try {
           const d = new Date(dateStr);
+          if (isNaN(d.getTime())) return '';
           const hours = String(d.getHours()).padStart(2, '0');
           const minutes = String(d.getMinutes()).padStart(2, '0');
           return `${hours}:${minutes}`;
@@ -184,13 +186,13 @@ const WorkspaceMemberActionsModal = forwardRef(function WorkspaceMemberActionsMo
         }
       };
 
-      const startStr = formatTimeOnly(startTime);
+      const startStr = startTime ? formatTimeOnly(startTime) : '';
       const endStr = endTime ? formatTimeOnly(endTime) : 'đang chơi';
       const amountStr = totalAmount ? (parseFloat(totalAmount) || 0).toLocaleString('vi-VN') + 'đ' : '';
 
       return (
         <Text style={styles.actionTitle}>
-          {tableName}: {startStr} - {endStr}
+          {tableName}: {startStr ? `${startStr} - ${endStr}` : endStr}
           {isPaid ? (
             <Text style={{ color: '#059669', fontWeight: 'bold' }}> (Đã thanh toán {amountStr})</Text>
           ) : endTime ? (
@@ -202,7 +204,7 @@ const WorkspaceMemberActionsModal = forwardRef(function WorkspaceMemberActionsMo
       );
     }
     
-    return <Text style={styles.actionTitle}>{item.actionTitle}</Text>;
+    return <Text style={styles.actionTitle}>{item?.actionTitle || ''}</Text>;
   };
 
   // Mở modal sửa thao tác

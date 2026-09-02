@@ -173,7 +173,9 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
     }
 
     const updateTicker = () => {
+      if (!session?.startTime) return;
       const start = new Date(session.startTime);
+      if (isNaN(start.getTime())) return;
       const end = session.endTime ? new Date(session.endTime) : new Date();
       const diffMs = Math.max(0, end - start);
 
@@ -397,7 +399,9 @@ const ShopSessionModal = forwardRef(({ onRefresh }, ref) => {
             <Text style={styles.infoRow}>
               <Text style={styles.infoLabel}>Giờ vào:</Text>{' '}
               <Text style={styles.infoValue}>
-                {new Date(session.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                {session?.startTime && !isNaN(new Date(session.startTime).getTime())
+                  ? new Date(session.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                  : '--:--'}
               </Text>
             </Text>
 

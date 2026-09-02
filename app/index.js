@@ -46,6 +46,7 @@ import AddEmployeeModal from '../src/components/AddEmployeeModal';
 import SalaryAdvanceModal from '../src/components/SalaryAdvanceModal';
 import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
 import EditEmployeeModal from '../src/components/EditEmployeeModal';
+import ReturnGoodsModal from '../src/components/ReturnGoodsModal';
 import AnimatedPressable from '../src/components/AnimatedPressable';
 import { useLockStore } from '../src/store/lockStore';
 import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
@@ -135,6 +136,7 @@ export default function DashboardScreen() {
   const editEmployeeModalRef = useRef(null);
   const memberActionsModalRef = useRef(null);
   const employeeDailyDebtModalRef = useRef(null); // Modal danh sách ghi nợ trong ngày (chỉ dùng cho tk thành viên)
+  const returnGoodsModalRef = useRef(null); // Modal trả hàng (nhanh & thủ công)
 
   const [showFloatingLogs, setShowFloatingLogs] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -239,13 +241,15 @@ export default function DashboardScreen() {
   };
 
   const renderActionTitleFloating = (item) => {
-    if (item.type === 'SHOP_SESSION' && item.rawItem) {
-      const { startTime, endTime, isPaid, totalAmount, table } = item.rawItem;
+    if (item?.type === 'SHOP_SESSION' && item?.rawItem) {
+      const { startTime, endTime, isPaid, totalAmount, table } = item.rawItem || {};
       const tableName = table?.name || 'Bàn/Phòng';
 
       const formatTimeOnly = (dateStr) => {
+        if (!dateStr) return '';
         try {
           const d = new Date(dateStr);
+          if (isNaN(d.getTime())) return '';
           const hours = String(d.getHours()).padStart(2, '0');
           const minutes = String(d.getMinutes()).padStart(2, '0');
           return `${hours}:${minutes}`;
@@ -254,13 +258,13 @@ export default function DashboardScreen() {
         }
       };
 
-      const startStr = formatTimeOnly(startTime);
+      const startStr = startTime ? formatTimeOnly(startTime) : '';
       const endStr = endTime ? formatTimeOnly(endTime) : 'đang chơi';
       const amountStr = totalAmount ? (parseFloat(totalAmount) || 0).toLocaleString('vi-VN') + 'đ' : '';
 
       return (
         <Text style={styles.floatingLogText} numberOfLines={2}>
-          {tableName}: {startStr} - {endStr}
+          {tableName}: {startStr ? `${startStr} - ${endStr}` : endStr}
           {isPaid ? (
             <Text style={{ color: '#059669', fontWeight: 'bold' }}> (Đã thanh toán {amountStr})</Text>
           ) : endTime ? (
@@ -274,7 +278,7 @@ export default function DashboardScreen() {
 
     return (
       <Text style={styles.floatingLogText} numberOfLines={2}>
-        {item.actionTitle}
+        {item?.actionTitle || ''}
       </Text>
     );
   };
@@ -349,6 +353,33 @@ export default function DashboardScreen() {
     // Luôn tải danh sách giao dịch khi ở tab khách hàng để hiển thị tổng tiền trên thẻ tổng hợp
     enabled: currentView === 'customers' && auth.hasPermission('canManageCustomers'),
   });
+
+  // Helper chuẩn hóa date thành chuỗi YYYY-MM-DD theo giờ địa phương
+  const getLocalDateKey = (dateInput) => {
+    if (!dateInput) return '';
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  // Xác định danh sách ID khách hàng có đơn hàng phát sinh trong ngày hôm nay
+  const todayCustomerIdsHasOrders = React.useMemo(() => {
+    if (!transactionsResponse?.data) return new Set();
+    const todayStr = getLocalDateKey(new Date());
+    const set = new Set();
+    transactionsResponse.data.forEach((t) => {
+      if (t.customerId && t.date) {
+        const tDateStr = getLocalDateKey(t.date);
+        if (tDateStr === todayStr) {
+          set.add(t.customerId);
+        }
+      }
+    });
+    return set;
+  }, [transactionsResponse?.data]);
 
   // Các hàm làm mới dữ liệu khách hàng kèm theo lịch sử nợ chi tiết nếu đang mở
   const handleRefreshAll = () => {
@@ -1591,7 +1622,7 @@ export default function DashboardScreen() {
                   }}
                   activeOpacity={0.6}
                 >
-                  <Text style={styles.addDebtBtnText}>🔴 Ghi nợ</Text>
+                  <Text style={styles.addDebtBtnText}>Ghi nợ</Text>
                 </TouchableOpacity>
               ) : (
                 <>
@@ -1606,7 +1637,7 @@ export default function DashboardScreen() {
                     }}
                     activeOpacity={0.6}
                   >
-                    <Text style={styles.viewDebtBtnText}>👁️ Xem nợ</Text>
+                    <Text style={styles.viewDebtBtnText}>Xem nợ</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -1620,7 +1651,29 @@ export default function DashboardScreen() {
                     }}
                     activeOpacity={0.6}
                   >
-                    <Text style={styles.addDebtBtnText}>🔴 Ghi nợ</Text>
+                    <Text style={styles.addDebtBtnText}>Ghi nợ</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.returnGoodsBtn,
+                      !todayCustomerIdsHasOrders.has(item.id) && styles.returnGoodsBtnDisabled
+                    ]}
+                    onPress={(e) => {
+                      if (e && e.stopPropagation) {
+                        e.stopPropagation();
+                      }
+                      setSelectedCustomerId(item.id);
+                      returnGoodsModalRef.current?.open(item);
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={[
+                      styles.returnGoodsBtnText,
+                      !todayCustomerIdsHasOrders.has(item.id) && styles.returnGoodsBtnTextDisabled
+                    ]}>
+                      Trả hàng
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -1633,7 +1686,7 @@ export default function DashboardScreen() {
                     }}
                     activeOpacity={0.6}
                   >
-                    <Text style={styles.exportDebtBtnText}>📊 Xuất nợ</Text>
+                    <Text style={styles.exportDebtBtnText}>Xuất nợ</Text>
                   </TouchableOpacity>
                 </>
               )}
@@ -3072,6 +3125,7 @@ export default function DashboardScreen() {
           dailyReportModalRef.current?.refetch();
         }}
       />
+      <ReturnGoodsModal ref={returnGoodsModalRef} onRefresh={handleRefreshAll} />
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />
 
@@ -3718,6 +3772,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
     color: COLORS.primaryDark, // Màu xanh lá cây đậm thương hiệu
+  },
+  // Nút Trả hàng cho khách hàng
+  returnGoodsBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#FFFBEB', // Nền hổ phách nhạt
+    borderWidth: 1,
+    borderColor: '#FDE68A',     // Viền hổ phách
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  returnGoodsBtnDisabled: {
+    backgroundColor: '#F1F5F9', // Nền xám nhạt khi bị vô hiệu hóa
+    borderColor: '#CBD5E1',     // Viền xám
+    opacity: 0.5,
+  },
+  returnGoodsBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#D97706', // Chữ màu hổ phách/cam
+  },
+  returnGoodsBtnTextDisabled: {
+    color: '#94A3B8', // Chữ màu xám khi bị vô hiệu hóa
   },
   actionMenuContainer: {
     position: 'relative',
