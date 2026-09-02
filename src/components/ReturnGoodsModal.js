@@ -351,8 +351,8 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
       setLoading(true);
       try {
         const formattedNote = quickNote.trim()
-          ? `[Trả hàng nhanh] ${quickNote.trim()}`
-          : '[Trả hàng nhanh] Trừ tiền công nợ đơn trong ngày';
+          ? `[Trả lại hàng] ${quickNote.trim()}`
+          : 'Trả lại hàng';
 
         const response = await api.post('/payments', {
           customerId: customer.id,

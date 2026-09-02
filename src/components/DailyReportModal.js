@@ -92,6 +92,12 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   const formatPaymentNote = (note, paidAt) => {
     if (!note) return 'Thu tiền nợ';
     const trimNote = note.trim();
+    if (trimNote === '[Trả hàng nhanh] Trừ tiền công nợ đơn trong ngày' || trimNote === 'Trả hàng' || trimNote === 'Trả lại hàng') {
+      return 'Trả lại hàng';
+    }
+    if (trimNote.startsWith('[Trả hàng nhanh]')) {
+      return trimNote.replace('[Trả hàng nhanh]', '[Trả lại hàng]');
+    }
     if (trimNote.startsWith('Thanh toán nợ Tháng') && !trimNote.includes('ngày')) {
       const d = new Date(paidAt);
       if (!isNaN(d.getTime())) {
@@ -1356,12 +1362,32 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                 {displayItems.map((item) => {
                   if (activeReportTab === 'day') {
                     const isDebt = item.type === 'debt';
+                    const isReturnGoods = !isDebt && (
+                      item.details?.includes('Trả hàng') || 
+                      item.details?.includes('Trả lại') || 
+                      item.note?.includes('Trả hàng') || 
+                      item.note?.includes('Trả lại')
+                    );
+
+                    let displayDetails = item.details;
+                    if (isReturnGoods) {
+                      if (displayDetails === '[Trả hàng nhanh] Trừ tiền công nợ đơn trong ngày' || displayDetails === 'Trả hàng' || displayDetails === 'Trả lại hàng') {
+                        displayDetails = 'Trả lại hàng';
+                      } else if (displayDetails?.startsWith('[Trả hàng nhanh]')) {
+                        displayDetails = displayDetails.replace('[Trả hàng nhanh]', '[Trả lại hàng]');
+                      }
+                    }
+
                     return (
                       <View
                         key={item.id}
                         style={[
                           styles.itemCard,
-                          isDebt ? styles.itemCardDebt : styles.itemCardPayment
+                          isDebt 
+                            ? styles.itemCardDebt 
+                            : isReturnGoods 
+                              ? styles.itemCardReturnGoods 
+                              : styles.itemCardPayment
                         ]}
                       >
                         <View style={styles.itemHeader}>
@@ -1390,14 +1416,21 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                             </TouchableOpacity>
                           </View>
 
-                          <Text style={[styles.itemAmount, isDebt ? styles.amountDebt : styles.amountPayment]}>
+                          <Text style={[
+                            styles.itemAmount, 
+                            isDebt 
+                              ? styles.amountDebt 
+                              : isReturnGoods 
+                                ? styles.amountReturnGoods 
+                                : styles.amountPayment
+                          ]}>
                             {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
                           </Text>
                         </View>
 
-                        {item.details ? (
+                        {displayDetails ? (
                           <Text style={styles.itemDetails} numberOfLines={2}>
-                            {isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`}
+                            {isDebt ? `🥩 ${displayDetails}` : isReturnGoods ? `↩️ ${displayDetails}` : `💵 ${displayDetails}`}
                           </Text>
                         ) : null}
                       </View>
@@ -1675,6 +1708,12 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: COLORS.primary,
   },
+  itemCardReturnGoods: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FEF3C7',
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
   itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1694,6 +1733,9 @@ const styles = StyleSheet.create({
   },
   amountPayment: {
     color: COLORS.primaryDark,
+  },
+  amountReturnGoods: {
+    color: '#D97706',
   },
   itemDetails: {
     fontSize: 12,
