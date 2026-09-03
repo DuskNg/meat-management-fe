@@ -18,7 +18,7 @@ let ReactDOM = null;
 if (Platform.OS === 'web' && typeof window !== 'undefined') {
   try {
     ReactDOM = require('react-dom');
-  } catch (_) {}
+  } catch (_) { }
 }
 
 /**
@@ -208,12 +208,12 @@ const CustomSelect = ({
             // Ngăn mousedown cướp focus và đóng dropdown trên Web
             {...(Platform.OS === 'web'
               ? {
-                  onMouseDown: (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleSelectOption(opt);
-                  },
-                }
+                onMouseDown: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelectOption(opt);
+                },
+              }
               : {})}
           >
             {renderOption ? (
@@ -454,12 +454,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...(Platform.OS !== 'web'
       ? {
-          shadowColor: '#000000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.08,
-          shadowRadius: 8,
-          elevation: 4,
-        }
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 4,
+      }
       : {}),
   },
   selectDropdownUp: {

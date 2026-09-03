@@ -143,17 +143,7 @@ export default function DashboardScreen() {
   const [loadingLogs, setLoadingLogs] = useState(false);
 
   const [currentView, setCurrentView] = useState(params.view || 'menu'); // 'menu' hoặc 'customers' để điều hướng
-  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-
-  // Tối ưu gõ phím siêu mượt: Cập nhật text ngay lập tức, debounce 60ms cho bộ lọc danh sách
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-    }, 60);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
-
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
@@ -1078,11 +1068,8 @@ export default function DashboardScreen() {
   };
 
   const customers = customersResponse?.data || [];
-  const customerIdSet = React.useMemo(() => new Set(customers.map((c) => c.id)), [customers]);
-  const customerPayments = React.useMemo(
-    () => (paymentsResponse?.data || []).filter((payment) => customerIdSet.has(payment.customerId)),
-    [paymentsResponse?.data, customerIdSet]
-  );
+  const customerIdSet = new Set(customers.map((c) => c.id));
+  const customerPayments = (paymentsResponse?.data || []).filter((payment) => customerIdSet.has(payment.customerId));
 
   // Helper lấy định dạng tháng/năm dạng ngắn MM/YYYY
   const getShortMonthYear = (monthKey) => {
@@ -1090,125 +1077,99 @@ export default function DashboardScreen() {
     return `${month}/${year}`;
   };
 
-  // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị (Memoized để không tính lại khi gõ tìm kiếm)
-  const totalDebt = React.useMemo(() => {
-    return customers.reduce((sum, c) => sum + (c.debt || 0), 0);
-  }, [customers]);
-
-  const selectedMonthPayments = React.useMemo(() => {
-    return customerPayments.filter((payment) => {
-      const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
-      if (!paidDate || isNaN(paidDate.getTime())) return false;
-      const monthKey = `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}`;
-      return monthKey === selectedRevenueMonth;
-    });
-  }, [customerPayments, selectedRevenueMonth]);
-
-  const totalCollectedInSelectedMonth = React.useMemo(() => {
-    return selectedMonthPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-  }, [selectedMonthPayments]);
+  // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
+  const totalDebt = customers.reduce((sum, c) => sum + (c.debt || 0), 0);
+  const selectedMonthPayments = customerPayments.filter((payment) => {
+    const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
+    if (!paidDate || isNaN(paidDate.getTime())) return false;
+    const monthKey = `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}`;
+    return monthKey === selectedRevenueMonth;
+  });
+  const totalCollectedInSelectedMonth = selectedMonthPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
 
   // Tính tổng giao dịch (tiền hàng nợ phát sinh) của tháng được chọn
-  const customerTransactions = React.useMemo(() => {
-    return (transactionsResponse?.data || []).filter((t) => customerIdSet.has(t.customerId));
-  }, [transactionsResponse?.data, customerIdSet]);
+  const customerTransactions = (transactionsResponse?.data || []).filter((t) => customerIdSet.has(t.customerId));
+  const selectedMonthTransactions = customerTransactions.filter((transaction) => {
+    const tDate = transaction.date ? new Date(transaction.date) : null;
+    if (!tDate || isNaN(tDate.getTime())) return false;
+    const monthKey = `${tDate.getFullYear()}-${(tDate.getMonth() + 1).toString().padStart(2, '0')}`;
+    return monthKey === selectedRevenueMonth;
+  });
+  const totalTransactionsInSelectedMonth = selectedMonthTransactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
 
-  const selectedMonthTransactions = React.useMemo(() => {
-    return customerTransactions.filter((transaction) => {
-      const tDate = transaction.date ? new Date(transaction.date) : null;
-      if (!tDate || isNaN(tDate.getTime())) return false;
-      const monthKey = `${tDate.getFullYear()}-${(tDate.getMonth() + 1).toString().padStart(2, '0')}`;
-      return monthKey === selectedRevenueMonth;
-    });
-  }, [customerTransactions, selectedRevenueMonth]);
-
-  const totalTransactionsInSelectedMonth = React.useMemo(() => {
-    return selectedMonthTransactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
-  }, [selectedMonthTransactions]);
-
-  const dailyCollectedRows = React.useMemo(() => {
-    const collectedByDay = selectedMonthPayments.reduce((groups, payment) => {
-      const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
-      const dateKey = paidDate && !isNaN(paidDate.getTime())
-        ? `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}-${paidDate.getDate().toString().padStart(2, '0')}`
-        : 'unknown';
-      groups[dateKey] = (groups[dateKey] || 0) + parseFloat(payment.amount || 0);
-      return groups;
-    }, {});
-    return Object.entries(collectedByDay)
-      .map(([dateKey, amount]) => ({ dateKey, amount }))
-      .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
-  }, [selectedMonthPayments]);
+  const totalCollected = customerPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  const totalOriginalDebt = totalDebt + totalCollected;
+  const collectedByDay = selectedMonthPayments.reduce((groups, payment) => {
+    const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
+    const dateKey = paidDate && !isNaN(paidDate.getTime())
+      ? `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}-${paidDate.getDate().toString().padStart(2, '0')}`
+      : 'unknown';
+    groups[dateKey] = (groups[dateKey] || 0) + parseFloat(payment.amount || 0);
+    return groups;
+  }, {});
+  const dailyCollectedRows = Object.entries(collectedByDay)
+    .map(([dateKey, amount]) => ({ dateKey, amount }))
+    .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
 
   // 3. Bộ lọc tìm kiếm nhanh theo tên hoặc SĐT khách hàng (hỗ trợ không dấu, viết tắt, nhiều từ rời rạc) và sắp xếp
-  const filteredCustomers = React.useMemo(() => {
-    return customers
-      .filter((c) => matchItemSearch(c, search, ['name', 'phone', 'address', 'note']))
-      .sort((a, b) => {
-        const debtA = a.debt || 0;
-        const debtB = b.debt || 0;
+  const filteredCustomers = customers
+    .filter((c) => matchItemSearch(c, search, ['name', 'phone', 'address', 'note']))
+    .sort((a, b) => {
+      const debtA = a.debt || 0;
+      const debtB = b.debt || 0;
 
-        // Ưu tiên những người còn nợ lên đầu
-        if (debtA > 0 && debtB <= 0) return -1;
-        if (debtB > 0 && debtA <= 0) return 1;
+      // Ưu tiên những người còn nợ lên đầu
+      if (debtA > 0 && debtB <= 0) return -1;
+      if (debtB > 0 && debtA <= 0) return 1;
 
-        // Nếu cả hai đều còn nợ, xếp theo số nợ từ lớn đến bé
-        if (debtA > 0 && debtB > 0) {
-          return debtB - debtA;
-        }
+      // Nếu cả hai đều còn nợ, xếp theo số nợ từ lớn đến bé
+      if (debtA > 0 && debtB > 0) {
+        return debtB - debtA;
+      }
 
-        // Nếu cả hai đều không còn nợ, sắp xếp theo tên theo bảng chữ cái tiếng Việt
-        return a.name.localeCompare(b.name, 'vi');
-      });
-  }, [customers, search]);
+      // Nếu cả hai đều không còn nợ, sắp xếp theo tên theo bảng chữ cái tiếng Việt
+      return a.name.localeCompare(b.name, 'vi');
+    });
 
   const badCustomers = badCustomersResponse?.data || [];
-  const totalBadDebt = React.useMemo(() => {
-    return badCustomers.reduce((sum, c) => sum + (c.debt || 0), 0);
-  }, [badCustomers]);
+  const totalBadDebt = badCustomers.reduce((sum, c) => sum + (c.debt || 0), 0);
 
-  const filteredBadCustomers = React.useMemo(() => {
-    return badCustomers
-      .filter((c) => matchItemSearch(c, search, ['name', 'phone', 'address', 'note']))
-      .sort((a, b) => {
-        const debtA = a.debt || 0;
-        const debtB = b.debt || 0;
+  const filteredBadCustomers = badCustomers
+    .filter((c) => matchItemSearch(c, search, ['name', 'phone', 'address', 'note']))
+    .sort((a, b) => {
+      const debtA = a.debt || 0;
+      const debtB = b.debt || 0;
 
-        // Ưu tiên những người còn nợ lên đầu
-        if (debtA > 0 && debtB <= 0) return -1;
-        if (debtB > 0 && debtA <= 0) return 1;
+      // Ưu tiên những người còn nợ lên đầu
+      if (debtA > 0 && debtB <= 0) return -1;
+      if (debtB > 0 && debtA <= 0) return 1;
 
-        if (debtA > 0 && debtB > 0) {
-          return debtB - debtA;
-        }
+      if (debtA > 0 && debtB > 0) {
+        return debtB - debtA;
+      }
 
-        return a.name.localeCompare(b.name, 'vi');
-      });
-  }, [badCustomers, search]);
+      return a.name.localeCompare(b.name, 'vi');
+    });
 
   const suppliers = suppliersResponse?.data || [];
-  const totalSupplierDebt = React.useMemo(() => {
-    return suppliers.reduce((sum, s) => sum + (s.debt || 0), 0);
-  }, [suppliers]);
+  const totalSupplierDebt = suppliers.reduce((sum, s) => sum + (s.debt || 0), 0);
 
-  const filteredSuppliers = React.useMemo(() => {
-    return suppliers
-      .filter((s) => matchItemSearch(s, search, ['name', 'phone', 'address', 'note']))
-      .sort((a, b) => {
-        const debtA = a.debt || 0;
-        const debtB = b.debt || 0;
+  const filteredSuppliers = suppliers
+    .filter((s) => matchItemSearch(s, search, ['name', 'phone', 'address', 'note']))
+    .sort((a, b) => {
+      const debtA = a.debt || 0;
+      const debtB = b.debt || 0;
 
-        // Ưu tiên nhà cung cấp mình đang nợ tiền lên đầu
-        if (debtA > 0 && debtB <= 0) return -1;
-        if (debtB > 0 && debtA <= 0) return 1;
+      // Ưu tiên nhà cung cấp mình đang nợ tiền lên đầu
+      if (debtA > 0 && debtB <= 0) return -1;
+      if (debtB > 0 && debtA <= 0) return 1;
 
-        if (debtA > 0 && debtB > 0) {
-          return debtB - debtA;
-        }
+      if (debtA > 0 && debtB > 0) {
+        return debtB - debtA;
+      }
 
-        return a.name.localeCompare(b.name, 'vi');
-      });
-  }, [suppliers, search]);
+      return a.name.localeCompare(b.name, 'vi');
+    });
 
   const renderSupplierItem = ({ item }) => {
     const hasDebt = item.debt > 0;
@@ -1566,43 +1527,43 @@ export default function DashboardScreen() {
             activeOpacity={0.7}
           >
             <View style={styles.cardHeaderSection}>
-            {/* Avatar chữ cái đại diện */}
-            <View style={[styles.customerAvatar, { backgroundColor: avatarBg }]}>
-              <Text style={[styles.customerAvatarText, { color: avatarText }]}>{firstLetter}</Text>
-            </View>
-
-            {/* Thông tin tên & số điện thoại */}
-            <View style={styles.cardInfo}>
-              <Text style={styles.customerName} numberOfLines={1}>
-                {item.name}
-              </Text>
-              <Text style={styles.customerPhone} numberOfLines={1}>
-                {item.phone ? `📞 ${item.phone}` : '📞 Không có số điện thoại'}
-              </Text>
-            </View>
-
-            {/* Trạng thái công nợ bên phải: Ẩn hoàn toàn với nhân viên */}
-            {!isEmployee && (
-              <View style={styles.cardDebtStatusSection}>
-                {isBadDebtCustomer ? (
-                  <View style={styles.badDebtValueContainer}>
-                    <Text style={styles.badDebtValueAmount}>{formatCurrency(item.debt)}</Text>
-                    <Text style={styles.badDebtValueLabel}>NỢ XẤU ⚠️</Text>
-                  </View>
-                ) : hasDebt ? (
-                  <View style={styles.debtValueContainer}>
-                    <Text style={styles.debtValueAmount}>{formatCurrency(item.debt)}</Text>
-                    <Text style={styles.debtValueLabel}>còn nợ ⚠️</Text>
-                  </View>
-                ) : (
-                  <View style={styles.noDebtBadge}>
-                    <Text style={styles.noDebtBadgeText}>Hết nợ ✅</Text>
-                  </View>
-                )}
+              {/* Avatar chữ cái đại diện */}
+              <View style={[styles.customerAvatar, { backgroundColor: avatarBg }]}>
+                <Text style={[styles.customerAvatarText, { color: avatarText }]}>{firstLetter}</Text>
               </View>
-            )}
-          </View>
-        </TouchableOpacity>
+
+              {/* Thông tin tên & số điện thoại */}
+              <View style={styles.cardInfo}>
+                <Text style={styles.customerName} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <Text style={styles.customerPhone} numberOfLines={1}>
+                  {item.phone ? `📞 ${item.phone}` : '📞 Không có số điện thoại'}
+                </Text>
+              </View>
+
+              {/* Trạng thái công nợ bên phải: Ẩn hoàn toàn với nhân viên */}
+              {!isEmployee && (
+                <View style={styles.cardDebtStatusSection}>
+                  {isBadDebtCustomer ? (
+                    <View style={styles.badDebtValueContainer}>
+                      <Text style={styles.badDebtValueAmount}>{formatCurrency(item.debt)}</Text>
+                      <Text style={styles.badDebtValueLabel}>NỢ XẤU ⚠️</Text>
+                    </View>
+                  ) : hasDebt ? (
+                    <View style={styles.debtValueContainer}>
+                      <Text style={styles.debtValueAmount}>{formatCurrency(item.debt)}</Text>
+                      <Text style={styles.debtValueLabel}>còn nợ ⚠️</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.noDebtBadge}>
+                      <Text style={styles.noDebtBadgeText}>Hết nợ ✅</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
 
           {/* Đường phân cách nét đứt nhẹ */}
           <View style={styles.cardDivider} />
@@ -2101,11 +2062,11 @@ export default function DashboardScreen() {
               style={styles.searchInput}
               placeholder="🔍 Tìm khách nợ xấu..."
               placeholderTextColor={COLORS.textLight}
-              value={searchInput}
-              onChangeText={setSearchInput}
+              value={search}
+              onChangeText={setSearch}
             />
-            {searchInput ? (
-              <TouchableOpacity style={styles.clearSearch} onPress={() => { setSearchInput(''); setSearch(''); }}>
+            {search ? (
+              <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
                 <Text style={styles.clearSearchText}>✕</Text>
               </TouchableOpacity>
             ) : null}
@@ -2225,11 +2186,9 @@ export default function DashboardScreen() {
   if (currentView === 'employees') {
     // Lọc danh sách nhân viên phục vụ tìm kiếm nhanh (hỗ trợ không dấu, viết tắt, nhiều từ)
     const employees = employeesResponse?.data || [];
-    const filteredEmployees = React.useMemo(() => {
-      return employees.filter((emp) => {
-        return matchItemSearch(emp, search, ['name', 'phone', 'role', 'note']);
-      });
-    }, [employees, search]);
+    const filteredEmployees = employees.filter((emp) => {
+      return matchItemSearch(emp, search, ['name', 'phone', 'role', 'note']);
+    });
 
     // Thay đổi ngày chấm công
     const adjustAttendanceDate = (days) => {
@@ -2340,11 +2299,11 @@ export default function DashboardScreen() {
                   style={styles.searchInput}
                   placeholder="🔍 Tìm nhân viên..."
                   placeholderTextColor={COLORS.textLight}
-                  value={searchInput}
-                  onChangeText={setSearchInput}
+                  value={search}
+                  onChangeText={setSearch}
                 />
-                {searchInput ? (
-                  <TouchableOpacity style={styles.clearSearch} onPress={() => { setSearchInput(''); setSearch(''); }}>
+                {search ? (
+                  <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
                     <Text style={styles.clearSearchText}>✕</Text>
                   </TouchableOpacity>
                 ) : null}
@@ -2614,11 +2573,11 @@ export default function DashboardScreen() {
               style={styles.searchInput}
               placeholder="🔍 Tìm nhà cung cấp thịt..."
               placeholderTextColor={COLORS.textLight}
-              value={searchInput}
-              onChangeText={setSearchInput}
+              value={search}
+              onChangeText={setSearch}
             />
-            {searchInput ? (
-              <TouchableOpacity style={styles.clearSearch} onPress={() => { setSearchInput(''); setSearch(''); }}>
+            {search ? (
+              <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
                 <Text style={styles.clearSearchText}>✕</Text>
               </TouchableOpacity>
             ) : null}
@@ -3012,11 +2971,11 @@ export default function DashboardScreen() {
             style={styles.searchInput}
             placeholder="🔍 Gõ tên hoặc SĐT khách quen..."
             placeholderTextColor={COLORS.textLight}
-            value={searchInput}
-            onChangeText={setSearchInput}
+            value={search}
+            onChangeText={setSearch}
           />
-          {searchInput ? (
-            <TouchableOpacity style={styles.clearSearch} onPress={() => { setSearchInput(''); setSearch(''); }}>
+          {search ? (
+            <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
               <Text style={styles.clearSearchText}>✕</Text>
             </TouchableOpacity>
           ) : null}

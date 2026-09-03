@@ -230,9 +230,9 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
           tempId: `row_${rowIdCounterRef.current++}`,
           items: Array.isArray(r.items)
             ? r.items.map((item) => ({
-                ...item,
-                tempItemId: `item_${rowIdCounterRef.current++}`,
-              }))
+              ...item,
+              tempItemId: `item_${rowIdCounterRef.current++}`,
+            }))
             : r.items,
         }));
       };
@@ -745,100 +745,100 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                 />
                               </View>
 
-                             <View style={{ flex: 1, marginRight: 4 }}>
-                              <TextInput
-                                style={styles.compactInput}
-                                placeholder="0"
-                                placeholderTextColor="#94A3B8"
-                                keyboardType="decimal-pad"
-                                value={item.quantity !== undefined && item.quantity !== null ? String(item.quantity) : ''}
-                                selectTextOnFocus={true}
-                                onChangeText={(text) => {
-                                  const filtered = text.replace(/[^0-9.,]/g, '');
-                                  const qVal = parseFloat(filtered.replace(',', '.')) || 0;
-                                  const pVal = parseNumberString(item.price);
-                                  const amtVal = item.amount !== undefined ? item.amount : 0;
+                              <View style={{ flex: 1, marginRight: 4 }}>
+                                <TextInput
+                                  style={styles.compactInput}
+                                  placeholder="0"
+                                  placeholderTextColor="#94A3B8"
+                                  keyboardType="decimal-pad"
+                                  value={item.quantity !== undefined && item.quantity !== null ? String(item.quantity) : ''}
+                                  selectTextOnFocus={true}
+                                  onChangeText={(text) => {
+                                    const filtered = text.replace(/[^0-9.,]/g, '');
+                                    const qVal = parseFloat(filtered.replace(',', '.')) || 0;
+                                    const pVal = parseNumberString(item.price);
+                                    const amtVal = item.amount !== undefined ? item.amount : 0;
 
-                                  let updates = { quantity: filtered };
+                                    let updates = { quantity: filtered };
 
-                                  if (pVal > 0) {
-                                    // Đã có Đơn giá -> tính Thành tiền = SL * Giá
-                                    updates.amount = Math.round(qVal * pVal);
-                                  } else if (amtVal > 0 && qVal > 0) {
-                                    // Chưa có Đơn giá nhưng đã có Thành tiền -> tính Đơn giá = Thành tiền / SL
-                                    const calcPrice = Math.round(amtVal / qVal);
-                                    updates.price = formatNumberString(calcPrice.toString());
-                                  }
+                                    if (pVal > 0) {
+                                      // Đã có Đơn giá -> tính Thành tiền = SL * Giá
+                                      updates.amount = Math.round(qVal * pVal);
+                                    } else if (amtVal > 0 && qVal > 0) {
+                                      // Chưa có Đơn giá nhưng đã có Thành tiền -> tính Đơn giá = Thành tiền / SL
+                                      const calcPrice = Math.round(amtVal / qVal);
+                                      updates.price = formatNumberString(calcPrice.toString());
+                                    }
 
-                                  handleUpdateRowItem(row.tempId, item.tempItemId, updates);
-                                }}
-                              />
+                                    handleUpdateRowItem(row.tempId, item.tempItemId, updates);
+                                  }}
+                                />
+                              </View>
+
+                              <View style={{ flex: 1.4, marginRight: 4 }}>
+                                <MoneyInput
+                                  style={styles.subtableMoneyInputContainer}
+                                  inputStyle={styles.subtableMoneyInputText}
+                                  value={p}
+                                  onChangeValue={(pVal) => {
+                                    const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
+                                    const amtVal = item.amount !== undefined ? item.amount : 0;
+
+                                    let updates = { price: formatNumberString(pVal.toString()) };
+
+                                    if (qVal > 0) {
+                                      // Đã có Số lượng -> tính Thành tiền = SL * Giá
+                                      updates.amount = Math.round(qVal * pVal);
+                                    } else if (amtVal > 0 && pVal > 0) {
+                                      // Chưa có Số lượng nhưng đã có Thành tiền -> tính Số lượng = Thành tiền / Giá
+                                      const newQty = amtVal / pVal;
+                                      const roundedQty = Math.round(newQty * 100) / 100;
+                                      updates.quantity = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
+                                    }
+
+                                    handleUpdateRowItem(row.tempId, item.tempItemId, updates);
+                                  }}
+                                  placeholder="0"
+                                  textAlign="right"
+                                />
+                              </View>
+
+                              <View style={{ flex: 1.4, marginRight: 4 }}>
+                                <MoneyInput
+                                  style={styles.subtableMoneyInputContainer}
+                                  inputStyle={[styles.subtableMoneyInputText, { color: '#DC2626', fontWeight: '600' }]}
+                                  value={item.amount !== undefined && item.amount !== null ? item.amount : itemSubtotal}
+                                  onChangeValue={(amtVal) => {
+                                    const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
+
+                                    let updates = { amount: amtVal };
+
+                                    if (p > 0) {
+                                      // Đã có Đơn giá -> tính Số lượng = Thành tiền / Giá
+                                      const newQty = p > 0 ? amtVal / p : 0;
+                                      const roundedQty = Math.round(newQty * 100) / 100;
+                                      updates.quantity = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
+                                    } else if (qVal > 0) {
+                                      // Chưa có Đơn giá nhưng đã có Số lượng -> tính Đơn giá = Thành tiền / SL
+                                      const calcPrice = Math.round(amtVal / qVal);
+                                      updates.price = formatNumberString(calcPrice.toString());
+                                    }
+
+                                    handleUpdateRowItem(row.tempId, item.tempItemId, updates);
+                                  }}
+                                  placeholder="0"
+                                  textAlign="right"
+                                />
+                              </View>
+
+                              <TouchableOpacity
+                                style={styles.deleteItemBtnMini}
+                                onPress={() => handleRemoveItemFromRow(row.tempId, item.tempItemId)}
+                              >
+                                <Text style={styles.deleteItemBtnMiniText}>✕</Text>
+                              </TouchableOpacity>
                             </View>
-
-                            <View style={{ flex: 1.4, marginRight: 4 }}>
-                              <MoneyInput
-                                style={styles.subtableMoneyInputContainer}
-                                inputStyle={styles.subtableMoneyInputText}
-                                value={p}
-                                onChangeValue={(pVal) => {
-                                  const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
-                                  const amtVal = item.amount !== undefined ? item.amount : 0;
-
-                                  let updates = { price: formatNumberString(pVal.toString()) };
-
-                                  if (qVal > 0) {
-                                    // Đã có Số lượng -> tính Thành tiền = SL * Giá
-                                    updates.amount = Math.round(qVal * pVal);
-                                  } else if (amtVal > 0 && pVal > 0) {
-                                    // Chưa có Số lượng nhưng đã có Thành tiền -> tính Số lượng = Thành tiền / Giá
-                                    const newQty = amtVal / pVal;
-                                    const roundedQty = Math.round(newQty * 100) / 100;
-                                    updates.quantity = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
-                                  }
-
-                                  handleUpdateRowItem(row.tempId, item.tempItemId, updates);
-                                }}
-                                placeholder="0"
-                                textAlign="right"
-                              />
-                            </View>
-
-                            <View style={{ flex: 1.4, marginRight: 4 }}>
-                              <MoneyInput
-                                style={styles.subtableMoneyInputContainer}
-                                inputStyle={[styles.subtableMoneyInputText, { color: '#DC2626', fontWeight: '600' }]}
-                                value={item.amount !== undefined && item.amount !== null ? item.amount : itemSubtotal}
-                                onChangeValue={(amtVal) => {
-                                  const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
-
-                                  let updates = { amount: amtVal };
-
-                                  if (p > 0) {
-                                    // Đã có Đơn giá -> tính Số lượng = Thành tiền / Giá
-                                    const newQty = p > 0 ? amtVal / p : 0;
-                                    const roundedQty = Math.round(newQty * 100) / 100;
-                                    updates.quantity = Number.isInteger(roundedQty) ? String(roundedQty) : roundedQty.toFixed(2);
-                                  } else if (qVal > 0) {
-                                    // Chưa có Đơn giá nhưng đã có Số lượng -> tính Đơn giá = Thành tiền / SL
-                                    const calcPrice = Math.round(amtVal / qVal);
-                                    updates.price = formatNumberString(calcPrice.toString());
-                                  }
-
-                                  handleUpdateRowItem(row.tempId, item.tempItemId, updates);
-                                }}
-                                placeholder="0"
-                                textAlign="right"
-                              />
-                            </View>
-
-                            <TouchableOpacity
-                              style={styles.deleteItemBtnMini}
-                              onPress={() => handleRemoveItemFromRow(row.tempId, item.tempItemId)}
-                            >
-                              <Text style={styles.deleteItemBtnMiniText}>✕</Text>
-                            </TouchableOpacity>
-                          </View>
-                        );
+                          );
                         });
                       })()}
 
