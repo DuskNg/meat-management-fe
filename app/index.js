@@ -1,5 +1,5 @@
 // meat-management-fe/app/index.js
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback, useDeferredValue } from 'react';
 import {
   StyleSheet,
   Text,
@@ -144,6 +144,7 @@ export default function DashboardScreen() {
 
   const [currentView, setCurrentView] = useState(params.view || 'menu'); // 'menu' hoặc 'customers' để điều hướng
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search); // Giúp ô nhập gõ mượt mà tức thì không bị khựng đơ khi lọc danh sách lớn
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
@@ -1067,9 +1068,12 @@ export default function DashboardScreen() {
     });
   };
 
-  const customers = customersResponse?.data || [];
-  const customerIdSet = new Set(customers.map((c) => c.id));
-  const customerPayments = (paymentsResponse?.data || []).filter((payment) => customerIdSet.has(payment.customerId));
+  const customers = useMemo(() => customersResponse?.data || [], [customersResponse?.data]);
+  const customerIdSet = useMemo(() => new Set(customers.map((c) => c.id)), [customers]);
+  const customerPayments = useMemo(
+    () => (paymentsResponse?.data || []).filter((payment) => customerIdSet.has(payment.customerId)),
+    [paymentsResponse?.data, customerIdSet]
+  );
 
   // Helper lấy định dạng tháng/năm dạng ngắn MM/YYYY
   const getShortMonthYear = (monthKey) => {
@@ -1078,98 +1082,127 @@ export default function DashboardScreen() {
   };
 
   // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
-  const totalDebt = customers.reduce((sum, c) => sum + (c.debt || 0), 0);
-  const selectedMonthPayments = customerPayments.filter((payment) => {
-    const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
-    if (!paidDate || isNaN(paidDate.getTime())) return false;
-    const monthKey = `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}`;
-    return monthKey === selectedRevenueMonth;
-  });
-  const totalCollectedInSelectedMonth = selectedMonthPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  const totalDebt = useMemo(() => customers.reduce((sum, c) => sum + (c.debt || 0), 0), [customers]);
+
+  const selectedMonthPayments = useMemo(() => {
+    return customerPayments.filter((payment) => {
+      const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
+      if (!paidDate || isNaN(paidDate.getTime())) return false;
+      const monthKey = `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}`;
+      return monthKey === selectedRevenueMonth;
+    });
+  }, [customerPayments, selectedRevenueMonth]);
+
+  const totalCollectedInSelectedMonth = useMemo(
+    () => selectedMonthPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0),
+    [selectedMonthPayments]
+  );
 
   // Tính tổng giao dịch (tiền hàng nợ phát sinh) của tháng được chọn
-  const customerTransactions = (transactionsResponse?.data || []).filter((t) => customerIdSet.has(t.customerId));
-  const selectedMonthTransactions = customerTransactions.filter((transaction) => {
-    const tDate = transaction.date ? new Date(transaction.date) : null;
-    if (!tDate || isNaN(tDate.getTime())) return false;
-    const monthKey = `${tDate.getFullYear()}-${(tDate.getMonth() + 1).toString().padStart(2, '0')}`;
-    return monthKey === selectedRevenueMonth;
-  });
-  const totalTransactionsInSelectedMonth = selectedMonthTransactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
+  const customerTransactions = useMemo(
+    () => (transactionsResponse?.data || []).filter((t) => customerIdSet.has(t.customerId)),
+    [transactionsResponse?.data, customerIdSet]
+  );
 
-  const totalCollected = customerPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  const selectedMonthTransactions = useMemo(() => {
+    return customerTransactions.filter((transaction) => {
+      const tDate = transaction.date ? new Date(transaction.date) : null;
+      if (!tDate || isNaN(tDate.getTime())) return false;
+      const monthKey = `${tDate.getFullYear()}-${(tDate.getMonth() + 1).toString().padStart(2, '0')}`;
+      return monthKey === selectedRevenueMonth;
+    });
+  }, [customerTransactions, selectedRevenueMonth]);
+
+  const totalTransactionsInSelectedMonth = useMemo(
+    () => selectedMonthTransactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0),
+    [selectedMonthTransactions]
+  );
+
+  const totalCollected = useMemo(
+    () => customerPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0),
+    [customerPayments]
+  );
   const totalOriginalDebt = totalDebt + totalCollected;
-  const collectedByDay = selectedMonthPayments.reduce((groups, payment) => {
-    const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
-    const dateKey = paidDate && !isNaN(paidDate.getTime())
-      ? `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}-${paidDate.getDate().toString().padStart(2, '0')}`
-      : 'unknown';
-    groups[dateKey] = (groups[dateKey] || 0) + parseFloat(payment.amount || 0);
-    return groups;
-  }, {});
-  const dailyCollectedRows = Object.entries(collectedByDay)
-    .map(([dateKey, amount]) => ({ dateKey, amount }))
-    .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+
+  const dailyCollectedRows = useMemo(() => {
+    const collectedByDay = selectedMonthPayments.reduce((groups, payment) => {
+      const paidDate = payment.paidAt ? new Date(payment.paidAt) : null;
+      const dateKey = paidDate && !isNaN(paidDate.getTime())
+        ? `${paidDate.getFullYear()}-${(paidDate.getMonth() + 1).toString().padStart(2, '0')}-${paidDate.getDate().toString().padStart(2, '0')}`
+        : 'unknown';
+      groups[dateKey] = (groups[dateKey] || 0) + parseFloat(payment.amount || 0);
+      return groups;
+    }, {});
+    return Object.entries(collectedByDay)
+      .map(([dateKey, amount]) => ({ dateKey, amount }))
+      .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+  }, [selectedMonthPayments]);
 
   // 3. Bộ lọc tìm kiếm nhanh theo tên hoặc SĐT khách hàng (hỗ trợ không dấu, viết tắt, nhiều từ rời rạc) và sắp xếp
-  const filteredCustomers = customers
-    .filter((c) => matchItemSearch(c, search, ['name', 'phone', 'address', 'note']))
-    .sort((a, b) => {
-      const debtA = a.debt || 0;
-      const debtB = b.debt || 0;
+  const filteredCustomers = useMemo(() => {
+    return customers
+      .filter((c) => matchItemSearch(c, deferredSearch, ['name', 'phone', 'address', 'note']))
+      .sort((a, b) => {
+        const debtA = a.debt || 0;
+        const debtB = b.debt || 0;
 
-      // Ưu tiên những người còn nợ lên đầu
-      if (debtA > 0 && debtB <= 0) return -1;
-      if (debtB > 0 && debtA <= 0) return 1;
+        // Ưu tiên những người còn nợ lên đầu
+        if (debtA > 0 && debtB <= 0) return -1;
+        if (debtB > 0 && debtA <= 0) return 1;
 
-      // Nếu cả hai đều còn nợ, xếp theo số nợ từ lớn đến bé
-      if (debtA > 0 && debtB > 0) {
-        return debtB - debtA;
-      }
+        // Nếu cả hai đều còn nợ, xếp theo số nợ từ lớn đến bé
+        if (debtA > 0 && debtB > 0) {
+          return debtB - debtA;
+        }
 
-      // Nếu cả hai đều không còn nợ, sắp xếp theo tên theo bảng chữ cái tiếng Việt
-      return a.name.localeCompare(b.name, 'vi');
-    });
+        // Nếu cả hai đều không còn nợ, sắp xếp theo tên theo bảng chữ cái tiếng Việt
+        return (a.name || '').localeCompare(b.name || '', 'vi');
+      });
+  }, [customers, deferredSearch]);
 
-  const badCustomers = badCustomersResponse?.data || [];
-  const totalBadDebt = badCustomers.reduce((sum, c) => sum + (c.debt || 0), 0);
+  const badCustomers = useMemo(() => badCustomersResponse?.data || [], [badCustomersResponse?.data]);
+  const totalBadDebt = useMemo(() => badCustomers.reduce((sum, c) => sum + (c.debt || 0), 0), [badCustomers]);
 
-  const filteredBadCustomers = badCustomers
-    .filter((c) => matchItemSearch(c, search, ['name', 'phone', 'address', 'note']))
-    .sort((a, b) => {
-      const debtA = a.debt || 0;
-      const debtB = b.debt || 0;
+  const filteredBadCustomers = useMemo(() => {
+    return badCustomers
+      .filter((c) => matchItemSearch(c, deferredSearch, ['name', 'phone', 'address', 'note']))
+      .sort((a, b) => {
+        const debtA = a.debt || 0;
+        const debtB = b.debt || 0;
 
-      // Ưu tiên những người còn nợ lên đầu
-      if (debtA > 0 && debtB <= 0) return -1;
-      if (debtB > 0 && debtA <= 0) return 1;
+        // Ưu tiên những người còn nợ lên đầu
+        if (debtA > 0 && debtB <= 0) return -1;
+        if (debtB > 0 && debtA <= 0) return 1;
 
-      if (debtA > 0 && debtB > 0) {
-        return debtB - debtA;
-      }
+        if (debtA > 0 && debtB > 0) {
+          return debtB - debtA;
+        }
 
-      return a.name.localeCompare(b.name, 'vi');
-    });
+        return (a.name || '').localeCompare(b.name || '', 'vi');
+      });
+  }, [badCustomers, deferredSearch]);
 
-  const suppliers = suppliersResponse?.data || [];
-  const totalSupplierDebt = suppliers.reduce((sum, s) => sum + (s.debt || 0), 0);
+  const suppliers = useMemo(() => suppliersResponse?.data || [], [suppliersResponse?.data]);
+  const totalSupplierDebt = useMemo(() => suppliers.reduce((sum, s) => sum + (s.debt || 0), 0), [suppliers]);
 
-  const filteredSuppliers = suppliers
-    .filter((s) => matchItemSearch(s, search, ['name', 'phone', 'address', 'note']))
-    .sort((a, b) => {
-      const debtA = a.debt || 0;
-      const debtB = b.debt || 0;
+  const filteredSuppliers = useMemo(() => {
+    return suppliers
+      .filter((s) => matchItemSearch(s, deferredSearch, ['name', 'phone', 'address', 'note']))
+      .sort((a, b) => {
+        const debtA = a.debt || 0;
+        const debtB = b.debt || 0;
 
-      // Ưu tiên nhà cung cấp mình đang nợ tiền lên đầu
-      if (debtA > 0 && debtB <= 0) return -1;
-      if (debtB > 0 && debtA <= 0) return 1;
+        // Ưu tiên nhà cung cấp mình đang nợ tiền lên đầu
+        if (debtA > 0 && debtB <= 0) return -1;
+        if (debtB > 0 && debtA <= 0) return 1;
 
-      if (debtA > 0 && debtB > 0) {
-        return debtB - debtA;
-      }
+        if (debtA > 0 && debtB > 0) {
+          return debtB - debtA;
+        }
 
-      return a.name.localeCompare(b.name, 'vi');
-    });
+        return (a.name || '').localeCompare(b.name || '', 'vi');
+      });
+  }, [suppliers, deferredSearch]);
 
   const renderSupplierItem = ({ item }) => {
     const hasDebt = item.debt > 0;
@@ -2996,6 +3029,10 @@ export default function DashboardScreen() {
             contentContainerStyle={styles.listContent}
             refreshing={isRefetching}
             onRefresh={refetch}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS !== 'web'}
             CellRendererComponent={CustomCellRenderer}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
