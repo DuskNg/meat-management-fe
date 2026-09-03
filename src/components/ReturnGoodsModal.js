@@ -36,6 +36,7 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   useResourceLock('CUSTOMER', customer?.id, visible, () => setVisible(false));
 
   // ─── State dành cho TAB TRẢ HÀNG NHANH ──────────────────────────────────
+  const [selectedDate, setSelectedDate] = useState('');
   const [quickAmountVND, setQuickAmountVND] = useState(0);
   const [quickNote, setQuickNote] = useState('');
 
@@ -131,30 +132,44 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   // Xác định đơn hàng hiện tại trong ngày và kiểm tra xem đơn đó là nợ nhanh hay nợ thủ công
   const selectedTx = todayTransactions.find((t) => t.id === selectedTransactionId) || todayTransactions[0];
   const isSelectedTxQuick = isQuickTransaction(selectedTx);
-  const isManualTabDisabled = todayTransactions.length === 0 || isSelectedTxQuick;
+  const dateTotalDebt = todayTransactions.reduce(
+    (sum, t) => sum + (parseFloat(t.totalAmount) || 0),
+    0
+  );
+  const hasOrdersOnDate = todayTransactions.length > 0 && dateTotalDebt > 0;
+  const isManualTabDisabled = !hasOrdersOnDate || isSelectedTxQuick;
 
-  // ─── Tải danh sách đơn hàng trong ngày của khách hàng ──────────────────
-  const fetchTodayOrders = async (cust) => {
-    if (!cust?.id) return;
+  // ─── Tải danh sách đơn hàng theo ngày của khách hàng ──────────────────
+  const fetchOrdersForDate = async (cust, targetDate) => {
+    if (!cust?.id || !targetDate) return;
     setLoadingTodayOrders(true);
     try {
       const res = await api.get('/transactions', {
-        params: { customerId: cust.id, todayOnly: 'true' },
+        params: { customerId: cust.id, date: targetDate },
       });
       const txs = res.data?.data || [];
       setTodayTransactions(txs);
       if (txs.length > 0) {
-        // Mặc định chọn đơn đầu tiên (mới nhất trong ngày)
+        // Mặc định chọn đơn đầu tiên
         loadTransactionToEdit(txs[0]);
       } else {
         setSelectedTransactionId(null);
         setCartItems([]);
       }
     } catch (err) {
-      console.error('[RETURN GOODS] Lỗi tải đơn hàng trong ngày:', err);
-      setError('Không thể tải danh sách đơn hàng trong ngày.');
+      console.error('[RETURN GOODS] Lỗi tải đơn hàng theo ngày:', err);
+      setError('Không thể tải danh sách đơn hàng theo ngày đã chọn.');
     } finally {
       setLoadingTodayOrders(false);
+    }
+  };
+
+  // Xử lý khi người dùng chọn ngày khác trên DatePicker
+  const handleDateChange = (newDateStr) => {
+    setSelectedDate(newDateStr);
+    setDateStr(newDateStr);
+    if (customer) {
+      fetchOrdersForDate(customer, newDateStr);
     }
   };
 
@@ -196,7 +211,10 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   useImperativeHandle(ref, () => ({
     open: (customerItem) => {
       if (!customerItem) return;
+      const today = formatDateToDisplay(new Date());
       setCustomer(customerItem);
+      setSelectedDate(today);
+      setDateStr(today);
       setActiveTab('quick');
       setQuickAmountVND(0);
       setQuickNote('');
@@ -207,8 +225,8 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
       setEditingItemId(null);
       setVisible(true);
 
-      // Tải danh sách đơn hàng trong ngày cho tab Trả hàng thủ công
-      fetchTodayOrders(customerItem);
+      // Tải danh sách đơn hàng theo ngày
+      fetchOrdersForDate(customerItem, today);
     },
     close: () => {
       setVisible(false);
@@ -253,13 +271,13 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
         prev.map((item) =>
           item.tempId === editingItemId
             ? {
-                ...item,
-                quantity: q,
-                price: p,
-                displayQuantity: currentQuantity,
-                displayPrice: currentPrice,
-                amount: q * p,
-              }
+              ...item,
+              quantity: q,
+              price: p,
+              displayQuantity: currentQuantity,
+              displayPrice: currentPrice,
+              amount: q * p,
+            }
             : item
         )
       );
@@ -351,13 +369,16 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
       setLoading(true);
       try {
         const formattedNote = quickNote.trim()
-          ? `[Trả lại hàng] ${quickNote.trim()}`
-          : 'Trả lại hàng';
+          ? `[Trả lại hàng] ${quickNote.trim()} (ngày ${selectedDate})`
+          : `Trả lại hàng (ngày ${selectedDate})`;
+
+        const isoDate = parseDateString(selectedDate) || new Date().toISOString();
 
         const response = await api.post('/payments', {
           customerId: customer.id,
           amount,
           note: formattedNote,
+          paidAt: isoDate,
         });
 
         if (response.data.success) {
@@ -437,53 +458,32 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
       <View style={styles.modalView}>
         {/* Header Modal */}
         <View style={styles.modalHeader}>
-          <View>
-            <Text style={styles.modalTitle}>↩️ TRẢ HÀNG KHÁCH HÀNG</Text>
-            <Text style={styles.customerSubTitle}>{customer?.name || 'Khách hàng'}</Text>
-          </View>
+          <Text style={styles.modalTitle}>↩️ TRẢ HÀNG KHÁCH HÀNG</Text>
           <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
             <Text style={styles.closeHeaderText}>✕</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Thanh chuyển đổi Tab */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'quick' && styles.tabButtonActive]}
-            onPress={() => {
-              setActiveTab('quick');
-              setError('');
-            }}
-          >
-            <Text style={[styles.tabButtonText, activeTab === 'quick' && styles.tabButtonTextActive]}>
-              ⚡ Trả hàng nhanh
+        {/* Thông tin khách hàng được hiển thị bên dưới tiêu đề */}
+        {customer ? (
+          <View style={styles.customerBox}>
+            <Text style={styles.customerName}>
+              Khách hàng: <Text style={styles.boldText}>{customer.name}</Text>
             </Text>
-          </TouchableOpacity>
+            {customer.phone ? (
+              <Text style={styles.customerPhone}>Số ĐT: {customer.phone}</Text>
+            ) : null}
+          </View>
+        ) : null}
 
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === 'manual' && styles.tabButtonActive,
-              isManualTabDisabled && styles.tabButtonDisabled,
-            ]}
-            disabled={isManualTabDisabled}
-            activeOpacity={isManualTabDisabled ? 1 : 0.6}
-            onPress={() => {
-              if (isManualTabDisabled) return;
-              setActiveTab('manual');
-              setError('');
-            }}
-          >
-            <Text
-              style={[
-                styles.tabButtonText,
-                activeTab === 'manual' && styles.tabButtonTextActive,
-                isManualTabDisabled && styles.tabButtonTextDisabled,
-              ]}
-            >
-              🥩 Trả hàng thủ công {isSelectedTxQuick ? '(Không khả dụng)' : ''}
-            </Text>
-          </TouchableOpacity>
+        {/* Bộ lọc chọn ngày trả hàng */}
+        <View style={styles.dateFilterContainer}>
+          <Text style={styles.dateFilterLabel}>📅 Chọn ngày phát sinh công nợ cần trả:</Text>
+          <DatePickerInput
+            value={selectedDate}
+            onChange={handleDateChange}
+            allowFuture={true}
+          />
         </View>
 
         {/* Thông báo lỗi */}
@@ -494,62 +494,139 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
           contentContainerStyle={styles.mainScrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          {activeTab === 'quick' ? (
-            /* ── TAB TRẢ HÀNG NHANH ── */
-            <View style={styles.quickContainer}>
-              <Text style={styles.label}>1. Số tiền trả hàng / Trừ nợ trực tiếp (VND):</Text>
-              <MoneyInput
-                style={styles.amountInputContainer}
-                inputStyle={styles.amountInput}
-                value={quickAmountVND}
-                onChangeValue={(val) => {
-                  setQuickAmountVND(val);
-                  setError('');
-                }}
-                placeholder="Ví dụ: 150.000"
-              />
+          {loadingTodayOrders ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Đang kiểm tra công nợ ngày {selectedDate}...</Text>
+            </View>
+          ) : !hasOrdersOnDate ? (
+            /* Khi ngày được chọn không có công nợ phát sinh */
+            <View style={styles.noDebtBox}>
+              <Text style={styles.noDebtIcon}>⚠️</Text>
+              <Text style={styles.noDebtTitle}>Không có công nợ phát sinh trong ngày {selectedDate}</Text>
+              <Text style={styles.noDebtDesc}>
+                Khách hàng <Text style={{ fontWeight: 'bold' }}>{customer?.name}</Text> không có đơn hàng ghi nợ nào phát sinh vào ngày {selectedDate}.
+              </Text>
+              <Text style={styles.noDebtHint}>
+                👉 Vui lòng chọn ngày khác ở bộ lọc phía trên để thực hiện trả hàng.
+              </Text>
+            </View>
+          ) : (
+            /* Khi ngày được chọn có công nợ phát sinh */
+            <>
+              {/* Thẻ tóm tắt đơn hàng của ngày được chọn */}
+              <View style={styles.orderSummaryBadge}>
+                <View style={styles.summaryLeft}>
+                  <Text style={styles.summaryTitle}>Đơn hàng ngày {selectedDate}</Text>
+                  <Text style={styles.summarySub}>Có {todayTransactions.length} đơn hàng ghi nợ</Text>
+                </View>
+                <View style={styles.summaryRight}>
+                  <Text style={styles.summaryLabel}>Tổng tiền đơn:</Text>
+                  <Text style={styles.summaryValue}>{formatCurrency(dateTotalDebt)}</Text>
+                </View>
+              </View>
 
-              <Text style={styles.subLabel}>Gợi ý số tiền nhanh:</Text>
-              <View style={styles.quickAmountContainer}>
-                {[50000, 100000, 200000, 500000, 1000000].map((val) => (
-                  <TouchableOpacity
-                    key={val}
-                    style={styles.quickAmountButton}
-                    onPress={() => {
+              {/* Thanh chuyển đổi Tab dạng Segmented Control */}
+              <View style={styles.tabContainer}>
+                <TouchableOpacity
+                  style={[styles.tabButton, activeTab === 'quick' && styles.tabButtonActive]}
+                  onPress={() => {
+                    setActiveTab('quick');
+                    setError('');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.tabButtonText, activeTab === 'quick' && styles.tabButtonTextActive]}
+                  >
+                    ⚡ Trả hàng nhanh
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.tabButton,
+                    activeTab === 'manual' && styles.tabButtonActive,
+                    isManualTabDisabled && styles.tabButtonDisabled,
+                  ]}
+                  disabled={isManualTabDisabled}
+                  activeOpacity={isManualTabDisabled ? 1 : 0.7}
+                  onPress={() => {
+                    if (isManualTabDisabled) return;
+                    setActiveTab('manual');
+                    setError('');
+                  }}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.tabButtonText,
+                      activeTab === 'manual' && styles.tabButtonTextActive,
+                      isManualTabDisabled && styles.tabButtonTextDisabled,
+                    ]}
+                  >
+                    🥩 Trả hàng chi tiết
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {activeTab === 'quick' ? (
+                /* ── TAB TRẢ HÀNG NHANH ── */
+                <View style={styles.quickContainer}>
+                  <Text style={styles.label}>1. Số tiền trả hàng / Trừ nợ trực tiếp (VND):</Text>
+                  <MoneyInput
+                    style={styles.amountInputContainer}
+                    inputStyle={styles.amountInput}
+                    value={quickAmountVND}
+                    onChangeValue={(val) => {
                       setQuickAmountVND(val);
                       setError('');
                     }}
-                  >
-                    <Text style={styles.quickAmountText}>
-                      {val >= 1000000 ? `${val / 1000000} Triệu` : `${val / 1000}k`}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                    placeholder="Ví dụ: 150.000"
+                  />
 
-              <Text style={[styles.label, { marginTop: 15 }]}>2. Lý do / Ghi chú trả hàng (Không bắt buộc):</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Ví dụ: Khách trả lại 2kg sườn mỡ..."
-                placeholderTextColor={COLORS.textLight}
-                value={quickNote}
-                onChangeText={setQuickNote}
-              />
-            </View>
-          ) : (
-            /* ── TAB TRẢ HÀNG THỦ CÔNG ── */
-            <View style={styles.manualContainer}>
-              {loadingTodayOrders ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                  <Text style={styles.loadingText}>Đang tải đơn hàng trong ngày...</Text>
-                </View>
-              ) : todayTransactions.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>⚠️ Khách hàng này không có đơn hàng nào phát sinh trong ngày hôm nay.</Text>
+                  <Text style={styles.subLabel}>Gợi ý số tiền nhanh:</Text>
+                  <View style={styles.quickAmountContainer}>
+                    <TouchableOpacity
+                      style={[styles.quickAmountButton, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}
+                      onPress={() => {
+                        setQuickAmountVND(dateTotalDebt);
+                        setError('');
+                      }}
+                    >
+                      <Text style={[styles.quickAmountText, { color: '#B45309', fontWeight: 'bold' }]}>
+                        Toàn bộ ({formatCurrency(dateTotalDebt)})
+                      </Text>
+                    </TouchableOpacity>
+                    {[50000, 100000, 200000, 500000].map((val) => (
+                      <TouchableOpacity
+                        key={val}
+                        style={styles.quickAmountButton}
+                        onPress={() => {
+                          setQuickAmountVND(val);
+                          setError('');
+                        }}
+                      >
+                        <Text style={styles.quickAmountText}>
+                          {val / 1000}k
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={[styles.label, { marginTop: 15 }]}>2. Lý do / Ghi chú trả hàng (Không bắt buộc):</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ví dụ: Khách trả lại 2kg sườn mỡ..."
+                    placeholderTextColor={COLORS.textLight}
+                    value={quickNote}
+                    onChangeText={setQuickNote}
+                  />
                 </View>
               ) : (
-                <>
+                /* ── TAB TRẢ HÀNG THỦ CÔNG ── */
+                <View style={styles.manualContainer}>
                   {/* Chọn đơn hàng nếu có nhiều đơn trong ngày */}
                   {todayTransactions.length > 1 && (
                     <View style={{ marginBottom: 14 }}>
@@ -658,11 +735,17 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
                       <Text style={styles.label}>Đơn giá (VND):</Text>
                       <TextInput
                         style={[styles.input, { fontSize: 16, fontWeight: 'bold' }]}
-                        placeholder="Ví dụ: 130.000"
+                        placeholder="Ví dụ: 130 hoặc 130.000"
                         placeholderTextColor={COLORS.textLight}
                         keyboardType="number-pad"
                         value={currentPrice}
                         onChangeText={(text) => setCurrentPrice(formatNumberString(text))}
+                        onBlur={() => {
+                          const pVal = parseNumberString(currentPrice);
+                          if (pVal > 0 && pVal < 1000) {
+                            setCurrentPrice(formatNumberString((pVal * 1000).toString()));
+                          }
+                        }}
                       />
 
                       <TouchableOpacity style={styles.addToCartBtn} onPress={handleAddToCart}>
@@ -687,34 +770,41 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
                       onChangeText={setManualNote}
                     />
                   </View>
-                </>
+                </View>
               )}
-            </View>
+            </>
           )}
         </ScrollView>
 
         {/* Nút Hủy & Xác nhận */}
         <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.button, styles.submitButton]}
-            onPress={() => requirePin(handleSubmit)}
-            disabled={loading || (activeTab === 'manual' && todayTransactions.length === 0)}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.submitButtonText}>
-                {activeTab === 'quick' ? 'XÁC NHẬN TRẢ HÀNG NHANH' : 'LƯU CẬP NHẬT ĐƠN HÀNG'}
-              </Text>
-            )}
-          </TouchableOpacity>
+          {hasOrdersOnDate && (
+            <TouchableOpacity
+              style={[styles.button, styles.submitButton]}
+              onPress={() => requirePin(handleSubmit)}
+              disabled={loading || (activeTab === 'manual' && todayTransactions.length === 0)}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.submitButtonText}>
+                  {activeTab === 'quick' ? 'XÁC NHẬN TRẢ HÀNG NHANH' : 'LƯU CẬP NHẬT ĐƠN HÀNG'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
-            style={[styles.button, styles.cancelButton]}
+            style={[
+              styles.button,
+              hasOrdersOnDate ? styles.cancelButton : styles.closeFullButton,
+            ]}
             onPress={() => setVisible(false)}
             disabled={loading}
           >
-            <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+            <Text style={hasOrdersOnDate ? styles.cancelButtonText : styles.closeFullButtonText}>
+              {hasOrdersOnDate ? 'HỦY BỎ' : '✕ ĐÓNG LẠI'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -731,9 +821,10 @@ export default ReturnGoodsModal;
 const styles = StyleSheet.create({
   modalView: {
     backgroundColor: COLORS.card,
+    flex: 1,
     height: '100%',
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 24,
     paddingTop: Platform.OS === 'ios' ? 50 : 30,
   },
   modalHeader: {
@@ -750,10 +841,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#B45309',
   },
-  customerSubTitle: {
-    fontSize: 13,
+  customerBox: {
+    backgroundColor: COLORS.inputBg,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 12,
+  },
+  customerName: {
+    fontSize: 14,
     color: COLORS.textSecondary,
-    fontWeight: '600',
+  },
+  boldText: {
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  customerPhone: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
     marginTop: 2,
   },
   closeHeaderButton: {
@@ -764,35 +871,134 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontWeight: 'bold',
   },
+  dateFilterContainer: {
+    backgroundColor: '#FAF8F6',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#F1EFEA',
+    marginBottom: 12,
+  },
+  dateFilterLabel: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 6,
+  },
+  orderSummaryBadge: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    marginBottom: 12,
+  },
+  summaryLeft: {
+    flex: 1,
+  },
+  summaryTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#92400E',
+  },
+  summarySub: {
+    fontSize: 12,
+    color: '#B45309',
+    marginTop: 2,
+  },
+  summaryRight: {
+    alignItems: 'flex-end',
+  },
+  summaryLabel: {
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
+  },
+  summaryValue: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.danger,
+  },
+  noDebtBox: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    alignItems: 'center',
+    marginVertical: 14,
+  },
+  noDebtIcon: {
+    fontSize: 34,
+    marginBottom: 8,
+  },
+  noDebtTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#991B1B',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  noDebtDesc: {
+    fontSize: 13,
+    color: '#7F1D1D',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  noDebtHint: {
+    fontSize: 12,
+    color: '#B91C1C',
+    fontWeight: '600',
+    marginTop: 10,
+    textAlign: 'center',
+  },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: COLORS.inputBg,
-    borderRadius: 8,
+    backgroundColor: '#EEF2F6', // Nền xám xanh trung tính hiện đại
+    borderRadius: 10,
     padding: 3,
-    marginBottom: 12,
+    marginBottom: 14,
+    alignItems: 'center',
+    height: 44,
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 10,
+    height: '100%',
+    justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: 8,
+    paddingHorizontal: 8,
   },
   tabButtonActive: {
     backgroundColor: '#FFFFFF',
-    ...SHADOWS.small,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)' }
+      : {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+          elevation: 2,
+        }),
   },
   tabButtonText: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.textSecondary,
+    color: '#64748B',
+    textAlign: 'center',
   },
   tabButtonTextActive: {
     color: '#D97706',
     fontWeight: 'bold',
   },
   tabButtonDisabled: {
-    backgroundColor: '#F1F5F9',
-    opacity: 0.5,
+    opacity: 0.4,
   },
   tabButtonTextDisabled: {
     color: '#94A3B8',
@@ -1033,6 +1239,22 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  closeFullButton: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  closeFullButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
   submitButton: {
     backgroundColor: '#D97706',

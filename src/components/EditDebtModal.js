@@ -133,7 +133,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
       if (!transaction) return;
       setTransactionId(transaction.id);
       setCustomerId(transaction.customerId || ownerCustomerId); // Ưu tiên ID trong giao dịch, fallback sang khách hàng đang xem
-      
+
       // Phân loại đơn là Ghi nợ nhanh hay Ghi nợ chi tiết
       const isQuick = (transaction.items || []).some(
         (it) => it.product?.name === 'Tiền hàng' || (it.product?.name && it.product.name.toLowerCase().startsWith('tiền'))
@@ -317,7 +317,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   // ─── Lưu cập nhật đơn hàng ──────────────────────────────────
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
-    
+
     const isoDate = parseDateString(dateStr);
     if (!isoDate) {
       setError('Ngày ghi nợ không hợp lệ (Ví dụ: 14/06/2026).');
@@ -401,213 +401,213 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
           keyboardShouldPersistTaps="handled"
         >
           {/* Thông báo lỗi chung */}
-        {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
+          {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
-        {/* ── THANH CHUYỂN TAB CÔNG NỢ (Chi tiết / Nợ nhanh) ── */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'manual' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('manual')}
-          >
-            <Text style={[styles.tabButtonText, activeTab === 'manual' && styles.tabButtonTextActive]}>
-              🥩 Nợ chi tiết (Theo thịt)
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'quick' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('quick')}
-          >
-            <Text style={[styles.tabButtonText, activeTab === 'quick' && styles.tabButtonTextActive]}>
-              ⚡ Nợ nhanh
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── NGÀY GHI NỢ ── */}
-        <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
-        <DatePickerInput
-          value={dateStr}
-          onChange={setDateStr}
-          allowFuture={true}
-        />
-
-        <View style={styles.divider} />
-
-        {activeTab === 'quick' ? (
-          /* ── GIAO DIỆN SỬA ĐƠN NỢ NHANH ── */
-          <View style={styles.quickSection}>
-            <Text style={styles.label}>📝 Tên tiền hàng / mặt hàng:</Text>
-            <TextInput
-              style={styles.input}
-              value={quickProductName}
-              onChangeText={setQuickProductName}
-              placeholder="Tiền hàng"
-              placeholderTextColor={COLORS.textLight}
-            />
-
-            <Text style={[styles.label, { marginTop: 12 }]}>💵 Số tiền nợ (đ):</Text>
-            <MoneyInput
-              value={quickAmountVND}
-              onChangeValue={setQuickAmountVND}
-              placeholder="0"
-              textAlign="left"
-            />
-
-            <Text style={[styles.label, { marginTop: 12 }]}>📝 Ghi chú bổ sung (tuỳ chọn):</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ví dụ: Nợ tiền thịt giao buổi sáng..."
-              placeholderTextColor={COLORS.textLight}
-              value={note}
-              onChangeText={setNote}
-            />
-          </View>
-        ) : (
-          /* ── GIAO DIỆN SỬA ĐƠN NỢ CHI TIẾT ── */
-          <View>
-            {/* ── GIỎ HÀNG: Danh sách mặt hàng đã thêm ── */}
-            {cartItems.length > 0 && (
-              <View style={styles.cartSection}>
-                <View style={styles.cartHeader}>
-                  <Text style={styles.cartTitle}>
-                    🛒 Đơn hàng ({cartItems.length} mặt hàng)
-                  </Text>
-                  <Text style={styles.cartTotalText}>{formatCurrency(cartTotal)}</Text>
-                </View>
-                <ScrollView style={styles.cartItemsScroll} nestedScrollEnabled={true}>
-                  {cartItems.map((item) => (
-                    <View key={item.tempId} style={styles.cartItem}>
-                      <TouchableOpacity style={styles.cartItemInfo} onPress={() => handleEditCartItem(item)}>
-                        <Text style={styles.cartItemText}>
-                          <Text style={styles.cartItemName}>{item.product.name}</Text>
-                          <Text style={styles.cartItemMeta}>
-                            {` - ${item.quantity} ${item.product.unit} × ${item.displayPrice}đ = `}
-                            <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>
-                              {formatCurrency(item.amount)}
-                            </Text>
-                          </Text>
-                        </Text>
-                      </TouchableOpacity>
-                      {/* Nút xóa mặt hàng khỏi giỏ */}
-                      <TouchableOpacity
-                        style={styles.cartEditBtn}
-                        onPress={() => handleEditCartItem(item)}
-                      >
-                        <Text style={styles.cartEditText}>✏️ Sửa</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.cartRemoveBtn}
-                        onPress={() => handleRemoveFromCart(item.tempId)}
-                      >
-                        <Text style={styles.cartRemoveText}>✕</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-        {/* ── CHỌN LOẠI THỊT ── */}
-        <Text style={styles.label}>
-          {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua:'}
-        </Text>
-        <ProductSelector
-          products={products}
-          currentProduct={currentProduct}
-          onSelectProduct={handleSelectProduct}
-          onClearProduct={() => {
-            setCurrentProduct(null);
-            setCurrentPrice('');
-            setProductSearch('');
-          }}
-          onAddProduct={() => productModalRef.current?.open()}
-          formatCurrency={formatCurrency}
-          hasError={error && error.toLowerCase().includes('thịt')}
-          error={error}
-        />
-
-        {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
-        {currentProduct ? (
-            <View>
-              {/* Khối lượng */}
-              <Text style={styles.label}>
-                Khối lượng ({currentProduct.unit}):
+          {/* ── THANH CHUYỂN TAB CÔNG NỢ (Chi tiết / Nợ nhanh) ── */}
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'manual' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('manual')}
+            >
+              <Text style={[styles.tabButtonText, activeTab === 'manual' && styles.tabButtonTextActive]}>
+                🥩 Nợ chi tiết (Theo thịt)
               </Text>
-              <View style={styles.numericRow}>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { flex: 1, minWidth: 0, fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 0 }
-                  ]}
-                  placeholder="Ví dụ: 1.5"
-                  placeholderTextColor={COLORS.textLight}
-                  keyboardType="decimal-pad"
-                  value={currentQuantity}
-                  onChangeText={(text) => {
-                    // Chỉ cho phép số, dấu chấm và dấu phẩy
-                    const filtered = text.replace(/[^0-9.,]/g, '');
-                    setCurrentQuantity(filtered);
-                  }}
-                />
-                <Text style={styles.unitText}>{currentProduct.unit}</Text>
-              </View>
+            </TouchableOpacity>
 
-              {/* Đơn giá */}
-              <Text style={styles.label}>Giá bán thực tế tại thời điểm này (VND):</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  { fontSize: 16, fontWeight: 'bold' }
-                ]}
-                placeholder="Ví dụ: 130.000"
-                placeholderTextColor={COLORS.textLight}
-                keyboardType="number-pad"
-                value={currentPrice}
-                onChangeText={(text) => setCurrentPrice(formatNumberString(text))}
-              />
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'quick' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('quick')}
+            >
+              <Text style={[styles.tabButtonText, activeTab === 'quick' && styles.tabButtonTextActive]}>
+                ⚡ Nợ nhanh
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-              {/* Xem trước thành tiền mặt hàng đang nhập */}
-              {displayCurrentSubtotal > 0 && (
-                <View style={styles.previewRow}>
-                  <Text style={styles.previewLabel}>Thành tiền mặt hàng này:</Text>
-                  <Text style={styles.previewValue}>
-                    {formatCurrency(displayCurrentSubtotal)}
-                  </Text>
-                </View>
-              )}
+          {/* ── NGÀY GHI NỢ ── */}
+          <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
+          <DatePickerInput
+            value={dateStr}
+            onChange={setDateStr}
+            allowFuture={true}
+          />
 
-              {/* Nút thêm vào giỏ hàng */}
-              <TouchableOpacity style={styles.addToCartBtn} onPress={handleAddToCart}>
-                <Text style={styles.addToCartText}>{editingItemId !== null ? '💾 CẬP NHẬT MẶT HÀNG' : '➕ THÊM VÀO ĐƠN'}</Text>
-              </TouchableOpacity>
-            </View>
-          ) : products.length === 0 ? (
-            <Text style={[styles.selectPrompt, { color: COLORS.dangerDark, fontWeight: '600' }]}>
-              Hiện tại chưa có loại thịt, vui lòng thêm loại thịt.
-            </Text>
-          ) : cartItems.length === 0 ? (
-            <Text style={styles.selectPrompt}>
-              Vui lòng chạm chọn loại thịt ở danh sách phía trên.
-            </Text>
-          ) : null}
+          <View style={styles.divider} />
 
-          {/* ── GHI CHÚ CHUNG CHO CẢ ĐƠN ── */}
-          {(cartItems.length > 0 || currentProduct) && (
-            <View style={styles.sharedFields}>
-              <View style={styles.divider} />
-              <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
+          {activeTab === 'quick' ? (
+            /* ── GIAO DIỆN SỬA ĐƠN NỢ NHANH ── */
+            <View style={styles.quickSection}>
+              <Text style={styles.label}>📝 Tên tiền hàng / mặt hàng:</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
+                value={quickProductName}
+                onChangeText={setQuickProductName}
+                placeholder="Tiền hàng"
+                placeholderTextColor={COLORS.textLight}
+              />
+
+              <Text style={[styles.label, { marginTop: 12 }]}>💵 Số tiền nợ (đ):</Text>
+              <MoneyInput
+                value={quickAmountVND}
+                onChangeValue={setQuickAmountVND}
+                placeholder="0"
+                textAlign="left"
+              />
+
+              <Text style={[styles.label, { marginTop: 12 }]}>📝 Ghi chú bổ sung (tuỳ chọn):</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ví dụ: Nợ tiền thịt giao buổi sáng..."
                 placeholderTextColor={COLORS.textLight}
                 value={note}
                 onChangeText={setNote}
               />
             </View>
+          ) : (
+            /* ── GIAO DIỆN SỬA ĐƠN NỢ CHI TIẾT ── */
+            <View>
+              {/* ── GIỎ HÀNG: Danh sách mặt hàng đã thêm ── */}
+              {cartItems.length > 0 && (
+                <View style={styles.cartSection}>
+                  <View style={styles.cartHeader}>
+                    <Text style={styles.cartTitle}>
+                      🛒 Đơn hàng ({cartItems.length} mặt hàng)
+                    </Text>
+                    <Text style={styles.cartTotalText}>{formatCurrency(cartTotal)}</Text>
+                  </View>
+                  <ScrollView style={styles.cartItemsScroll} nestedScrollEnabled={true}>
+                    {cartItems.map((item) => (
+                      <View key={item.tempId} style={styles.cartItem}>
+                        <TouchableOpacity style={styles.cartItemInfo} onPress={() => handleEditCartItem(item)}>
+                          <Text style={styles.cartItemText}>
+                            <Text style={styles.cartItemName}>{item.product.name}</Text>
+                            <Text style={styles.cartItemMeta}>
+                              {` - ${item.quantity} ${item.product.unit} × ${item.displayPrice}đ = `}
+                              <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>
+                                {formatCurrency(item.amount)}
+                              </Text>
+                            </Text>
+                          </Text>
+                        </TouchableOpacity>
+                        {/* Nút xóa mặt hàng khỏi giỏ */}
+                        <TouchableOpacity
+                          style={styles.cartEditBtn}
+                          onPress={() => handleEditCartItem(item)}
+                        >
+                          <Text style={styles.cartEditText}>✏️ Sửa</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.cartRemoveBtn}
+                          onPress={() => handleRemoveFromCart(item.tempId)}
+                        >
+                          <Text style={styles.cartRemoveText}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* ── CHỌN LOẠI THỊT ── */}
+              <Text style={styles.label}>
+                {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua:'}
+              </Text>
+              <ProductSelector
+                products={products}
+                currentProduct={currentProduct}
+                onSelectProduct={handleSelectProduct}
+                onClearProduct={() => {
+                  setCurrentProduct(null);
+                  setCurrentPrice('');
+                  setProductSearch('');
+                }}
+                onAddProduct={() => productModalRef.current?.open()}
+                formatCurrency={formatCurrency}
+                hasError={error && error.toLowerCase().includes('thịt')}
+                error={error}
+              />
+
+              {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
+              {currentProduct ? (
+                <View>
+                  {/* Khối lượng */}
+                  <Text style={styles.label}>
+                    Khối lượng ({currentProduct.unit}):
+                  </Text>
+                  <View style={styles.numericRow}>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        { flex: 1, minWidth: 0, fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 0 }
+                      ]}
+                      placeholder="Ví dụ: 1.5"
+                      placeholderTextColor={COLORS.textLight}
+                      keyboardType="decimal-pad"
+                      value={currentQuantity}
+                      onChangeText={(text) => {
+                        // Chỉ cho phép số, dấu chấm và dấu phẩy
+                        const filtered = text.replace(/[^0-9.,]/g, '');
+                        setCurrentQuantity(filtered);
+                      }}
+                    />
+                    <Text style={styles.unitText}>{currentProduct.unit}</Text>
+                  </View>
+
+                  {/* Đơn giá */}
+                  <Text style={styles.label}>Giá bán thực tế tại thời điểm này (VND):</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { fontSize: 16, fontWeight: 'bold' }
+                    ]}
+                    placeholder="Ví dụ: 130.000"
+                    placeholderTextColor={COLORS.textLight}
+                    keyboardType="number-pad"
+                    value={currentPrice}
+                    onChangeText={(text) => setCurrentPrice(formatNumberString(text))}
+                  />
+
+                  {/* Xem trước thành tiền mặt hàng đang nhập */}
+                  {displayCurrentSubtotal > 0 && (
+                    <View style={styles.previewRow}>
+                      <Text style={styles.previewLabel}>Thành tiền mặt hàng này:</Text>
+                      <Text style={styles.previewValue}>
+                        {formatCurrency(displayCurrentSubtotal)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Nút thêm vào giỏ hàng */}
+                  <TouchableOpacity style={styles.addToCartBtn} onPress={handleAddToCart}>
+                    <Text style={styles.addToCartText}>{editingItemId !== null ? '💾 CẬP NHẬT MẶT HÀNG' : '➕ THÊM VÀO ĐƠN'}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : products.length === 0 ? (
+                <Text style={[styles.selectPrompt, { color: COLORS.dangerDark, fontWeight: '600' }]}>
+                  Hiện tại chưa có loại thịt, vui lòng thêm loại thịt.
+                </Text>
+              ) : cartItems.length === 0 ? (
+                <Text style={styles.selectPrompt}>
+                  Vui lòng chạm chọn loại thịt ở danh sách phía trên.
+                </Text>
+              ) : null}
+
+              {/* ── GHI CHÚ CHUNG CHO CẢ ĐƠN ── */}
+              {(cartItems.length > 0 || currentProduct) && (
+                <View style={styles.sharedFields}>
+                  <View style={styles.divider} />
+                  <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
+                    placeholderTextColor={COLORS.textLight}
+                    value={note}
+                    onChangeText={setNote}
+                  />
+                </View>
+              )}
+            </View>
           )}
-        </View>
-      )}
         </ScrollView>
 
         {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}

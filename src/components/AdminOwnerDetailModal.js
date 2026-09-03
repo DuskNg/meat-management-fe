@@ -495,13 +495,17 @@ const AdminOwnerDetailModal = forwardRef(function AdminOwnerDetailModal(props, r
 export default AdminOwnerDetailModal;
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
+  overlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15, 23, 42, 0.5)' },
   sheet: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
     maxHeight: SCREEN_H * 0.92,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',

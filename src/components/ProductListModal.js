@@ -17,12 +17,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import PopupModal from './PopupModal';
+import { matchItemSearch } from '../utils/searchHelper';
+import MoneyInput from './MoneyInput';
 
 const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [name, setName] = useState('');
-  const [price, setPrice] = useState('');
+  const [price, setPrice] = useState(0); // Đơn giá VNĐ (sử dụng MoneyInput)
   const [unit, setUnit] = useState('kg'); // Đơn vị mặc định là kg
+  const [searchQuery, setSearchQuery] = useState(''); // Từ khóa tìm kiếm tên thịt
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
@@ -44,13 +47,19 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
     (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
   );
 
+  // Lọc danh sách thịt theo từ khóa tìm kiếm
+  const filteredProducts = products.filter((p) =>
+    matchItemSearch(p, searchQuery, ['name', 'unit'])
+  );
+
   // 2. Expose các hàm mở/đóng modal ra ngoài
   useImperativeHandle(ref, () => ({
     open: () => {
       setVisible(true);
       setName('');
-      setPrice('');
+      setPrice(0);
       setUnit('kg');
+      setSearchQuery('');
       setError('');
       setEditingProduct(null);
     },
@@ -83,7 +92,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const handleStartEdit = (product) => {
     setEditingProduct(product);
     setName(product.name);
-    setPrice(formatNumberString(String(product.defaultPrice)));
+    setPrice(product.defaultPrice || 0);
     setUnit(product.unit);
     setError('');
   };
@@ -92,7 +101,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const handleCancelEdit = () => {
     setEditingProduct(null);
     setName('');
-    setPrice('');
+    setPrice(0);
     setUnit('kg');
     setError('');
   };
@@ -105,14 +114,9 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       setError('Tên loại thịt không được để trống.');
       return;
     }
-    if (!price || price.trim() === '') {
+    const defaultPrice = typeof price === 'number' ? price : parseNumberString(price);
+    if (defaultPrice === undefined || defaultPrice === null || defaultPrice < 0) {
       setError('Đơn giá không được để trống.');
-      return;
-    }
-
-    const defaultPrice = parseNumberString(price);
-    if (defaultPrice < 0) {
-      setError('Đơn giá mặc định phải từ 0 trở lên.');
       return;
     }
 
@@ -150,14 +154,9 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       setError('Tên loại thịt không được để trống.');
       return;
     }
-    if (!price || price.trim() === '') {
-      setError('Đơn giá không được để trống.');
-      return;
-    }
-
-    const defaultPrice = parseNumberString(price);
-    if (defaultPrice < 0) {
-      setError('Đơn giá mặc định phải từ 0 trở lên.');
+    const defaultPrice = typeof price === 'number' ? price : parseNumberString(price);
+    if (!defaultPrice || defaultPrice <= 0) {
+      setError('Đơn giá không được để trống hoặc phải lớn hơn 0đ.');
       return;
     }
 
@@ -225,162 +224,191 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   return (
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.modalView}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>🥩 QUẢN LÝ DANH SÁCH THỊT</Text>
-          <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
-            <Text style={styles.closeHeaderText}>✕</Text>
-          </TouchableOpacity>
-        </View>
+        <View style={styles.modalView}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>🥩 QUẢN LÝ DANH SÁCH THỊT</Text>
+            <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
+              <Text style={styles.closeHeaderText}>✕</Text>
+            </TouchableOpacity>
+          </View>
 
-        {error ? (
-          <View style={[styles.alertBox, error.startsWith('✅') ? styles.alertSuccess : styles.alertError]}>
-            <Text style={error.startsWith('✅') ? styles.alertTextSuccess : styles.alertTextError}>
-              {error}
+          {error ? (
+            <View style={[styles.alertBox, error.startsWith('✅') ? styles.alertSuccess : styles.alertError]}>
+              <Text style={error.startsWith('✅') ? styles.alertTextSuccess : styles.alertTextError}>
+                {error}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Form thêm hoặc cập nhật thịt mới */}
+          <View style={styles.formContainer}>
+            <Text style={styles.sectionTitle}>
+              {editingProduct ? '✏️ CẬP NHẬT THÔNG TIN THỊT' : '➕ THÊM THỊT MỚI'}
             </Text>
-          </View>
-        ) : null}
 
-        {/* Form thêm hoặc cập nhật thịt mới */}
-        <View style={styles.formContainer}>
-          <Text style={styles.sectionTitle}>
-            {editingProduct ? '✏️ CẬP NHẬT THÔNG TIN THỊT' : '➕ THÊM THỊT MỚI'}
-          </Text>
-
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
-            <View style={{ flex: 1.2 }}>
-              <Text style={styles.label}>Tên loại thịt:</Text>
-              <TextInput
-                style={[styles.input, { marginBottom: 0 }]}
-                placeholder="Ví dụ: Bắp bò..."
-                placeholderTextColor={COLORS.textLight}
-                value={name}
-                onChangeText={setName}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Đơn giá (VND):</Text>
-              <TextInput
-                style={[styles.input, { marginBottom: 0 }]}
-                placeholder="Ví dụ: 130.000"
-                placeholderTextColor={COLORS.textLight}
-                keyboardType="number-pad"
-                value={price}
-                onChangeText={(text) => setPrice(formatNumberString(text))}
-              />
-            </View>
-          </View>
-
-          {/* Chọn đơn vị tính và các nút bấm hành động */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={[styles.label, { marginBottom: 0 }]}>ĐVT:</Text>
-              <View style={[styles.unitContainer, { marginBottom: 0, gap: 4 }]}>
-                {['kg', 'lạng', 'cái'].map((u) => {
-                  const isSelected = unit === u;
-                  return (
-                    <TouchableOpacity
-                      key={u}
-                      style={[styles.unitBadge, isSelected && styles.unitBadgeSelected]}
-                      onPress={() => setUnit(u)}
-                    >
-                      <Text style={[styles.unitBadgeText, isSelected && styles.unitBadgeTextSelected]}>
-                        {u}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
+              <View style={{ flex: 1.2 }}>
+                <Text style={styles.label}>Tên loại thịt:</Text>
+                <TextInput
+                  style={[styles.input, { marginBottom: 0 }]}
+                  placeholder="Ví dụ: Bắp bò..."
+                  placeholderTextColor={COLORS.textLight}
+                  value={name}
+                  onChangeText={setName}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Đơn giá (VND):</Text>
+                <MoneyInput
+                  style={styles.moneyInputContainer}
+                  inputStyle={styles.moneyInputField}
+                  value={price}
+                  onChangeValue={(val) => {
+                    setPrice(val);
+                    setError('');
+                  }}
+                  placeholder="0"
+                />
               </View>
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              {editingProduct ? (
-                <>
+            {/* Chọn đơn vị tính và các nút bấm hành động */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={[styles.label, { marginBottom: 0 }]}>ĐVT:</Text>
+                <View style={[styles.unitContainer, { marginBottom: 0, gap: 4 }]}>
+                  {['kg', 'lạng', 'cái'].map((u) => {
+                    const isSelected = unit === u;
+                    return (
+                      <TouchableOpacity
+                        key={u}
+                        style={[styles.unitBadge, isSelected && styles.unitBadgeSelected]}
+                        onPress={() => setUnit(u)}
+                      >
+                        <Text style={[styles.unitBadgeText, isSelected && styles.unitBadgeTextSelected]}>
+                          {u}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {editingProduct ? (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.saveButton, { height: 36, paddingHorizontal: 12, backgroundColor: COLORS.primary }]}
+                      onPress={handleUpdateProduct}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <Text style={[styles.saveButtonText, { fontSize: 13 }]}>LƯU 💾</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.closeButton, { height: 36, paddingHorizontal: 12, marginTop: 0, backgroundColor: COLORS.inputBg }]}
+                      onPress={handleCancelEdit}
+                    >
+                      <Text style={[styles.closeButtonText, { fontSize: 13 }]}>HỦY</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
                   <TouchableOpacity
-                    style={[styles.saveButton, { height: 36, paddingHorizontal: 12, backgroundColor: COLORS.primary }]}
-                    onPress={handleUpdateProduct}
+                    style={[styles.saveButton, { height: 36, paddingHorizontal: 12 }]}
+                    onPress={handleAddProduct}
                     disabled={loading}
                   >
                     {loading ? (
                       <ActivityIndicator color="#FFFFFF" size="small" />
                     ) : (
-                      <Text style={[styles.saveButtonText, { fontSize: 13 }]}>LƯU 💾</Text>
+                      <Text style={[styles.saveButtonText, { fontSize: 13 }]}>THÊM 💾</Text>
                     )}
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.closeButton, { height: 36, paddingHorizontal: 12, marginTop: 0, backgroundColor: COLORS.inputBg }]}
-                    onPress={handleCancelEdit}
-                  >
-                    <Text style={[styles.closeButtonText, { fontSize: 13 }]}>HỦY</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.saveButton, { height: 36, paddingHorizontal: 12 }]}
-                  onPress={handleAddProduct}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Text style={[styles.saveButtonText, { fontSize: 13 }]}>THÊM 💾</Text>
-                  )}
-                </TouchableOpacity>
-              )}
+                )}
+              </View>
             </View>
           </View>
-        </View>
 
-        {/* Danh sách thịt hiện có */}
-        <Text style={styles.sectionTitle}>📋 DANH SÁCH THỊT ĐANG BÁN ({products.length})</Text>
-        {isLoading ? (
-          <ActivityIndicator color={COLORS.primary} style={{ margin: 20 }} />
-        ) : (
-          <FlatList
-            data={products}
-            keyExtractor={(item) => item.id}
-            style={{ flex: 1 }} // Cho phép danh sách co giãn chiếm trọn không gian trống còn lại
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => (
-              <View style={styles.productItem}>
-                <View style={styles.productDetails}>
-                  <Text style={styles.productNameText}>{item.name}</Text>
-                  <Text style={styles.productPriceText}>
-                    {formatCurrency(item.defaultPrice)} / {item.unit}
-                  </Text>
-                </View>
-
-                {/* Cụm nút hành động bên cạnh mặt hàng: Sửa và Ẩn */}
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={() => handleStartEdit(item)}
-                  >
-                    <Text style={styles.editButtonText}>✏️ Sửa</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => handleDeleteProduct(item.id, item.name)}
-                  >
-                    <Text style={styles.deleteButtonText}>🗑️ Xóa</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+          {/* Thanh tìm kiếm tên thịt */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="🔍 Tìm kiếm tên loại thịt, đơn vị tính..."
+              placeholderTextColor={COLORS.textLight}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                style={styles.searchClearBtn}
+                onPress={() => setSearchQuery('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.searchClearText}>✕</Text>
+              </TouchableOpacity>
             )}
-            ListEmptyComponent={
-              <Text style={styles.emptyText}>Chưa có loại thịt nào. Hãy thêm ở form trên!</Text>
-            }
-          />
-        )}
+          </View>
 
-        {/* Nút đóng chân modal (được thu nhỏ lại) */}
-        <TouchableOpacity
-          style={[styles.closeButton, { height: 38, marginTop: 8 }]}
-          onPress={() => setVisible(false)}
-        >
-          <Text style={[styles.closeButtonText, { fontSize: 14 }]}>ĐÓNG LẠI</Text>
-        </TouchableOpacity>
-      </View>
+          {/* Danh sách thịt hiện có */}
+          <Text style={styles.sectionTitle}>
+            📋 DANH SÁCH THỊT ĐANG BÁN ({filteredProducts.length}{searchQuery.trim() ? `/${products.length}` : ''})
+          </Text>
+          {isLoading ? (
+            <ActivityIndicator color={COLORS.primary} style={{ margin: 20 }} />
+          ) : (
+            <FlatList
+              data={filteredProducts}
+              keyExtractor={(item) => item.id}
+              style={{ flex: 1 }} // Cho phép danh sách co giãn chiếm trọn không gian trống còn lại
+              contentContainerStyle={styles.listContent}
+              renderItem={({ item }) => (
+                <View style={styles.productItem}>
+                  <View style={styles.productDetails}>
+                    <Text style={styles.productNameText}>{item.name}</Text>
+                    <Text style={styles.productPriceText}>
+                      {formatCurrency(item.defaultPrice)} / {item.unit}
+                    </Text>
+                  </View>
+
+                  {/* Cụm nút hành động bên cạnh mặt hàng: Sửa và Ẩn */}
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => handleStartEdit(item)}
+                    >
+                      <Text style={styles.editButtonText}>✏️ Sửa</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleDeleteProduct(item.id, item.name)}
+                    >
+                      <Text style={styles.deleteButtonText}>🗑️ Xóa</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>
+                  {searchQuery.trim()
+                    ? `Không tìm thấy loại thịt nào khớp với "${searchQuery}".`
+                    : 'Chưa có loại thịt nào. Hãy thêm ở form trên!'}
+                </Text>
+              }
+            />
+          )}
+
+          {/* Nút đóng chân modal (được thu nhỏ lại) */}
+          <TouchableOpacity
+            style={[styles.closeButton, { height: 38, marginTop: 8 }]}
+            onPress={() => setVisible(false)}
+          >
+            <Text style={[styles.closeButtonText, { fontSize: 14 }]}>ĐÓNG LẠI</Text>
+          </TouchableOpacity>
+        </View>
       </SmoothModal>
       <PopupModal ref={popupModalRef} />
     </>
@@ -575,6 +603,50 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     textAlign: 'center',
     marginVertical: 14,
+  },
+  // Khung tìm kiếm tên thịt
+  searchContainer: {
+    position: 'relative',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  searchInput: {
+    backgroundColor: '#FAF8F6',
+    height: 40,
+    borderRadius: 8,
+    paddingLeft: 12,
+    paddingRight: 36,
+    fontSize: 14,
+    color: COLORS.text,
+    borderWidth: 1.5,
+    borderColor: '#E4E2DD',
+  },
+  searchClearBtn: {
+    position: 'absolute',
+    right: 10,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  searchClearText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    fontWeight: 'bold',
+  },
+  moneyInputContainer: {
+    backgroundColor: '#FFFFFF',
+    height: 42,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1.5,
+    borderColor: '#E4E2DD',
+    marginBottom: 0,
+    justifyContent: 'center',
+  },
+  moneyInputField: {
+    fontSize: 14,
+    color: COLORS.text,
   },
   closeButton: {
     backgroundColor: COLORS.inputBg,

@@ -305,9 +305,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 16,
   },
   card: {
+    width: '100%',
+    maxWidth: 860,
     maxHeight: '94%',
     backgroundColor: '#0F172A',
     borderRadius: 16,

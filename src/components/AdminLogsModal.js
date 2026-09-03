@@ -368,16 +368,18 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'flex-end',
     backgroundColor: '#0F172A',
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
-    gap: 12,
+    gap: 10,
     width: '100%',
   },
   inputContainer: {
     flex: 1,
+    minWidth: 150,
   },
   filterLabel: {
     fontSize: 11,

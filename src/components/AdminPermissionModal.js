@@ -132,131 +132,138 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
             </View>
           ) : null}
 
-          {/* Dòng điều khiển phân quyền: Toàn bộ quyền */}
-          <View style={[styles.row, { borderBottomWidth: 2, borderBottomColor: '#475569', paddingBottom: 16, marginBottom: 8 }]}>
-            <View style={styles.infoCol}>
-              <Text style={[styles.label, { color: '#38BDF8', fontWeight: 'bold' }]}>Toàn bộ quyền</Text>
-              <Text style={styles.desc}>Bật hoặc tắt toàn bộ các quyền hạn của tài khoản.</Text>
+          {/* Danh sách các quyền có thể cuộn linh hoạt trên mọi kích thước màn hình */}
+          <ScrollView
+            style={styles.scrollList}
+            contentContainerStyle={styles.scrollListContent}
+            showsVerticalScrollIndicator={true}
+          >
+            {/* Dòng điều khiển phân quyền: Toàn bộ quyền */}
+            <View style={[styles.row, { borderBottomWidth: 2, borderBottomColor: '#475569', paddingBottom: 16, marginBottom: 8 }]}>
+              <View style={styles.infoCol}>
+                <Text style={[styles.label, { color: '#38BDF8', fontWeight: 'bold' }]}>Toàn bộ quyền</Text>
+                <Text style={styles.desc}>Bật hoặc tắt toàn bộ các quyền hạn của tài khoản.</Text>
+              </View>
+              <Switch
+                value={isAllSelected}
+                onValueChange={handleToggleAll}
+                trackColor={{ false: '#334155', true: '#38BDF8' }}
+                thumbColor={isAllSelected ? '#FFFFFF' : '#94A3B8'}
+              />
             </View>
-            <Switch
-              value={isAllSelected}
-              onValueChange={handleToggleAll}
-              trackColor={{ false: '#334155', true: '#38BDF8' }}
-              thumbColor={isAllSelected ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
 
-          {/* Dòng điều khiển phân quyền: Chủ Workspace */}
-          <View style={[styles.row, { borderBottomColor: '#475569', borderBottomWidth: 1, paddingBottom: 12, marginBottom: 8 }]}>
-            <View style={styles.infoCol}>
-              <Text style={[styles.label, { color: '#A78BFA', fontWeight: 'bold' }]}>👑 Quyền Chủ Workspace</Text>
-              <Text style={styles.desc}>Cho phép tạo Workspace, phát mã QR cho nhân viên và quản lý toàn bộ hệ thống.</Text>
+            {/* Dòng điều khiển phân quyền: Chủ Workspace */}
+            <View style={[styles.row, { borderBottomColor: '#475569', borderBottomWidth: 1, paddingBottom: 12, marginBottom: 8 }]}>
+              <View style={styles.infoCol}>
+                <Text style={[styles.label, { color: '#A78BFA', fontWeight: 'bold' }]}>👑 Quyền Chủ Workspace</Text>
+                <Text style={styles.desc}>Cho phép tạo Workspace, phát mã QR cho nhân viên và quản lý toàn bộ hệ thống.</Text>
+              </View>
+              <Switch
+                value={isWorkspaceOwner}
+                onValueChange={handleToggleWorkspaceOwner}
+                trackColor={{ false: '#334155', true: '#8B5CF6' }}
+                thumbColor={isWorkspaceOwner ? '#FFFFFF' : '#94A3B8'}
+              />
             </View>
-            <Switch
-              value={isWorkspaceOwner}
-              onValueChange={handleToggleWorkspaceOwner}
-              trackColor={{ false: '#334155', true: '#8B5CF6' }}
-              thumbColor={isWorkspaceOwner ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
 
-          {/* Dòng điều khiển phân quyền 1 */}
-          <View style={styles.row}>
-            <View style={styles.infoCol}>
-              <Text style={styles.label}>Quản lý khách hàng</Text>
-              <Text style={styles.desc}>Cho phép xem, thêm, sửa, xóa danh sách khách hàng thường.</Text>
+            {/* Dòng điều khiển phân quyền 1 */}
+            <View style={styles.row}>
+              <View style={styles.infoCol}>
+                <Text style={styles.label}>Quản lý khách hàng</Text>
+                <Text style={styles.desc}>Cho phép xem, thêm, sửa, xóa danh sách khách hàng thường.</Text>
+              </View>
+              <Switch
+                value={canManageCustomers}
+                onValueChange={setCanManageCustomers}
+                trackColor={{ false: '#334155', true: '#0EA5E9' }}
+                thumbColor={canManageCustomers ? '#FFFFFF' : '#94A3B8'}
+              />
             </View>
-            <Switch
-              value={canManageCustomers}
-              onValueChange={setCanManageCustomers}
-              trackColor={{ false: '#334155', true: '#0EA5E9' }}
-              thumbColor={canManageCustomers ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
 
-          {/* Dòng điều khiển phân quyền 2 */}
-          <View style={styles.row}>
-            <View style={styles.infoCol}>
-              <Text style={styles.label}>Quản lý công nợ</Text>
-              <Text style={styles.desc}>Cho phép ghi đơn nợ mới, thu tiền, chỉnh sửa hoặc xóa giao dịch.</Text>
+            {/* Dòng điều khiển phân quyền 2 */}
+            <View style={styles.row}>
+              <View style={styles.infoCol}>
+                <Text style={styles.label}>Quản lý công nợ</Text>
+                <Text style={styles.desc}>Cho phép ghi đơn nợ mới, thu tiền, chỉnh sửa hoặc xóa giao dịch.</Text>
+              </View>
+              <Switch
+                value={canManageDebt}
+                onValueChange={setCanManageDebt}
+                trackColor={{ false: '#334155', true: '#0EA5E9' }}
+                thumbColor={canManageDebt ? '#FFFFFF' : '#94A3B8'}
+              />
             </View>
-            <Switch
-              value={canManageDebt}
-              onValueChange={setCanManageDebt}
-              trackColor={{ false: '#334155', true: '#0EA5E9' }}
-              thumbColor={canManageDebt ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
 
-          {/* Dòng điều khiển phân quyền 3 */}
-          <View style={styles.row}>
-            <View style={styles.infoCol}>
-              <Text style={styles.label}>Quản lý nợ xấu</Text>
-              <Text style={styles.desc}>Cho phép truy cập và quản lý nhóm khách hàng nợ xấu.</Text>
+            {/* Dòng điều khiển phân quyền 3 */}
+            <View style={styles.row}>
+              <View style={styles.infoCol}>
+                <Text style={styles.label}>Quản lý nợ xấu</Text>
+                <Text style={styles.desc}>Cho phép truy cập và quản lý nhóm khách hàng nợ xấu.</Text>
+              </View>
+              <Switch
+                value={canManageBadDebt}
+                onValueChange={setCanManageBadDebt}
+                trackColor={{ false: '#334155', true: '#0EA5E9' }}
+                thumbColor={canManageBadDebt ? '#FFFFFF' : '#94A3B8'}
+              />
             </View>
-            <Switch
-              value={canManageBadDebt}
-              onValueChange={setCanManageBadDebt}
-              trackColor={{ false: '#334155', true: '#0EA5E9' }}
-              thumbColor={canManageBadDebt ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
 
-          {/* Dòng điều khiển phân quyền 4 */}
-          <View style={styles.row}>
-            <View style={styles.infoCol}>
-              <Text style={styles.label}>Quản lý nhân viên</Text>
-              <Text style={styles.desc}>Cho phép quản lý nhân viên, chấm công và thanh toán lương.</Text>
+            {/* Dòng điều khiển phân quyền 4 */}
+            <View style={styles.row}>
+              <View style={styles.infoCol}>
+                <Text style={styles.label}>Quản lý nhân viên</Text>
+                <Text style={styles.desc}>Cho phép quản lý nhân viên, chấm công và thanh toán lương.</Text>
+              </View>
+              <Switch
+                value={canManageEmployees}
+                onValueChange={setCanManageEmployees}
+                trackColor={{ false: '#334155', true: '#0EA5E9' }}
+                thumbColor={canManageEmployees ? '#FFFFFF' : '#94A3B8'}
+              />
             </View>
-            <Switch
-              value={canManageEmployees}
-              onValueChange={setCanManageEmployees}
-              trackColor={{ false: '#334155', true: '#0EA5E9' }}
-              thumbColor={canManageEmployees ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
 
-          {/* Dòng điều khiển phân quyền 5 */}
-          <View style={styles.row}>
-            <View style={styles.infoCol}>
-              <Text style={styles.label}>Quản lý nhà hàng</Text>
-              <Text style={styles.desc}>Cho phép quản lý sơ đồ bàn ăn, thực đơn món ăn, đặt món và thanh toán nhà hàng.</Text>
+            {/* Dòng điều khiển phân quyền 5 */}
+            <View style={styles.row}>
+              <View style={styles.infoCol}>
+                <Text style={styles.label}>Quản lý nhà hàng</Text>
+                <Text style={styles.desc}>Cho phép quản lý sơ đồ bàn ăn, thực đơn món ăn, đặt món và thanh toán nhà hàng.</Text>
+              </View>
+              <Switch
+                value={canManageStore}
+                onValueChange={setCanManageStore}
+                trackColor={{ false: '#334155', true: '#0EA5E9' }}
+                thumbColor={canManageStore ? '#FFFFFF' : '#94A3B8'}
+              />
             </View>
-            <Switch
-              value={canManageStore}
-              onValueChange={setCanManageStore}
-              trackColor={{ false: '#334155', true: '#0EA5E9' }}
-              thumbColor={canManageStore ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
 
-          {/* Dòng điều khiển phân quyền 6 */}
-          <View style={styles.row}>
-            <View style={styles.infoCol}>
-              <Text style={styles.label}>Quản lý kho</Text>
-              <Text style={styles.desc}>Cho phép xem danh sách tồn kho, thêm sản phẩm và theo dõi tổng giá trị kho hàng.</Text>
+            {/* Dòng điều khiển phân quyền 6 */}
+            <View style={styles.row}>
+              <View style={styles.infoCol}>
+                <Text style={styles.label}>Quản lý kho</Text>
+                <Text style={styles.desc}>Cho phép xem danh sách tồn kho, thêm sản phẩm và theo dõi tổng giá trị kho hàng.</Text>
+              </View>
+              <Switch
+                value={canManageInventory}
+                onValueChange={setCanManageInventory}
+                trackColor={{ false: '#334155', true: '#0EA5E9' }}
+                thumbColor={canManageInventory ? '#FFFFFF' : '#94A3B8'}
+              />
             </View>
-            <Switch
-              value={canManageInventory}
-              onValueChange={setCanManageInventory}
-              trackColor={{ false: '#334155', true: '#0EA5E9' }}
-              thumbColor={canManageInventory ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
 
-          {/* Dòng điều khiển phân quyền 7 */}
-          <View style={styles.row}>
-            <View style={styles.infoCol}>
-              <Text style={styles.label}>Quản lý cửa hàng tính giờ</Text>
-              <Text style={styles.desc}>Cho phép quản lý bàn/phòng chơi bida, karaoke, giặt đồ, tính tiền theo giờ và phụ thu...</Text>
+            {/* Dòng điều khiển phân quyền 7 */}
+            <View style={styles.row}>
+              <View style={styles.infoCol}>
+                <Text style={styles.label}>Quản lý cửa hàng tính giờ</Text>
+                <Text style={styles.desc}>Cho phép quản lý bàn/phòng chơi bida, karaoke, giặt đồ, tính tiền theo giờ và phụ thu...</Text>
+              </View>
+              <Switch
+                value={canManageShop}
+                onValueChange={setCanManageShop}
+                trackColor={{ false: '#334155', true: '#14B8A6' }}
+                thumbColor={canManageShop ? '#FFFFFF' : '#94A3B8'}
+              />
             </View>
-            <Switch
-              value={canManageShop}
-              onValueChange={setCanManageShop}
-              trackColor={{ false: '#334155', true: '#14B8A6' }}
-              thumbColor={canManageShop ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
+          </ScrollView>
 
           <View style={styles.actions}>
             <TouchableOpacity
@@ -295,12 +302,20 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 450,
+    maxWidth: 520,
+    maxHeight: '90%',
     backgroundColor: '#1E293B',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 20,
     borderWidth: 1,
     borderColor: '#334155',
+    overflow: 'hidden',
+  },
+  scrollList: {
+    maxHeight: 400,
+  },
+  scrollListContent: {
+    paddingRight: 4,
   },
   title: {
     fontSize: 18,

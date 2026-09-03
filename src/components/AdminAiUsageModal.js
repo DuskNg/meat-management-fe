@@ -169,8 +169,8 @@ const AdminAiUsageModal = forwardRef((props, ref) => {
 });
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: '#00000099', justifyContent: 'center', padding: 16 },
-  card: { maxHeight: '90%', backgroundColor: '#0F172A', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#334155' },
+  overlay: { flex: 1, backgroundColor: '#00000099', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  card: { width: '100%', maxWidth: 700, maxHeight: '90%', backgroundColor: '#0F172A', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#334155' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   title: { color: '#F8FAFC', fontSize: 20, fontWeight: 'bold' },
   subtitle: { color: '#94A3B8', fontSize: 12, marginTop: 4 },

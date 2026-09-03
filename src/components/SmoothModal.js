@@ -15,9 +15,9 @@ import {
  * Component SmoothModal giải quyết vấn đề backdrop trượt theo popup:
  * - Sử dụng 2 Modals song song chạy đồng thời.
  * - Modal 1 (fade): Hiển thị lớp nền tối tĩnh, từ từ mờ dần/rõ dần (fade in/out).
- * - Modal 2 (slide): Chứa nội dung chính của pop-up.
- *   + Với dialog (isToast=false): trượt lên từ dưới (animationType="slide" mặc định).
- *   + Với toast (isToast=true): trượt vào từ phải và trượt ra phải bằng Animated.translateX.
+ * - Modal 2 (slide): Chứa nội dung chính của pop-up trượt lên/xuống (slide up/down)
+ *   và xử lý đẩy bàn phím (KeyboardAvoidingView) mà không làm lệch kích thước.
+ * - Toast (isToast=true): Trượt vào từ góc trên bên phải màn hình.
  */
 const SmoothModal = ({ visible, onClose, children, isToast }) => {
   // Animation trượt từ phải vào / ra cho Toast (translateX: 400 → 0 → 400)
@@ -67,13 +67,10 @@ const SmoothModal = ({ visible, onClose, children, isToast }) => {
         </Modal>
       )}
 
-      {/* Modal 2: Hiển thị nội dung chính */}
+      {/* Modal 2: Trượt nội dung chính lên/xuống và tránh bàn phím */}
       <Modal
         transparent={true}
-        // Toast dùng internalVisible để giữ Modal sống trong suốt exit animation
         visible={isToast ? toastInternalVisible : visible}
-        // Toast dùng animationType="none" để tự kiểm soát animation translateX
-        // Dialog dùng animationType="slide" để trượt từ dưới lên như cũ
         animationType={isToast ? 'none' : 'slide'}
         onRequestClose={onClose}
       >
@@ -82,7 +79,7 @@ const SmoothModal = ({ visible, onClose, children, isToast }) => {
           style={[styles.centeredView, isToast && styles.centeredViewToast]}
           pointerEvents="box-none"
         >
-          {/* Lớp nền trong suốt click ngoài để đóng (chỉ cho dialog) */}
+          {/* Lớp nền trong suốt click ngoài để đóng (chỉ cho dialog) - pointerEvents="box-only" để không chặn children */}
           {!isToast && (
             <TouchableOpacity
               style={styles.backdropClick}
@@ -109,7 +106,7 @@ const SmoothModal = ({ visible, onClose, children, isToast }) => {
 const styles = StyleSheet.create({
   backdropFill: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)', // Nền tối làm mờ màn hình sau
+    backgroundColor: 'rgba(15, 23, 42, 0.55)', // Nền tối làm mờ màn hình sau
   },
   centeredView: {
     flex: 1,
@@ -133,3 +130,4 @@ const styles = StyleSheet.create({
 });
 
 export default SmoothModal;
+

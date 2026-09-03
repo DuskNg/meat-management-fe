@@ -365,22 +365,6 @@ export default function DashboardScreen() {
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  // Xác định danh sách ID khách hàng có đơn hàng phát sinh trong ngày hôm nay
-  const todayCustomerIdsHasOrders = React.useMemo(() => {
-    if (!transactionsResponse?.data) return new Set();
-    const todayStr = getLocalDateKey(new Date());
-    const set = new Set();
-    transactionsResponse.data.forEach((t) => {
-      if (t.customerId && t.date) {
-        const tDateStr = getLocalDateKey(t.date);
-        if (tDateStr === todayStr) {
-          set.add(t.customerId);
-        }
-      }
-    });
-    return set;
-  }, [transactionsResponse?.data]);
-
   // Các hàm làm mới dữ liệu khách hàng kèm theo lịch sử nợ chi tiết nếu đang mở
   const handleRefreshAll = () => {
     refetch();
@@ -1535,13 +1519,14 @@ export default function DashboardScreen() {
         {isLockedByOther ? (
           <ResourceLockOverlay lockInfo={activeLock} borderRadius={12} />
         ) : null}
-        <TouchableOpacity
-          style={styles.customerCardClickable}
-          onPress={() => router.push(`/customer/${item.id}`)}
-          activeOpacity={0.7}
-        >
-          {/* PHẦN TRÊN: Thông tin khách hàng và dư nợ */}
-          <View style={styles.cardHeaderSection}>
+        <View style={styles.customerCardClickable}>
+          {/* PHẦN TRÊN: Thông tin khách hàng và dư nợ (Click để xem chi tiết) */}
+          <TouchableOpacity
+            style={styles.cardHeaderTouchable}
+            onPress={() => router.push(`/customer/${item.id}`)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.cardHeaderSection}>
             {/* Avatar chữ cái đại diện */}
             <View style={[styles.customerAvatar, { backgroundColor: avatarBg }]}>
               <Text style={[styles.customerAvatarText, { color: avatarText }]}>{firstLetter}</Text>
@@ -1578,6 +1563,7 @@ export default function DashboardScreen() {
               </View>
             )}
           </View>
+        </TouchableOpacity>
 
           {/* Đường phân cách nét đứt nhẹ */}
           <View style={styles.cardDivider} />
@@ -1655,10 +1641,7 @@ export default function DashboardScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[
-                      styles.returnGoodsBtn,
-                      !todayCustomerIdsHasOrders.has(item.id) && styles.returnGoodsBtnDisabled
-                    ]}
+                    style={styles.returnGoodsBtn}
                     onPress={(e) => {
                       if (e && e.stopPropagation) {
                         e.stopPropagation();
@@ -1668,10 +1651,7 @@ export default function DashboardScreen() {
                     }}
                     activeOpacity={0.6}
                   >
-                    <Text style={[
-                      styles.returnGoodsBtnText,
-                      !todayCustomerIdsHasOrders.has(item.id) && styles.returnGoodsBtnTextDisabled
-                    ]}>
+                    <Text style={styles.returnGoodsBtnText}>
                       Trả hàng
                     </Text>
                   </TouchableOpacity>
@@ -1740,7 +1720,7 @@ export default function DashboardScreen() {
               )}
             </View>
           </View>
-        </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -3648,6 +3628,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
   },
+  cardHeaderTouchable: {
+    width: '100%',
+  },
   cardHeaderSection: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3785,18 +3768,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...SHADOWS.card,
   },
-  returnGoodsBtnDisabled: {
-    backgroundColor: '#F1F5F9', // Nền xám nhạt khi bị vô hiệu hóa
-    borderColor: '#CBD5E1',     // Viền xám
-    opacity: 0.5,
-  },
   returnGoodsBtnText: {
     fontSize: 13,
     fontWeight: 'bold',
     color: '#D97706', // Chữ màu hổ phách/cam
-  },
-  returnGoodsBtnTextDisabled: {
-    color: '#94A3B8', // Chữ màu xám khi bị vô hiệu hóa
   },
   actionMenuContainer: {
     position: 'relative',
