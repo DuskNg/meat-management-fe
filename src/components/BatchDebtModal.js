@@ -329,6 +329,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
           quantity: '',
           price: '',
           unit: 'kg',
+          autoFocus: true, // Tự động trỏ con trỏ chuột vào ô chọn thịt của dòng mới
         };
         return { ...r, items: [...r.items, newItem] };
       })
@@ -721,6 +722,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                   value={selectedProd}
                                   placeholder="Chọn thịt..."
                                   options={availableProducts}
+                                  autoFocus={!!item.autoFocus}
                                   onSelect={(prod) => {
                                     const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
                                     const pVal = prod.defaultPrice || 0;
@@ -729,6 +731,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                       price: formatNumberString(pVal),
                                       unit: prod.unit || 'kg',
                                       amount: Math.round(qVal * pVal),
+                                      autoFocus: false,
                                     });
                                   }}
                                   renderSelected={(prod) => prod.name}

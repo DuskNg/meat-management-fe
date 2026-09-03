@@ -48,6 +48,7 @@ const CustomSelect = ({
   zIndex = 9999,
   dropUp,
   minWidth,
+  autoFocus = false,
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -62,6 +63,18 @@ const CustomSelect = ({
 
   // Nhãn hiển thị của mục đã chọn
   const valueLabel = value ? (renderSelected ? renderSelected(value) : getOptionLabel(value)) : '';
+
+  // Tự động focus vào input khi autoFocus = true
+  useEffect(() => {
+    if (autoFocus && !disabled) {
+      const timer = setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [autoFocus, disabled]);
 
   // Lắng nghe sự kiện click ngoài ô select để tự động đóng dropdown trên Web
   useEffect(() => {
