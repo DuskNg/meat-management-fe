@@ -128,6 +128,21 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     return `${mm}/${yyyy}`;
   };
 
+  // Helper kiểm tra xem một giao dịch/khoản thanh toán có phải là "Trả hàng" hay không
+  const isReturnPayment = (item) => {
+    if (!item) return false;
+    const isDebt = item.type === 'debt';
+    if (isDebt) return false;
+    const note = item.note || item.rawObj?.note || '';
+    const details = item.details || item.rawObj?.details || '';
+    return (
+      note.includes('Trả hàng') ||
+      note.includes('Trả lại') ||
+      details.includes('Trả hàng') ||
+      details.includes('Trả lại')
+    );
+  };
+
   // Helper phân loại 4 trạng thái giao dịch: 'edited' (Đã sửa) | 'return' (Trả hàng) | 'payment' (Thu nợ) | 'debt' (Đơn nợ mới)
   const getItemStatus = (item) => {
     const createdAt = item.createdAt || item.rawObj?.createdAt;
@@ -135,16 +150,10 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     const isEdited = createdAt && updatedAt && (new Date(updatedAt).getTime() - new Date(createdAt).getTime() > 1000);
     if (isEdited) return 'edited';
 
+    if (isReturnPayment(item)) return 'return';
     const isDebt = item.type === 'debt';
-    const isReturnGoods = !isDebt && (
-      item.details?.includes('Trả hàng') ||
-      item.details?.includes('Trả lại') ||
-      item.note?.includes('Trả hàng') ||
-      item.note?.includes('Trả lại')
-    );
-    if (isReturnGoods) return 'return';
-    if (!isDebt) return 'payment';
-    return 'debt';
+    if (isDebt) return 'debt';
+    return 'payment';
   };
 
   // Thứ tự ưu tiên hiển thị: 1. Đã sửa -> 2. Trả hàng -> 3. Thu nợ -> 4. Đơn nợ mới
@@ -270,13 +279,21 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     return 0;
   };
 
-  // Tính tổng nợ phát sinh, tổng đã thu và tổng lợi nhuận trong khoảng thời gian được chọn
+  // Tính tổng nợ phát sinh, tổng đã thu (không tính tiền trả hàng) và tổng lợi nhuận
   const totalDebtCreated = useMemo(() => {
     return currentTransactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
   }, [currentTransactions]);
 
   const totalPaymentReceived = useMemo(() => {
-    return currentPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    return currentPayments
+      .filter(p => !isReturnPayment(p))
+      .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  }, [currentPayments]);
+
+  const totalReturnAmount = useMemo(() => {
+    return currentPayments
+      .filter(p => isReturnPayment(p))
+      .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
   }, [currentPayments]);
 
   const totalProfit = useMemo(() => {
@@ -524,9 +541,11 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   const displayItems = useMemo(() => {
     if (activeReportTab === 'day') {
       return timelineItems.filter(item => {
-        // 1. Lọc theo tab/loại giao dịch
+        // 1. Lọc theo tab/loại giao dịch (hỗ trợ 4 trạng thái: đã sửa, trả hàng, thu nợ, đơn nợ mới)
         if (activeFilter === 'debt' && item.type !== 'debt') return false;
-        if (activeFilter === 'payment' && item.type !== 'payment') return false;
+        if (activeFilter === 'payment' && (item.type !== 'payment' || isReturnPayment(item))) return false;
+        if (activeFilter === 'return' && !isReturnPayment(item)) return false;
+        if (activeFilter === 'edited' && getItemStatus(item) !== 'edited') return false;
 
         // 2. Lọc theo từ khóa tìm kiếm (tên khách hàng, loại thịt hoặc số tiền - hỗ trợ không dấu, viết tắt, nhiều từ)
         if (searchText && searchText.trim()) {
@@ -859,14 +878,16 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     }
 
     try {
-      // 1. Lấy danh sách giao dịch nợ mới & thu nợ trong ngày
+      // 1. Lấy danh sách giao dịch nợ mới & thu nợ trong ngày (tách biệt tiền trả hàng)
       const newDebtOrders = rawTransactions.filter(t => toDateKey(t.date) === selectedDate);
-      const paymentsCollected = rawPayments.filter(p => toDateKey(p.paidAt) === selectedDate);
+      const paymentsCollected = rawPayments.filter(p => toDateKey(p.paidAt) === selectedDate && !isReturnPayment(p));
+      const returnsCollected = rawPayments.filter(p => toDateKey(p.paidAt) === selectedDate && isReturnPayment(p));
 
-      // Tính tổng tiền nợ mới & thu nợ
+      // Tính tổng tiền nợ mới, thu nợ và trả hàng
       const totalNewDebt = newDebtOrders.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
       const totalPayment = paymentsCollected.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-      const netBalance = totalNewDebt - totalPayment;
+      const totalReturn = returnsCollected.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+      const netBalance = totalNewDebt - totalPayment - totalReturn;
 
       // 2. Xác định danh sách khách quen theo thời gian gần đây (trong 2 tuần gần nhất có nhiều hơn 3 đơn nợ)
       const [dayStr, monthStr, yearStr] = selectedDate.split('/').map(Number);
@@ -1426,7 +1447,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                   styles.summaryBox,
                   styles.debtBox,
                   activeReportTab === 'day' && activeFilter === 'debt' && styles.activeDebtBox,
-                  activeReportTab === 'day' && activeFilter === 'payment' && styles.inactiveBox
+                  activeReportTab === 'day' && activeFilter !== 'all' && activeFilter !== 'debt' && styles.inactiveBox
                 ]}
                 onPress={() => {
                   if (activeReportTab === 'day') {
@@ -1443,7 +1464,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                   styles.summaryBox,
                   styles.paymentBox,
                   activeReportTab === 'day' && activeFilter === 'payment' && styles.activePaymentBox,
-                  activeReportTab === 'day' && activeFilter === 'debt' && styles.inactiveBox
+                  activeReportTab === 'day' && activeFilter !== 'all' && activeFilter !== 'payment' && styles.inactiveBox
                 ]}
                 onPress={() => {
                   if (activeReportTab === 'day') {
@@ -1463,25 +1484,60 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               </View>
             </View>
 
-            {/* Ô chú thích 4 màu trạng thái giao dịch */}
+            {/* Ô chú thích 4 màu trạng thái giao dịch (bấm để lọc nhanh) */}
             {activeReportTab === 'day' && (
               <View style={styles.legendContainer}>
-                <View style={[styles.legendBadge, styles.legendBadgeEdited]}>
+                <TouchableOpacity
+                  style={[
+                    styles.legendBadge,
+                    styles.legendBadgeEdited,
+                    activeFilter === 'edited' && styles.legendBadgeActive
+                  ]}
+                  onPress={() => setActiveFilter(prev => prev === 'edited' ? 'all' : 'edited')}
+                  activeOpacity={0.7}
+                >
                   <View style={[styles.legendDot, { backgroundColor: '#8B5CF6' }]} />
                   <Text style={[styles.legendText, { color: '#7E22CE' }]}>Đã sửa</Text>
-                </View>
-                <View style={[styles.legendBadge, styles.legendBadgeReturn]}>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.legendBadge,
+                    styles.legendBadgeReturn,
+                    activeFilter === 'return' && styles.legendBadgeActive
+                  ]}
+                  onPress={() => setActiveFilter(prev => prev === 'return' ? 'all' : 'return')}
+                  activeOpacity={0.7}
+                >
                   <View style={[styles.legendDot, { backgroundColor: '#EA580C' }]} />
                   <Text style={[styles.legendText, { color: '#EA580C' }]}>Trả hàng</Text>
-                </View>
-                <View style={[styles.legendBadge, styles.legendBadgePayment]}>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.legendBadge,
+                    styles.legendBadgePayment,
+                    activeFilter === 'payment' && styles.legendBadgeActive
+                  ]}
+                  onPress={() => setActiveFilter(prev => prev === 'payment' ? 'all' : 'payment')}
+                  activeOpacity={0.7}
+                >
                   <View style={[styles.legendDot, { backgroundColor: '#16A34A' }]} />
                   <Text style={[styles.legendText, { color: '#16A34A' }]}>Thu nợ</Text>
-                </View>
-                <View style={[styles.legendBadge, styles.legendBadgeDebt]}>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.legendBadge,
+                    styles.legendBadgeDebt,
+                    activeFilter === 'debt' && styles.legendBadgeActive
+                  ]}
+                  onPress={() => setActiveFilter(prev => prev === 'debt' ? 'all' : 'debt')}
+                  activeOpacity={0.7}
+                >
                   <View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} />
                   <Text style={[styles.legendText, { color: '#DC2626' }]}>Đơn nợ mới</Text>
-                </View>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -1941,6 +1997,16 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
+    cursor: 'pointer',
+  },
+  legendBadgeActive: {
+    borderWidth: 1.8,
+    borderColor: '#334155',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 3,
   },
   legendBadgeEdited: {
     backgroundColor: '#F3E8FF',
