@@ -47,6 +47,8 @@ import SalaryAdvanceModal from '../src/components/SalaryAdvanceModal';
 import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
 import EditEmployeeModal from '../src/components/EditEmployeeModal';
 import ReturnGoodsModal from '../src/components/ReturnGoodsModal';
+import ProfitFeatureIntroModal from '../src/components/ProfitFeatureIntroModal';
+import RecurringDebtModal from '../src/components/RecurringDebtModal';
 import AnimatedPressable from '../src/components/AnimatedPressable';
 import { useLockStore } from '../src/store/lockStore';
 import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
@@ -137,12 +139,24 @@ export default function DashboardScreen() {
   const memberActionsModalRef = useRef(null);
   const employeeDailyDebtModalRef = useRef(null); // Modal danh sách ghi nợ trong ngày (chỉ dùng cho tk thành viên)
   const returnGoodsModalRef = useRef(null); // Modal trả hàng (nhanh & thủ công)
+  const profitFeatureIntroModalRef = useRef(null); // Modal giới thiệu tính năng tính Lợi Nhuận mới
+  const recurringDebtModalRef = useRef(null); // Modal đơn nợ cố định hàng ngày (00:30 mỗi ngày)
 
   const [showFloatingLogs, setShowFloatingLogs] = useState(false);
   const [logs, setLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
   const [currentView, setCurrentView] = useState(params.view || 'menu'); // 'menu' hoặc 'customers' để điều hướng
+
+  // Tự động mở popup giới thiệu tính năng Tính Lợi Nhuận khi người dùng truy cập Quản lý khách hàng
+  useEffect(() => {
+    if (currentView === 'customers' && !auth.user?.workspaceMember) {
+      const timer = setTimeout(() => {
+        profitFeatureIntroModalRef.current?.open();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [currentView, auth.user?.workspaceMember]);
   const [search, setSearch] = useState('');
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
@@ -1096,6 +1110,33 @@ export default function DashboardScreen() {
     return monthKey === selectedRevenueMonth;
   });
   const totalTransactionsInSelectedMonth = selectedMonthTransactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
+
+  // Tính tổng lợi nhuận của tháng được chọn
+  const totalProfitInSelectedMonth = selectedMonthTransactions.reduce((sum, t) => {
+    if (t.totalProfit !== undefined && t.totalProfit !== null && parseFloat(t.totalProfit) > 0) {
+      return sum + parseFloat(t.totalProfit);
+    }
+    // Fallback tính từ items nếu đơn cũ chưa lưu totalProfit
+    if (t.items && Array.isArray(t.items)) {
+      const itemsProfit = t.items.reduce((iSum, it) => {
+        if (it.profit !== undefined && it.profit !== null && parseFloat(it.profit) > 0) {
+          return iSum + parseFloat(it.profit);
+        }
+        const qty = parseFloat(it.quantity || 0);
+        const sellPrice = parseFloat(it.price || 0);
+        const itemCostNum = parseFloat(it.costPrice || 0);
+        const prodCostNum = parseFloat(it.product?.costPrice || 0);
+        const costPrice = itemCostNum > 0 ? itemCostNum : prodCostNum;
+        const amt = it.amount !== null && it.amount !== undefined ? parseFloat(it.amount) : Math.round(qty * sellPrice);
+        if (costPrice > 0) {
+          return iSum + (amt - (qty * costPrice));
+        }
+        return iSum;
+      }, 0);
+      return sum + itemsProfit;
+    }
+    return sum;
+  }, 0);
 
   const totalCollected = customerPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
   const totalOriginalDebt = totalDebt + totalCollected;
@@ -2711,32 +2752,47 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* TỔNG TIỀN NỢ: Chỉ hiện với chủ tài khoản, ẩn với tài khoản thành viên */}
+        {/* TỔNG TIỀN NỢ & KINH DOANH: Chỉ hiện với chủ tài khoản, ẩn với tài khoản thành viên */}
         {!auth.user?.workspaceMember && <View style={styles.summaryCard}>
           <TouchableOpacity
             onPress={() => setShowDebtSummary((prev) => !prev)}
             activeOpacity={0.85}
           >
-            {/* Chia giao diện thành 2 phần cùng hàng */}
+            {/* Thanh tiêu đề nhỏ hiển thị tháng và gợi ý mở rộng */}
+            <View style={styles.summaryCardTopHeader}>
+              <View style={styles.summaryMonthBadge}>
+                <Text style={styles.summaryMonthBadgeText}>
+                  📊 Thống kê Tháng {getShortMonthYear(selectedRevenueMonth)}
+                </Text>
+              </View>
+              <Text style={styles.summaryExpandHint}>
+                {showDebtSummary ? 'Thu gọn ▲' : 'Xem chi tiết ▼'}
+              </Text>
+            </View>
+
+            {/* Chia giao diện thành 3 ô thống kê con màu sắc trực quan */}
             <View style={styles.summaryColumnsRow}>
-              {/* Phần bên trái: Tổng nợ */}
-              <View style={styles.summaryColumn}>
-                <Text style={styles.summaryColumnLabel}>💰 TỔNG TIỀN NỢ</Text>
-                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryColumnValue}>
+              {/* 1. Tổng tiền nợ */}
+              <View style={[styles.summaryMicroBox, styles.summaryMicroBoxDebt]}>
+                <Text style={styles.summaryMicroBoxLabelDebt}>🔴 TỔNG NỢ</Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueDebt}>
                   {formatCurrency(totalDebt)}
                 </Text>
               </View>
 
-              {/* Đường vạch chia dọc giữa hai cột */}
-              <View style={styles.summaryVerticalDivider} />
-
-              {/* Phần bên phải: Doanh thu */}
-              <View style={styles.summaryColumn}>
-                <Text style={styles.summaryColumnLabelRevenue}>
-                  📈 DOANH THU {getShortMonthYear(selectedRevenueMonth)}
-                </Text>
-                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryColumnValueRevenue}>
+              {/* 2. Doanh thu đã thu trong tháng */}
+              <View style={[styles.summaryMicroBox, styles.summaryMicroBoxRevenue]}>
+                <Text style={styles.summaryMicroBoxLabelRevenue}>🟢 DOANH THU</Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueRevenue}>
                   {isLoadingPayments ? '...' : formatCurrency(totalCollectedInSelectedMonth)}
+                </Text>
+              </View>
+
+              {/* 3. Lợi nhuận trong tháng */}
+              <View style={[styles.summaryMicroBox, styles.summaryMicroBoxProfit]}>
+                <Text style={styles.summaryMicroBoxLabelProfit}>🔵 LỢI NHUẬN</Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueProfit}>
+                  {isLoadingTransactions ? '...' : formatCurrency(totalProfitInSelectedMonth)}
                 </Text>
               </View>
             </View>
@@ -2803,6 +2859,13 @@ export default function DashboardScreen() {
                       <Text style={styles.monthTotalSalesLabel}>🥩 Tổng tiền hàng trong tháng:</Text>
                       <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.monthTotalSalesValue}>
                         {formatCurrency(totalTransactionsInSelectedMonth)}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.monthTotalSalesBox, { marginTop: 4, paddingTop: 4 }]}>
+                      <Text style={[styles.monthTotalSalesLabel, { color: '#0369A1' }]}>💰 Lợi nhuận trong tháng:</Text>
+                      <Text numberOfLines={1} adjustsFontSizeToFit={true} style={[styles.monthTotalSalesValue, { color: '#0369A1' }]}>
+                        {formatCurrency(totalProfitInSelectedMonth)}
                       </Text>
                     </View>
                   </View>
@@ -2942,6 +3005,38 @@ export default function DashboardScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.smartDebtMenuTitle}>Thêm loại thịt mới</Text>
                     <Text style={styles.smartDebtMenuSub}>Cập nhật bảng giá sản phẩm</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    recurringDebtModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🔁</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Đơn nợ cố định hàng ngày</Text>
+                    <Text style={styles.smartDebtMenuSub}>Tự động lên đơn lúc 0:30 mỗi ngày</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    profitFeatureIntroModalRef.current?.open(true);
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>💡</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Hướng dẫn tính Lợi Nhuận</Text>
+                    <Text style={styles.smartDebtMenuSub}>Xem lại hướng dẫn tính lãi nợ nhanh & thủ công</Text>
                   </View>
                 </TouchableOpacity>
               </View>
@@ -3106,6 +3201,12 @@ export default function DashboardScreen() {
         }}
       />
       <ReturnGoodsModal ref={returnGoodsModalRef} onRefresh={handleRefreshAll} />
+      <RecurringDebtModal ref={recurringDebtModalRef} onRefresh={handleRefreshAll} />
+      {/* MODAL GIỚI THIỆU TÍNH NĂNG LỢI NHUẬN */}
+      <ProfitFeatureIntroModal
+        ref={profitFeatureIntroModalRef}
+        onOpenProductList={() => productModalRef.current?.open()}
+      />
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />
 
@@ -3246,57 +3347,101 @@ const styles = StyleSheet.create({
     color: '#EF4444',
   },
   summaryCard: {
-    backgroundColor: '#FFFFFF', // Đổi nền trắng premium
+    backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
-    marginTop: 12,
+    marginTop: 10,
     marginBottom: 10,
     borderRadius: 12,
-    padding: 14,
+    padding: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0', // Đổi viền sang xám Slate mảnh dẻ
+    borderColor: '#E2E8F0',
     ...SHADOWS.card,
+  },
+  summaryCardTopHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  summaryMonthBadge: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  summaryMonthBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  summaryExpandHint: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
   },
   summaryColumnsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 6,
   },
-  summaryColumn: {
+  summaryMicroBox: {
     flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 2,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
-  summaryVerticalDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: '#E2E8F0',
-    marginHorizontal: 8,
-    opacity: 0.8,
+  summaryMicroBoxDebt: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
-  summaryColumnLabel: {
-    fontSize: 11,
+  summaryMicroBoxRevenue: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  summaryMicroBoxProfit: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#BAE6FD',
+  },
+  summaryMicroBoxLabelDebt: {
+    fontSize: 10,
     fontWeight: 'bold',
-    color: COLORS.dangerDark,
+    color: '#991B1B',
+    marginBottom: 2,
+  },
+  summaryMicroBoxValueDebt: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#DC2626',
     textAlign: 'center',
-    marginBottom: 4,
   },
-  summaryColumnValue: {
-    fontSize: 16,
+  summaryMicroBoxLabelRevenue: {
+    fontSize: 10,
     fontWeight: 'bold',
-    color: COLORS.danger,
+    color: '#166534',
+    marginBottom: 2,
+  },
+  summaryMicroBoxValueRevenue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#16A34A',
     textAlign: 'center',
   },
-  summaryColumnLabelRevenue: {
-    fontSize: 11,
+  summaryMicroBoxLabelProfit: {
+    fontSize: 10,
     fontWeight: 'bold',
-    color: COLORS.primaryDark,
-    textAlign: 'center',
-    marginBottom: 4,
+    color: '#0369A1',
+    marginBottom: 2,
   },
-  summaryColumnValueRevenue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.primaryDark,
+  summaryMicroBoxValueProfit: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#0284C7',
     textAlign: 'center',
   },
   debtSummaryDetail: {

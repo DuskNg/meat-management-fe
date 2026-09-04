@@ -23,7 +23,8 @@ import MoneyInput from './MoneyInput';
 const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [name, setName] = useState('');
-  const [price, setPrice] = useState(0); // Đơn giá VNĐ (sử dụng MoneyInput)
+  const [price, setPrice] = useState(0); // Giá bán VNĐ (sử dụng MoneyInput)
+  const [costPrice, setCostPrice] = useState(0); // Giá nhập VNĐ (sử dụng MoneyInput)
   const [unit, setUnit] = useState('kg'); // Đơn vị mặc định là kg
   const [searchQuery, setSearchQuery] = useState(''); // Từ khóa tìm kiếm tên thịt
   const [error, setError] = useState('');
@@ -58,6 +59,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       setVisible(true);
       setName('');
       setPrice(0);
+      setCostPrice(0);
       setUnit('kg');
       setSearchQuery('');
       setError('');
@@ -77,14 +79,15 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
 
   // Định dạng chuỗi số nhập vào tự động thêm dấu chấm phân tách hàng nghìn
   const formatNumberString = (value) => {
-    const cleanValue = value.replace(/[^0-9]/g, '');
+    const cleanValue = String(value || '').replace(/[^0-9]/g, '');
     if (cleanValue === '') return '';
     return new Intl.NumberFormat('vi-VN').format(parseInt(cleanValue, 10));
   };
 
   // Chuyển chuỗi định dạng trở lại số nguyên để gửi đi
   const parseNumberString = (formattedValue) => {
-    const cleanValue = formattedValue.replace(/[^0-9]/g, '');
+    if (typeof formattedValue === 'number') return formattedValue;
+    const cleanValue = String(formattedValue || '').replace(/[^0-9]/g, '');
     return cleanValue ? parseInt(cleanValue, 10) : 0;
   };
 
@@ -93,6 +96,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
     setEditingProduct(product);
     setName(product.name);
     setPrice(product.defaultPrice || 0);
+    setCostPrice(product.costPrice || 0);
     setUnit(product.unit);
     setError('');
   };
@@ -102,6 +106,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
     setEditingProduct(null);
     setName('');
     setPrice(0);
+    setCostPrice(0);
     setUnit('kg');
     setError('');
   };
@@ -114,9 +119,11 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       setError('Tên loại thịt không được để trống.');
       return;
     }
-    const defaultPrice = typeof price === 'number' ? price : parseNumberString(price);
+    const defaultPrice = parseNumberString(price);
+    const parsedCostPrice = parseNumberString(costPrice);
+
     if (defaultPrice === undefined || defaultPrice === null || defaultPrice < 0) {
-      setError('Đơn giá không được để trống.');
+      setError('Giá bán không được để trống.');
       return;
     }
 
@@ -126,6 +133,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       const response = await api.put(`/products/${editingProduct.id}`, {
         name: trimmedName,
         defaultPrice,
+        costPrice: parsedCostPrice,
         unit,
       });
 
@@ -154,9 +162,11 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       setError('Tên loại thịt không được để trống.');
       return;
     }
-    const defaultPrice = typeof price === 'number' ? price : parseNumberString(price);
+    const defaultPrice = parseNumberString(price);
+    const parsedCostPrice = parseNumberString(costPrice);
+
     if (!defaultPrice || defaultPrice <= 0) {
-      setError('Đơn giá không được để trống hoặc phải lớn hơn 0đ.');
+      setError('Giá bán không được để trống hoặc phải lớn hơn 0đ.');
       return;
     }
 
@@ -166,12 +176,14 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       const response = await api.post('/products', {
         name: trimmedName,
         defaultPrice,
+        costPrice: parsedCostPrice,
         unit,
       });
 
       if (response.data.success) {
         setName('');
-        setPrice('');
+        setPrice(0);
+        setCostPrice(0);
         setUnit('kg');
         // Làm mới cache React Query
         queryClient.invalidateQueries({ queryKey: ['products'] });
@@ -246,25 +258,39 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
               {editingProduct ? '✏️ CẬP NHẬT THÔNG TIN THỊT' : '➕ THÊM THỊT MỚI'}
             </Text>
 
+            <View style={{ marginBottom: 8 }}>
+              <Text style={styles.label}>Tên loại thịt:</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ví dụ: Bắp bò, Ba chỉ..."
+                placeholderTextColor={COLORS.textLight}
+                value={name}
+                onChangeText={setName}
+              />
+            </View>
+
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
-              <View style={{ flex: 1.2 }}>
-                <Text style={styles.label}>Tên loại thịt:</Text>
-                <TextInput
-                  style={[styles.input, { marginBottom: 0 }]}
-                  placeholder="Ví dụ: Bắp bò..."
-                  placeholderTextColor={COLORS.textLight}
-                  value={name}
-                  onChangeText={setName}
-                />
-              </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Đơn giá (VND):</Text>
+                <Text style={styles.label}>Giá bán (VND):</Text>
                 <MoneyInput
                   style={styles.moneyInputContainer}
                   inputStyle={styles.moneyInputField}
                   value={price}
                   onChangeValue={(val) => {
                     setPrice(val);
+                    setError('');
+                  }}
+                  placeholder="0"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Giá nhập (VND):</Text>
+                <MoneyInput
+                  style={styles.moneyInputContainer}
+                  inputStyle={styles.moneyInputField}
+                  value={costPrice}
+                  onChangeValue={(val) => {
+                    setCostPrice(val);
                     setError('');
                   }}
                   placeholder="0"
@@ -363,34 +389,53 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
             <FlatList
               data={filteredProducts}
               keyExtractor={(item) => item.id}
-              style={{ flex: 1 }} // Cho phép danh sách co giãn chiếm trọn không gian trống còn lại
+              style={{ flex: 1 }}
               contentContainerStyle={styles.listContent}
-              renderItem={({ item }) => (
-                <View style={styles.productItem}>
-                  <View style={styles.productDetails}>
-                    <Text style={styles.productNameText}>{item.name}</Text>
-                    <Text style={styles.productPriceText}>
-                      {formatCurrency(item.defaultPrice)} / {item.unit}
-                    </Text>
-                  </View>
+              renderItem={({ item }) => {
+                const sellPrice = parseFloat(item.defaultPrice || 0);
+                const importPrice = parseFloat(item.costPrice || 0);
+                const profitPerUnit = sellPrice - importPrice;
+                const marginPercent = sellPrice > 0 ? Math.round((profitPerUnit / sellPrice) * 100) : 0;
 
-                  {/* Cụm nút hành động bên cạnh mặt hàng: Sửa và Ẩn */}
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TouchableOpacity
-                      style={styles.editButton}
-                      onPress={() => handleStartEdit(item)}
-                    >
-                      <Text style={styles.editButtonText}>✏️ Sửa</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.deleteButton}
-                      onPress={() => handleDeleteProduct(item.id, item.name)}
-                    >
-                      <Text style={styles.deleteButtonText}>🗑️ Xóa</Text>
-                    </TouchableOpacity>
+                return (
+                  <View style={styles.productItem}>
+                    <View style={styles.productDetails}>
+                      <Text style={styles.productNameText}>{item.name}</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2, alignItems: 'center' }}>
+                        <Text style={styles.productPriceText}>
+                          Bán: <Text style={{ color: COLORS.dangerDark, fontWeight: 'bold' }}>{formatCurrency(sellPrice)}</Text>/{item.unit}
+                        </Text>
+                        <Text style={[styles.productPriceText, { color: COLORS.textSecondary }]}>
+                          Nhập: <Text style={{ color: '#0369A1', fontWeight: 'bold' }}>{formatCurrency(importPrice)}</Text>/{item.unit}
+                        </Text>
+                        {importPrice > 0 && (
+                          <View style={{ backgroundColor: '#F0F9FF', borderColor: '#BAE6FD', borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#0369A1' }}>
+                              Lãi: +{formatCurrency(profitPerUnit)} ({marginPercent}%)
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+
+                    {/* Cụm nút hành động bên cạnh mặt hàng: Sửa và Ẩn */}
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <TouchableOpacity
+                        style={styles.editButton}
+                        onPress={() => handleStartEdit(item)}
+                      >
+                        <Text style={styles.editButtonText}>✏️ Sửa</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteButton}
+                        onPress={() => handleDeleteProduct(item.id, item.name)}
+                      >
+                        <Text style={styles.deleteButtonText}>🗑️ Xóa</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              )}
+                );
+              }}
               ListEmptyComponent={
                 <Text style={styles.emptyText}>
                   {searchQuery.trim()
@@ -401,7 +446,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
             />
           )}
 
-          {/* Nút đóng chân modal (được thu nhỏ lại) */}
+          {/* Nút đóng chân modal */}
           <TouchableOpacity
             style={[styles.closeButton, { height: 38, marginTop: 8 }]}
             onPress={() => setVisible(false)}

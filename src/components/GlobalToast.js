@@ -1,9 +1,17 @@
 // meat-management-fe/src/components/GlobalToast.js
 // Component hiển thị thông báo Toast toàn cục (Global Toast) trượt ở góc trên màn hình
 import React, { useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Animated, TouchableOpacity, Platform } from 'react-native';
+import { StyleSheet, Text, View, Animated, TouchableOpacity, Platform, Modal } from 'react-native';
 import { useToastStore } from '../store/toastStore';
 import { SHADOWS } from '../theme';
+
+// Render Portal ra ngoài document.body trên Web để đè lên mọi Modal/Overlay
+let ReactDOM = null;
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  try {
+    ReactDOM = require('react-dom');
+  } catch (_) {}
+}
 
 const GlobalToast = () => {
   const toast = useToastStore((state) => state.toast);
@@ -46,7 +54,7 @@ const GlobalToast = () => {
   const isSuccess = toast.type === 'success';
   const isError = toast.type === 'error';
 
-  return (
+  const toastContent = (
     <Animated.View
       style={[
         styles.container,
@@ -68,11 +76,27 @@ const GlobalToast = () => {
       >
         <Text style={styles.iconText}>{isSuccess ? '✓' : isError ? '✕' : 'ℹ'}</Text>
         <View style={styles.textContainer}>
-          <Text style={styles.titleText}>{toast.title || (isSuccess ? 'Thành công' : 'Thông báo')}</Text>
-          <Text style={styles.messageText}>{toast.message}</Text>
+          <Text style={styles.titleText}>
+            {typeof toast.title === 'string' ? toast.title : (isSuccess ? 'Thành công' : 'Thông báo')}
+          </Text>
+          <Text style={styles.messageText}>
+            {typeof toast.message === 'string' ? toast.message : (toast.message ? JSON.stringify(toast.message) : '')}
+          </Text>
         </View>
       </TouchableOpacity>
     </Animated.View>
+  );
+
+  // Trên Web: Portal trực tiếp ra document.body để luôn ở lớp cao nhất
+  if (Platform.OS === 'web' && ReactDOM?.createPortal && typeof document !== 'undefined') {
+    return ReactDOM.createPortal(toastContent, document.body);
+  }
+
+  // Trên Mobile: Bọc trong Modal transparent để luôn nổi lên trên các native screen/modal khác
+  return (
+    <Modal transparent visible={!!toast} animationType="none" pointerEvents="box-none">
+      {toastContent}
+    </Modal>
   );
 };
 
@@ -80,11 +104,11 @@ export default GlobalToast;
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
+    position: Platform.OS === 'web' ? 'fixed' : 'absolute',
     top: Platform.OS === 'web' ? 16 : 44,
     right: 16,
-    zIndex: 999999,
-    elevation: 999999,
+    zIndex: 2147483647,
+    elevation: 2147483647,
     maxWidth: 380,
     minWidth: 260,
   },

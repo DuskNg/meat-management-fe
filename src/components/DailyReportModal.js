@@ -128,6 +128,33 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     return `${mm}/${yyyy}`;
   };
 
+  // Helper phân loại 4 trạng thái giao dịch: 'edited' (Đã sửa) | 'return' (Trả hàng) | 'payment' (Thu nợ) | 'debt' (Đơn nợ mới)
+  const getItemStatus = (item) => {
+    const createdAt = item.createdAt || item.rawObj?.createdAt;
+    const updatedAt = item.updatedAt || item.rawObj?.updatedAt;
+    const isEdited = createdAt && updatedAt && (new Date(updatedAt).getTime() - new Date(createdAt).getTime() > 1000);
+    if (isEdited) return 'edited';
+
+    const isDebt = item.type === 'debt';
+    const isReturnGoods = !isDebt && (
+      item.details?.includes('Trả hàng') ||
+      item.details?.includes('Trả lại') ||
+      item.note?.includes('Trả hàng') ||
+      item.note?.includes('Trả lại')
+    );
+    if (isReturnGoods) return 'return';
+    if (!isDebt) return 'payment';
+    return 'debt';
+  };
+
+  // Thứ tự ưu tiên hiển thị: 1. Đã sửa -> 2. Trả hàng -> 3. Thu nợ -> 4. Đơn nợ mới
+  const STATUS_PRIORITY = {
+    edited: 1,
+    return: 2,
+    payment: 3,
+    debt: 4,
+  };
+
   // 2. Tải giao dịch, thu tiền & khách hàng từ API theo ngày cụ thể (hoặc tháng nếu chọn tab Tháng)
   const fetchReportData = async (
     targetDate = selectedDate,
@@ -217,7 +244,33 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     }
   }, [rawPayments, activeReportTab, selectedDate, selectedMonth]);
 
-  // Tính tổng nợ phát sinh và tổng đã thu trong khoảng thời gian được chọn
+  // Helper lấy lợi nhuận của 1 transaction (hỗ trợ cả đơn mới và đơn cũ)
+  const getTransactionProfit = (t) => {
+    if (t.totalProfit !== undefined && t.totalProfit !== null && parseFloat(t.totalProfit) > 0) {
+      return parseFloat(t.totalProfit);
+    }
+    // Fallback tính từ items nếu đơn cũ chưa lưu totalProfit
+    if (t.items && Array.isArray(t.items)) {
+      return t.items.reduce((sum, it) => {
+        if (it.profit !== undefined && it.profit !== null && parseFloat(it.profit) > 0) {
+          return sum + parseFloat(it.profit);
+        }
+        const qty = parseFloat(it.quantity || 0);
+        const sellPrice = parseFloat(it.price || 0);
+        const itemCostNum = parseFloat(it.costPrice || 0);
+        const prodCostNum = parseFloat(it.product?.costPrice || 0);
+        const costPrice = itemCostNum > 0 ? itemCostNum : prodCostNum;
+        const amt = it.amount !== null && it.amount !== undefined ? parseFloat(it.amount) : Math.round(qty * sellPrice);
+        if (costPrice > 0) {
+          return sum + (amt - (qty * costPrice));
+        }
+        return sum;
+      }, 0);
+    }
+    return 0;
+  };
+
+  // Tính tổng nợ phát sinh, tổng đã thu và tổng lợi nhuận trong khoảng thời gian được chọn
   const totalDebtCreated = useMemo(() => {
     return currentTransactions.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
   }, [currentTransactions]);
@@ -226,13 +279,24 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     return currentPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
   }, [currentPayments]);
 
-  // Gộp chung giao dịch và thanh toán thành một dòng thời gian hiển thị (tiền đã thu lên đầu, sau đó đến nợ phát sinh)
+  const totalProfit = useMemo(() => {
+    return currentTransactions.reduce((sum, t) => sum + getTransactionProfit(t), 0);
+  }, [currentTransactions]);
+
+  const profitMarginPercent = useMemo(() => {
+    if (totalDebtCreated <= 0 || totalProfit <= 0) return 0;
+    return Math.round((totalProfit / totalDebtCreated) * 100);
+  }, [totalDebtCreated, totalProfit]);
+
+  // Gộp chung giao dịch và thanh toán thành một dòng thời gian hiển thị (Đã sửa -> Trả hàng -> Thu nợ -> Đơn nợ mới)
   const timelineItems = useMemo(() => {
     return [
       ...currentPayments.map(p => ({
         id: p.id,
         type: 'payment',
         time: p.paidAt,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
         customerId: p.customerId,
         rawObj: p,
         customerName: p.customer?.name || 'Khách ẩn danh',
@@ -244,10 +308,13 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         id: t.id,
         type: 'debt',
         time: t.date,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
         customerId: t.customerId,
         rawObj: t,
         customerName: t.customer?.name || 'Khách ẩn danh',
         amount: parseFloat(t.totalAmount || 0),
+        profit: getTransactionProfit(t),
         note: t.note,
         details: t.items?.map(item => {
           const qty = parseFloat(item.quantity);
@@ -261,10 +328,13 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         }).join(', ')
       }))
     ].sort((a, b) => {
-      // Sắp xếp tiền đã thu (payment) lên đầu, nợ phát sinh (debt) ở sau
-      if (a.type === 'payment' && b.type === 'debt') return -1;
-      if (a.type === 'debt' && b.type === 'payment') return 1;
-      // Cùng loại thì xếp theo thời gian mới nhất lên đầu
+      // Sắp xếp theo mức độ ưu tiên trạng thái: 1. Đã sửa -> 2. Trả hàng -> 3. Thu nợ -> 4. Đơn nợ mới
+      const priorityA = STATUS_PRIORITY[getItemStatus(a)] || 99;
+      const priorityB = STATUS_PRIORITY[getItemStatus(b)] || 99;
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+      // Cùng nhóm thì xếp theo thời gian mới nhất lên đầu
       return new Date(b.time) - new Date(a.time);
     });
   }, [currentTransactions, currentPayments]);
@@ -829,14 +899,60 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       const customersWithOrderToday = new Set(newDebtOrders.map(t => t.customerId));
       const missingRegularCustomers = regularCustomers.filter(c => !customersWithOrderToday.has(c.id));
 
-      // 3. Chuẩn bị canvas và context vẽ ảnh
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+      // 3. Chuẩn bị danh sách giao dịch & chia cột
+      const allDailyTx = [...timelineItems];
+      const totalDailyCount = allDailyTx.length;
+      const isTwoCol = totalDailyCount >= 10;
 
-      const width = 1200;
-      const colWidth = 565;
-      const leftColX = 25;
-      const rightColX = 610;
+      let leftItems = [];
+      let rightItems = [];
+
+      if (isTwoCol) {
+        const half = Math.ceil(totalDailyCount / 2);
+        leftItems = allDailyTx.slice(0, half);
+        rightItems = allDailyTx.slice(half);
+      } else {
+        leftItems = allDailyTx;
+      }
+
+      // Đánh chỉ số toàn cục (globalIdx)
+      leftItems = leftItems.map((item, idx) => ({ ...item, globalIdx: idx + 1 }));
+      rightItems = rightItems.map((item, idx) => ({ ...item, globalIdx: leftItems.length + idx + 1 }));
+
+      const numRows = Math.max(1, leftItems.length);
+
+      // Tự động tính toán chiều cao hàng, kích thước chữ dựa trên số lượng phần tử
+      let rowHeight = 48;
+      let fontSizeName = 14;
+      let fontSizeDetail = 11.5;
+      let fontSizeAmount = 14;
+
+      if (numRows <= 6) {
+        rowHeight = 68;
+        fontSizeName = 17;
+        fontSizeDetail = 13.5;
+        fontSizeAmount = 17;
+      } else if (numRows <= 12) {
+        rowHeight = 60;
+        fontSizeName = 16;
+        fontSizeDetail = 12.5;
+        fontSizeAmount = 16;
+      } else if (numRows <= 18) {
+        rowHeight = 54;
+        fontSizeName = 15;
+        fontSizeDetail = 12;
+        fontSizeAmount = 15;
+      } else if (numRows <= 26) {
+        rowHeight = 48;
+        fontSizeName = 14;
+        fontSizeDetail = 11.5;
+        fontSizeAmount = 14;
+      } else {
+        rowHeight = Math.max(42, Math.round(48 - (numRows - 26) * 0.25));
+        fontSizeName = Math.max(12.5, 14 - (numRows - 26) * 0.05);
+        fontSizeDetail = Math.max(10, 11.5 - (numRows - 26) * 0.05);
+        fontSizeAmount = fontSizeName;
+      }
 
       // Helper bẻ dòng text dài
       const wrapText = (context, text, maxWidth) => {
@@ -877,23 +993,32 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         return lines;
       };
 
-      const rowHeight = 44;
-      const headerBoxHeight = 220;
-      const colHeaderHeight = 40;
+      // 4. Tính toán kích thước canvas chuẩn xác (vừa khít không bị thừa khoảng trắng phía dưới)
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
 
-      const numDebtRows = Math.max(1, newDebtOrders.length);
-      const numPayRows = Math.max(1, paymentsCollected.length);
-      const mainColsHeight = Math.max(numDebtRows, numPayRows) * rowHeight + colHeaderHeight;
+      const width = isTwoCol ? 1200 : 900;
+      const colGap = 20;
+      const sidePadding = 25;
+      const colWidth = isTwoCol ? (width - sidePadding * 2 - colGap) / 2 : (width - sidePadding * 2);
+      const leftColX = sidePadding;
+      const rightColX = sidePadding + colWidth + colGap;
 
-      const missingSectionHeaderHeight = 60;
-      const numMissingRows = Math.max(1, missingRegularCustomers.length);
-      const missingSectionHeight = missingSectionHeaderHeight + numMissingRows * rowHeight;
+      const headerTop = 15;
+      const headerHeight = 110;
+      const boxY = headerTop + headerHeight + 10; // 135
+      const boxH = 70;
+      const colHeaderHeight = 42;
+      const listStartY = boxY + boxH + 20; // 225
+      const listHeight = colHeaderHeight + numRows * rowHeight;
+      const footerGap = 20;
+      const footerHeight = 55;
+      const bottomPadding = 15;
 
-      const footerHeight = 80;
-      const totalHeight = headerBoxHeight + mainColsHeight + footerHeight + 40;
+      const totalHeight = listStartY + listHeight + footerGap + footerHeight + bottomPadding;
 
-      // Tỉ lệ scale sắc nét 1.3
-      const scale = 1.3;
+      // Scale 2x giúp hình ảnh xuất ra siêu nét, xem rõ ràng trên mọi thiết bị
+      const scale = 2;
       canvas.width = width * scale;
       canvas.height = totalHeight * scale;
 
@@ -915,51 +1040,49 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ctx.fillStyle = '#FFFFFF';
       ctx.font = 'bold 24px Arial, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('BÁO CÁO CÔNG NỢ TRONG NGÀY', width / 2, 50);
+      ctx.fillText('BÁO CÁO CÔNG NỢ TRONG NGÀY', width / 2, 52);
 
       ctx.fillStyle = '#A7F3D0';
       ctx.font = 'bold 16px Arial, sans-serif';
-      ctx.fillText(`Ngày báo cáo: ${selectedDate}`, width / 2, 80);
+      ctx.fillText(`Ngày báo cáo: ${selectedDate}`, width / 2, 82);
 
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} - ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
       ctx.fillStyle = '#E2E8F0';
       ctx.font = 'italic 12px Arial, sans-serif';
-      ctx.fillText(`Thời gian xuất: ${timeStr}`, width / 2, 105);
+      ctx.fillText(`Thời gian xuất: ${timeStr}`, width / 2, 107);
 
       // ─── 2. HỘP TỔNG KẾT (3 HỘP TRÊN CÙNG) ───────────────────
-      const boxY = 135;
-      const boxW = (width - 70) / 3;
-      const boxH = 65;
+      const boxW = (width - sidePadding * 2 - 20) / 3;
 
       // Hộp Nợ Mới
       ctx.fillStyle = '#FEF2F2';
-      ctx.fillRect(25, boxY, boxW, boxH);
+      ctx.fillRect(sidePadding, boxY, boxW, boxH);
       ctx.strokeStyle = '#FECACA';
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(25, boxY, boxW, boxH);
+      ctx.strokeRect(sidePadding, boxY, boxW, boxH);
 
       ctx.fillStyle = '#991B1B';
-      ctx.font = 'bold 12px Arial, sans-serif';
+      ctx.font = 'bold 12.5px Arial, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('🔴 ĐƠN NỢ MỚI TRONG NGÀY', 35, boxY + 24);
-      ctx.font = 'bold 17px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalNewDebt), 35, boxY + 50);
+      ctx.fillText('🔴 ĐƠN NỢ MỚI TRONG NGÀY', sidePadding + 14, boxY + 26);
+      ctx.font = 'bold 18px Arial, sans-serif';
+      ctx.fillText(formatCurrency(totalNewDebt), sidePadding + 14, boxY + 54);
 
       // Hộp Thu Nợ
-      const box2X = 25 + boxW + 10;
+      const box2X = sidePadding + boxW + 10;
       ctx.fillStyle = '#F0FDF4';
       ctx.fillRect(box2X, boxY, boxW, boxH);
       ctx.strokeStyle = '#BBF7D0';
       ctx.strokeRect(box2X, boxY, boxW, boxH);
 
       ctx.fillStyle = '#166534';
-      ctx.font = 'bold 12px Arial, sans-serif';
-      ctx.fillText('🟢 TIỀN ĐÃ THU TRONG NGÀY', box2X + 10, boxY + 24);
-      ctx.font = 'bold 17px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalPayment), box2X + 10, boxY + 50);
+      ctx.font = 'bold 12.5px Arial, sans-serif';
+      ctx.fillText('🟢 TIỀN ĐÃ THU TRONG NGÀY', box2X + 14, boxY + 26);
+      ctx.font = 'bold 18px Arial, sans-serif';
+      ctx.fillText(formatCurrency(totalPayment), box2X + 14, boxY + 54);
 
-      // Hộp Dư Nợ Ròng
+      // Hộp Dư NỢ Ròng
       const box3X = box2X + boxW + 10;
       ctx.fillStyle = '#EFF6FF';
       ctx.fillRect(box3X, boxY, boxW, boxH);
@@ -967,52 +1090,14 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ctx.strokeRect(box3X, boxY, boxW, boxH);
 
       ctx.fillStyle = '#1E40AF';
-      ctx.font = 'bold 12px Arial, sans-serif';
-      ctx.fillText('🔵 CHÊNH LỆCH CÔNG NỢ RÒNG', box3X + 10, boxY + 24);
-      ctx.font = 'bold 17px Arial, sans-serif';
-      ctx.fillText(formatCurrency(netBalance), box3X + 10, boxY + 50);
+      ctx.font = 'bold 12.5px Arial, sans-serif';
+      ctx.fillText('🔵 CHÊNH LỆCH CÔNG NỢ RÒNG', box3X + 14, boxY + 26);
+      ctx.font = 'bold 18px Arial, sans-serif';
+      ctx.fillText(formatCurrency(netBalance), box3X + 14, boxY + 54);
 
-      // ─── 3. VẼ DANH SÁCH CHI TIẾT GIAO DỊCH (GỘP CHUNG THU NỢ & ĐƠN NỢ MỚI) ───────────────────
-      let currentY = boxY + boxH + 20;
-
-      const allDailyTx = [
-        ...newDebtOrders.map(t => ({
-          id: t.id,
-          type: 'debt',
-          customerName: t.customer?.name || 'Khách ẩn danh',
-          amount: parseFloat(t.totalAmount || 0),
-          details: t.items?.map((i) => {
-            const q = parseFloat(i.quantity);
-            const name = i.product?.name || 'Thịt';
-            const isQuick = name === 'Tiền hàng' || name.toLowerCase().startsWith('tiền');
-            return isQuick ? name : `${q}${i.product?.unit || 'kg'} ${name}`;
-          }).join(', ') || 'Nợ mới',
-        })),
-        ...paymentsCollected.map(p => ({
-          id: p.id,
-          type: 'payment',
-          customerName: p.customer?.name || 'Khách ẩn danh',
-          amount: parseFloat(p.amount || 0),
-          details: formatPaymentNote(p.note, p.paidAt),
-        })),
-      ];
-
-      const totalDailyCount = allDailyTx.length;
-      const isTwoCol = totalDailyCount >= 10;
-
-      let leftItems = [];
-      let rightItems = [];
-
-      if (isTwoCol) {
-        const half = Math.ceil(totalDailyCount / 2);
-        leftItems = allDailyTx.slice(0, half);
-        rightItems = allDailyTx.slice(half);
-      } else {
-        leftItems = allDailyTx;
-      }
-
+      // ─── 3. VẼ DANH SÁCH CHI TIẾT GIAO DỊCH ───────────────────
       const drawColumn = (items, startX, colW, headerTitle) => {
-        let colY = currentY;
+        let colY = listStartY;
 
         // Header cột
         ctx.fillStyle = '#1E293B';
@@ -1020,7 +1105,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx.fillStyle = '#FFFFFF';
         ctx.font = 'bold 14px Arial, sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(headerTitle, startX + 12, colY + 25);
+        ctx.fillText(headerTitle, startX + 14, colY + 26);
 
         colY += colHeaderHeight;
 
@@ -1032,29 +1117,52 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
           ctx.fillStyle = '#94A3B8';
           ctx.font = 'italic 13px Arial, sans-serif';
-          ctx.fillText('Không có giao dịch nào.', startX + 12, colY + 26);
+          ctx.fillText('Không có giao dịch nào.', startX + 14, colY + Math.round(rowHeight / 2) + 5);
           colY += rowHeight;
         } else {
           items.forEach((item, idx) => {
+            const status = getItemStatus(item);
             const isDebt = item.type === 'debt';
-            ctx.fillStyle = isDebt ? (idx % 2 === 0 ? '#FFFFFF' : '#FEF2F2') : (idx % 2 === 0 ? '#FFFFFF' : '#F0FDF4');
+            const isReturnGoods = status === 'return';
+
+            if (isReturnGoods) {
+              ctx.fillStyle = idx % 2 === 0 ? '#FFF7ED' : '#FFEDD5';
+              ctx.strokeStyle = '#FED7AA';
+            } else if (isDebt) {
+              ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#FEF2F2';
+              ctx.strokeStyle = '#FECACA';
+            } else {
+              ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F0FDF4';
+              ctx.strokeStyle = '#BBF7D0';
+            }
+
             ctx.fillRect(startX, colY, colW, rowHeight);
-            ctx.strokeStyle = isDebt ? '#FECACA' : '#BBF7D0';
             ctx.strokeRect(startX, colY, colW, rowHeight);
 
+            // Tên khách hàng (căn trái)
             ctx.fillStyle = '#0F172A';
-            ctx.font = 'bold 13px Arial, sans-serif';
-            ctx.fillText(`${item.globalIdx || idx + 1}. ${item.customerName}`, startX + 10, colY + 18);
+            ctx.font = `bold ${fontSizeName}px Arial, sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.fillText(`${item.globalIdx || idx + 1}. ${item.customerName}`, startX + 12, colY + Math.round(rowHeight * 0.42));
 
+            // Chi tiết mặt hàng / ghi chú (căn trái)
             ctx.fillStyle = '#64748B';
-            ctx.font = '11px Arial, sans-serif';
-            const subText = wrapText(ctx, item.details || '', colW - 160)[0] || '';
-            ctx.fillText(subText, startX + 24, colY + 34);
+            ctx.font = `${fontSizeDetail}px Arial, sans-serif`;
+            const subText = wrapText(ctx, item.details || '', colW - 170)[0] || '';
+            ctx.fillText(subText, startX + 22, colY + Math.round(rowHeight * 0.8));
 
-            ctx.fillStyle = isDebt ? '#DC2626' : '#16A34A';
-            ctx.font = 'bold 13px Arial, sans-serif';
+            // Số tiền (căn phải)
+            if (isReturnGoods) {
+              ctx.fillStyle = '#EA580C';
+            } else if (isDebt) {
+              ctx.fillStyle = '#DC2626';
+            } else {
+              ctx.fillStyle = '#16A34A';
+            }
+
+            ctx.font = `bold ${fontSizeAmount}px Arial, sans-serif`;
             ctx.textAlign = 'right';
-            ctx.fillText(`${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`, startX + colW - 10, colY + 26);
+            ctx.fillText(`${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`, startX + colW - 12, colY + Math.round(rowHeight * 0.58));
             ctx.textAlign = 'left';
 
             colY += rowHeight;
@@ -1063,34 +1171,27 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         return colY;
       };
 
-      // Đánh chỉ số toàn cục (globalIdx)
-      leftItems = leftItems.map((item, idx) => ({ ...item, globalIdx: idx + 1 }));
-      rightItems = rightItems.map((item, idx) => ({ ...item, globalIdx: leftItems.length + idx + 1 }));
-
-      let endYLeft = currentY;
-      let endYRight = currentY;
-
       if (!isTwoCol) {
-        endYLeft = drawColumn(leftItems, leftColX, width - 50, `📝 DANH SÁCH GIAO DỊCH CÔNG NỢ TRONG NGÀY (${totalDailyCount} giao dịch)`);
+        drawColumn(leftItems, leftColX, width - sidePadding * 2, `📝 DANH SÁCH GIAO DỊCH CÔNG NỢ TRONG NGÀY (${totalDailyCount} giao dịch)`);
       } else {
-        endYLeft = drawColumn(leftItems, leftColX, colWidth, `📝 CHI TIẾT GIAO DỊCH (Phần 1 - ${leftItems.length} đơn)`);
-        endYRight = drawColumn(rightItems, rightColX, colWidth, `📝 CHI TIẾT GIAO DỊCH (Phần 2 - ${rightItems.length} đơn)`);
+        drawColumn(leftItems, leftColX, colWidth, `📝 CHI TIẾT GIAO DỊCH (Phần 1 - ${leftItems.length} đơn)`);
+        drawColumn(rightItems, rightColX, colWidth, `📝 CHI TIẾT GIAO DỊCH (Phần 2 - ${rightItems.length} đơn)`);
       }
 
       // ─── 4. VẼ FOOTER CHO CANVAS 1 & TẢI XUỐNG ───────────────────
-      const footerY1 = Math.max(endYLeft, endYRight) + 20;
+      const footerY1 = listStartY + listHeight + footerGap;
       ctx.strokeStyle = '#CBD5E1';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(25, footerY1);
-      ctx.lineTo(width - 25, footerY1);
+      ctx.moveTo(sidePadding, footerY1);
+      ctx.lineTo(width - sidePadding, footerY1);
       ctx.stroke();
 
       ctx.fillStyle = '#64748B';
-      ctx.font = '11px Arial, sans-serif';
+      ctx.font = '12px Arial, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, footerY1 + 20);
-      ctx.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, footerY1 + 36);
+      ctx.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, footerY1 + 22);
+      ctx.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, footerY1 + 40);
 
       // Tải ảnh báo cáo chính (Ảnh 1)
       const dataUrl = canvas.toDataURL('image/png');
@@ -1101,10 +1202,25 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
       // ─── 5. XỬ LÝ ẢNH 2 (NẾU CÓ KHÁCH QUEN SÓT ĐƠN NỢ) ───────────────────
       if (missingRegularCustomers.length > 0) {
+        const numMissingRows = Math.max(1, missingRegularCustomers.length);
+        let missingRowHeight = 48;
+        let missingFontSize = 14;
+        if (numMissingRows <= 6) {
+          missingRowHeight = 65;
+          missingFontSize = 16;
+        } else if (numMissingRows <= 12) {
+          missingRowHeight = 56;
+          missingFontSize = 15;
+        }
+
+        const c2HeaderH = 80;
+        const c2StartY = 15 + c2HeaderH + 20; // 115
+        const c2ListH = numMissingRows * missingRowHeight;
+        const canvas2Height = c2StartY + c2ListH + footerGap + footerHeight + bottomPadding;
+
         const canvas2 = document.createElement('canvas');
         const ctx2 = canvas2.getContext('2d');
 
-        const canvas2Height = 115 + numMissingRows * rowHeight + footerHeight + 20;
         canvas2.width = width * scale;
         canvas2.height = canvas2Height * scale;
         ctx2.scale(scale, scale);
@@ -1120,7 +1236,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
         // Header của ảnh 2
         ctx2.fillStyle = '#065F46';
-        ctx2.fillRect(15, 15, width - 30, 80);
+        ctx2.fillRect(15, 15, width - 30, c2HeaderH);
 
         ctx2.fillStyle = '#FFFFFF';
         ctx2.font = 'bold 20px Arial, sans-serif';
@@ -1131,61 +1247,61 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx2.font = 'bold 13px Arial, sans-serif';
         ctx2.fillText(`Ngày báo cáo: ${selectedDate}`, width / 2, 70);
 
-        let currentY = 115;
+        let currentY = c2StartY;
 
         if (missingRegularCustomers.length === 0) {
           ctx2.fillStyle = '#F8FAFC';
-          ctx2.fillRect(25, currentY, width - 50, rowHeight);
+          ctx2.fillRect(sidePadding, currentY, width - sidePadding * 2, missingRowHeight);
           ctx2.strokeStyle = '#E2E8F0';
-          ctx2.strokeRect(25, currentY, width - 50, rowHeight);
+          ctx2.strokeRect(sidePadding, currentY, width - sidePadding * 2, missingRowHeight);
 
           ctx2.fillStyle = '#94A3B8';
           ctx2.font = 'italic 13px Arial, sans-serif';
-          ctx2.fillText('Không có khách quen nào bị sót.', 37, currentY + 26);
-          currentY += rowHeight;
+          ctx2.fillText('Không có khách quen nào bị sót.', sidePadding + 14, currentY + Math.round(missingRowHeight / 2) + 5);
+          currentY += missingRowHeight;
         } else {
           missingRegularCustomers.forEach((c, idx) => {
             ctx2.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-            ctx2.fillRect(25, currentY, width - 50, rowHeight);
+            ctx2.fillRect(sidePadding, currentY, width - sidePadding * 2, missingRowHeight);
             ctx2.strokeStyle = '#E2E8F0';
-            ctx2.strokeRect(25, currentY, width - 50, rowHeight);
+            ctx2.strokeRect(sidePadding, currentY, width - sidePadding * 2, missingRowHeight);
 
             ctx2.fillStyle = '#0F172A';
-            ctx2.font = 'bold 13px Arial, sans-serif';
-            ctx2.fillText(`${idx + 1}. ${c.name}`, leftColX + 10, currentY + 26);
+            ctx2.font = `bold ${missingFontSize}px Arial, sans-serif`;
+            ctx2.fillText(`${idx + 1}. ${c.name}`, sidePadding + 12, currentY + Math.round(missingRowHeight / 2) + 5);
 
             ctx2.fillStyle = '#64748B';
-            ctx2.font = '11px Arial, sans-serif';
+            ctx2.font = '12px Arial, sans-serif';
             ctx2.fillText(
               `SĐT: ${c.phone || 'Chưa có'}  |  Số đơn nợ 2 tuần qua: ${customerRecentTxCounts[c.id] || 0} đơn`,
-              leftColX + 260,
-              currentY + 26
+              sidePadding + 260,
+              currentY + Math.round(missingRowHeight / 2) + 5
             );
 
             ctx2.fillStyle = c.debt > 0 ? '#DC2626' : '#64748B';
-            ctx2.font = 'bold 13px Arial, sans-serif';
+            ctx2.font = `bold ${missingFontSize}px Arial, sans-serif`;
             ctx2.textAlign = 'right';
-            ctx2.fillText(`Nợ tích lũy: ${formatCurrency(c.debt)}`, width - 40, currentY + 26);
+            ctx2.fillText(`Nợ tích lũy: ${formatCurrency(c.debt)}`, width - sidePadding - 14, currentY + Math.round(missingRowHeight / 2) + 5);
             ctx2.textAlign = 'left';
 
-            currentY += rowHeight;
+            currentY += missingRowHeight;
           });
         }
 
-        // Footer
-        const finalY = currentY + 20;
+        // Footer ảnh 2
+        const finalY = currentY + footerGap;
         ctx2.strokeStyle = '#CBD5E1';
         ctx2.lineWidth = 1;
         ctx2.beginPath();
-        ctx2.moveTo(25, finalY);
-        ctx2.lineTo(width - 25, finalY);
+        ctx2.moveTo(sidePadding, finalY);
+        ctx2.lineTo(width - sidePadding, finalY);
         ctx2.stroke();
 
         ctx2.fillStyle = '#64748B';
-        ctx2.font = '11px Arial, sans-serif';
+        ctx2.font = '12px Arial, sans-serif';
         ctx2.textAlign = 'center';
-        ctx2.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, finalY + 20);
-        ctx2.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, finalY + 36);
+        ctx2.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, finalY + 22);
+        ctx2.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, finalY + 40);
 
         // Download Ảnh 2
         const dataUrl2 = canvas2.toDataURL('image/png');
@@ -1303,7 +1419,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           </View>
         ) : (
           <View style={styles.mainContent}>
-            {/* Hộp tổng kết nhanh */}
+            {/* 3 Hộp tổng kết nhanh (Nợ phát sinh, Tiền đã thu, Lợi nhuận) */}
             <View style={styles.summaryContainer}>
               <TouchableOpacity
                 style={[
@@ -1319,7 +1435,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                 }}
                 activeOpacity={activeReportTab === 'day' ? 0.7 : 1}
               >
-                <Text style={styles.summaryBoxLabel}>{activeReportTab === 'day' ? '🔴 Nợ phát sinh' : '🔴 Tổng nợ trong tháng'}</Text>
+                <Text style={styles.summaryBoxLabel}>{activeReportTab === 'day' ? '🔴 Nợ phát sinh' : '🔴 Tổng nợ'}</Text>
                 <Text style={styles.summaryBoxValue}>{formatCurrency(totalDebtCreated)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1336,10 +1452,38 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                 }}
                 activeOpacity={activeReportTab === 'day' ? 0.7 : 1}
               >
-                <Text style={styles.summaryBoxLabel}>{activeReportTab === 'day' ? '🟢 Tiền đã thu' : '🟢 Đã thu trong tháng'}</Text>
+                <Text style={styles.summaryBoxLabel}>{activeReportTab === 'day' ? '🟢 Tiền đã thu' : '🟢 Đã thu'}</Text>
                 <Text style={styles.summaryBoxValue}>{formatCurrency(totalPaymentReceived)}</Text>
               </TouchableOpacity>
+              <View style={[styles.summaryBox, styles.profitBox]}>
+                <Text style={[styles.summaryBoxLabel, { color: '#0369A1' }]}>
+                  {`💰 Lợi nhuận${profitMarginPercent > 0 ? ` (${profitMarginPercent}%)` : ''}`}
+                </Text>
+                <Text style={[styles.summaryBoxValue, { color: '#0369A1' }]}>{formatCurrency(totalProfit)}</Text>
+              </View>
             </View>
+
+            {/* Ô chú thích 4 màu trạng thái giao dịch */}
+            {activeReportTab === 'day' && (
+              <View style={styles.legendContainer}>
+                <View style={[styles.legendBadge, styles.legendBadgeEdited]}>
+                  <View style={[styles.legendDot, { backgroundColor: '#8B5CF6' }]} />
+                  <Text style={[styles.legendText, { color: '#7E22CE' }]}>Đã sửa</Text>
+                </View>
+                <View style={[styles.legendBadge, styles.legendBadgeReturn]}>
+                  <View style={[styles.legendDot, { backgroundColor: '#EA580C' }]} />
+                  <Text style={[styles.legendText, { color: '#EA580C' }]}>Trả hàng</Text>
+                </View>
+                <View style={[styles.legendBadge, styles.legendBadgePayment]}>
+                  <View style={[styles.legendDot, { backgroundColor: '#16A34A' }]} />
+                  <Text style={[styles.legendText, { color: '#16A34A' }]}>Thu nợ</Text>
+                </View>
+                <View style={[styles.legendBadge, styles.legendBadgeDebt]}>
+                  <View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} />
+                  <Text style={[styles.legendText, { color: '#DC2626' }]}>Đơn nợ mới</Text>
+                </View>
+              </View>
+            )}
 
             {/* Tiêu đề danh sách chi tiết */}
             <Text style={styles.listTitle}>📝 Danh sách chi tiết ({displayItems.length}):</Text>
@@ -1361,13 +1505,10 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               >
                 {displayItems.map((item) => {
                   if (activeReportTab === 'day') {
+                    const status = getItemStatus(item);
                     const isDebt = item.type === 'debt';
-                    const isReturnGoods = !isDebt && (
-                      item.details?.includes('Trả hàng') || 
-                      item.details?.includes('Trả lại') || 
-                      item.note?.includes('Trả hàng') || 
-                      item.note?.includes('Trả lại')
-                    );
+                    const isEdited = status === 'edited';
+                    const isReturnGoods = status === 'return';
 
                     let displayDetails = item.details;
                     if (isReturnGoods) {
@@ -1383,11 +1524,13 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                         key={item.id}
                         style={[
                           styles.itemCard,
-                          isDebt 
-                            ? styles.itemCardDebt 
+                          isEdited
+                            ? styles.itemCardEdited
                             : isReturnGoods 
                               ? styles.itemCardReturnGoods 
-                              : styles.itemCardPayment
+                              : isDebt 
+                                ? styles.itemCardDebt 
+                                : styles.itemCardPayment
                         ]}
                       >
                         <View style={styles.itemHeader}>
@@ -1418,20 +1561,31 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
                           <Text style={[
                             styles.itemAmount, 
-                            isDebt 
-                              ? styles.amountDebt 
+                            isEdited
+                              ? styles.amountEdited
                               : isReturnGoods 
                                 ? styles.amountReturnGoods 
-                                : styles.amountPayment
+                                : isDebt 
+                                  ? styles.amountDebt 
+                                  : styles.amountPayment
                           ]}>
                             {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
                           </Text>
                         </View>
 
                         {displayDetails ? (
-                          <Text style={styles.itemDetails} numberOfLines={2}>
-                            {isDebt ? `🥩 ${displayDetails}` : isReturnGoods ? `↩️ ${displayDetails}` : `💵 ${displayDetails}`}
-                          </Text>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={[styles.itemDetails, { flex: 1 }]} numberOfLines={2}>
+                              {isDebt ? `🥩 ${displayDetails}` : isReturnGoods ? `↩️ ${displayDetails}` : `💵 ${displayDetails}`}
+                            </Text>
+                            {isDebt && item.profit > 0 ? (
+                              <View style={styles.itemProfitBadge}>
+                                <Text style={styles.itemProfitBadgeText}>
+                                  Lãi: +{formatCurrency(item.profit)}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
                         ) : null}
                       </View>
                     );
@@ -1609,6 +1763,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FDF4',
     borderColor: '#BBF7D0',
   },
+  profitBox: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#BAE6FD',
+  },
+  itemProfitBadge: {
+    backgroundColor: '#E0F2FE',
+    borderColor: '#7DD3FC',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginLeft: 6,
+  },
+  itemProfitBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#0369A1',
+  },
   activeDebtBox: {
     borderColor: '#DC2626',
     borderWidth: 2,
@@ -1714,6 +1886,12 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#F59E0B',
   },
+  itemCardEdited: {
+    backgroundColor: '#FAF5FF',
+    borderColor: '#E9D5FF',
+    borderLeftWidth: 4,
+    borderLeftColor: '#8B5CF6',
+  },
   itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1736,6 +1914,71 @@ const styles = StyleSheet.create({
   },
   amountReturnGoods: {
     color: '#D97706',
+  },
+  amountEdited: {
+    color: '#7E22CE',
+  },
+  /* Legend Box */
+  legendContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  legendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  legendBadgeEdited: {
+    backgroundColor: '#F3E8FF',
+    borderColor: '#D8B4FE',
+  },
+  legendBadgeReturn: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FFEDD5',
+  },
+  legendBadgePayment: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#DCFCE7',
+  },
+  legendBadgeDebt: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FEE2E2',
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusTagEdited: {
+    backgroundColor: '#EDE9FE',
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  statusTagEditedText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6D28D9',
   },
   itemDetails: {
     fontSize: 12,

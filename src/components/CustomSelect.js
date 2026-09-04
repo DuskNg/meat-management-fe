@@ -49,12 +49,14 @@ const CustomSelect = ({
   dropUp,
   minWidth,
   autoFocus = false,
+  openOnFocus = true,
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0, isUp: false });
   const dropdownRef = useRef(null);
   const inputRef = useRef(null);
+  const isAutoFocusingRef = useRef(false);
   // ID portal riêng biệt cho mỗi instance tránh xung đột key
   const portalIdRef = useRef(`csp-${Math.random().toString(36).slice(2)}`);
   const portalElRef = useRef(null);
@@ -64,13 +66,18 @@ const CustomSelect = ({
   // Nhãn hiển thị của mục đã chọn
   const valueLabel = value ? (renderSelected ? renderSelected(value) : getOptionLabel(value)) : '';
 
-  // Tự động focus vào input khi autoFocus = true
+  // Tự động focus vào input khi autoFocus = true (không tự bung dropdown để không che nút bấm)
   useEffect(() => {
     if (autoFocus && !disabled) {
+      isAutoFocusingRef.current = true;
       const timer = setTimeout(() => {
         if (inputRef.current) {
           inputRef.current.focus();
         }
+        // Giải phóng cờ sau khi focus hoàn tất
+        setTimeout(() => {
+          isAutoFocusingRef.current = false;
+        }, 150);
       }, 60);
       return () => clearTimeout(timer);
     }
@@ -87,7 +94,6 @@ const CustomSelect = ({
       if (!isInsideTrigger && !isInsidePortal) {
         setOpen(false);
         setSearch('');
-        if (portalElRef.current) portalElRef.current.style.pointerEvents = 'none';
         if (onOpenChange) onOpenChange(false);
       }
     };
@@ -129,33 +135,41 @@ const CustomSelect = ({
     });
   }, [dropUp]);
 
-  // Lắng nghe sự kiện scroll và resize để tự động cập nhật lại vị trí dropdown (giống Antd)
+  // Lắng nghe sự kiện scroll và resize: khi cuộn danh sách bên ngoài thì tự động bỏ focus và đóng dropdown
   useEffect(() => {
     if (!open || Platform.OS !== 'web') return;
 
-    const handleUpdate = () => {
+    const handleScroll = (event) => {
+      // Nếu sự kiện cuộn xảy ra bên trong chính danh sách tùy chọn của dropdown thì không đóng
+      if (portalElRef.current?.contains(event.target)) {
+        return;
+      }
+      // Người dùng cuộn danh sách / modal bên ngoài -> hủy focus và đóng dropdown ngay
+      inputRef.current?.blur();
+      setOpen(false);
+      setSearch('');
+      if (onOpenChange) onOpenChange(false);
+    };
+
+    const handleResize = () => {
       measureAndOpen();
     };
 
-    // Bắt sự kiện scroll ở bất kỳ container con nào bằng capture phase
-    window.addEventListener('scroll', handleUpdate, true);
-    window.addEventListener('resize', handleUpdate);
-
-    // Đo vị trí ngay khi mở
-    handleUpdate();
+    // Bắt sự kiện scroll ở bất kỳ container cha/con nào bằng capture phase
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
 
     return () => {
-      window.removeEventListener('scroll', handleUpdate, true);
-      window.removeEventListener('resize', handleUpdate);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
     };
-  }, [open, measureAndOpen]);
+  }, [open, onOpenChange, measureAndOpen]);
 
   // Mở dropdown: đo vị trí (Web) và cập nhật state
   const openDropdown = useCallback(() => {
     if (disabled) return;
     if (Platform.OS === 'web') measureAndOpen();
     setOpen(true);
-    setSearch('');
     if (onOpenChange) onOpenChange(true);
   }, [disabled, measureAndOpen, onOpenChange]);
 
@@ -163,7 +177,6 @@ const CustomSelect = ({
   const closeDropdown = useCallback(() => {
     setOpen(false);
     setSearch('');
-    if (portalElRef.current) portalElRef.current.style.pointerEvents = 'none';
     if (onOpenChange) onOpenChange(false);
   }, [onOpenChange]);
 
@@ -234,29 +247,32 @@ const CustomSelect = ({
     if (!open || Platform.OS !== 'web' || !ReactDOM) return null;
     if (typeof document === 'undefined') return null;
 
-    // Mỗi instance CustomSelect có 1 container riêng → không bao giờ bị duplicate key
+    // Mỗi instance CustomSelect có 1 container riêng, luôn đặt pointer-events: none
     if (!portalElRef.current) {
       const el = document.createElement('div');
       el.id = portalIdRef.current;
-      el.style.cssText = 'position:absolute;top:0;left:0;width:100%;z-index:999999;pointer-events:none;';
+      el.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;z-index:999999;pointer-events:none;';
       document.body.appendChild(el);
       portalElRef.current = el;
     }
-    // Bật pointer-events khi mở để có thể click vào option
-    portalElRef.current.style.pointerEvents = 'auto';
 
     // Tính vị trí hiển thị dropdown tuyệt đối theo document body (như Antd)
+    const effectiveMinWidth = minWidth !== undefined ? minWidth : 260;
+    const calculatedWidth = dropdownStyle?.width || Math.max(dropdownPos.width, effectiveMinWidth);
+
     const dropStyle = {
       position: 'absolute',
       left: dropdownPos.left,
-      width: dropdownStyle?.width || (minWidth !== undefined ? Math.max(dropdownPos.width, minWidth) : dropdownPos.width),
+      width: calculatedWidth,
+      minWidth: effectiveMinWidth,
       zIndex: 999999,
       backgroundColor: '#FFFFFF',
       border: '1px solid #E2E8F0',
       borderRadius: 8,
-      boxShadow: '0px 4px 12px rgba(0,0,0,0.08)',
+      boxShadow: '0px 6px 16px rgba(0,0,0,0.12)',
       overflow: 'hidden',
-      maxHeight: 200,
+      maxHeight: 240,
+      pointerEvents: 'auto',
     };
 
     if (dropdownPos.isUp) {
@@ -276,8 +292,9 @@ const CustomSelect = ({
   };
 
   // Xử lý khi nút mũi tên được bấm: toggle đóng/mở dropdown
-  const handleArrowPress = () => {
+  const handleArrowPress = (e) => {
     if (disabled) return;
+    if (e && e.stopPropagation) e.stopPropagation();
     if (open) {
       // Đang mở → bấm mũi tên để đóng
       inputRef.current?.blur();
@@ -286,8 +303,9 @@ const CustomSelect = ({
         closeDropdown();
       }
     } else {
-      // Đang đóng → focus TextInput để mở dropdown + hiện bàn phím
+      // Đang đóng → focus TextInput và mở dropdown
       inputRef.current?.focus();
+      openDropdown();
     }
   };
 
@@ -310,6 +328,16 @@ const CustomSelect = ({
           hasError && styles.selectTriggerError,
           disabled && styles.selectTriggerDisabled,
         ]}
+        {...(Platform.OS === 'web'
+          ? {
+              onClick: () => {
+                if (!disabled && !open) {
+                  inputRef.current?.focus();
+                  openDropdown();
+                }
+              },
+            }
+          : {})}
       >
         <TextInput
           ref={inputRef}
@@ -322,9 +350,9 @@ const CustomSelect = ({
           placeholder={placeholder}
           placeholderTextColor={COLORS.textLight}
           editable={!disabled}
-          // onFocus: mở dropdown khi TextInput nhận focus (tap trực tiếp trên mobile → bàn phím hiện ngay)
+          // onFocus: chỉ tự động mở dropdown khi openOnFocus = true
           onFocus={() => {
-            if (!disabled && !open) {
+            if (!disabled && !open && !isAutoFocusingRef.current) {
               openDropdown();
             }
           }}
@@ -341,6 +369,11 @@ const CustomSelect = ({
           }}
           onChangeText={(text) => {
             setSearch(text);
+            if (!open && !disabled) {
+              if (Platform.OS === 'web') measureAndOpen();
+              setOpen(true);
+              if (onOpenChange) onOpenChange(true);
+            }
             if (onInputChange) onInputChange(text);
           }}
           onSubmitEditing={() => inputRef.current?.blur()}
@@ -384,6 +417,8 @@ export default CustomSelect;
 const styles = StyleSheet.create({
   selectWrapper: {
     position: 'relative',
+    width: '100%',
+    minWidth: 0,
     zIndex: 100,
     elevation: 100,
   },
@@ -394,14 +429,20 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
     borderRadius: 8,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
+    paddingLeft: 8,
+    paddingRight: 4,
     height: 38,
+    width: '100%',
+    minWidth: 0,
+    overflow: 'hidden',
     ...(Platform.OS === 'web' ? { cursor: 'text' } : {}),
   },
   selectTriggerCompact: {
-    height: 26,
-    paddingHorizontal: 6,
-    borderColor: '#94A3B8',
+    height: 34,
+    paddingLeft: 8,
+    paddingRight: 4,
+    borderColor: '#CBD5E1',
+    borderRadius: 6,
   },
   selectTriggerOpen: {
     borderColor: '#2563EB',
@@ -417,22 +458,35 @@ const styles = StyleSheet.create({
   },
   selectTriggerInput: {
     flex: 1,
-    fontSize: 12,
+    minWidth: 0,
+    fontSize: 13,
     fontWeight: '600',
     color: '#0F172A',
     padding: 0,
-    ...(Platform.OS === 'web' ? { outlineStyle: 'none', cursor: 'text' } : {}),
+    margin: 0,
+    height: '100%',
+    ...(Platform.OS === 'web' ? {
+      outlineStyle: 'none',
+      cursor: 'text',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+    } : {}),
   },
   selectTriggerTextCompact: {
-    fontSize: 11,
+    fontSize: 12.5,
   },
   selectPlaceholder: {
     color: '#94A3B8',
     fontWeight: '400',
   },
   arrowContainer: {
-    paddingLeft: 4,
-    paddingVertical: 6,
+    paddingLeft: 2,
+    paddingRight: 4,
+    paddingVertical: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
     ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),
   },
   selectArrow: {
@@ -444,8 +498,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '100%',
     left: 0,
-    minWidth: 280,
-    maxHeight: 200,
+    minWidth: 260,
+    maxHeight: 240,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -470,11 +524,11 @@ const styles = StyleSheet.create({
     ...(Platform.OS !== 'web' ? { shadowOffset: { width: 0, height: -4 } } : {}),
   },
   selectDropdownScroll: {
-    maxHeight: 195,
+    maxHeight: 235,
   },
   selectOption: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
     ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),

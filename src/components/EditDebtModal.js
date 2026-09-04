@@ -98,6 +98,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   const [activeTab, setActiveTab] = useState('manual'); // 'manual' hoặc 'quick'
   const [quickProductName, setQuickProductName] = useState('Tiền hàng');
   const [quickAmountVND, setQuickAmountVND] = useState(0);
+  const [quickProfitPercent, setQuickProfitPercent] = useState('');
   const [quickProductId, setQuickProductId] = useState(null);
 
   const [loading, setLoading] = useState(false);
@@ -146,11 +147,13 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
         setQuickAmountVND(itemAmount || parseFloat(transaction.totalAmount || 0));
         setQuickProductName(firstItem?.product?.name || 'Tiền hàng');
         setQuickProductId(firstItem?.productId || firstItem?.product?.id || null);
+        setQuickProfitPercent(transaction.profitPercent ? String(transaction.profitPercent) : '');
         setCartItems([]);
       } else {
         setActiveTab('manual');
         setQuickAmountVND(0);
         setQuickProductName('Tiền hàng');
+        setQuickProfitPercent('');
 
         // Nhóm và cộng dồn các mặt hàng cùng loại thịt từ lịch sử
         const mergedMap = {};
@@ -161,16 +164,20 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
             name: it.product?.name || 'Sản phẩm đã bị xóa',
             unit: it.product?.unit || 'kg',
             defaultPrice: parseFloat(it.price),
+            costPrice: parseFloat(it.costPrice || 0),
           };
           const key = prod.id;
           const qty = parseFloat(it.quantity);
           const priceVal = parseFloat(it.price);
+          const costVal = it.costPrice !== undefined ? parseFloat(it.costPrice) : (prod.costPrice || 0);
+
           if (mergedMap[key]) {
             // Nếu đã tồn tại loại thịt này, cộng dồn số lượng và cập nhật đơn giá mới nhất
             mergedMap[key].quantity += qty;
             mergedMap[key].amount = mergedMap[key].quantity * priceVal;
             mergedMap[key].displayQuantity = mergedMap[key].quantity.toString();
             mergedMap[key].price = priceVal;
+            mergedMap[key].costPrice = costVal;
             mergedMap[key].displayPrice = formatNumberString(priceVal.toString());
           } else {
             // Nếu chưa tồn tại, khởi tạo phần tử mới
@@ -179,6 +186,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
               product: prod,
               quantity: qty,
               price: priceVal,
+              costPrice: costVal,
               displayQuantity: it.quantity.toString(),
               displayPrice: formatNumberString(priceVal.toString()),
               amount: qty * priceVal,
@@ -242,7 +250,15 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
 
     if (editingItemId !== null) {
       setCartItems((prev) => prev.map((item) => item.tempId === editingItemId
-        ? { ...item, quantity: q, price: p, displayQuantity: currentQuantity, displayPrice: currentPrice, amount: q * p }
+        ? {
+            ...item,
+            quantity: q,
+            price: p,
+            costPrice: item.costPrice !== undefined ? item.costPrice : (currentProduct?.costPrice || 0),
+            displayQuantity: currentQuantity,
+            displayPrice: currentPrice,
+            amount: q * p
+          }
         : item
       ));
       setEditingItemId(null);
@@ -257,6 +273,8 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
     setCartItems((prev) => {
       // Kiểm tra xem loại thịt đã tồn tại trong giỏ hàng chưa
       const existingIndex = prev.findIndex((item) => item.product.id === currentProduct.id);
+      const cp = currentProduct?.costPrice || 0;
+
       if (existingIndex > -1) {
         // Nếu đã tồn tại, cộng dồn khối lượng và cập nhật đơn giá mới nhất
         const updated = [...prev];
@@ -266,6 +284,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
           ...existingItem,
           quantity: newQuantity,
           price: p,
+          costPrice: cp,
           displayQuantity: newQuantity.toString(),
           displayPrice: currentPrice,
           amount: newQuantity * p,
@@ -280,6 +299,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
           product: currentProduct,
           quantity: q,
           price: p,
+          costPrice: cp,
           displayQuantity: currentQuantity,
           displayPrice: currentPrice,
           amount: q * p,
@@ -348,6 +368,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
         productId: item.product.id,
         quantity: item.quantity,
         price: item.price,
+        costPrice: item.costPrice !== undefined ? item.costPrice : (item.product?.costPrice || 0),
       }));
     }
 
@@ -358,6 +379,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
       const response = await api.put(`/transactions/${transactionId}`, {
         date: isoDate,
         note: note.trim() || null,
+        profitPercent: activeTab === 'quick' && quickProfitPercent ? parseFloat(quickProfitPercent) : undefined,
         items: payloadItems,
       });
 
@@ -376,8 +398,16 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
     }
   };
 
-  // ─── Tổng số tiền giỏ hàng ───────────────────────────────────────────
+  // ─── Tổng số tiền & Lợi nhuận giỏ hàng ───────────────────────────────
   const cartTotal = cartItems.reduce((sum, item) => sum + item.amount, 0);
+  const cartTotalCost = cartItems.reduce((sum, item) => {
+    const itemCostNum = parseFloat(item.costPrice || 0);
+    const prodCostNum = parseFloat(item.product?.costPrice || 0);
+    const cp = itemCostNum > 0 ? itemCostNum : prodCostNum;
+    return sum + (item.quantity * cp);
+  }, 0);
+  const cartTotalProfit = cartTotal - cartTotalCost;
+  const cartProfitMargin = cartTotal > 0 && cartTotalProfit > 0 ? Math.round((cartTotalProfit / cartTotal) * 100) : 0;
 
   // Xem trước thành tiền mặt hàng đang gõ
   const currentSubtotal =
@@ -446,13 +476,49 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
                 placeholderTextColor={COLORS.textLight}
               />
 
-              <Text style={[styles.label, { marginTop: 12 }]}>💵 Số tiền nợ (đ):</Text>
-              <MoneyInput
-                value={quickAmountVND}
-                onChangeValue={setQuickAmountVND}
-                placeholder="0"
-                textAlign="left"
-              />
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                <View style={{ flex: 1.5 }}>
+                  <Text style={styles.label}>💵 Số tiền nợ (đ):</Text>
+                  <MoneyInput
+                    value={quickAmountVND}
+                    onChangeValue={setQuickAmountVND}
+                    placeholder="0"
+                    textAlign="left"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>📈 % Lợi nhuận:</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        height: 48,
+                        borderColor: '#C084FC',
+                        backgroundColor: '#FAF5FF',
+                        color: '#7E22CE',
+                        fontWeight: 'bold',
+                        fontSize: 16,
+                        textAlign: 'center',
+                        marginBottom: 0,
+                      },
+                    ]}
+                    placeholder="Ví dụ: 15"
+                    placeholderTextColor="#A855F7"
+                    value={quickProfitPercent}
+                    onChangeText={(txt) => setQuickProfitPercent(txt.replace(/[^0-9.]/g, ''))}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
+
+              {quickAmountVND > 0 && quickProfitPercent ? (
+                <View style={{ backgroundColor: '#FAF5FF', borderColor: '#E9D5FF', borderWidth: 1, borderRadius: 8, padding: 8, marginTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: '#6B21A8', fontWeight: '600' }}>💵 Tiền lãi ước tính ({quickProfitPercent}%):</Text>
+                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#7E22CE' }}>
+                    +{formatCurrency(Math.round(quickAmountVND * (parseFloat(quickProfitPercent) / 100)))}
+                  </Text>
+                </View>
+              ) : null}
 
               <Text style={[styles.label, { marginTop: 12 }]}>📝 Ghi chú bổ sung (tuỳ chọn):</Text>
               <TextInput
@@ -613,8 +679,16 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
         {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}
         {(activeTab === 'quick' ? quickAmountVND > 0 : cartItems.length > 0) && (
           <View style={styles.totalContainer}>
-            <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
-            <Text style={styles.totalValue}>{formatCurrency(activeTab === 'quick' ? quickAmountVND : cartTotal)}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
+              <Text style={styles.totalValue}>{formatCurrency(activeTab === 'quick' ? quickAmountVND : cartTotal)}</Text>
+            </View>
+            {activeTab === 'manual' && cartTotalCost > 0 && cartTotalProfit > 0 && (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginTop: 4 }}>
+                <Text style={{ fontSize: 12, color: '#0369A1', fontWeight: '600' }}>💰 Lợi nhuận ước tính ({cartProfitMargin}%):</Text>
+                <Text style={{ fontSize: 13, color: '#0369A1', fontWeight: 'bold' }}>+{formatCurrency(cartTotalProfit)}</Text>
+              </View>
+            )}
           </View>
         )}
 

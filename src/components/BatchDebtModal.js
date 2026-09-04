@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/BatchDebtModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect, useMemo } from 'react';
 import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
@@ -155,6 +155,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   const pinSetupRef = useRef(null);
   const popupRef = useRef(null);
   const mainScrollRef = useRef(null);
+  const bottomAnchorRef = useRef(null);
   const isSubmittingRef = useRef(false);
   const isLoadedCacheRef = useRef(false);
   // Counter tăng dần đảm bảo tempId/tempItemId luôn unique dù gọi liên tiếp trong cùng 1ms
@@ -290,21 +291,63 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     selectedCustomerId: null,
     // Dành cho Nợ Nhanh
     quickAmount: '',
+    quickProfitPercent: '',
     quickProductName: 'Tiền hàng',
     // Dành cho Nợ Chi Tiết (mặc định sẵn 3 dòng chọn loại thịt)
     items: [
-      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', unit: 'kg' },
-      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', unit: 'kg' },
-      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', unit: 'kg' },
+      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', costPrice: '', unit: 'kg' },
+      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', costPrice: '', unit: 'kg' },
+      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', costPrice: '', unit: 'kg' },
     ],
   });
+
+  // Helper cuộn xuống đáy danh sách đa nền tảng (Web & Native)
+  const scrollToBottom = (smooth = true) => {
+    try {
+      if (bottomAnchorRef.current?.scrollIntoView) {
+        bottomAnchorRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
+      }
+    } catch (_) {}
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        const node = mainScrollRef.current?.getScrollableNode?.() || mainScrollRef.current;
+        if (node) {
+          if (node.scrollTo) {
+            node.scrollTo({ top: 999999, behavior: smooth ? 'smooth' : 'auto' });
+          } else {
+            node.scrollTop = 999999;
+          }
+        }
+      } catch (_) {}
+    }
+
+    try {
+      mainScrollRef.current?.scrollTo({ y: 999999, animated: smooth });
+      mainScrollRef.current?.scrollToEnd({ animated: smooth });
+    } catch (_) {}
+  };
+
+  // Tự động cuộn xuống tận cùng khi chuyển sang tab Nợ chi tiết
+  useEffect(() => {
+    if (activeTab === 'detail' && visible) {
+      const t1 = setTimeout(() => scrollToBottom(true), 60);
+      const t2 = setTimeout(() => scrollToBottom(true), 180);
+      const t3 = setTimeout(() => scrollToBottom(true), 350);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [activeTab, visible]);
 
   // --- Các hàm thao tác trên hàng (rows) ---
   const handleAddRow = () => {
     setRows((prev) => [...prev, createEmptyRow()]);
     setTimeout(() => {
-      mainScrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+      scrollToBottom(true);
+    }, 80);
   };
 
   const handleRemoveRow = (tempId) => {
@@ -335,8 +378,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       })
     );
     setTimeout(() => {
-      mainScrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+      scrollToBottom(true);
+    }, 80);
   };
 
   // Xóa loại thịt khỏi dòng đơn nợ chi tiết
@@ -391,6 +434,26 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     validQuickRows.reduce((s, r) => s + getQuickRowTotal(r), 0) +
     validDetailRows.reduce((s, r) => s + getDetailRowTotal(r), 0);
   const validRowsCount = validQuickRows.length + validDetailRows.length;
+
+  // Lợi nhuận ước tính của đợt ghi nợ hàng loạt
+  const totalBatchProfit = useMemo(() => {
+    let profit = 0;
+    validDetailRows.forEach((r) => {
+      r.items.forEach((it) => {
+        if (it.productId) {
+          const q = parseFloat((it.quantity || '0').replace(',', '.')) || 0;
+          const p = parseNumberString(it.price);
+          const prod = products.find((prodItem) => prodItem.id === it.productId);
+          const cp = it.costPrice !== undefined && it.costPrice !== '' ? parseNumberString(it.costPrice) : (prod?.costPrice || 0);
+          const itAmt = it.amount !== undefined && it.amount !== null ? it.amount : Math.round(q * p);
+          if (cp > 0 && q > 0) {
+            profit += (itAmt - Math.round(q * cp));
+          }
+        }
+      });
+    });
+    return profit;
+  }, [validDetailRows, products]);
 
   // --- Kiểm tra PIN và Gửi dữ liệu ---
   const requirePin = async (action) => {
@@ -449,13 +512,15 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     try {
       // Tạo các promise cho NỢ NHANH
       const quickPromises = validQuick.map((row) => {
-        const amount = getQuickRowTotal(row);
+        const amount = parseNumberString(row.quickAmount);
+        const profitPercent = row.quickProfitPercent ? parseFloat(row.quickProfitPercent) : undefined;
         return api.post('/transactions', {
           customerId: row.selectedCustomerId,
           date: isoDate,
-          note: 'Ghi nợ nhanh hàng loạt',
+          note: 'Ghi nợ nhanh',
           source: 'BATCH_QUICK',
           isBatch: true,
+          profitPercent,
           items: [{ productName: 'Tiền hàng', quantity: 1, price: amount }],
         });
       });
@@ -468,6 +533,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
             productId: i.productId,
             quantity: parseFloat((i.quantity || '0').replace(',', '.')),
             price: parseNumberString(i.price),
+            costPrice: i.costPrice !== undefined && i.costPrice !== '' ? parseNumberString(i.costPrice) : undefined,
           }));
         return api.post('/transactions', {
           customerId: row.selectedCustomerId,
@@ -548,6 +614,9 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
               onPress={() => {
                 setActiveTab('detail');
                 setError('');
+                setTimeout(() => {
+                  scrollToBottom(true);
+                }, 80);
               }}
             >
               <Text style={[styles.segTabBtnText, activeTab === 'detail' && styles.segTabBtnTextActive]}>
@@ -591,9 +660,10 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
             /* ──────────────── TAB 1: NỢ NHANH ──────────────── */
             <View style={styles.quickTableContainer}>
               <View style={styles.tableHeaderRow}>
-                <Text style={[styles.thText, { flex: 2.2 }]}>Khách hàng nợ</Text>
-                <Text style={[styles.thText, { flex: 1.2, textAlign: 'right' }]}>Số tiền nợ (VNĐ)</Text>
-                <Text style={[styles.thText, { width: 32, textAlign: 'center' }]}></Text>
+                <Text style={[styles.thText, { flex: 2, marginRight: 8, minWidth: 0 }]}>Khách hàng nợ</Text>
+                <Text style={[styles.thText, { flex: 1.2, marginRight: 6, textAlign: 'right', minWidth: 0 }]}>Số tiền nợ (VNĐ)</Text>
+                <Text style={[styles.thText, { width: 68, marginRight: 6, textAlign: 'center' }]}>% Lãi</Text>
+                <Text style={[styles.thText, { width: 22, textAlign: 'center' }]}></Text>
               </View>
 
               {rows.map((row, index) => {
@@ -604,7 +674,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                 return (
                   <View key={row.tempId} style={[styles.quickTableRow, { zIndex: rowZIndex, elevation: rowZIndex }]}>
                     {/* Ô chọn khách hàng */}
-                    <View style={{ flex: 2.2, marginRight: 8 }}>
+                    <View style={{ flex: 2, marginRight: 8, minWidth: 0 }}>
                       <CustomSelect
                         value={selectedCust}
                         placeholder="Chọn khách hàng..."
@@ -622,7 +692,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                     </View>
 
                     {/* Ô nhập số tiền nợ */}
-                    <View style={{ flex: 1.2 }}>
+                    <View style={{ flex: 1.2, marginRight: 6, minWidth: 0 }}>
                       <MoneyInput
                         style={[
                           styles.tableMoneyInputContainer,
@@ -641,7 +711,23 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                       />
                     </View>
 
-                    {/* Nút Xóa Dòng (Nhỏ gọn tinh tế) */}
+                    {/* Ô nhập % lợi nhuận */}
+                    <View style={{ width: 68, marginRight: 6, flexShrink: 0 }}>
+                      <TextInput
+                        style={styles.profitPercentInput}
+                        placeholder="% Lãi"
+                        placeholderTextColor="#0284C7"
+                        value={row.quickProfitPercent !== undefined ? String(row.quickProfitPercent) : ''}
+                        onChangeText={(txt) => {
+                          const clean = txt.replace(/[^0-9.]/g, '');
+                          handleUpdateRow(row.tempId, { quickProfitPercent: clean });
+                        }}
+                        keyboardType="decimal-pad"
+                        textAlign="center"
+                      />
+                    </View>
+
+                    {/* Nút Xóa Dòng */}
                     <TouchableOpacity
                       style={styles.deleteRowBtnMini}
                       onPress={() => handleRemoveRow(row.tempId)}
@@ -726,9 +812,11 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                   onSelect={(prod) => {
                                     const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
                                     const pVal = prod.defaultPrice || 0;
+                                    const cVal = prod.costPrice || 0;
                                     handleUpdateRowItem(row.tempId, item.tempItemId, {
                                       productId: prod.id,
                                       price: formatNumberString(pVal),
+                                      costPrice: formatNumberString(cVal),
                                       unit: prod.unit || 'kg',
                                       amount: Math.round(qVal * pVal),
                                       autoFocus: false,
@@ -855,6 +943,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
             </View>
           )}
 
+          {/* Anchor điểm neo ở cuối ScrollView để scrollIntoView chuẩn xác */}
+          <View ref={bottomAnchorRef} style={{ height: 1 }} />
         </ScrollView>
 
         {/* Nút Thêm Khách Nợ Mới - GIỮ CỐ ĐỊNH PHÍA TRÊN FOOTER */}
@@ -869,6 +959,11 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
               Đã ghi: <Text style={styles.summaryCountBold}>{validRowsCount}</Text> khách
             </Text>
             <Text style={styles.summaryTotalText}>{formatCurrency(totalBatchAmount)}</Text>
+            {totalBatchProfit > 0 && (
+              <Text style={{ fontSize: 11, color: '#0369A1', fontWeight: 'bold', marginTop: 2 }}>
+                💰 Lãi dự tính: +{formatCurrency(totalBatchProfit)}
+              </Text>
+            )}
           </View>
 
           <View style={styles.footerActionsRow}>
@@ -1107,10 +1202,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 6,
   },
-  deleteRowBtnMiniText: {
-    fontSize: 11,
+  profitPercentInput: {
+    height: 34,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#7DD3FC',
+    backgroundColor: '#F0F9FF',
+    color: '#0369A1',
+    fontSize: 13,
     fontWeight: 'bold',
-    color: '#EF4444',
+    paddingHorizontal: 4,
   },
 
   /* TAB 2: NỢ CHI TIẾT STYLES */
