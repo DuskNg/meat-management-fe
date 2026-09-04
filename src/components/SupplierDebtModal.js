@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/SupplierDebtModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
 import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
@@ -17,14 +17,25 @@ import SmoothModal from './SmoothModal';
 // Modal để ghi nợ mới (chủ sạp nợ nhà cung cấp khi nhập hàng)
 const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
+  const [currentSupplier, setCurrentSupplier] = useState(supplier);
   const [amountVND, setAmountVND] = useState(0);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const isSubmittingRef = useRef(false);
 
+  // Đồng bộ nhà cung cấp khi prop supplier thay đổi
+  useEffect(() => {
+    if (supplier) {
+      setCurrentSupplier(supplier);
+    }
+  }, [supplier]);
+
   useImperativeHandle(ref, () => ({
-    open: () => {
+    open: (targetSupplier) => {
+      if (targetSupplier) {
+        setCurrentSupplier(targetSupplier);
+      }
       setVisible(true);
       setAmountVND(0);
       setNote('');
@@ -55,8 +66,10 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
       setError('Số tiền hàng nhập không được để trống và phải lớn hơn 0.');
       return;
     }
-    if (debtAmount <= 0) {
-      setError('Số tiền hàng nhập phải lớn hơn 0.');
+
+    const activeSupplier = currentSupplier || supplier;
+    if (!activeSupplier?.id) {
+      setError('Không tìm thấy thông tin nhà cung cấp.');
       return;
     }
 
@@ -65,7 +78,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
     isSubmittingRef.current = true;
     try {
       const response = await api.post('/suppliers/transactions', {
-        supplierId: supplier?.id,
+        supplierId: activeSupplier.id,
         totalAmount: debtAmount,
         note: note.trim() || null,
         date: new Date(),
@@ -89,7 +102,9 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <Text style={styles.modalTitle}>📥 GHI NHẬN NHẬP HÀNG (GHI NỢ)</Text>
-        <Text style={styles.supplierName}>Nhà cung cấp: {supplier?.name}</Text>
+        <Text style={styles.supplierName}>
+          Nhà cung cấp: {currentSupplier?.name || supplier?.name || ''}
+        </Text>
 
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 

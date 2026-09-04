@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/SupplierPaymentModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
 import MoneyInput from './MoneyInput';
 import {
   StyleSheet,
@@ -17,14 +17,25 @@ import SmoothModal from './SmoothModal';
 // Modal ghi nhận việc chủ sạp trả tiền hàng cho nhà cung cấp
 const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
+  const [currentSupplier, setCurrentSupplier] = useState(supplier);
   const [amountVND, setAmountVND] = useState(0);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const isSubmittingRef = useRef(false);
 
+  // Đồng bộ nhà cung cấp khi prop supplier thay đổi
+  useEffect(() => {
+    if (supplier) {
+      setCurrentSupplier(supplier);
+    }
+  }, [supplier]);
+
   useImperativeHandle(ref, () => ({
-    open: (defaultAmount = '') => {
+    open: (defaultAmount = '', targetSupplier) => {
+      if (targetSupplier) {
+        setCurrentSupplier(targetSupplier);
+      }
       setVisible(true);
       const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
       setAmountVND(numericAmount);
@@ -56,12 +67,18 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
       return;
     }
 
+    const activeSupplier = currentSupplier || supplier;
+    if (!activeSupplier?.id) {
+      setError('Không tìm thấy thông tin nhà cung cấp.');
+      return;
+    }
+
     setError('');
     setLoading(true);
     isSubmittingRef.current = true;
     try {
       const response = await api.post('/suppliers/payments', {
-        supplierId: supplier?.id,
+        supplierId: activeSupplier.id,
         amount: payAmount,
         note: note.trim() || null,
         paidAt: new Date(),
@@ -85,7 +102,9 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <Text style={styles.modalTitle}>💵 GHI NHẬN TRẢ TIỀN HÀNG</Text>
-        <Text style={styles.supplierName}>Nhà cung cấp: {supplier?.name}</Text>
+        <Text style={styles.supplierName}>
+          Nhà cung cấp: {currentSupplier?.name || supplier?.name || ''}
+        </Text>
 
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 

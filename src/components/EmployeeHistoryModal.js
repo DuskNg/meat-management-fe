@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/EmployeeHistoryModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,37 +15,73 @@ import SmoothModal from './SmoothModal';
 // Modal xem lịch sử tổng hợp của nhân viên
 const EmployeeHistoryModal = forwardRef(({ employee }, ref) => {
   const [visible, setVisible] = useState(false);
+  const [currentEmployee, setCurrentEmployee] = useState(employee);
   const [activeTab, setActiveTab] = useState('ATTENDANCE'); // 'ATTENDANCE', 'ADVANCE', 'PAYMENT'
   const [historyData, setHistoryData] = useState({ attendances: [], advances: [], payments: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const activeEmployeeIdRef = useRef(null);
+
+  // Đồng bộ thông tin nhân viên khi prop employee thay đổi
+  useEffect(() => {
+    if (employee) {
+      setCurrentEmployee(employee);
+    }
+  }, [employee]);
 
   useImperativeHandle(ref, () => ({
-    open: () => {
+    open: (targetEmployee) => {
+      const activeEmp = targetEmployee || employee || currentEmployee;
+      if (activeEmp) {
+        setCurrentEmployee(activeEmp);
+      }
+      setHistoryData({ attendances: [], advances: [], payments: [] });
+      setError('');
       setVisible(true);
       setActiveTab('ATTENDANCE');
-      fetchHistory();
+
+      if (activeEmp?.id) {
+        fetchHistory(activeEmp.id);
+      }
     },
     close: () => {
       setVisible(false);
     },
+    refresh: () => {
+      const activeId = currentEmployee?.id || employee?.id;
+      if (activeId) {
+        fetchHistory(activeId);
+      }
+    },
   }));
 
-  const fetchHistory = async () => {
-    if (!employee?.id) return;
+  const fetchHistory = async (employeeId) => {
+    const id = employeeId || currentEmployee?.id || employee?.id;
+    if (!id) {
+      setLoading(false);
+      return;
+    }
+
+    activeEmployeeIdRef.current = id;
     setLoading(true);
     setError('');
     try {
-      const response = await api.get(`/employees/${employee.id}/history`);
-      if (response.data.success) {
-        setHistoryData(response.data.data);
-      } else {
-        setError(response.data.message || 'Không thể tải lịch sử nhân viên.');
+      const response = await api.get(`/employees/${id}/history`);
+      if (activeEmployeeIdRef.current === id) {
+        if (response.data?.success) {
+          setHistoryData(response.data.data);
+        } else {
+          setError(response.data?.message || 'Không thể tải lịch sử nhân viên.');
+        }
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Lỗi kết nối máy chủ.');
+      if (activeEmployeeIdRef.current === id) {
+        setError(err.response?.data?.message || 'Lỗi kết nối máy chủ.');
+      }
     } finally {
-      setLoading(false);
+      if (activeEmployeeIdRef.current === id) {
+        setLoading(false);
+      }
     }
   };
 
@@ -122,7 +158,9 @@ const EmployeeHistoryModal = forwardRef(({ employee }, ref) => {
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <Text style={styles.modalTitle}>👁️ LỊCH SỬ NHÂN VIÊN</Text>
-        <Text style={styles.employeeName}>Nhân viên: {employee?.name}</Text>
+        <Text style={styles.employeeName}>
+          Nhân viên: {currentEmployee?.name || employee?.name || ''}
+        </Text>
 
         {/* Cụm Tabs */}
         <View style={styles.tabContainer}>

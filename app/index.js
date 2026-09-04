@@ -1269,7 +1269,7 @@ export default function DashboardScreen() {
                 style={styles.viewDebtBtn}
                 onPress={() => {
                   setSelectedSupplier(item);
-                  supplierHistoryModalRef.current?.open();
+                  supplierHistoryModalRef.current?.open(item);
                 }}
                 activeOpacity={0.6}
               >
@@ -1281,7 +1281,7 @@ export default function DashboardScreen() {
                 style={styles.addDebtBtn}
                 onPress={() => {
                   setSelectedSupplier(item);
-                  supplierDebtModalRef.current?.open();
+                  supplierDebtModalRef.current?.open(item);
                 }}
                 activeOpacity={0.6}
               >
@@ -1296,7 +1296,7 @@ export default function DashboardScreen() {
                 ]}
                 onPress={() => {
                   setSelectedSupplier(item);
-                  supplierPaymentModalRef.current?.open(item.debt || '');
+                  supplierPaymentModalRef.current?.open(item.debt || '', item);
                 }}
                 activeOpacity={0.6}
                 disabled={!hasDebt}
@@ -1415,7 +1415,7 @@ export default function DashboardScreen() {
                 style={styles.viewDebtBtn}
                 onPress={() => {
                   setSelectedEmployee(item);
-                  employeeHistoryModalRef.current?.open();
+                  employeeHistoryModalRef.current?.open(item);
                 }}
                 activeOpacity={0.6}
               >
