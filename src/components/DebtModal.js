@@ -220,6 +220,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setErrorField('product');
       return;
     }
+    const cleanQty = (currentQuantity || '').trim().replace(',', '.');
     const q = parseFloat(cleanQty);
     if (isNaN(q) || q <= 0) {
       setError('Khối lượng phải lớn hơn 0 (Ví dụ: 1.5 hoặc 1,5).');
@@ -642,14 +643,14 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                   {/* Xem trước thành tiền & lãi mặt hàng đang nhập */}
                   {displayCurrentSubtotal > 0 && (
                     <View style={styles.previewRow}>
-                      <View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.previewLabel}>Thành tiền:</Text>
                         <Text style={styles.previewValue}>
                           {formatCurrency(displayCurrentSubtotal)}
                         </Text>
                       </View>
                       {displayCurrentCost > 0 && displayCurrentProfit > 0 && (
-                        <View style={{ alignItems: 'flex-end' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Text style={[styles.previewLabel, { color: '#0369A1' }]}>Lãi dự tính:</Text>
                           <Text style={[styles.previewValue, { color: '#0369A1', fontWeight: 'bold' }]}>
                             +{formatCurrency(displayCurrentProfit)} ({displayCurrentMargin}%)
@@ -1232,6 +1233,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     marginBottom: 8,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   previewLabel: {
     fontSize: FONTS.caption,

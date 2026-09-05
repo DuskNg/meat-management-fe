@@ -147,6 +147,8 @@ const DatePickerInput = ({
   minDate = null,
   maxDate = null,
   compact = false, // Thêm prop compact
+  dense = false, // Chế độ thu gọn chiều cao tối đa cho modal
+  style, // Custom style cho container
 }) => {
   // Tự động inject CSS cho Web để dãn rộng vùng click của bộ chọn ngày
   if (Platform.OS === 'web') {
@@ -220,9 +222,11 @@ const DatePickerInput = ({
       <TouchableOpacity
         style={[
           styles.container,
+          dense && styles.containerDense,
           compact && styles.containerCompact,
           disabled && styles.containerDisabled,
-          (pressed || showPicker || showCustomPicker) && !disabled && styles.containerFocused
+          (pressed || showPicker || showCustomPicker) && !disabled && styles.containerFocused,
+          style,
         ]}
         onPress={handlePressInput}
         onPressIn={() => !disabled && setPressed(true)}
@@ -232,15 +236,19 @@ const DatePickerInput = ({
       >
         {/* Icon lịch bên trái */}
         {!compact && (
-          <View style={styles.iconWrapper}>
-            <Text style={styles.icon}>📅</Text>
+          <View style={[styles.iconWrapper, dense && styles.iconWrapperDense]}>
+            <Text style={[styles.icon, dense && styles.iconDense]}>📅</Text>
           </View>
         )}
 
         {/* Phần nội dung ngày */}
         <View style={[styles.dateContent, compact && styles.dateContentCompact]}>
-          {!compact && <Text style={styles.weekdayText}>{weekday}</Text>}
-          <Text style={[styles.dateDisplayText, compact && styles.dateDisplayTextCompact]}>
+          {!compact && <Text style={[styles.weekdayText, dense && styles.weekdayTextDense]}>{weekday}</Text>}
+          <Text style={[
+            styles.dateDisplayText,
+            compact && styles.dateDisplayTextCompact,
+            dense && styles.dateDisplayTextDense
+          ]}>
             {value || formatDateToDisplay(new Date())}
           </Text>
         </View>
@@ -248,12 +256,12 @@ const DatePickerInput = ({
         {/* Nhãn "Đổi ngày" / "Cố định" */}
         {!compact && (
           disabled ? (
-            <View style={[styles.changeTag, styles.disabledTag]}>
-              <Text style={[styles.changeTagText, styles.disabledTagText]}>Cố định 🔒</Text>
+            <View style={[styles.changeTag, styles.disabledTag, dense && styles.changeTagDense]}>
+              <Text style={[styles.changeTagText, styles.disabledTagText, dense && styles.changeTagTextDense]}>Cố định 🔒</Text>
             </View>
           ) : (
-            <View style={styles.changeTag}>
-              <Text style={styles.changeTagText}>Đổi ngày</Text>
+            <View style={[styles.changeTag, dense && styles.changeTagDense]}>
+              <Text style={[styles.changeTagText, dense && styles.changeTagTextDense]}>Đổi ngày</Text>
             </View>
           )
         )}
@@ -580,5 +588,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: COLORS.text,
+  },
+  // Chế độ dense (thu gọn chiều cao vừa phải, thông thoáng, giữ đầy đủ thông tin)
+  containerDense: {
+    height: 40,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    marginBottom: 0,
+  },
+  iconWrapperDense: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  iconDense: {
+    fontSize: 14,
+  },
+  weekdayTextDense: {
+    fontSize: 10.5,
+    lineHeight: 13,
+  },
+  dateDisplayTextDense: {
+    fontSize: 13.5,
+    lineHeight: 17,
+  },
+  changeTagDense: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+  },
+  changeTagTextDense: {
+    fontSize: 10.5,
   },
 });

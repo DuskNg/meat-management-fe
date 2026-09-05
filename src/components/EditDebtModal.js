@@ -636,10 +636,12 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
                   {/* Xem trước thành tiền mặt hàng đang nhập */}
                   {displayCurrentSubtotal > 0 && (
                     <View style={styles.previewRow}>
-                      <Text style={styles.previewLabel}>Thành tiền mặt hàng này:</Text>
-                      <Text style={styles.previewValue}>
-                        {formatCurrency(displayCurrentSubtotal)}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.previewLabel}>Thành tiền:</Text>
+                        <Text style={styles.previewValue}>
+                          {formatCurrency(displayCurrentSubtotal)}
+                        </Text>
+                      </View>
                     </View>
                   )}
 
@@ -1022,6 +1024,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     marginBottom: 8,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   previewLabel: {
     fontSize: FONTS.caption,

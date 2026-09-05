@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/EmployeeDailyDebtModal.js
-import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -13,6 +13,82 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import PopupModal from './PopupModal';
 import DatePickerInput from './DatePickerInput';
+
+// Bảng màu đa dạng, tương phản cao, dễ phân biệt cho các nhóm khách hàng có đơn nợ trùng lặp
+const DUPLICATE_COLOR_PALETTES = [
+  {
+    // Nhóm 1: Vàng tươi / Hoàng yến (Yellow / Gold)
+    cardBg: '#FEFCE8',
+    borderColor: '#FEF08A',
+    borderLeftColor: '#EAB308',
+    badgeBg: '#FEF08A',
+    badgeBorder: '#EAB308',
+    badgeText: '#854D0E',
+  },
+  {
+    // Nhóm 2: Xanh dương tươi (Electric Blue)
+    cardBg: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderLeftColor: '#2563EB',
+    badgeBg: '#DBEAFE',
+    badgeBorder: '#2563EB',
+    badgeText: '#1D4ED8',
+  },
+  {
+    // Nhóm 3: Hồng cánh sen (Hot Pink / Magenta)
+    cardBg: '#FDF2F8',
+    borderColor: '#FBCFE8',
+    borderLeftColor: '#EC4899',
+    badgeBg: '#FCE7F3',
+    badgeBorder: '#EC4899',
+    badgeText: '#BE185D',
+  },
+  {
+    // Nhóm 4: Xanh ngọc biển (Cyan / Turquoise)
+    cardBg: '#ECFEFF',
+    borderColor: '#A5F3FC',
+    borderLeftColor: '#06B6D4',
+    badgeBg: '#CFFAFE',
+    badgeBorder: '#06B6D4',
+    badgeText: '#0E7490',
+  },
+  {
+    // Nhóm 5: Nâu đất sẫm (Chocolate Brown)
+    cardBg: '#FAF5EF',
+    borderColor: '#D7CCC8',
+    borderLeftColor: '#6D4C41',
+    badgeBg: '#EFEBE9',
+    badgeBorder: '#6D4C41',
+    badgeText: '#4E342E',
+  },
+  {
+    // Nhóm 6: Xanh chàm đậm (Deep Indigo)
+    cardBg: '#EEF2FF',
+    borderColor: '#C7D2FE',
+    borderLeftColor: '#4F46E5',
+    badgeBg: '#E0E7FF',
+    badgeBorder: '#4F46E5',
+    badgeText: '#3730A3',
+  },
+  {
+    // Nhóm 7: Xám than chì (Charcoal / Slate)
+    cardBg: '#F8FAFC',
+    borderColor: '#CBD5E1',
+    borderLeftColor: '#334155',
+    badgeBg: '#E2E8F0',
+    badgeBorder: '#334155',
+    badgeText: '#0F172A',
+  },
+  {
+    // Nhóm 8: Xanh chanh tươi (Lime Green)
+    cardBg: '#F7FEE7',
+    borderColor: '#D9F99D',
+    borderLeftColor: '#65A30D',
+    badgeBg: '#ECFCCB',
+    badgeBorder: '#65A30D',
+    badgeText: '#3F6212',
+  },
+];
 
 /**
  * Modal hiển thị danh sách đơn ghi nợ do nhân viên này tạo trong ngày hôm nay.
@@ -105,6 +181,57 @@ const EmployeeDailyDebtModal = forwardRef(({ onRefresh, onEditTransaction, popup
     const d = new Date(dateStr);
     return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
   };
+
+  // Đếm số đơn nợ của từng khách hàng trong ngày để phát hiện trùng đơn
+  const customerDebtCounts = useMemo(() => {
+    const counts = {};
+    transactions.forEach(t => {
+      const key = t.customerId ? String(t.customerId) : (t.customer?.name || 'unknown');
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [transactions]);
+
+  // Bản đồ gán màu riêng biệt cho từng khách hàng có trùng đơn (cùng 1 khách cùng 1 màu)
+  const duplicateCustomerIndexMap = useMemo(() => {
+    const map = {};
+    let idx = 0;
+    const uniqueKeys = [];
+    Object.keys(customerDebtCounts).forEach(key => {
+      if ((customerDebtCounts[key] || 0) >= 2) {
+        uniqueKeys.push(key);
+      }
+    });
+    uniqueKeys.sort();
+    uniqueKeys.forEach(key => {
+      map[key] = idx % DUPLICATE_COLOR_PALETTES.length;
+      idx++;
+    });
+    return map;
+  }, [customerDebtCounts]);
+
+  const getDuplicatePalette = (key) => {
+    const colorIdx = duplicateCustomerIndexMap[key] ?? 0;
+    return DUPLICATE_COLOR_PALETTES[colorIdx % DUPLICATE_COLOR_PALETTES.length];
+  };
+
+  // Sắp xếp các đơn trùng của cùng một khách hàng nằm gần nhau
+  const sortedTransactions = useMemo(() => {
+    return [...transactions].sort((a, b) => {
+      const keyA = a.customerId ? String(a.customerId) : (a.customer?.name || '');
+      const keyB = b.customerId ? String(b.customerId) : (b.customer?.name || '');
+      const isDupA = (customerDebtCounts[keyA] || 0) >= 2;
+      const isDupB = (customerDebtCounts[keyB] || 0) >= 2;
+      // Ưu tiên các đơn trùng lên đầu để nhân viên dễ thấy
+      if (isDupA !== isDupB) {
+        return isDupA ? -1 : 1;
+      }
+      if (isDupA && isDupB && keyA !== keyB) {
+        return keyA.localeCompare(keyB, 'vi');
+      }
+      return new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date);
+    });
+  }, [transactions, customerDebtCounts]);
 
   const handleEdit = (transaction) => {
     // Không đóng modal danh sách ghi nợ hôm nay khi mở modal sửa, để khi tắt modal sửa thì danh sách vẫn hiển thị
@@ -204,15 +331,53 @@ const EmployeeDailyDebtModal = forwardRef(({ onRefresh, onEditTransaction, popup
             </View>
           ) : (
             <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-              {transactions.map((t) => (
-                <View key={t.id} style={styles.card}>
-                  {/* Dòng trên: tên khách + thời gian */}
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.customerName} numberOfLines={1}>
-                      👤 {t.customer?.name || 'Khách hàng'}
-                    </Text>
-                    <Text style={styles.timeText}>{formatTime(t.createdAt || t.date)}</Text>
-                  </View>
+              {sortedTransactions.map((t) => {
+                const key = t.customerId ? String(t.customerId) : (t.customer?.name || 'unknown');
+                const isDuplicate = (customerDebtCounts[key] || 0) >= 2;
+                const dupCount = customerDebtCounts[key] || 0;
+                const palette = isDuplicate ? getDuplicatePalette(key) : null;
+
+                return (
+                  <View
+                    key={t.id}
+                    style={[
+                      styles.card,
+                      isDuplicate && [
+                        styles.cardDuplicate,
+                        {
+                          backgroundColor: palette.cardBg,
+                          borderColor: palette.borderColor,
+                          borderLeftColor: palette.borderLeftColor,
+                        }
+                      ]
+                    ]}
+                  >
+                    {/* Dòng trên: tên khách + thời gian */}
+                    <View style={styles.cardHeader}>
+                      <View style={styles.customerNameRow}>
+                        <Text style={styles.customerName} numberOfLines={1}>
+                          👤 {t.customer?.name || 'Khách hàng'}
+                        </Text>
+                        {isDuplicate && (
+                          <View style={[
+                            styles.duplicateTag,
+                            {
+                              backgroundColor: palette.badgeBg,
+                              borderColor: palette.badgeBorder,
+                            }
+                          ]}>
+                            <Text style={[styles.duplicateTagText, { color: palette.badgeText }]}>
+                              ⚠️ Trùng ({dupCount})
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.timeText}>
+                        {t.updatedAt && t.createdAt && (new Date(t.updatedAt).getTime() - new Date(t.createdAt).getTime() > 1000)
+                          ? `🕒 Cập nhật: ${formatTime(t.updatedAt)}`
+                          : `🕒 ${formatTime(t.createdAt || t.date)}`}
+                      </Text>
+                    </View>
 
                   {/* Danh sách mặt hàng */}
                   {(t.items || []).map((item, idx) => (
@@ -254,7 +419,8 @@ const EmployeeDailyDebtModal = forwardRef(({ onRefresh, onEditTransaction, popup
                     </View>
                   </View>
                 </View>
-              ))}
+              );
+            })}
             </ScrollView>
           )}
 
@@ -366,17 +532,42 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...SHADOWS.card,
   },
+  cardDuplicate: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
   },
+  customerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    marginRight: 6,
+  },
   customerName: {
     fontSize: 14,
     fontWeight: 'bold',
     color: COLORS.text,
-    flex: 1,
+  },
+  duplicateTag: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  duplicateTagText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#B45309',
   },
   timeText: {
     fontSize: 12,

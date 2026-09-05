@@ -17,6 +17,115 @@ import DatePickerInput from './DatePickerInput';
 import PopupModal from './PopupModal';
 import { matchSearch } from '../utils/searchHelper';
 
+// Bảng màu đa dạng, tương phản cao, dễ phân biệt cho các nhóm khách hàng trùng đơn
+// Mỗi khách hàng 1 màu riêng biệt, màu sắc phân bố đều trên vòng tròn màu sắc để tránh bị na ná nhau
+const DUPLICATE_COLOR_PALETTES = [
+  {
+    // Nhóm 1: Vàng tươi / Hoàng yến (Yellow / Gold)
+    cardBg: '#FEFCE8',
+    borderColor: '#FEF08A',
+    borderLeftColor: '#EAB308',
+    badgeBg: '#FEF08A',
+    badgeBorder: '#EAB308',
+    badgeText: '#854D0E',
+    canvasBgEven: '#FEF9C3',
+    canvasBgOdd: '#FEF08A',
+    canvasStroke: '#EAB308',
+    canvasText: '#713F12',
+  },
+  {
+    // Nhóm 2: Xanh dương tươi (Electric Blue)
+    cardBg: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderLeftColor: '#2563EB',
+    badgeBg: '#DBEAFE',
+    badgeBorder: '#2563EB',
+    badgeText: '#1D4ED8',
+    canvasBgEven: '#DBEAFE',
+    canvasBgOdd: '#BFDBFE',
+    canvasStroke: '#2563EB',
+    canvasText: '#1E40AF',
+  },
+  {
+    // Nhóm 3: Hồng cánh sen (Hot Pink / Magenta)
+    cardBg: '#FDF2F8',
+    borderColor: '#FBCFE8',
+    borderLeftColor: '#EC4899',
+    badgeBg: '#FCE7F3',
+    badgeBorder: '#EC4899',
+    badgeText: '#BE185D',
+    canvasBgEven: '#FCE7F3',
+    canvasBgOdd: '#FBCFE8',
+    canvasStroke: '#EC4899',
+    canvasText: '#9D174D',
+  },
+  {
+    // Nhóm 4: Xanh ngọc biển (Cyan / Turquoise)
+    cardBg: '#ECFEFF',
+    borderColor: '#A5F3FC',
+    borderLeftColor: '#06B6D4',
+    badgeBg: '#CFFAFE',
+    badgeBorder: '#06B6D4',
+    badgeText: '#0E7490',
+    canvasBgEven: '#CFFAFE',
+    canvasBgOdd: '#A5F3FC',
+    canvasStroke: '#06B6D4',
+    canvasText: '#155E75',
+  },
+  {
+    // Nhóm 5: Nâu đất sẫm (Chocolate Brown)
+    cardBg: '#FAF5EF',
+    borderColor: '#D7CCC8',
+    borderLeftColor: '#6D4C41',
+    badgeBg: '#EFEBE9',
+    badgeBorder: '#6D4C41',
+    badgeText: '#4E342E',
+    canvasBgEven: '#EFEBE9',
+    canvasBgOdd: '#D7CCC8',
+    canvasStroke: '#6D4C41',
+    canvasText: '#3E2723',
+  },
+  {
+    // Nhóm 6: Xanh chàm đậm (Deep Indigo)
+    cardBg: '#EEF2FF',
+    borderColor: '#C7D2FE',
+    borderLeftColor: '#4F46E5',
+    badgeBg: '#E0E7FF',
+    badgeBorder: '#4F46E5',
+    badgeText: '#3730A3',
+    canvasBgEven: '#E0E7FF',
+    canvasBgOdd: '#C7D2FE',
+    canvasStroke: '#4F46E5',
+    canvasText: '#312E81',
+  },
+  {
+    // Nhóm 7: Xám than chì (Charcoal / Slate)
+    cardBg: '#F8FAFC',
+    borderColor: '#CBD5E1',
+    borderLeftColor: '#334155',
+    badgeBg: '#E2E8F0',
+    badgeBorder: '#334155',
+    badgeText: '#0F172A',
+    canvasBgEven: '#F1F5F9',
+    canvasBgOdd: '#E2E8F0',
+    canvasStroke: '#334155',
+    canvasText: '#0F172A',
+  },
+  {
+    // Nhóm 8: Xanh chanh tươi (Lime Green)
+    cardBg: '#F7FEE7',
+    borderColor: '#D9F99D',
+    borderLeftColor: '#65A30D',
+    badgeBg: '#ECFCCB',
+    badgeBorder: '#65A30D',
+    badgeText: '#3F6212',
+    canvasBgEven: '#ECFCCB',
+    canvasBgOdd: '#D9F99D',
+    canvasStroke: '#65A30D',
+    canvasText: '#365314',
+  },
+];
+
 const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransaction, onEditPayment }, ref) => {
   const popupModalRef = useRef(null);
   const [visible, setVisible] = useState(false);
@@ -154,6 +263,29 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     const isDebt = item.type === 'debt';
     if (isDebt) return 'debt';
     return 'payment';
+  };
+
+  // Helper lấy chuỗi thời gian cập nhật/tạo đơn trong ngày
+  const formatItemTime = (item) => {
+    if (!item) return '';
+    const updatedAt = item.updatedAt || item.rawObj?.updatedAt;
+    const createdAt = item.createdAt || item.rawObj?.createdAt || item.time;
+    const isEdited = getItemStatus(item) === 'edited';
+
+    const formatT = (dateStr) => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return `${h}:${m}`;
+    };
+
+    if (isEdited && createdAt && updatedAt && formatT(createdAt) !== formatT(updatedAt)) {
+      return `Cập nhật: ${formatT(updatedAt)} (Tạo: ${formatT(createdAt)})`;
+    }
+    const t = updatedAt || createdAt;
+    return t ? `Cập nhật: ${formatT(t)}` : '';
   };
 
   // Thứ tự ưu tiên hiển thị: 1. Đã sửa -> 2. Trả hàng -> 3. Thu nợ -> 4. Đơn nợ mới
@@ -356,6 +488,165 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     });
   }, [currentTransactions, currentPayments]);
 
+  // Helper lấy khóa định danh khách hàng chuẩn hóa (ưu tiên tên khách hàng để gom chính xác)
+  const getCustomerKey = (item) => {
+    if (!item) return 'khach_an_danh';
+    const name = item.customer?.name || item.customerName || (item.customerId ? String(item.customerId) : 'khach_an_danh');
+    return name.trim().toLowerCase();
+  };
+
+  // Đếm số lần phát sinh đơn nợ của từng khách hàng trong ngày được chọn
+  const customerDebtCountMap = useMemo(() => {
+    const counts = {};
+    currentTransactions.forEach(t => {
+      const key = getCustomerKey(t);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [currentTransactions]);
+
+  // Helper kiểm tra xem một giao dịch nợ có phải là đơn nợ trùng không (khách có >= 2 đơn nợ trong ngày)
+  const isItemDuplicateDebt = (item) => {
+    if (!item || item.type !== 'debt') return false;
+    const key = getCustomerKey(item);
+    return (customerDebtCountMap[key] || 0) >= 2;
+  };
+
+  // Helper lấy số lượng đơn nợ của khách hàng của đơn này trong ngày
+  const getItemDebtCount = (item) => {
+    if (!item || item.type !== 'debt') return 0;
+    const key = getCustomerKey(item);
+    return customerDebtCountMap[key] || 0;
+  };
+
+  // Danh sách các đơn nợ bị trùng trong ngày
+  const duplicateDebtItems = useMemo(() => {
+    return timelineItems.filter(item => isItemDuplicateDebt(item));
+  }, [timelineItems, customerDebtCountMap]);
+
+  // Số lượng khách hàng có đơn nợ bị trùng trong ngày
+  const duplicateCustomerCount = useMemo(() => {
+    const customerKeys = new Set();
+    duplicateDebtItems.forEach(item => {
+      const key = getCustomerKey(item);
+      customerKeys.add(key);
+    });
+    return customerKeys.size;
+  }, [duplicateDebtItems]);
+
+  // Bản đồ gán màu riêng biệt cho từng khách hàng có trùng đơn (để cùng 1 khách luôn có cùng 1 màu)
+  const duplicateCustomerIndexMap = useMemo(() => {
+    const map = {};
+    let idx = 0;
+    const uniqueKeys = [];
+    Object.keys(customerDebtCountMap).forEach(key => {
+      if ((customerDebtCountMap[key] || 0) >= 2) {
+        uniqueKeys.push(key);
+      }
+    });
+    // Sắp xếp thứ tự tên khách để màu không bị nhảy ngẫu nhiên khi lọc hoặc xóa
+    uniqueKeys.sort();
+    uniqueKeys.forEach(key => {
+      map[key] = idx % DUPLICATE_COLOR_PALETTES.length;
+      idx++;
+    });
+    return map;
+  }, [customerDebtCountMap]);
+
+  // Helper lấy bảng màu cho item đơn trùng theo từng khách hàng
+  const getDuplicatePalette = (item) => {
+    if (!item || item.type !== 'debt') return DUPLICATE_COLOR_PALETTES[0];
+    const key = getCustomerKey(item);
+    const colorIdx = duplicateCustomerIndexMap[key] ?? 0;
+    return DUPLICATE_COLOR_PALETTES[colorIdx % DUPLICATE_COLOR_PALETTES.length];
+  };
+
+  // Helper lấy thứ tự đơn trùng của khách hàng trong ngày (Ví dụ: Đơn 1/2, Đơn 2/2)
+  const getItemDebtSequence = (item) => {
+    if (!item || item.type !== 'debt') return '';
+    const key = getCustomerKey(item);
+    const count = customerDebtCountMap[key] || 0;
+    if (count < 2) return '';
+    const custItems = currentTransactions
+      .filter(t => getCustomerKey(t) === key)
+      .slice()
+      .sort((a, b) => {
+        const timeA = new Date(a.date || a.createdAt || 0).getTime();
+        const timeB = new Date(b.date || b.createdAt || 0).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+        return String(a.id).localeCompare(String(b.id));
+      });
+    const idx = custItems.findIndex(t => t.id === item.id);
+    if (idx !== -1) {
+      return `Đơn ${idx + 1}/${count}`;
+    }
+    return `Trùng (${count})`;
+  };
+
+  // Helper sắp xếp danh sách giao dịch trong ngày:
+  // - Gom các đơn nợ trùng của cùng 1 khách hàng lại liền kề nhau
+  // - Trong cùng 1 khách hàng: xếp thứ tự từ Đơn 1/2 rồi tới Đơn 2/2
+  // - Giữa các nhóm khách hàng khác nhau: xếp theo độ ưu tiên trạng thái và thời gian mới nhất của nhóm
+  const sortDailyTimelineItems = (items) => {
+    if (!items || items.length === 0) return [];
+
+    const getItemTime = (item) => new Date(item.time || item.createdAt || item.date || 0).getTime();
+
+    // 1. Phân nhóm và tính toán thời gian mới nhất + độ ưu tiên tốt nhất của từng nhóm
+    const groupLatestTime = {};
+    const groupPriority = {};
+
+    items.forEach(item => {
+      const isDup = isItemDuplicateDebt(item);
+      const groupKey = isDup ? `dup:${getCustomerKey(item)}` : `single:${item.id}`;
+      const t = getItemTime(item);
+      const p = STATUS_PRIORITY[getItemStatus(item)] || 99;
+
+      if (!groupLatestTime[groupKey] || t > groupLatestTime[groupKey]) {
+        groupLatestTime[groupKey] = t;
+      }
+      if (!groupPriority[groupKey] || p < groupPriority[groupKey]) {
+        groupPriority[groupKey] = p;
+      }
+    });
+
+    // 2. Sắp xếp danh sách
+    return [...items].sort((a, b) => {
+      const isDupA = isItemDuplicateDebt(a);
+      const isDupB = isItemDuplicateDebt(b);
+      const keyA = getCustomerKey(a);
+      const keyB = getCustomerKey(b);
+      const groupA = isDupA ? `dup:${keyA}` : `single:${a.id}`;
+      const groupB = isDupB ? `dup:${keyB}` : `single:${b.id}`;
+
+      // Khác nhóm: xếp theo độ ưu tiên trạng thái rồi tới thời gian mới nhất của nhóm đó
+      if (groupA !== groupB) {
+        const priorityA = groupPriority[groupA] || 99;
+        const priorityB = groupPriority[groupB] || 99;
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+
+        const timeGroupA = groupLatestTime[groupA] || 0;
+        const timeGroupB = groupLatestTime[groupB] || 0;
+        if (timeGroupA !== timeGroupB) {
+          return timeGroupB - timeGroupA; // Nhóm có giao dịch mới hơn xếp trước
+        }
+
+        return groupA.localeCompare(groupB);
+      }
+
+      // Cùng nhóm (cùng một khách hàng có đơn nợ trùng):
+      // Xếp theo thời gian tăng dần: đơn cũ trước (Đơn 1/2), đơn mới sau (Đơn 2/2) để tiện đối chiếu
+      const tA = getItemTime(a);
+      const tB = getItemTime(b);
+      if (tA !== tB) {
+        return tA - tB;
+      }
+      return String(a.id).localeCompare(String(b.id));
+    });
+  };
+
   // Thao tác xóa từng đơn nợ hoặc lượt thu tiền trong báo cáo ngày
   const handleDeleteItem = (item) => {
     const isDebt = item.type === 'debt';
@@ -537,27 +828,32 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       .sort((a, b) => b.remainingInMonth - a.remainingInMonth); // Sắp xếp nợ tháng này nhiều nhất lên đầu
   }, [rawTransactions, rawPayments, activeReportTab, selectedMonth]);
 
-  // Lọc danh sách giao dịch hiển thị dựa trên bộ lọc đang chọn và từ khóa tìm kiếm
+  // Lọc và sắp xếp danh sách giao dịch hiển thị dựa trên bộ lọc đang chọn và từ khóa tìm kiếm
   const displayItems = useMemo(() => {
     if (activeReportTab === 'day') {
-      return timelineItems.filter(item => {
-        // 1. Lọc theo tab/loại giao dịch (hỗ trợ 4 trạng thái: đã sửa, trả hàng, thu nợ, đơn nợ mới)
+      const filtered = timelineItems.filter(item => {
+        // 1. Lọc theo tab/loại giao dịch (hỗ trợ các trạng thái: đã sửa, trả hàng, thu nợ, đơn nợ mới, trùng đơn)
         if (activeFilter === 'debt' && item.type !== 'debt') return false;
         if (activeFilter === 'payment' && (item.type !== 'payment' || isReturnPayment(item))) return false;
         if (activeFilter === 'return' && !isReturnPayment(item)) return false;
         if (activeFilter === 'edited' && getItemStatus(item) !== 'edited') return false;
+        if (activeFilter === 'duplicate' && !isItemDuplicateDebt(item)) return false;
 
         // 2. Lọc theo từ khóa tìm kiếm (tên khách hàng, loại thịt hoặc số tiền - hỗ trợ không dấu, viết tắt, nhiều từ)
         if (searchText && searchText.trim()) {
           const nameMatch = matchSearch(item.customerName || '', searchText);
           const detailMatch = matchSearch(item.details || '', searchText);
           const amountMatch = (item.amount || 0).toString().includes(searchText.trim());
+          const duplicateMatch = isItemDuplicateDebt(item) && matchSearch('trùng đơn', searchText);
 
-          return nameMatch || detailMatch || amountMatch;
+          return nameMatch || detailMatch || amountMatch || duplicateMatch;
         }
 
         return true;
       });
+
+      // Sắp xếp danh sách: các công nợ trùng nhau của cùng một khách hàng luôn nằm liền kề nhau
+      return sortDailyTimelineItems(filtered);
     } else {
       // Tab Theo tháng: Lọc danh sách khách còn nợ theo từ khóa tìm kiếm
       return customerMonthlyDebts.filter(item => {
@@ -569,7 +865,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         return true;
       });
     }
-  }, [timelineItems, customerMonthlyDebts, activeReportTab, activeFilter, searchText]);
+  }, [timelineItems, customerMonthlyDebts, activeReportTab, activeFilter, searchText, customerDebtCountMap]);
 
   // Xử lý xuất công nợ dạng ảnh bằng Canvas HTML5 (Cứ 15 giao dịch chia làm 1 cột, tự động tăng chiều rộng)
   const handleExportImage = () => {
@@ -825,7 +1121,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         // Duyệt qua danh sách để điền thông tin chi tiết
         displayItems.forEach(item => {
           const isDebt = item.type === 'debt';
-          const typeStr = isDebt ? 'Nợ phát sinh' : 'Tiền đã thu';
+          const isDup = isItemDuplicateDebt(item);
+          const typeStr = isDebt ? (isDup ? 'Nợ phát sinh (Trùng đơn)' : 'Nợ phát sinh') : 'Tiền đã thu';
 
           const tDate = new Date(item.time);
           const hour = String(tDate.getHours()).padStart(2, '0');
@@ -920,8 +1217,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       const customersWithOrderToday = new Set(newDebtOrders.map(t => t.customerId));
       const missingRegularCustomers = regularCustomers.filter(c => !customersWithOrderToday.has(c.id));
 
-      // 3. Chuẩn bị danh sách giao dịch & chia cột
-      const allDailyTx = [...timelineItems];
+      // 3. Chuẩn bị danh sách giao dịch & chia cột theo đúng bộ lọc đang chọn (displayItems)
+      const allDailyTx = displayItems;
       const totalDailyCount = allDailyTx.length;
       const isTwoCol = totalDailyCount >= 10;
 
@@ -1061,7 +1358,24 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ctx.fillStyle = '#FFFFFF';
       ctx.font = 'bold 24px Arial, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('BÁO CÁO CÔNG NỢ TRONG NGÀY', width / 2, 52);
+
+      let reportHeaderTitle = 'BÁO CÁO CÔNG NỢ TRONG NGÀY';
+      if (activeFilter === 'duplicate') {
+        reportHeaderTitle = 'BÁO CÁO ĐƠN NỢ TRÙNG TRONG NGÀY';
+      } else if (activeFilter === 'debt') {
+        reportHeaderTitle = 'BÁO CÁO ĐƠN NỢ MỚI TRONG NGÀY';
+      } else if (activeFilter === 'payment') {
+        reportHeaderTitle = 'BÁO CÁO THU TIỀN NỢ TRONG NGÀY';
+      } else if (activeFilter === 'return') {
+        reportHeaderTitle = 'BÁO CÁO TRẢ HÀNG TRONG NGÀY';
+      } else if (activeFilter === 'edited') {
+        reportHeaderTitle = 'BÁO CÁO ĐƠN ĐÃ SỬA TRONG NGÀY';
+      }
+      if (searchText && searchText.trim()) {
+        reportHeaderTitle += ` (${searchText.trim()})`;
+      }
+
+      ctx.fillText(reportHeaderTitle, width / 2, 52);
 
       ctx.fillStyle = '#A7F3D0';
       ctx.font = 'bold 16px Arial, sans-serif';
@@ -1076,45 +1390,88 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       // ─── 2. HỘP TỔNG KẾT (3 HỘP TRÊN CÙNG) ───────────────────
       const boxW = (width - sidePadding * 2 - 20) / 3;
 
-      // Hộp Nợ Mới
-      ctx.fillStyle = '#FEF2F2';
-      ctx.fillRect(sidePadding, boxY, boxW, boxH);
-      ctx.strokeStyle = '#FECACA';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(sidePadding, boxY, boxW, boxH);
+      if (activeFilter === 'duplicate') {
+        const totalDupAmount = allDailyTx.reduce((sum, it) => sum + parseFloat(it.amount || 0), 0);
+        // Hộp 1: Tổng tiền nợ trùng
+        ctx.fillStyle = '#FFFBEB';
+        ctx.fillRect(sidePadding, boxY, boxW, boxH);
+        ctx.strokeStyle = '#FDE68A';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(sidePadding, boxY, boxW, boxH);
 
-      ctx.fillStyle = '#991B1B';
-      ctx.font = 'bold 12.5px Arial, sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText('🔴 ĐƠN NỢ MỚI TRONG NGÀY', sidePadding + 14, boxY + 26);
-      ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalNewDebt), sidePadding + 14, boxY + 54);
+        ctx.fillStyle = '#92400E';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('⚠️ TỔNG TIỀN ĐƠN TRÙNG', sidePadding + 14, boxY + 26);
+        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.fillText(formatCurrency(totalDupAmount), sidePadding + 14, boxY + 54);
 
-      // Hộp Thu Nợ
-      const box2X = sidePadding + boxW + 10;
-      ctx.fillStyle = '#F0FDF4';
-      ctx.fillRect(box2X, boxY, boxW, boxH);
-      ctx.strokeStyle = '#BBF7D0';
-      ctx.strokeRect(box2X, boxY, boxW, boxH);
+        // Hộp 2: Số khách hàng có trùng đơn
+        const box2X = sidePadding + boxW + 10;
+        ctx.fillStyle = '#EFF6FF';
+        ctx.fillRect(box2X, boxY, boxW, boxH);
+        ctx.strokeStyle = '#BFDBFE';
+        ctx.strokeRect(box2X, boxY, boxW, boxH);
 
-      ctx.fillStyle = '#166534';
-      ctx.font = 'bold 12.5px Arial, sans-serif';
-      ctx.fillText('🟢 TIỀN ĐÃ THU TRONG NGÀY', box2X + 14, boxY + 26);
-      ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalPayment), box2X + 14, boxY + 54);
+        ctx.fillStyle = '#1E40AF';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText('👥 KHÁCH HÀNG BỊ TRÙNG', box2X + 14, boxY + 26);
+        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.fillText(`${duplicateCustomerCount} khách hàng`, box2X + 14, boxY + 54);
 
-      // Hộp Dư NỢ Ròng
-      const box3X = box2X + boxW + 10;
-      ctx.fillStyle = '#EFF6FF';
-      ctx.fillRect(box3X, boxY, boxW, boxH);
-      ctx.strokeStyle = '#BFDBFE';
-      ctx.strokeRect(box3X, boxY, boxW, boxH);
+        // Hộp 3: Tổng số đơn trùng
+        const box3X = box2X + boxW + 10;
+        ctx.fillStyle = '#F8FAFC';
+        ctx.fillRect(box3X, boxY, boxW, boxH);
+        ctx.strokeStyle = '#CBD5E1';
+        ctx.strokeRect(box3X, boxY, boxW, boxH);
 
-      ctx.fillStyle = '#1E40AF';
-      ctx.font = 'bold 12.5px Arial, sans-serif';
-      ctx.fillText('🔵 CHÊNH LỆCH CÔNG NỢ RÒNG', box3X + 14, boxY + 26);
-      ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(netBalance), box3X + 14, boxY + 54);
+        ctx.fillStyle = '#334155';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText('📋 TỔNG SỐ ĐƠN TRÙNG', box3X + 14, boxY + 26);
+        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.fillText(`${allDailyTx.length} đơn nợ`, box3X + 14, boxY + 54);
+      } else {
+        // Hộp Nợ Mới
+        ctx.fillStyle = '#FEF2F2';
+        ctx.fillRect(sidePadding, boxY, boxW, boxH);
+        ctx.strokeStyle = '#FECACA';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(sidePadding, boxY, boxW, boxH);
+
+        ctx.fillStyle = '#991B1B';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('🔴 ĐƠN NỢ MỚI TRONG NGÀY', sidePadding + 14, boxY + 26);
+        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.fillText(formatCurrency(totalNewDebt), sidePadding + 14, boxY + 54);
+
+        // Hộp Thu Nợ
+        const box2X = sidePadding + boxW + 10;
+        ctx.fillStyle = '#F0FDF4';
+        ctx.fillRect(box2X, boxY, boxW, boxH);
+        ctx.strokeStyle = '#BBF7D0';
+        ctx.strokeRect(box2X, boxY, boxW, boxH);
+
+        ctx.fillStyle = '#166534';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText('🟢 TIỀN ĐÃ THU TRONG NGÀY', box2X + 14, boxY + 26);
+        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.fillText(formatCurrency(totalPayment), box2X + 14, boxY + 54);
+
+        // Hộp Dư NỢ Ròng
+        const box3X = box2X + boxW + 10;
+        ctx.fillStyle = '#EFF6FF';
+        ctx.fillRect(box3X, boxY, boxW, boxH);
+        ctx.strokeStyle = '#BFDBFE';
+        ctx.strokeRect(box3X, boxY, boxW, boxH);
+
+        ctx.fillStyle = '#1E40AF';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText('🔵 CHÊNH LỆCH CÔNG NỢ RÒNG', box3X + 14, boxY + 26);
+        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.fillText(formatCurrency(netBalance), box3X + 14, boxY + 54);
+      }
 
       // ─── 3. VẼ DANH SÁCH CHI TIẾT GIAO DỊCH ───────────────────
       const drawColumn = (items, startX, colW, headerTitle) => {
@@ -1146,12 +1503,21 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             const isDebt = item.type === 'debt';
             const isReturnGoods = status === 'return';
 
+            const isDuplicate = isItemDuplicateDebt(item);
+            const palette = isDuplicate ? getDuplicatePalette(item) : null;
+            const seqText = isDuplicate ? getItemDebtSequence(item) : '';
+
             if (isReturnGoods) {
               ctx.fillStyle = idx % 2 === 0 ? '#FFF7ED' : '#FFEDD5';
               ctx.strokeStyle = '#FED7AA';
             } else if (isDebt) {
-              ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#FEF2F2';
-              ctx.strokeStyle = '#FECACA';
+              if (isDuplicate && activeFilter === 'duplicate') {
+                ctx.fillStyle = idx % 2 === 0 ? palette.canvasBgEven : palette.canvasBgOdd;
+                ctx.strokeStyle = palette.canvasStroke;
+              } else {
+                ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#FEF2F2';
+                ctx.strokeStyle = '#FECACA';
+              }
             } else {
               ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F0FDF4';
               ctx.strokeStyle = '#BBF7D0';
@@ -1161,10 +1527,11 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             ctx.strokeRect(startX, colY, colW, rowHeight);
 
             // Tên khách hàng (căn trái)
-            ctx.fillStyle = '#0F172A';
+            ctx.fillStyle = (isDuplicate && activeFilter === 'duplicate') ? palette.canvasText : '#0F172A';
             ctx.font = `bold ${fontSizeName}px Arial, sans-serif`;
             ctx.textAlign = 'left';
-            ctx.fillText(`${item.globalIdx || idx + 1}. ${item.customerName}`, startX + 12, colY + Math.round(rowHeight * 0.42));
+            const dupTag = isDuplicate ? ` [${seqText}]` : '';
+            ctx.fillText(`${item.globalIdx || idx + 1}. ${item.customerName}${dupTag}`, startX + 12, colY + Math.round(rowHeight * 0.42));
 
             // Chi tiết mặt hàng / ghi chú (căn trái)
             ctx.fillStyle = '#64748B';
@@ -1183,7 +1550,15 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
             ctx.font = `bold ${fontSizeAmount}px Arial, sans-serif`;
             ctx.textAlign = 'right';
-            ctx.fillText(`${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`, startX + colW - 12, colY + Math.round(rowHeight * 0.58));
+            ctx.fillText(`${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`, startX + colW - 12, colY + Math.round(rowHeight * 0.44));
+
+            // Thời gian cập nhật đơn (căn phải)
+            const itemTimeStr = formatItemTime(item);
+            if (itemTimeStr) {
+              ctx.fillStyle = isEdited ? '#7E22CE' : '#64748B';
+              ctx.font = `italic ${Math.max(9.5, fontSizeDetail - 1.5)}px Arial, sans-serif`;
+              ctx.fillText(itemTimeStr, startX + colW - 12, colY + Math.round(rowHeight * 0.8));
+            }
             ctx.textAlign = 'left';
 
             colY += rowHeight;
@@ -1192,11 +1567,23 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         return colY;
       };
 
+      const colTitlePrefix = activeFilter === 'duplicate' 
+        ? '⚠️ DANH SÁCH ĐƠN NỢ TRÙNG'
+        : activeFilter === 'debt'
+          ? '🔴 DANH SÁCH ĐƠN NỢ MỚI'
+          : activeFilter === 'payment'
+            ? '🟢 DANH SÁCH THU TIỀN NỢ'
+            : activeFilter === 'return'
+              ? '🟠 DANH SÁCH TRẢ HÀNG'
+              : activeFilter === 'edited'
+                ? '🟣 DANH SÁCH ĐƠN ĐÃ SỬA'
+                : '📝 DANH SÁCH GIAO DỊCH CÔNG NỢ TRONG NGÀY';
+
       if (!isTwoCol) {
-        drawColumn(leftItems, leftColX, width - sidePadding * 2, `📝 DANH SÁCH GIAO DỊCH CÔNG NỢ TRONG NGÀY (${totalDailyCount} giao dịch)`);
+        drawColumn(leftItems, leftColX, width - sidePadding * 2, `${colTitlePrefix} (${totalDailyCount} ${activeFilter === 'payment' || activeFilter === 'return' ? 'lượt' : 'đơn'})`);
       } else {
-        drawColumn(leftItems, leftColX, colWidth, `📝 CHI TIẾT GIAO DỊCH (Phần 1 - ${leftItems.length} đơn)`);
-        drawColumn(rightItems, rightColX, colWidth, `📝 CHI TIẾT GIAO DỊCH (Phần 2 - ${rightItems.length} đơn)`);
+        drawColumn(leftItems, leftColX, colWidth, `${colTitlePrefix} (Phần 1 - ${leftItems.length} đơn)`);
+        drawColumn(rightItems, rightColX, colWidth, `${colTitlePrefix} (Phần 2 - ${rightItems.length} đơn)`);
       }
 
       // ─── 4. VẼ FOOTER CHO CANVAS 1 & TẢI XUỐNG ───────────────────
@@ -1217,12 +1604,22 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       // Tải ảnh báo cáo chính (Ảnh 1)
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
-      link.download = `BaoCao_CongNo_Ngay_${selectedDate.replace(/\//g, '_')}.png`;
+      const filterFileSuffixMap = {
+        all: '',
+        duplicate: '_DonTrung',
+        debt: '_DonNoMoi',
+        payment: '_ThuNo',
+        return: '_TraHang',
+        edited: '_DaSua'
+      };
+      const fSuffix = filterFileSuffixMap[activeFilter] || (activeFilter ? `_${activeFilter}` : '');
+      const sSuffix = searchText && searchText.trim() ? `_Tim_${searchText.trim().replace(/\s+/g, '_')}` : '';
+      link.download = `BaoCao_CongNo_Ngay_${selectedDate.replace(/\//g, '_')}${fSuffix}${sSuffix}.png`;
       link.href = dataUrl;
       link.click();
 
-      // ─── 5. XỬ LÝ ẢNH 2 (NẾU CÓ KHÁCH QUEN SÓT ĐƠN NỢ) ───────────────────
-      if (missingRegularCustomers.length > 0) {
+      // ─── 5. XỬ LÝ ẢNH 2 (CHỈ XUẤT KHI ĐANG Ở TAB TẤT CẢ VÀ KHÔNG TÌM KIẾM) ───────────────────
+      if (activeFilter === 'all' && !searchText && missingRegularCustomers.length > 0) {
         const numMissingRows = Math.max(1, missingRegularCustomers.length);
         let missingRowHeight = 48;
         let missingFontSize = 14;
@@ -1386,6 +1783,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               value={selectedDate}
               onChange={handleDateChange}
               allowFuture={true}
+              dense={true}
             />
           </View>
         ) : (
@@ -1484,6 +1882,35 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               </View>
             </View>
 
+            {/* Banner cảnh báo phát hiện trùng đơn trong ngày */}
+            {activeReportTab === 'day' && duplicateDebtItems.length > 0 && (
+              <View style={styles.duplicateBanner}>
+                <View style={styles.duplicateBannerLeft}>
+                  <Text style={styles.duplicateBannerTitle}>
+                    ⚠️ Phát hiện {duplicateDebtItems.length} đơn trùng ({duplicateCustomerCount} khách có từ 2 đơn nợ)
+                  </Text>
+                  <Text style={styles.duplicateBannerDesc}>
+                    Kiểm tra tránh trường hợp ghi nợ 2 lần cho cùng một khách hàng
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.duplicateBannerBtn,
+                    activeFilter === 'duplicate' && styles.duplicateBannerBtnActive
+                  ]}
+                  onPress={() => setActiveFilter(prev => prev === 'duplicate' ? 'all' : 'duplicate')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.duplicateBannerBtnText,
+                    activeFilter === 'duplicate' && styles.duplicateBannerBtnTextActive
+                  ]}>
+                    {activeFilter === 'duplicate' ? 'Xem tất cả' : 'Lọc xem ngay'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* Ô chú thích 4 màu trạng thái giao dịch (bấm để lọc nhanh) */}
             {activeReportTab === 'day' && (
               <View style={styles.legendContainer}>
@@ -1565,6 +1992,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                     const isDebt = item.type === 'debt';
                     const isEdited = status === 'edited';
                     const isReturnGoods = status === 'return';
+                    const isDuplicate = isItemDuplicateDebt(item);
+                    const palette = isDuplicate ? getDuplicatePalette(item) : null;
+                    const seqText = isDuplicate ? getItemDebtSequence(item) : '';
 
                     let displayDetails = item.details;
                     if (isReturnGoods) {
@@ -1585,13 +2015,38 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                             : isReturnGoods 
                               ? styles.itemCardReturnGoods 
                               : isDebt 
-                                ? styles.itemCardDebt 
+                                ? (isDuplicate && activeFilter === 'duplicate'
+                                    ? [
+                                        styles.itemCardDuplicate,
+                                        {
+                                          backgroundColor: palette.cardBg,
+                                          borderColor: palette.borderColor,
+                                          borderLeftColor: palette.borderLeftColor,
+                                        }
+                                      ]
+                                    : styles.itemCardDebt)
                                 : styles.itemCardPayment
                         ]}
                       >
                         <View style={styles.itemHeader}>
                           <View style={styles.customerNameRow}>
                             <Text style={styles.customerName}>{item.customerName}</Text>
+                            {isDuplicate && (
+                              <View style={[
+                                styles.duplicateBadge,
+                                activeFilter === 'duplicate' && {
+                                  backgroundColor: palette.badgeBg,
+                                  borderColor: palette.badgeBorder,
+                                }
+                              ]}>
+                                <Text style={[
+                                  styles.duplicateBadgeText,
+                                  activeFilter === 'duplicate' && { color: palette.badgeText }
+                                ]}>
+                                  ⚠️ {seqText}
+                                </Text>
+                              </View>
+                            )}
                             <TouchableOpacity
                               style={styles.itemEditBtn}
                               onPress={() => {
@@ -1615,18 +2070,26 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                             </TouchableOpacity>
                           </View>
 
-                          <Text style={[
-                            styles.itemAmount, 
-                            isEdited
-                              ? styles.amountEdited
-                              : isReturnGoods 
-                                ? styles.amountReturnGoods 
-                                : isDebt 
-                                  ? styles.amountDebt 
-                                  : styles.amountPayment
-                          ]}>
-                            {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
-                          </Text>
+                          <View style={styles.itemAmountContainer}>
+                            <Text style={[
+                              styles.itemAmount, 
+                              isEdited
+                                ? styles.amountEdited
+                                : isReturnGoods 
+                                  ? styles.amountReturnGoods 
+                                  : isDebt 
+                                    ? styles.amountDebt 
+                                    : styles.amountPayment
+                            ]}>
+                              {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
+                            </Text>
+                            <Text style={[
+                              styles.itemTimeText,
+                              isEdited && styles.itemTimeTextEdited
+                            ]}>
+                              🕒 {formatItemTime(item)}
+                            </Text>
+                          </View>
                         </View>
 
                         {displayDetails ? (
@@ -1693,7 +2156,19 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               onPress={handleExportDailyReportImage}
               activeOpacity={0.7}
             >
-              <Text style={styles.exportReportBtnText}>📸 XUẤT BÁO CÁO NGÀY</Text>
+              <Text style={styles.exportReportBtnText} numberOfLines={1}>
+                {activeFilter === 'duplicate' 
+                  ? '📸 XUẤT BÁO CÁO ĐƠN TRÙNG' 
+                  : activeFilter === 'debt'
+                    ? '📸 XUẤT BÁO CÁO ĐƠN NỢ'
+                    : activeFilter === 'payment'
+                      ? '📸 XUẤT BÁO CÁO THU NỢ'
+                      : activeFilter === 'return'
+                        ? '📸 XUẤT BÁO CÁO TRẢ HÀNG'
+                        : activeFilter === 'edited'
+                          ? '📸 XUẤT BÁO CÁO ĐÃ SỬA'
+                          : '📸 XUẤT BÁO CÁO NGÀY'}
+              </Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -1716,38 +2191,38 @@ export default DailyReportModal;
 const styles = StyleSheet.create({
   modalView: {
     backgroundColor: COLORS.card,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 14,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: 12,
     paddingTop: 10,
-    paddingBottom: 12,
-    marginTop: 20,
-    maxHeight: '94%',
+    paddingBottom: 8,
+    marginTop: 10,
+    maxHeight: '96%',
     flex: 1,
   },
   modalHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   modalTitle: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
     flex: 1,
   },
   closeHeaderBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    marginLeft: 6,
   },
   closeHeaderBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#64748B',
   },
@@ -1756,40 +2231,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     flex: 1,
-    marginRight: 8,
+    marginRight: 6,
+    flexWrap: 'wrap',
   },
   datePickerContainer: {
-    marginBottom: 8,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: COLORS.textSecondary,
     marginBottom: 6,
   },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+    marginBottom: 5,
+  },
   loadingContainer: {
-    paddingVertical: 50,
+    paddingVertical: 35,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 14,
+    marginTop: 8,
+    fontSize: 13,
     color: COLORS.textSecondary,
   },
   errorContainer: {
-    paddingVertical: 40,
+    paddingVertical: 25,
     alignItems: 'center',
   },
   errorText: {
     color: COLORS.dangerDark,
     backgroundColor: COLORS.dangerLight,
-    padding: 12,
-    borderRadius: 8,
-    fontSize: 14,
+    padding: 8,
+    borderRadius: 6,
+    fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
-    marginBottom: 15,
+    marginBottom: 10,
     width: '100%',
   },
   mainContent: {
@@ -1799,13 +2275,13 @@ const styles = StyleSheet.create({
   },
   summaryContainer: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
+    gap: 6,
+    marginBottom: 6,
   },
   summaryBox: {
     flex: 1,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
     borderRadius: 8,
     borderWidth: 1.5,
     alignItems: 'flex-start',
@@ -1849,78 +2325,78 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   summaryBoxLabel: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
     marginBottom: 2,
   },
   summaryBoxValue: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: 'bold',
     color: COLORS.text,
   },
   listTitle: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: 'bold',
     color: COLORS.text,
     marginBottom: 6,
   },
   emptyContainer: {
-    paddingVertical: 30,
+    paddingVertical: 24,
     alignItems: 'center',
     backgroundColor: COLORS.inputBg,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   emptyText: {
     color: COLORS.textLight,
     fontStyle: 'italic',
-    fontSize: 13,
+    fontSize: 12.5,
     textAlign: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   scrollList: {
     flex: 1,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   itemCard: {
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginBottom: 6,
     flexDirection: 'column',
-    gap: 4,
+    gap: 3,
   },
   itemEditBtn: {
     backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#BFDBFE',
     justifyContent: 'center',
     alignItems: 'center',
   },
   itemEditBtnText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: 'bold',
     color: '#1D4ED8',
   },
   itemDeleteBtn: {
     backgroundColor: '#FEF2F2',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#FECACA',
     justifyContent: 'center',
     alignItems: 'center',
   },
   itemDeleteBtnText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: 'bold',
     color: '#DC2626',
   },
@@ -1929,6 +2405,25 @@ const styles = StyleSheet.create({
     borderColor: '#FEE2E2',
     borderLeftWidth: 4,
     borderLeftColor: COLORS.danger,
+  },
+  itemCardDuplicate: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  duplicateBadge: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  duplicateBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#B45309',
   },
   itemCardPayment: {
     backgroundColor: COLORS.card,
@@ -1954,12 +2449,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   customerName: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: 'bold',
     color: COLORS.text,
   },
+  itemAmountContainer: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  itemTimeText: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+    fontWeight: '500',
+  },
+  itemTimeTextEdited: {
+    color: '#7E22CE',
+    fontWeight: '600',
+  },
   itemAmount: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: 'bold',
   },
   amountDebt: {
@@ -1978,14 +2487,14 @@ const styles = StyleSheet.create({
   legendContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 5,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 6,
     alignItems: 'center',
     justifyContent: 'space-between',
   },
@@ -1993,20 +2502,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
     cursor: 'pointer',
   },
   legendBadgeActive: {
-    borderWidth: 1.8,
+    borderWidth: 1.6,
     borderColor: '#334155',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.12,
     shadowRadius: 2,
-    elevation: 3,
+    elevation: 2,
   },
   legendBadgeEdited: {
     backgroundColor: '#F3E8FF',
@@ -2024,13 +2533,62 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
     borderColor: '#FEE2E2',
   },
+  legendBadgeDuplicate: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  duplicateBanner: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    borderWidth: 1.5,
+    borderRadius: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  duplicateBannerLeft: {
+    flex: 1,
+  },
+  duplicateBannerTitle: {
+    fontSize: 11.5,
+    fontWeight: 'bold',
+    color: '#92400E',
+  },
+  duplicateBannerDesc: {
+    fontSize: 10.5,
+    color: '#B45309',
+    marginTop: 1,
+  },
+  duplicateBannerBtn: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  duplicateBannerBtnActive: {
+    backgroundColor: '#78350F',
+  },
+  duplicateBannerBtnText: {
+    fontSize: 10.5,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  duplicateBannerBtnTextActive: {
+    color: '#FEF3C7',
+  },
   legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
   legendText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
   },
   statusTagEdited: {
@@ -2039,7 +2597,7 @@ const styles = StyleSheet.create({
     borderColor: '#C4B5FD',
     borderRadius: 4,
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1.5,
   },
   statusTagEditedText: {
     fontSize: 10,
@@ -2047,41 +2605,44 @@ const styles = StyleSheet.create({
     color: '#6D28D9',
   },
   itemDetails: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: COLORS.textSecondary,
     lineHeight: 16,
   },
   itemTime: {
     fontSize: 10,
     color: COLORS.textLight,
-    marginTop: 2,
+    marginTop: 1,
   },
   button: {
-    height: 44,
-    borderRadius: 10,
+    height: 40,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   retryButton: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   retryButtonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
+    fontSize: 12.5,
   },
   footerButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     marginTop: 'auto',
-    paddingTop: 8,
+    paddingTop: 6,
+    paddingBottom: 4,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    alignItems: 'center',
   },
   exportButton: {
     flex: 1,
-    height: 46,
-    borderRadius: 10,
+    height: 40,
+    borderRadius: 8,
     backgroundColor: '#E0F2FE', // Màu xanh dương nhạt pastel
     borderColor: '#BAE6FD',
     borderWidth: 1,
@@ -2091,7 +2652,7 @@ const styles = StyleSheet.create({
   },
   exportButtonText: {
     color: '#0369A1', // Xanh dương đậm
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: 'bold',
   },
   excelButton: {
@@ -2100,11 +2661,14 @@ const styles = StyleSheet.create({
   },
   excelButtonText: {
     color: '#15803D', // Xanh lá đậm
+    fontSize: 12.5,
   },
   closeButtonNew: {
     flex: 1,
-    height: 46,
-    borderRadius: 10,
+    minHeight: 40,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
     backgroundColor: COLORS.inputBg,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -2113,11 +2677,11 @@ const styles = StyleSheet.create({
   },
   closeButtonTextNew: {
     color: COLORS.textSecondary,
-    fontSize: 14,
+    fontSize: 12.5,
     fontWeight: 'bold',
   },
   searchContainer: {
-    marginBottom: 8,
+    marginBottom: 6,
     position: 'relative',
     justifyContent: 'center',
   },
@@ -2126,7 +2690,7 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 8,
     paddingLeft: 10,
-    paddingRight: 30,
+    paddingRight: 28,
     fontSize: 12,
     color: COLORS.text,
     borderWidth: 1,
@@ -2134,11 +2698,11 @@ const styles = StyleSheet.create({
   },
   clearSearch: {
     position: 'absolute',
-    right: 12,
-    padding: 6,
+    right: 8,
+    padding: 4,
   },
   clearSearchText: {
-    fontSize: 16,
+    fontSize: 14,
     color: COLORS.textLight,
     fontWeight: 'bold',
   },
@@ -2146,12 +2710,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: COLORS.inputBg,
     borderRadius: 8,
-    padding: 4,
-    marginBottom: 16,
+    padding: 3,
+    marginBottom: 6,
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 6,
     alignItems: 'center',
     borderRadius: 6,
   },
@@ -2160,7 +2724,7 @@ const styles = StyleSheet.create({
     ...SHADOWS.small,
   },
   tabButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: COLORS.textSecondary,
   },
@@ -2171,12 +2735,12 @@ const styles = StyleSheet.create({
   monthSelectorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   monthSelectorArrow: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 8,
     backgroundColor: COLORS.inputBg,
     borderWidth: 1.5,
     borderColor: COLORS.border,
@@ -2184,27 +2748,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   monthSelectorArrowText: {
-    fontSize: 16,
+    fontSize: 14,
     color: COLORS.text,
     fontWeight: 'bold',
   },
   monthValueContainer: {
     flex: 1,
-    height: 44,
+    height: 38,
     backgroundColor: COLORS.inputBg,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1.5,
     borderColor: COLORS.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
   monthValueText: {
-    fontSize: 15,
+    fontSize: 13.5,
     fontWeight: 'bold',
     color: COLORS.text,
   },
   scrollListContent: {
-    paddingBottom: 24, // Khoảng đệm ở đáy để đảm bảo cuộn hết nút bấm của phần tử cuối cùng
+    paddingBottom: 16, // Khoảng đệm ở đáy thoáng đãng
   },
   cardActionsContainer: {
     marginTop: 4,
@@ -2213,22 +2777,24 @@ const styles = StyleSheet.create({
   },
   zaloButton: {
     backgroundColor: '#0068FF', // Màu xanh Zalo thương hiệu
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
   zaloButtonText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
   },
   exportReportBtn: {
-    flex: 1,
-    height: 46,
-    borderRadius: 10,
+    flex: 1.8, // Tăng tỷ trọng flex để nút xuất báo cáo có nhiều không gian hiển thị không bị rớt dòng
+    minHeight: 40,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
     backgroundColor: '#059669', // Emerald green
     justifyContent: 'center',
     alignItems: 'center',
@@ -2236,7 +2802,9 @@ const styles = StyleSheet.create({
   },
   exportReportBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 15,
   },
 });
