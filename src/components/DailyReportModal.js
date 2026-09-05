@@ -2129,14 +2129,14 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                           {`Tổng nợ: ${formatCurrency(item.totalDebt)}   |   Đã trả: ${formatCurrency(item.totalPaid)}`}
                         </Text>
 
-                        {/* Nút hành động xuất nợ & gửi Zalo cho từng khách hàng */}
+                        {/* Nút hành động xuất nợ cho từng khách hàng */}
                         <View style={styles.cardActionsContainer}>
                           <TouchableOpacity
                             style={styles.zaloButton}
                             onPress={() => onExportDebt?.(item.customerId, selectedMonth)}
                             activeOpacity={0.7}
                           >
-                            <Text style={styles.zaloButtonText}>📸 Xuất ảnh & Gửi Zalo 💬</Text>
+                            <Text style={styles.zaloButtonText}>📸 Xuất ảnh công nợ</Text>
                           </TouchableOpacity>
                         </View>
                       </View>

@@ -52,7 +52,7 @@ const ConfirmExportModal = forwardRef(({}, ref) => {
         <Text style={styles.modalTitle}>⚠️ CẢNH BÁO CHƯA CÓ ĐƠN NỢ</Text>
 
         <Text style={styles.description}>
-          Phát hiện có <Text style={styles.highlightText}>{days.length}</Text> ngày chưa phát sinh đơn nợ trong <Text style={styles.boldText}>Tháng {month}</Text>. Bạn có muốn tiếp tục xuất ảnh và gửi Zalo?
+          Phát hiện có <Text style={styles.highlightText}>{days.length}</Text> ngày chưa phát sinh đơn nợ trong <Text style={styles.boldText}>Tháng {month}</Text>. Bạn có muốn tiếp tục xuất ảnh?
         </Text>
 
         {/* Danh sách các ngày trống */}

@@ -10,12 +10,10 @@ import {
   Platform,
   Alert,
   Image,
-  Linking,
 } from 'react-native';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
-import UpdatePhoneModal from './UpdatePhoneModal';
 import ConfirmExportModal from './ConfirmExportModal';
 
 // Hàm helper để xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
@@ -51,7 +49,6 @@ const formatPaymentNote = (note, paidAt) => {
 };
 
 const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
-  const updatePhoneModalRef = useRef(null);
   const confirmExportModalRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
@@ -705,37 +702,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     return new Blob(byteArrays, { type: contentType });
   };
 
-  // Chuẩn hóa số điện thoại và mở Zalo
-  const proceedZalo = (phone) => {
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-    if (cleanPhone.length >= 9) {
-      let webPhone = cleanPhone;
-      if (webPhone.startsWith('84')) {
-        webPhone = '0' + webPhone.slice(2);
-      } else if (!webPhone.startsWith('0')) {
-        webPhone = '0' + webPhone;
-      }
-
-      const zaloUrl = `https://zalo.me/${webPhone}`;
-
-      // Mở Zalo chat của khách hàng
-      Linking.openURL(zaloUrl).catch((err) => {
-        console.error('Không thể mở Zalo:', err);
-        Alert.alert('Lỗi', 'Không thể mở ứng dụng Zalo. Vui lòng kiểm tra lại.');
-      });
-    } else {
-      Alert.alert('SĐT không hợp lệ', 'Số điện thoại của khách hàng không đúng định dạng.');
-    }
-  };
-
-  // Kiểm tra thiết bị có phải iOS (iPhone/iPad) không
-  const isIOS = () => {
-    if (Platform.OS !== 'web') return false;
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  };
-
-  // Thực hiện tải ảnh về máy và tự động mở Zalo gửi cho khách hàng (nếu có SĐT)
-  const executeDownloadAndZalo = async (targetPhone = null) => {
+  // Thực hiện tải ảnh về máy
+  const executeDownloadImage = async () => {
     if (Platform.OS === 'web' && imageUri) {
       const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
       const safeMonth = selectedMonth.replace('/', '-');
@@ -743,22 +711,6 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       try {
         const blob = base64ToBlob(imageUri, 'image/png');
-
-        // Chỉ khi CÓ SĐT và người dùng muốn gửi Zalo thì mới gọi Web Share API nếu trình duyệt hỗ trợ
-        if (targetPhone && navigator.canShare) {
-          const imageFile = new File([blob], fileName, { type: 'image/png' });
-
-          if (navigator.canShare({ files: [imageFile] })) {
-            await navigator.share({
-              files: [imageFile],
-              title: `Ảnh công nợ tháng ${selectedMonth}`,
-            });
-            proceedZalo(targetPhone);
-            return;
-          }
-        }
-
-        // Tải ảnh trực tiếp về máy qua thẻ a (không điều hướng bất kỳ đâu khi chỉ tải ảnh)
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = blobUrl;
@@ -769,28 +721,14 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
         // Giải phóng bộ nhớ Object URL sau khi hoàn tất
         setTimeout(() => URL.revokeObjectURL(blobUrl), 200);
-
-        // Chỉ mở Zalo khi có số điện thoại
-        if (targetPhone) {
-          setTimeout(() => proceedZalo(targetPhone), 800);
-        }
-        return;
       } catch (err) {
-        if (err?.name !== 'AbortError') {
-          console.error('Lỗi khi tải ảnh:', err);
-        }
-        return;
+        console.error('Lỗi khi tải ảnh:', err);
       }
-    }
-
-    // Không có ảnh: chỉ mở Zalo nếu có SĐT
-    if (targetPhone) {
-      proceedZalo(targetPhone);
     }
   };
 
   // Kiểm tra các ngày trống đơn nợ và mở popup cảnh báo nếu có
-  const checkEmptyDaysAndProceed = (phone) => {
+  const checkEmptyDaysAndProceed = () => {
     const emptyDays = rows.filter(r => r.debtAmount === 0 && r.paymentAmount === 0).map(r => r.dateKey.split('/')[0]);
     if (emptyDays.length > 0) {
       confirmExportModalRef.current?.open(
@@ -798,39 +736,20 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         selectedMonth,
         () => {
           // Người dùng chọn tiếp tục xuất
-          executeDownloadAndZalo(phone);
+          executeDownloadImage();
         },
         () => {
           // Người dùng chọn hủy xuất (không làm gì)
         }
       );
     } else {
-      executeDownloadAndZalo(phone);
+      executeDownloadImage();
     }
   };
 
-  // 4. Tải ảnh về máy và tự động điều hướng sang Zalo gửi cho khách hàng (nếu có SĐT) hoặc chỉ tải ảnh
-  const handleDownloadAndZalo = async () => {
-    const targetPhone = customer?.phone;
-
-    // Nếu thiếu SĐT thì mở popup nhập, nhưng có thêm nút "Chỉ tải ảnh" không bắt buộc
-    if (!targetPhone) {
-      updatePhoneModalRef.current?.open(
-        customer,
-        (newPhone) => {
-          setCustomer(prev => ({ ...prev, phone: newPhone }));
-          if (onRefresh) onRefresh();
-          checkEmptyDaysAndProceed(newPhone);
-        },
-        () => {
-          // Người dùng không nhập SĐT / chọn Chỉ tải ảnh
-          checkEmptyDaysAndProceed(null);
-        }
-      );
-      return;
-    }
-
-    checkEmptyDaysAndProceed(targetPhone);
+  // 4. Tải ảnh công nợ về máy
+  const handleDownloadImage = async () => {
+    checkEmptyDaysAndProceed();
   };
 
   return (
@@ -929,12 +848,12 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                     <TouchableOpacity
                       style={[
                         styles.downloadButtonInline,
-                        styles.zaloActiveColor
+                        styles.normalActiveColor
                       ]}
-                      onPress={handleDownloadAndZalo}
+                      onPress={handleDownloadImage}
                     >
                       <Text style={styles.downloadButtonInlineText}>
-                        💾 Tải & Gửi Zalo
+                        💾 TẢI ẢNH VỀ MÁY
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -953,7 +872,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                     </Text>
                   ) : (
                     <Text style={styles.helperText}>
-                      💡 Mẹo: Nhấn giữ vào ảnh trên để lưu vào Thư viện ảnh của thiết bị hoặc chụp màn hình để chia sẻ nhanh qua Zalo.
+                      💡 Mẹo: Nhấn giữ vào ảnh trên để lưu vào Thư viện ảnh của thiết bị.
                     </Text>
                   )}
                 </View>
@@ -971,7 +890,6 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
       </SmoothModal>
-      <UpdatePhoneModal ref={updatePhoneModalRef} onUpdateSuccess={onRefresh} />
       <ConfirmExportModal ref={confirmExportModalRef} />
     </>
   );
