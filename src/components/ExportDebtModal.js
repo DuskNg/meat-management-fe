@@ -735,7 +735,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   // Thực hiện tải ảnh về máy và tự động mở Zalo gửi cho khách hàng (nếu có SĐT)
-  const executeDownloadAndZalo = async (targetPhone = customer?.phone) => {
+  const executeDownloadAndZalo = async (targetPhone = null) => {
     if (Platform.OS === 'web' && imageUri) {
       const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
       const safeMonth = selectedMonth.replace('/', '-');
@@ -744,26 +744,21 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       try {
         const blob = base64ToBlob(imageUri, 'image/png');
 
-        // Sử dụng Web Share API nếu trình duyệt hỗ trợ chia sẻ tệp (áp dụng cho cả iOS và Android di động)
-        // Người dùng có thể chọn "Lưu hình ảnh" vào thư viện thiết bị từ bảng chia sẻ hệ thống
-        if (navigator.canShare) {
+        // Chỉ khi CÓ SĐT và người dùng muốn gửi Zalo thì mới gọi Web Share API nếu trình duyệt hỗ trợ
+        if (targetPhone && navigator.canShare) {
           const imageFile = new File([blob], fileName, { type: 'image/png' });
 
           if (navigator.canShare({ files: [imageFile] })) {
-            // Hiện Share Sheet của hệ thống — sau khi người dùng đóng mới mở Zalo nếu có SĐT
             await navigator.share({
               files: [imageFile],
               title: `Ảnh công nợ tháng ${selectedMonth}`,
             });
-            // Mở Zalo sau khi đã chia sẻ/lưu ảnh xong nếu có SĐT
-            if (targetPhone) {
-              proceedZalo(targetPhone);
-            }
+            proceedZalo(targetPhone);
             return;
           }
         }
 
-        // Android / Desktop: tải ảnh bằng Blob Object URL rồi mở Zalo sau 800ms nếu có SĐT
+        // Tải ảnh trực tiếp về máy qua thẻ a (không điều hướng bất kỳ đâu khi chỉ tải ảnh)
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = blobUrl;
@@ -775,15 +770,14 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         // Giải phóng bộ nhớ Object URL sau khi hoàn tất
         setTimeout(() => URL.revokeObjectURL(blobUrl), 200);
 
-        // Đợi một chút để trình duyệt kịp lưu file trước khi mở Zalo (chỉ khi có SĐT)
+        // Chỉ mở Zalo khi có số điện thoại
         if (targetPhone) {
           setTimeout(() => proceedZalo(targetPhone), 800);
         }
         return;
       } catch (err) {
-        // Người dùng huỷ Share Sheet hoặc lỗi — chỉ log, không mở Zalo
         if (err?.name !== 'AbortError') {
-          console.error('Lỗi khi tải / chia sẻ ảnh:', err);
+          console.error('Lỗi khi tải ảnh:', err);
         }
         return;
       }
