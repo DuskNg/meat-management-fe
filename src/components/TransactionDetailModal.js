@@ -236,11 +236,9 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
     setError('');
     isSubmittingRef.current = true;
     try {
-      // Lấy số nợ còn lại thực tế của ngày sau khi đã phân bổ theo FIFO
+      // Lấy số nợ còn lại thực tế của ngày sau khi đã phân bổ
       const remainingDebt = dayGroup.remainingDebt !== undefined ? dayGroup.remainingDebt : (dayGroup.totalDebt - dayGroup.totalPayment);
       
-      // Hiển thị Alert debug trước khi gọi API
-      Alert.alert('Debug Gửi API', `Khách hàng: ${customerId}\nSố tiền: ${remainingDebt.toLocaleString('vi-VN')}đ\nNgày nợ: ${dayGroup.dateKey}`);
       const response = await api.post('/payments', {
         customerId,
         amount: remainingDebt,
@@ -454,15 +452,18 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
                     <Text style={styles.transNote}>📝 {t.note}</Text>
                   ) : null}
 
-                  {/* Lịch sử khấu trừ thanh toán */}
+                  {/* Lịch sử khấu trừ thanh toán / trả hàng */}
                   {t.allocations && t.allocations.length > 0 && (
                     <View style={styles.allocationBox}>
                       <Text style={styles.allocationTitle}>🔗 Đã khấu trừ từ các lần trả:</Text>
-                      {t.allocations.map((alloc, aIdx) => (
-                        <Text key={aIdx} style={styles.allocationItem}>
-                          • Đã trả <Text style={styles.boldText}>{formatCurrency(alloc.amount)}</Text> vào ngày {toDateKey(alloc.date)}
-                        </Text>
-                      ))}
+                      {t.allocations.map((alloc, aIdx) => {
+                        const isRet = alloc.note?.includes('Trả hàng') || alloc.note?.includes('Trả lại');
+                        return (
+                          <Text key={aIdx} style={styles.allocationItem}>
+                            • {isRet ? 'Trừ trả hàng' : 'Đã trả'} <Text style={styles.boldText}>{formatCurrency(alloc.amount)}</Text> vào ngày {toDateKey(alloc.date)}
+                          </Text>
+                        );
+                      })}
                     </View>
                   )}
                 </View>

@@ -613,6 +613,37 @@ export default function CustomerDetailScreen() {
       payAllocations[pId].push({ transactionId: tId, date: tDate, amount, note: tNote });
     };
 
+    // 0. Phân bổ các khoản Trả hàng (Return Goods) trực tiếp vào đơn nợ của chính ngày phát sinh trả hàng
+    const isReturnPayment = (p) => {
+      const trimNote = (p.note || '').trim();
+      return (
+        trimNote.includes('[Trả lại hàng]') ||
+        trimNote.includes('[Trả hàng nhanh]') ||
+        trimNote.includes('Trả hàng') ||
+        trimNote.includes('Trả lại')
+      );
+    };
+
+    payments.forEach((p) => {
+      if (isReturnPayment(p)) {
+        const returnDateKey = toDateKey(p.paidAt);
+        const dayTransactions = transactions
+          .filter((t) => toDateKey(t.date) === returnDateKey)
+          .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        dayTransactions.forEach((t) => {
+          const debtAmt = remainingDebtMap[t.id];
+          const payAmt = remainingPayMap[p.id];
+          if (debtAmt > 0 && payAmt > 0) {
+            const allocAmt = Math.min(debtAmt, payAmt);
+            remainingDebtMap[t.id] -= allocAmt;
+            remainingPayMap[p.id] -= allocAmt;
+            recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
+          }
+        });
+      }
+    });
+
     // A. Phân bổ theo ngày cụ thể (Specific Date matching)
     payments.forEach((p) => {
       const trimNote = (p.note || '').trim();

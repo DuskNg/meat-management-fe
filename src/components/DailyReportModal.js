@@ -730,6 +730,27 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       // Sắp xếp payments theo ngày tăng dần
       payments.sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt));
 
+      // Bước 0: Cấn trừ các payments Trả hàng vào trực tiếp các đơn nợ của chính ngày phát sinh trả hàng
+      payments.forEach(p => {
+        if (!isReturnPayment(p)) return;
+        const pDateKey = toDateKey(p.paidAt);
+        let remainingPayment = p.remainingAmount !== undefined ? p.remainingAmount : p.amount;
+
+        txs.forEach(t => {
+          if (remainingPayment <= 0) return;
+          if (toDateKey(t.date) === pDateKey) {
+            const needed = t.totalAmount - t.paidAmount;
+            if (needed > 0) {
+              const allocated = Math.min(needed, remainingPayment);
+              t.paidAmount += allocated;
+              remainingPayment -= allocated;
+            }
+          }
+        });
+
+        p.remainingAmount = remainingPayment;
+      });
+
       // Bước A: Cấn trừ các payments có ghi chú chỉ định cụ thể tháng
       payments.forEach(p => {
         if (!p.targetMonth) return;
