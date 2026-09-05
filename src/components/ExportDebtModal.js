@@ -326,8 +326,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         return lines;
       };
 
-      const startTableY = 160;
-      const footerHeight = 160;
+      const startTableY = 180;
+      const footerHeight = 220;
 
       // Tạo một canvas tạm thời để đo độ rộng chữ và tính toán chiều cao hàng
       const tempCanvas = document.createElement('canvas');
@@ -422,28 +422,28 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       // ─── PHẦN TIÊU ĐỀ (HEADER) ───────────────────
       ctx.fillStyle = '#0F172A'; // Chữ tối màu tương phản cao
-      ctx.font = 'bold 24px Arial';
+      ctx.font = 'bold 28px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(`BẢNG CHI TIẾT CÔNG NỢ THÁNG ${month}`, width / 2, 75);
+      ctx.fillText(`BẢNG CHI TIẾT CÔNG NỢ THÁNG ${month}`, width / 2, 65);
 
       // Vẽ đường phân cách nét mảnh
-      ctx.strokeStyle = '#E2E8F0';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#CBD5E1';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(35, 105);
-      ctx.lineTo(width - 35, 105);
+      ctx.moveTo(35, 95);
+      ctx.lineTo(width - 35, 95);
       ctx.stroke();
 
-      // Thông tin khách hàng
+      // Thông tin khách hàng - RẤT TO & RÕ RÀNG
       ctx.textAlign = 'left';
       ctx.fillStyle = '#0F172A';
-      ctx.font = 'bold 16px Arial';
-      ctx.fillText(`Khách hàng: ${cust?.name}`, 40, 135);
+      ctx.font = 'bold 26px Arial';
+      ctx.fillText(`Khách hàng: ${cust?.name || ''}`, 40, 142);
 
       ctx.textAlign = 'right';
-      ctx.font = '16px Arial';
+      ctx.font = 'bold 18px Arial';
       ctx.fillStyle = '#475569';
-      ctx.fillText(`Số ĐT: ${cust?.phone || 'Không có'}`, width - 40, 135);
+      ctx.fillText(`Số ĐT: ${cust?.phone || 'Không có'}`, width - 40, 142);
 
       // ─── PHẦN BẢNG DỮ LIỆU (TABLE HEADER & ROWS) ──────────
       columns.forEach((colRows, colIdx) => {
@@ -559,48 +559,48 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       });
 
       // ─── PHẦN TỔNG KẾT (FOOTER) ───────────────────
-      let currentFooterY = startTableY + 42 + contentHeight + 15;
+      let currentFooterY = startTableY + 42 + contentHeight + 20;
 
       // Vẽ nét gạch ngang trước tổng kết
-      ctx.strokeStyle = '#E2E8F0';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#CBD5E1';
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(40, currentFooterY);
       ctx.lineTo(width - 40, currentFooterY);
       ctx.stroke();
 
-      currentFooterY += 30;
+      currentFooterY += 45;
 
       // Hàng 1: Tổng tiền nợ
       ctx.textAlign = 'right';
-      ctx.fillStyle = '#475569';
-      ctx.font = '16px Arial';
-      ctx.fillText('Tổng tiền nợ:', width - 240, currentFooterY);
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 22px Arial';
+      ctx.fillText('Tổng tiền nợ:', width - 320, currentFooterY);
 
       ctx.fillStyle = '#DC2626';
-      ctx.font = 'bold 16px Arial';
+      ctx.font = 'bold 26px Arial';
       ctx.fillText(formatCurrency(totalDebtVal), width - 40, currentFooterY);
 
       // Hàng 2: Tổng tiền đã thanh toán
-      currentFooterY += 30;
-      ctx.fillStyle = '#475569';
-      ctx.font = '16px Arial';
-      ctx.fillText('Tổng tiền đã thanh toán:', width - 240, currentFooterY);
+      currentFooterY += 45;
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 22px Arial';
+      ctx.fillText('Tổng tiền đã thanh toán:', width - 320, currentFooterY);
 
-      ctx.fillStyle = '#10B981';
-      ctx.font = 'bold 16px Arial';
+      ctx.fillStyle = '#059669';
+      ctx.font = 'bold 26px Arial';
       ctx.fillText(formatCurrency(totalPaymentVal), width - 40, currentFooterY);
 
-      // Hàng 3: Tiền nợ còn lại
-      currentFooterY += 35;
+      // Hàng 3: Tiền nợ còn lại (Rất to và nổi bật)
+      currentFooterY += 52;
       ctx.fillStyle = '#0F172A';
-      ctx.font = 'bold 17px Arial';
-      ctx.fillText('Tiền nợ còn lại:', width - 240, currentFooterY);
+      ctx.font = 'bold 26px Arial';
+      ctx.fillText('Tiền nợ còn lại:', width - 320, currentFooterY);
 
       // Chỉ tính nợ còn lại của riêng tháng được chọn
       const overallDebt = Math.max(0, totalDebtVal - totalPaymentVal);
-      ctx.fillStyle = overallDebt > 0 ? '#DC2626' : '#10B981';
-      ctx.font = 'bold 20px Arial';
+      ctx.fillStyle = overallDebt > 0 ? '#DC2626' : '#059669';
+      ctx.font = 'bold 34px Arial';
       ctx.fillText(formatCurrency(overallDebt), width - 40, currentFooterY);
 
       // Xuất base64
