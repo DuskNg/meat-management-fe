@@ -312,11 +312,42 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
   // Số nợ còn lại của ngày sau phân bổ FIFO
   const remainingDebt = dayGroup.remainingDebt !== undefined ? dayGroup.remainingDebt : (totalDebt - totalPayment);
   const hasDebt = totalDebt > 0;
-  const hasPayment = totalPayment > 0;
 
-  // Tính số tiền đã thanh toán (khấu trừ) cho ngày này
-  const paidAmount = totalDebt - remainingDebt;
-  const hasPaidAmount = paidAmount > 0;
+  // Helper phân loại Trả hàng
+  const isReturnGoodsItem = (item) => {
+    if (!item) return false;
+    const note = item.note || '';
+    return note.includes('Trả hàng') || note.includes('Trả lại');
+  };
+
+  // Tính toán riêng biệt số tiền Hàng trả về (cam) và số tiền Đã thanh toán (xanh)
+  let returnDeducted = 0;
+  let paymentDeducted = 0;
+
+  if (hasDebt) {
+    transactions.forEach((t) => {
+      (t.allocations || []).forEach((alloc) => {
+        if (isReturnGoodsItem(alloc)) {
+          returnDeducted += parseFloat(alloc.amount || 0);
+        } else {
+          paymentDeducted += parseFloat(alloc.amount || 0);
+        }
+      });
+    });
+
+    const returnPaymentsOnDay = payments.filter((p) => isReturnGoodsItem(p)).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    const normalPaymentsOnDay = payments.filter((p) => !isReturnGoodsItem(p)).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+
+    if (returnDeducted === 0 && returnPaymentsOnDay > 0) {
+      returnDeducted = Math.min(returnPaymentsOnDay, totalDebt);
+    }
+    if (paymentDeducted === 0 && normalPaymentsOnDay > 0) {
+      paymentDeducted = Math.min(normalPaymentsOnDay, Math.max(0, totalDebt - returnDeducted));
+    }
+  } else {
+    returnDeducted = payments.filter((p) => isReturnGoodsItem(p)).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    paymentDeducted = payments.filter((p) => !isReturnGoodsItem(p)).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  }
 
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
@@ -332,7 +363,7 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
 
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
-        {/* ── TỔNG KẾT NGÀY (debt + payment badges) ── */}
+        {/* ── TỔNG KẾT NGÀY (Ghi nợ + Hàng trả về màu cam + Đã thanh toán màu xanh) ── */}
         <View style={styles.summaryRow}>
           {hasDebt && (
             <View style={[styles.summaryBadge, styles.debtBadge]}>
@@ -340,28 +371,27 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
               <Text style={styles.summaryBadgeAmount}>+{formatCurrency(totalDebt)}</Text>
             </View>
           )}
-          {hasDebt ? (
-            hasPaidAmount ? (
-              <View style={[styles.summaryBadge, styles.paymentBadge]}>
-                <Text style={styles.summaryBadgeLabel}>🟢 Đã thanh toán</Text>
-                <Text style={[styles.summaryBadgeAmount, { color: COLORS.primaryDark }]}>
-                  -{formatCurrency(paidAmount)}
-                </Text>
-              </View>
-            ) : null
-          ) : (
-            hasPayment ? (
-              <View style={[styles.summaryBadge, styles.paymentBadge]}>
-                <Text style={styles.summaryBadgeLabel}>🟢 Thu tiền</Text>
-                <Text style={[styles.summaryBadgeAmount, { color: COLORS.primaryDark }]}>
-                  -{formatCurrency(totalPayment)}
-                </Text>
-              </View>
-            ) : null
+
+          {returnDeducted > 0 && (
+            <View style={[styles.summaryBadge, styles.returnBadge]}>
+              <Text style={[styles.summaryBadgeLabel, { color: '#C2410C' }]}>🟠 Hàng trả về</Text>
+              <Text style={[styles.summaryBadgeAmount, { color: '#EA580C' }]}>
+                -{formatCurrency(returnDeducted)}
+              </Text>
+            </View>
+          )}
+
+          {paymentDeducted > 0 && (
+            <View style={[styles.summaryBadge, styles.paymentBadge]}>
+              <Text style={styles.summaryBadgeLabel}>{hasDebt ? '🟢 Đã thanh toán' : '🟢 Thu tiền'}</Text>
+              <Text style={[styles.summaryBadgeAmount, { color: COLORS.primaryDark }]}>
+                -{formatCurrency(paymentDeducted)}
+              </Text>
+            </View>
           )}
         </View>
 
-        {/* ── HIỂN THỊ NỢ CÒN LẠI CỦA NGÀY (nếu có phát sinh nợ và có phân bổ thanh toán) ── */}
+        {/* ── HIỂN THỊ NỢ CÒN LẠI CỦA NGÀY (nếu có phát sinh nợ và có phân bổ thanh toán hoặc trả hàng) ── */}
         {hasDebt && (remainingDebt < totalDebt) && (
           <View style={[styles.netRow, remainingDebt > 0 ? styles.netRowDebt : styles.netRowOk]}>
             <Text style={styles.netLabel}>Còn lại chưa thanh toán:</Text>
@@ -624,6 +654,10 @@ const styles = StyleSheet.create({
   debtBadge: {
     backgroundColor: COLORS.dangerLight,
     borderColor: '#FECACA',
+  },
+  returnBadge: {
+    backgroundColor: '#FFF7ED', // Nền cam nhạt cho Hàng trả về
+    borderColor: '#FED7AA',     // Viền cam
   },
   paymentBadge: {
     backgroundColor: COLORS.primaryLight,
