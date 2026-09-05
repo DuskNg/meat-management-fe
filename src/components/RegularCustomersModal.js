@@ -589,23 +589,15 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
             <View style={styles.headerIconContainer}>
               <Text style={styles.headerIcon}>🌟</Text>
             </View>
-            <View>
-              <Text style={styles.headerTitle}>QUẢN LÝ KHÁCH QUEN</Text>
-              <Text style={styles.headerSubtitle}>
-                Đối chiếu khách đặt hàng trong 3 ngày gần nhất để tránh sót đơn
+            <View style={styles.headerTitleWrapper}>
+              <Text style={styles.headerTitle} numberOfLines={1}>QUẢN LÝ KHÁCH QUEN</Text>
+              <Text style={styles.headerSubtitle} numberOfLines={1}>
+                Đối chiếu khách đặt hàng 3 ngày gần nhất
               </Text>
             </View>
           </View>
 
           <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.exportImgBtn}
-              onPress={handleExportImage}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.exportImgBtnText}>📸 Xuất ảnh</Text>
-            </TouchableOpacity>
-
             <TouchableOpacity
               style={styles.refreshBtn}
               onPress={fetchData}
@@ -692,20 +684,32 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
           </TouchableOpacity>
         </View>
 
-        {/* Ô TÌM KIẾM NHANH KHÁCH QUEN */}
+        {/* Ô TÌM KIẾM NHANH KHÁCH QUEN & NÚT XUẤT ẢNH */}
         <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="🔍 Gõ tên hoặc SĐT khách quen cần tìm..."
-            placeholderTextColor={COLORS.textLight}
-            value={search}
-            onChangeText={setSearch}
-          />
-          {search ? (
-            <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
-              <Text style={styles.clearSearchText}>✕</Text>
+          <View style={styles.searchRow}>
+            <View style={styles.searchInputWrapper}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="🔍 Tìm tên hoặc SĐT khách..."
+                placeholderTextColor={COLORS.textLight}
+                value={search}
+                onChangeText={setSearch}
+              />
+              {search ? (
+                <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
+                  <Text style={styles.clearSearchText}>✕</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            <TouchableOpacity
+              style={styles.exportImgBtn}
+              onPress={handleExportImage}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.exportImgBtnText}>📸 Xuất ảnh ({missingCustomers.length})</Text>
             </TouchableOpacity>
-          ) : null}
+          </View>
         </View>
 
         {/* DANH SÁCH KHÁCH HÀNG */}
@@ -766,32 +770,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderColor: '#E2E8F0',
     backgroundColor: '#FAF5FF', // Nền tím pastel nhẹ
+    gap: 8,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    gap: 12,
+    minWidth: 0,
+    gap: 10,
+  },
+  headerTitleWrapper: {
+    flex: 1,
+    minWidth: 0,
   },
   headerIconContainer: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: 10,
     backgroundColor: '#F3E8FF',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E9D5FF',
+    flexShrink: 0,
   },
   headerIcon: {
-    fontSize: 20,
+    fontSize: 18,
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
     color: '#6B21A8', // Tím đậm
     letterSpacing: 0.3,
@@ -799,29 +810,13 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 11,
     color: '#7E22CE',
-    marginTop: 2,
+    marginTop: 1,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  exportImgBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#065F46', // Xanh lá đậm thương hiệu
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#047857',
-    ...SHADOWS.small,
-  },
-  exportImgBtnText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    flexShrink: 0,
   },
   refreshBtn: {
     width: 34,
@@ -1024,6 +1019,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 8,
     marginBottom: 6,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchInputWrapper: {
+    flex: 1,
     position: 'relative',
     justifyContent: 'center',
   },
@@ -1047,6 +1050,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#94A3B8',
     fontWeight: 'bold',
+  },
+  exportImgBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#065F46', // Xanh lá đậm
+    height: 40,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#047857',
+    flexShrink: 0,
+    ...SHADOWS.small,
+  },
+  exportImgBtnText: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   listContent: {
     paddingHorizontal: 16,
