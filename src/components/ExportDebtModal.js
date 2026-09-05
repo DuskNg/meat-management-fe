@@ -392,15 +392,17 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       });
       const contentHeight = Math.max(...colHeights);
 
-      // Tính toán chiều cao dòng ghi chú các ngày không có công nợ
-      let emptyDaysLinesCount = 0;
+      // Tính toán chiều cao khung thông tin các ngày không có công nợ
+      let emptyDaysLines = [];
+      let emptyBoxHeight = 0;
       if (emptyDays.length > 0) {
-        const emptyDaysText = `* Các ngày không có công nợ: Ngày ${emptyDays.join(', ')}`;
-        tempCtx.font = 'italic 15px Arial';
-        const lines = wrapText(tempCtx, emptyDaysText, width - 80);
-        emptyDaysLinesCount = lines.length;
+        const emptyDaysText = `📌 Các ngày không phát sinh công nợ: Ngày ${emptyDays.join(', ')}`;
+        tempCtx.font = 'bold 18px Arial';
+        // Chiều rộng khả dụng bên trong khung (width - 80px lề 2 bên - 36px padding trong khung)
+        emptyDaysLines = wrapText(tempCtx, emptyDaysText, width - 116);
+        emptyBoxHeight = emptyDaysLines.length * 28 + 24; // 24px padding trên dưới
       }
-      const footerExtraHeight = emptyDaysLinesCount > 0 ? (emptyDaysLinesCount * 22 + 15) : 0;
+      const footerExtraHeight = emptyDays.length > 0 ? (emptyBoxHeight + 20) : 0;
       const footerHeight = 220 + footerExtraHeight;
       const canvasHeight = startTableY + 42 + contentHeight + footerHeight;
 
@@ -540,18 +542,40 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       // ─── PHẦN TỔNG KẾT (FOOTER) ───────────────────
       let currentFooterY = startTableY + 42 + contentHeight + 20;
 
-      // Vẽ dòng ghi chú các ngày không có công nợ nếu có
+      // Vẽ Khung thông tin nổi bật các ngày không có công nợ
       if (emptyDays.length > 0) {
-        const emptyDaysText = `* Các ngày không có công nợ: Ngày ${emptyDays.join(', ')}`;
+        const boxX = 40;
+        const boxY = currentFooterY;
+        const boxW = width - 80;
+        const boxH = emptyBoxHeight;
+
+        // Nền khung nổi bật
+        ctx.fillStyle = '#F8FAFC';
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+
+        // Viền xung quanh khung
+        ctx.strokeStyle = '#94A3B8';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+        // Vạch màu nhấn bên trái
+        ctx.fillStyle = '#0F172A';
+        ctx.fillRect(boxX, boxY, 6, boxH);
+
+        // Vẽ nội dung chữ to, đậm và rõ ràng
         ctx.textAlign = 'left';
-        ctx.fillStyle = '#64748B';
-        ctx.font = 'italic 15px Arial';
-        const emptyLines = wrapText(ctx, emptyDaysText, width - 80);
-        emptyLines.forEach((l) => {
-          ctx.fillText(l, 40, currentFooterY);
-          currentFooterY += 22;
+        ctx.textBaseline = 'top';
+        ctx.font = 'bold 18px Arial';
+        ctx.fillStyle = '#0F172A';
+
+        let textY = boxY + 12;
+        emptyDaysLines.forEach((line) => {
+          ctx.fillText(line, boxX + 18, textY);
+          textY += 28;
         });
-        currentFooterY += 10;
+
+        ctx.textBaseline = 'alphabetic'; // Trả về mặc định
+        currentFooterY += boxH + 20;
       }
 
       // Vẽ nét gạch ngang trước tổng kết
