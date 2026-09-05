@@ -135,35 +135,23 @@ const CustomSelect = ({
     });
   }, [dropUp]);
 
-  // Lắng nghe sự kiện scroll và resize: khi cuộn danh sách bên ngoài thì tự động bỏ focus và đóng dropdown
+  // Lắng nghe sự kiện scroll và resize: cập nhật lại vị trí dropdown khi cuộn/thay đổi kích thước
   useEffect(() => {
     if (!open || Platform.OS !== 'web') return;
 
-    const handleScroll = (event) => {
-      // Nếu sự kiện cuộn xảy ra bên trong chính danh sách tùy chọn của dropdown thì không đóng
-      if (portalElRef.current?.contains(event.target)) {
-        return;
-      }
-      // Người dùng cuộn danh sách / modal bên ngoài -> hủy focus và đóng dropdown ngay
-      inputRef.current?.blur();
-      setOpen(false);
-      setSearch('');
-      if (onOpenChange) onOpenChange(false);
-    };
-
-    const handleResize = () => {
+    const handleScrollOrResize = () => {
       measureAndOpen();
     };
 
-    // Bắt sự kiện scroll ở bất kỳ container cha/con nào bằng capture phase
-    window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('resize', handleResize);
+    // Bắt sự kiện scroll và resize ở bất kỳ container cha/con nào để dropdown luôn bám sát ô chọn
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
 
     return () => {
-      window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
     };
-  }, [open, onOpenChange, measureAndOpen]);
+  }, [open, measureAndOpen]);
 
   // Mở dropdown: đo vị trí (Web) và cập nhật state
   const openDropdown = useCallback(() => {

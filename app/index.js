@@ -49,6 +49,7 @@ import EditEmployeeModal from '../src/components/EditEmployeeModal';
 import ReturnGoodsModal from '../src/components/ReturnGoodsModal';
 import ProfitFeatureIntroModal from '../src/components/ProfitFeatureIntroModal';
 import RecurringDebtModal from '../src/components/RecurringDebtModal';
+import RegularCustomersModal from '../src/components/RegularCustomersModal';
 import AnimatedPressable from '../src/components/AnimatedPressable';
 import { useLockStore } from '../src/store/lockStore';
 import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
@@ -141,6 +142,7 @@ export default function DashboardScreen() {
   const returnGoodsModalRef = useRef(null); // Modal trả hàng (nhanh & thủ công)
   const profitFeatureIntroModalRef = useRef(null); // Modal giới thiệu tính năng tính Lợi Nhuận mới
   const recurringDebtModalRef = useRef(null); // Modal đơn nợ cố định hàng ngày (00:30 mỗi ngày)
+  const regularCustomersModalRef = useRef(null); // Modal quản lý khách quen và đối chiếu công nợ tránh sót đơn
 
   const [showFloatingLogs, setShowFloatingLogs] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -2982,13 +2984,13 @@ export default function DashboardScreen() {
                   style={styles.smartDebtMenuItem}
                   onPress={() => {
                     setShowDebtToolsMenu(false);
-                    modalRef.current?.open();
+                    regularCustomersModalRef.current?.open();
                   }}
                 >
-                  <Text style={styles.smartDebtMenuIcon}>👤</Text>
+                  <Text style={styles.smartDebtMenuIcon}>🌟</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.smartDebtMenuTitle}>Thêm khách hàng mới</Text>
-                    <Text style={styles.smartDebtMenuSub}>Tạo hồ sơ người mua nợ mới</Text>
+                    <Text style={styles.smartDebtMenuTitle}>Quản lý khách quen</Text>
+                    <Text style={styles.smartDebtMenuSub}>Đối chiếu khách đặt 3 ngày qua để tránh sót đơn</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -3077,7 +3079,14 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.listHeaderContainer}>
-          <Text style={styles.listHeader}>👥 SỔ GHI NỢ KHÁCH QUEN ({filteredCustomers.length})</Text>
+          <Text style={styles.listHeader}>👥 DANH SÁCH KHÁCH ({filteredCustomers.length})</Text>
+          <TouchableOpacity
+            style={styles.addCustomerHeaderBtn}
+            onPress={() => modalRef.current?.open()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.addCustomerHeaderBtnText}>➕ Thêm khách</Text>
+          </TouchableOpacity>
         </View>
 
         {/* DANH SÁCH KHÁCH HÀNG */}
@@ -3202,6 +3211,19 @@ export default function DashboardScreen() {
       />
       <ReturnGoodsModal ref={returnGoodsModalRef} onRefresh={handleRefreshAll} />
       <RecurringDebtModal ref={recurringDebtModalRef} onRefresh={handleRefreshAll} />
+      {/* MODAL QUẢN LÝ KHÁCH QUEN (Ẩn) */}
+      <RegularCustomersModal
+        ref={regularCustomersModalRef}
+        onRefresh={handleRefreshAll}
+        onOpenDebt={(customer) => {
+          setSelectedCustomerId(customer.id);
+          debtModalRef.current?.open(customer);
+        }}
+        onViewHistory={(customer) => {
+          setSelectedCustomerId(customer.id);
+          customerDebtHistoryModalRef.current?.open(customer);
+        }}
+      />
       {/* MODAL GIỚI THIỆU TÍNH NĂNG LỢI NHUẬN */}
       <ProfitFeatureIntroModal
         ref={profitFeatureIntroModalRef}
@@ -3622,13 +3644,30 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   listHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   listHeader: {
     fontSize: 15,
     fontWeight: 'bold',
     color: COLORS.text,
+  },
+  addCustomerHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981', // Màu xanh lá tươi chuẩn thương hiệu
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    ...SHADOWS.card,
+  },
+  addCustomerHeaderBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   listContent: {
     paddingHorizontal: 16,
