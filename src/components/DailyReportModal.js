@@ -1626,90 +1626,111 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
       // ─── 5. XỬ LÝ ẢNH 2 (CHỈ XUẤT KHI ĐANG Ở TAB TẤT CẢ VÀ KHÔNG TÌM KIẾM) ───────────────────
       if (activeFilter === 'all' && !searchText && missingRegularCustomers.length > 0) {
-        const numMissingRows = Math.max(1, missingRegularCustomers.length);
-        let missingRowHeight = 48;
-        let missingFontSize = 14;
-        if (numMissingRows <= 6) {
-          missingRowHeight = 65;
-          missingFontSize = 16;
-        } else if (numMissingRows <= 12) {
-          missingRowHeight = 56;
-          missingFontSize = 15;
-        }
+        const isTwoColC2 = missingRegularCustomers.length > 15;
+        const c2Width = isTwoColC2 ? 750 : 550;
+        const numMissingRows = isTwoColC2 ? Math.ceil(missingRegularCustomers.length / 2) : Math.max(1, missingRegularCustomers.length);
+        const missingRowHeight = 44;
+        const missingFontSize = 16;
 
         const c2HeaderH = 80;
-        const c2StartY = 15 + c2HeaderH + 20; // 115
+        const c2StartY = 15 + c2HeaderH + 15;
         const c2ListH = numMissingRows * missingRowHeight;
         const canvas2Height = c2StartY + c2ListH + footerGap + footerHeight + bottomPadding;
 
         const canvas2 = document.createElement('canvas');
         const ctx2 = canvas2.getContext('2d');
 
-        canvas2.width = width * scale;
+        canvas2.width = c2Width * scale;
         canvas2.height = canvas2Height * scale;
         ctx2.scale(scale, scale);
 
         // Nền trắng toàn ảnh
         ctx2.fillStyle = '#FFFFFF';
-        ctx2.fillRect(0, 0, width, canvas2Height);
+        ctx2.fillRect(0, 0, c2Width, canvas2Height);
 
         // Viền bo khung ngoài
         ctx2.strokeStyle = '#CBD5E1';
         ctx2.lineWidth = 3;
-        ctx2.strokeRect(10, 10, width - 20, canvas2Height - 20);
+        ctx2.strokeRect(10, 10, c2Width - 20, canvas2Height - 20);
 
         // Header của ảnh 2
         ctx2.fillStyle = '#065F46';
-        ctx2.fillRect(15, 15, width - 30, c2HeaderH);
+        ctx2.fillRect(15, 15, c2Width - 30, c2HeaderH);
 
         ctx2.fillStyle = '#FFFFFF';
         ctx2.font = 'bold 20px Arial, sans-serif';
         ctx2.textAlign = 'center';
-        ctx2.fillText('DANH SÁCH KHÁCH QUEN CHƯA CÓ ĐƠN NỢ HÔM NAY', width / 2, 45);
+        ctx2.fillText('DANH SÁCH KHÁCH CHƯA LÊN ĐƠN HÔM NAY', c2Width / 2, 45);
 
         ctx2.fillStyle = '#A7F3D0';
         ctx2.font = 'bold 13px Arial, sans-serif';
-        ctx2.fillText(`Ngày báo cáo: ${selectedDate}`, width / 2, 70);
+        ctx2.fillText(`Ngày báo cáo: ${selectedDate}   •   Tổng số: ${missingRegularCustomers.length} khách`, c2Width / 2, 70);
 
         let currentY = c2StartY;
 
         if (missingRegularCustomers.length === 0) {
           ctx2.fillStyle = '#F8FAFC';
-          ctx2.fillRect(sidePadding, currentY, width - sidePadding * 2, missingRowHeight);
+          ctx2.fillRect(sidePadding, currentY, c2Width - sidePadding * 2, missingRowHeight);
           ctx2.strokeStyle = '#E2E8F0';
-          ctx2.strokeRect(sidePadding, currentY, width - sidePadding * 2, missingRowHeight);
+          ctx2.strokeRect(sidePadding, currentY, c2Width - sidePadding * 2, missingRowHeight);
 
           ctx2.fillStyle = '#94A3B8';
           ctx2.font = 'italic 13px Arial, sans-serif';
-          ctx2.fillText('Không có khách quen nào bị sót.', sidePadding + 14, currentY + Math.round(missingRowHeight / 2) + 5);
+          ctx2.fillText('Không có khách nào bị sót.', sidePadding + 14, currentY + Math.round(missingRowHeight / 2) + 5);
           currentY += missingRowHeight;
-        } else {
+        } else if (!isTwoColC2) {
           missingRegularCustomers.forEach((c, idx) => {
             ctx2.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-            ctx2.fillRect(sidePadding, currentY, width - sidePadding * 2, missingRowHeight);
+            ctx2.fillRect(sidePadding, currentY, c2Width - sidePadding * 2, missingRowHeight);
             ctx2.strokeStyle = '#E2E8F0';
-            ctx2.strokeRect(sidePadding, currentY, width - sidePadding * 2, missingRowHeight);
+            ctx2.strokeRect(sidePadding, currentY, c2Width - sidePadding * 2, missingRowHeight);
 
             ctx2.fillStyle = '#0F172A';
             ctx2.font = `bold ${missingFontSize}px Arial, sans-serif`;
-            ctx2.fillText(`${idx + 1}. ${c.name}`, sidePadding + 12, currentY + Math.round(missingRowHeight / 2) + 5);
-
-            ctx2.fillStyle = '#64748B';
-            ctx2.font = '12px Arial, sans-serif';
-            ctx2.fillText(
-              `SĐT: ${c.phone || 'Chưa có'}  |  Số đơn nợ 2 tuần qua: ${customerRecentTxCounts[c.id] || 0} đơn`,
-              sidePadding + 260,
-              currentY + Math.round(missingRowHeight / 2) + 5
-            );
-
-            ctx2.fillStyle = c.debt > 0 ? '#DC2626' : '#64748B';
-            ctx2.font = `bold ${missingFontSize}px Arial, sans-serif`;
-            ctx2.textAlign = 'right';
-            ctx2.fillText(`Nợ tích lũy: ${formatCurrency(c.debt)}`, width - sidePadding - 14, currentY + Math.round(missingRowHeight / 2) + 5);
             ctx2.textAlign = 'left';
+            ctx2.fillText(`${idx + 1}. ${c.name || ''}`, sidePadding + 16, currentY + Math.round(missingRowHeight / 2) + 5);
 
             currentY += missingRowHeight;
           });
+        } else {
+          const half = Math.ceil(missingRegularCustomers.length / 2);
+          const colW = (c2Width - sidePadding * 2 - 16) / 2;
+          const leftX = sidePadding;
+          const rightX = sidePadding + colW + 16;
+
+          for (let i = 0; i < half; i++) {
+            const rowY = currentY + i * missingRowHeight;
+
+            // Cột trái
+            const leftItem = missingRegularCustomers[i];
+            if (leftItem) {
+              ctx2.fillStyle = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+              ctx2.fillRect(leftX, rowY, colW, missingRowHeight);
+              ctx2.strokeStyle = '#E2E8F0';
+              ctx2.strokeRect(leftX, rowY, colW, missingRowHeight);
+
+              ctx2.fillStyle = '#0F172A';
+              ctx2.font = 'bold 15px Arial, sans-serif';
+              ctx2.textAlign = 'left';
+              ctx2.fillText(`${i + 1}. ${leftItem.name || ''}`, leftX + 16, rowY + Math.round(missingRowHeight / 2) + 5);
+            }
+
+            // Cột phải
+            const rightIdx = half + i;
+            if (rightIdx < missingRegularCustomers.length) {
+              const rightItem = missingRegularCustomers[rightIdx];
+              ctx2.fillStyle = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+              ctx2.fillRect(rightX, rowY, colW, missingRowHeight);
+              ctx2.strokeStyle = '#E2E8F0';
+              ctx2.strokeRect(rightX, rowY, colW, missingRowHeight);
+
+              ctx2.fillStyle = '#0F172A';
+              ctx2.font = 'bold 15px Arial, sans-serif';
+              ctx2.textAlign = 'left';
+              ctx2.fillText(`${rightIdx + 1}. ${rightItem.name || ''}`, rightX + 16, rowY + Math.round(missingRowHeight / 2) + 5);
+            }
+          }
+          currentY += half * missingRowHeight;
         }
 
         // Footer ảnh 2
@@ -1718,19 +1739,19 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx2.lineWidth = 1;
         ctx2.beginPath();
         ctx2.moveTo(sidePadding, finalY);
-        ctx2.lineTo(width - sidePadding, finalY);
+        ctx2.lineTo(c2Width - sidePadding, finalY);
         ctx2.stroke();
 
         ctx2.fillStyle = '#64748B';
         ctx2.font = '12px Arial, sans-serif';
         ctx2.textAlign = 'center';
-        ctx2.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, finalY + 22);
-        ctx2.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, finalY + 40);
+        ctx2.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', c2Width / 2, finalY + 22);
+        ctx2.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', c2Width / 2, finalY + 40);
 
         // Download Ảnh 2
         const dataUrl2 = canvas2.toDataURL('image/png');
         const link2 = document.createElement('a');
-        link2.download = `BaoCao_KhachQuenSot_Ngay_${selectedDate.replace(/\//g, '_')}.png`;
+        link2.download = `Khach_Chua_Len_Don_${selectedDate.replace(/\//g, '_')}.png`;
         link2.href = dataUrl2;
         link2.click();
       }

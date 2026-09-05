@@ -304,7 +304,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
     });
   };
 
-  // Xử lý xuất ảnh danh sách khách quen chưa có đơn trong ngày
+  // Xử lý xuất ảnh danh sách khách quen chưa có đơn trong ngày (Chỉ hiển thị tên khách)
   const handleExportImage = () => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') {
       alert('Chức năng xuất ảnh hiện hỗ trợ trên trình duyệt Web.');
@@ -317,17 +317,17 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const width = 800;
+      const isTwoCol = listToExport.length > 15;
+      const width = isTwoCol ? 750 : 550;
       const padding = 20;
-      const headerHeight = 105;
-      const colHeaderHeight = 36;
-      const rowHeight = 40;
+      const headerHeight = 85;
+      const rowHeight = 44;
       const emptyRowHeight = 65;
-      const footerHeight = 55;
+      const footerHeight = 45;
 
-      const totalRows = Math.max(listToExport.length, 1);
-      const contentHeight = listToExport.length === 0 ? emptyRowHeight : totalRows * rowHeight;
-      const totalHeight = padding * 2 + headerHeight + colHeaderHeight + contentHeight + footerHeight;
+      const numRows = isTwoCol ? Math.ceil(listToExport.length / 2) : Math.max(listToExport.length, 1);
+      const contentHeight = listToExport.length === 0 ? emptyRowHeight : numRows * rowHeight;
+      const totalHeight = padding * 2 + headerHeight + 15 + contentHeight + footerHeight;
 
       // Render độ nét cao (2x scale)
       const scale = 2;
@@ -351,42 +351,15 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
       ctx.fillStyle = '#FFFFFF';
       ctx.font = 'bold 20px Arial, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('DANH SÁCH KHÁCH QUEN CHƯA CÓ ĐƠN HÔM NAY', width / 2, 45);
+      ctx.fillText('DANH SÁCH KHÁCH CHƯA LÊN ĐƠN HÔM NAY', width / 2, 44);
 
       ctx.fillStyle = '#A7F3D0';
       ctx.font = 'bold 13px Arial, sans-serif';
-      ctx.fillText(`Ngày: ${selectedDate}   •   Khách chưa lên đơn: ${listToExport.length} người`, width / 2, 72);
+      ctx.fillText(`Ngày: ${selectedDate}   •   Tổng số: ${listToExport.length} khách`, width / 2, 70);
 
-      if (threeDaysLabels.length > 0) {
-        ctx.fillStyle = '#D1FAE5';
-        ctx.font = '11px Arial, sans-serif';
-        ctx.fillText(`(Dựa trên đơn đặt hàng 3 ngày gần nhất: ${threeDaysLabels.join(', ')})`, width / 2, 92);
-      }
+      let startY = 12 + headerHeight + 15;
 
-      let startY = 12 + headerHeight + 12;
-
-      // ── Header các cột bảng ──
-      ctx.fillStyle = '#F1F5F9';
-      ctx.fillRect(padding, startY, width - padding * 2, colHeaderHeight);
-      ctx.strokeStyle = '#CBD5E1';
-      ctx.strokeRect(padding, startY, width - padding * 2, colHeaderHeight);
-
-      ctx.fillStyle = '#334155';
-      ctx.font = 'bold 12px Arial, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('STT', padding + 25, startY + 23);
-
-      ctx.textAlign = 'left';
-      ctx.fillText('Tên khách hàng', padding + 60, startY + 23);
-      ctx.fillText('Số điện thoại', padding + 300, startY + 23);
-      ctx.fillText('Tần suất (3 ngày qua)', padding + 460, startY + 23);
-
-      ctx.textAlign = 'right';
-      ctx.fillText('Dư nợ hiện tại', width - padding - 15, startY + 23);
-
-      startY += colHeaderHeight;
-
-      // ── Render danh sách khách hàng ──
+      // ── Render danh sách tên khách hàng ──
       if (listToExport.length === 0) {
         ctx.fillStyle = '#F8FAFC';
         ctx.fillRect(padding, startY, width - padding * 2, emptyRowHeight);
@@ -394,51 +367,70 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
         ctx.strokeRect(padding, startY, width - padding * 2, emptyRowHeight);
 
         ctx.fillStyle = '#059669';
-        ctx.font = 'bold 13px Arial, sans-serif';
+        ctx.font = 'bold 14px Arial, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('🎉 Tất cả khách quen đều đã được lên đơn nợ trong ngày hôm nay!', width / 2, startY + 38);
+        ctx.fillText('🎉 Tất cả khách quen đều đã được lên đơn trong ngày hôm nay!', width / 2, startY + 38);
         startY += emptyRowHeight;
-      } else {
+      } else if (!isTwoCol) {
+        // 1 Cột duy nhất
         listToExport.forEach((item, idx) => {
           ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
           ctx.fillRect(padding, startY, width - padding * 2, rowHeight);
           ctx.strokeStyle = '#E2E8F0';
           ctx.strokeRect(padding, startY, width - padding * 2, rowHeight);
 
-          // STT
-          ctx.fillStyle = '#64748B';
-          ctx.font = '12px Arial, sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(String(idx + 1), padding + 25, startY + 25);
-
-          // Tên khách hàng
+          // Tên khách hàng (to, rõ ràng)
           ctx.fillStyle = '#0F172A';
-          ctx.font = 'bold 13px Arial, sans-serif';
+          ctx.font = 'bold 16px Arial, sans-serif';
           ctx.textAlign = 'left';
-          ctx.fillText(item.name || '', padding + 60, startY + 25);
-
-          // SĐT
-          ctx.fillStyle = '#475569';
-          ctx.font = '12px Arial, sans-serif';
-          ctx.fillText(item.phone || '—', padding + 300, startY + 25);
-
-          // Tần suất 3 ngày
-          ctx.fillStyle = '#7C3AED';
-          ctx.font = '12px Arial, sans-serif';
-          ctx.fillText(`Đặt ${item.uniqueDaysCount}/3 ngày (${item.recentOrdersCount} đơn)`, padding + 460, startY + 25);
-
-          // Dư nợ
-          ctx.fillStyle = item.debt > 0 ? '#DC2626' : '#059669';
-          ctx.font = 'bold 13px Arial, sans-serif';
-          ctx.textAlign = 'right';
-          ctx.fillText(formatCurrency(item.debt || 0), width - padding - 15, startY + 25);
+          ctx.fillText(`${idx + 1}. ${item.name || ''}`, padding + 20, startY + 27);
 
           startY += rowHeight;
         });
+      } else {
+        // 2 Cột song song
+        const half = Math.ceil(listToExport.length / 2);
+        const colW = (width - padding * 2 - 16) / 2;
+        const leftX = padding;
+        const rightX = padding + colW + 16;
+
+        for (let i = 0; i < half; i++) {
+          const rowY = startY + i * rowHeight;
+
+          // Cột trái
+          const leftItem = listToExport[i];
+          if (leftItem) {
+            ctx.fillStyle = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+            ctx.fillRect(leftX, rowY, colW, rowHeight);
+            ctx.strokeStyle = '#E2E8F0';
+            ctx.strokeRect(leftX, rowY, colW, rowHeight);
+
+            ctx.fillStyle = '#0F172A';
+            ctx.font = 'bold 15px Arial, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(`${i + 1}. ${leftItem.name || ''}`, leftX + 16, rowY + 27);
+          }
+
+          // Cột phải
+          const rightIdx = half + i;
+          if (rightIdx < listToExport.length) {
+            const rightItem = listToExport[rightIdx];
+            ctx.fillStyle = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+            ctx.fillRect(rightX, rowY, colW, rowHeight);
+            ctx.strokeStyle = '#E2E8F0';
+            ctx.strokeRect(rightX, rowY, colW, rowHeight);
+
+            ctx.fillStyle = '#0F172A';
+            ctx.font = 'bold 15px Arial, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(`${rightIdx + 1}. ${rightItem.name || ''}`, rightX + 16, rowY + 27);
+          }
+        }
+        startY += half * rowHeight;
       }
 
       // ── Footer ảnh ──
-      const footerY = startY + 14;
+      const footerY = startY + 12;
       ctx.strokeStyle = '#E2E8F0';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -452,20 +444,20 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
       ctx.fillStyle = '#64748B';
       ctx.font = '11px Arial, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(`Thời gian xuất: ${timeStr}`, padding, footerY + 20);
+      ctx.fillText(`Thời gian xuất: ${timeStr}`, padding, footerY + 18);
 
       ctx.textAlign = 'right';
-      ctx.fillText('Phần mềm Quản lý Giao dịch & Công nợ Sạp thịt', width - padding, footerY + 20);
+      ctx.fillText('Phần mềm Quản lý Giao dịch & Công nợ Sạp thịt', width - padding, footerY + 18);
 
       // Tải file ảnh về máy
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
-      link.download = `Khach_Quen_Chua_Co_Don_${selectedDate.replace(/\//g, '_')}.png`;
+      link.download = `Khach_Chua_Len_Don_${selectedDate.replace(/\//g, '_')}.png`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
       console.error('[EXPORT REGULAR CUSTOMERS IMAGE ERROR]', err);
-      alert('Đã xảy ra lỗi khi xuất ảnh danh sách khách quen.');
+      alert('Đã xảy ra lỗi khi xuất ảnh danh sách khách.');
     }
   };
 
