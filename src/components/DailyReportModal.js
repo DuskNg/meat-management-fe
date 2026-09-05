@@ -1432,12 +1432,15 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx.font = 'bold 18px Arial, sans-serif';
         ctx.fillText(`${allDailyTx.length} đơn nợ`, box3X + 14, boxY + 54);
       } else {
+        // Chỉ hiển thị 2 hộp: Đơn nợ mới & Tiền đã thu trong ngày (Bỏ chênh lệch công nợ ròng)
+        const box2W = (width - sidePadding * 2 - 16) / 2;
+
         // Hộp Nợ Mới
         ctx.fillStyle = '#FEF2F2';
-        ctx.fillRect(sidePadding, boxY, boxW, boxH);
+        ctx.fillRect(sidePadding, boxY, box2W, boxH);
         ctx.strokeStyle = '#FECACA';
         ctx.lineWidth = 1.5;
-        ctx.strokeRect(sidePadding, boxY, boxW, boxH);
+        ctx.strokeRect(sidePadding, boxY, box2W, boxH);
 
         ctx.fillStyle = '#991B1B';
         ctx.font = 'bold 12.5px Arial, sans-serif';
@@ -1447,30 +1450,18 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx.fillText(formatCurrency(totalNewDebt), sidePadding + 14, boxY + 54);
 
         // Hộp Thu Nợ
-        const box2X = sidePadding + boxW + 10;
+        const box2X = sidePadding + box2W + 16;
         ctx.fillStyle = '#F0FDF4';
-        ctx.fillRect(box2X, boxY, boxW, boxH);
+        ctx.fillRect(box2X, boxY, box2W, boxH);
         ctx.strokeStyle = '#BBF7D0';
-        ctx.strokeRect(box2X, boxY, boxW, boxH);
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(box2X, boxY, box2W, boxH);
 
         ctx.fillStyle = '#166534';
         ctx.font = 'bold 12.5px Arial, sans-serif';
         ctx.fillText('🟢 TIỀN ĐÃ THU TRONG NGÀY', box2X + 14, boxY + 26);
         ctx.font = 'bold 18px Arial, sans-serif';
         ctx.fillText(formatCurrency(totalPayment), box2X + 14, boxY + 54);
-
-        // Hộp Dư NỢ Ròng
-        const box3X = box2X + boxW + 10;
-        ctx.fillStyle = '#EFF6FF';
-        ctx.fillRect(box3X, boxY, boxW, boxH);
-        ctx.strokeStyle = '#BFDBFE';
-        ctx.strokeRect(box3X, boxY, boxW, boxH);
-
-        ctx.fillStyle = '#1E40AF';
-        ctx.font = 'bold 12.5px Arial, sans-serif';
-        ctx.fillText('🔵 CHÊNH LỆCH CÔNG NỢ RÒNG', box3X + 14, boxY + 26);
-        ctx.font = 'bold 18px Arial, sans-serif';
-        ctx.fillText(formatCurrency(netBalance), box3X + 14, boxY + 54);
       }
 
       // ─── 3. VẼ DANH SÁCH CHI TIẾT GIAO DỊCH ───────────────────
@@ -1501,7 +1492,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           items.forEach((item, idx) => {
             const status = getItemStatus(item);
             const isDebt = item.type === 'debt';
-            const isEdited = status === 'edited';
+            // Chỉ hiển thị màu sắc/status đã sửa khi người dùng đang xuất ảnh ở chế độ lọc 'edited'
+            const isEdited = activeFilter === 'edited' && status === 'edited';
             const isReturnGoods = status === 'return';
 
             const isDuplicate = isItemDuplicateDebt(item);
