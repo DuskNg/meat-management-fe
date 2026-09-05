@@ -304,6 +304,171 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
     });
   };
 
+  // Xử lý xuất ảnh danh sách khách quen chưa có đơn trong ngày
+  const handleExportImage = () => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') {
+      alert('Chức năng xuất ảnh hiện hỗ trợ trên trình duyệt Web.');
+      return;
+    }
+
+    try {
+      const listToExport = missingCustomers; // Danh sách khách quen chưa có đơn
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const width = 800;
+      const padding = 20;
+      const headerHeight = 105;
+      const colHeaderHeight = 36;
+      const rowHeight = 40;
+      const emptyRowHeight = 65;
+      const footerHeight = 55;
+
+      const totalRows = Math.max(listToExport.length, 1);
+      const contentHeight = listToExport.length === 0 ? emptyRowHeight : totalRows * rowHeight;
+      const totalHeight = padding * 2 + headerHeight + colHeaderHeight + contentHeight + footerHeight;
+
+      // Render độ nét cao (2x scale)
+      const scale = 2;
+      canvas.width = width * scale;
+      canvas.height = totalHeight * scale;
+      ctx.scale(scale, scale);
+
+      // Nền trắng toàn bộ ảnh
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, totalHeight);
+
+      // Khung viền ngoài
+      ctx.strokeStyle = '#CBD5E1';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(8, 8, width - 16, totalHeight - 16);
+
+      // ── Header ảnh ──
+      ctx.fillStyle = '#065F46'; // Xanh lá đậm sang trọng
+      ctx.fillRect(12, 12, width - 24, headerHeight);
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 20px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('DANH SÁCH KHÁCH QUEN CHƯA CÓ ĐƠN HÔM NAY', width / 2, 45);
+
+      ctx.fillStyle = '#A7F3D0';
+      ctx.font = 'bold 13px Arial, sans-serif';
+      ctx.fillText(`Ngày: ${selectedDate}   •   Khách chưa lên đơn: ${listToExport.length} người`, width / 2, 72);
+
+      if (threeDaysLabels.length > 0) {
+        ctx.fillStyle = '#D1FAE5';
+        ctx.font = '11px Arial, sans-serif';
+        ctx.fillText(`(Dựa trên đơn đặt hàng 3 ngày gần nhất: ${threeDaysLabels.join(', ')})`, width / 2, 92);
+      }
+
+      let startY = 12 + headerHeight + 12;
+
+      // ── Header các cột bảng ──
+      ctx.fillStyle = '#F1F5F9';
+      ctx.fillRect(padding, startY, width - padding * 2, colHeaderHeight);
+      ctx.strokeStyle = '#CBD5E1';
+      ctx.strokeRect(padding, startY, width - padding * 2, colHeaderHeight);
+
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 12px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('STT', padding + 25, startY + 23);
+
+      ctx.textAlign = 'left';
+      ctx.fillText('Tên khách hàng', padding + 60, startY + 23);
+      ctx.fillText('Số điện thoại', padding + 300, startY + 23);
+      ctx.fillText('Tần suất (3 ngày qua)', padding + 460, startY + 23);
+
+      ctx.textAlign = 'right';
+      ctx.fillText('Dư nợ hiện tại', width - padding - 15, startY + 23);
+
+      startY += colHeaderHeight;
+
+      // ── Render danh sách khách hàng ──
+      if (listToExport.length === 0) {
+        ctx.fillStyle = '#F8FAFC';
+        ctx.fillRect(padding, startY, width - padding * 2, emptyRowHeight);
+        ctx.strokeStyle = '#E2E8F0';
+        ctx.strokeRect(padding, startY, width - padding * 2, emptyRowHeight);
+
+        ctx.fillStyle = '#059669';
+        ctx.font = 'bold 13px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('🎉 Tất cả khách quen đều đã được lên đơn nợ trong ngày hôm nay!', width / 2, startY + 38);
+        startY += emptyRowHeight;
+      } else {
+        listToExport.forEach((item, idx) => {
+          ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+          ctx.fillRect(padding, startY, width - padding * 2, rowHeight);
+          ctx.strokeStyle = '#E2E8F0';
+          ctx.strokeRect(padding, startY, width - padding * 2, rowHeight);
+
+          // STT
+          ctx.fillStyle = '#64748B';
+          ctx.font = '12px Arial, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(String(idx + 1), padding + 25, startY + 25);
+
+          // Tên khách hàng
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 13px Arial, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(item.name || '', padding + 60, startY + 25);
+
+          // SĐT
+          ctx.fillStyle = '#475569';
+          ctx.font = '12px Arial, sans-serif';
+          ctx.fillText(item.phone || '—', padding + 300, startY + 25);
+
+          // Tần suất 3 ngày
+          ctx.fillStyle = '#7C3AED';
+          ctx.font = '12px Arial, sans-serif';
+          ctx.fillText(`Đặt ${item.uniqueDaysCount}/3 ngày (${item.recentOrdersCount} đơn)`, padding + 460, startY + 25);
+
+          // Dư nợ
+          ctx.fillStyle = item.debt > 0 ? '#DC2626' : '#059669';
+          ctx.font = 'bold 13px Arial, sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillText(formatCurrency(item.debt || 0), width - padding - 15, startY + 25);
+
+          startY += rowHeight;
+        });
+      }
+
+      // ── Footer ảnh ──
+      const footerY = startY + 14;
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padding, footerY);
+      ctx.lineTo(width - padding, footerY);
+      ctx.stroke();
+
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} ngày ${toDateKey(now)}`;
+
+      ctx.fillStyle = '#64748B';
+      ctx.font = '11px Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`Thời gian xuất: ${timeStr}`, padding, footerY + 20);
+
+      ctx.textAlign = 'right';
+      ctx.fillText('Phần mềm Quản lý Giao dịch & Công nợ Sạp thịt', width - padding, footerY + 20);
+
+      // Tải file ảnh về máy
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `Khach_Quen_Chua_Co_Don_${selectedDate.replace(/\//g, '_')}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('[EXPORT REGULAR CUSTOMERS IMAGE ERROR]', err);
+      alert('Đã xảy ra lỗi khi xuất ảnh danh sách khách quen.');
+    }
+  };
+
   const isToday = selectedDate === getTodayFormatted();
 
   // Render từng thẻ khách quen
@@ -441,6 +606,14 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
           </View>
 
           <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.exportImgBtn}
+              onPress={handleExportImage}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.exportImgBtnText}>📸 Xuất ảnh</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.refreshBtn}
               onPress={fetchData}
@@ -640,6 +813,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  exportImgBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#065F46', // Xanh lá đậm thương hiệu
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#047857',
+    ...SHADOWS.small,
+  },
+  exportImgBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   refreshBtn: {
     width: 34,
