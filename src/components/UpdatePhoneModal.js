@@ -19,21 +19,34 @@ const UpdatePhoneModal = forwardRef(({ onUpdateSuccess }, ref) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successCallback, setSuccessCallback] = useState(null);
+  const [skipCallback, setSkipCallback] = useState(null);
 
   // 1. Cung cấp các hành động ra bên ngoài thông qua useImperativeHandler và forwardRef
   useImperativeHandle(ref, () => ({
-    open: (customerData, callback) => {
+    open: (customerData, callback, onSkip) => {
       setCustomer(customerData);
       setPhone(customerData?.phone || '');
       setError('');
       setLoading(false);
       setSuccessCallback(() => callback);
+      setSkipCallback(() => onSkip);
       setVisible(true);
     },
     close: () => {
       setVisible(false);
+    },
+    skip: () => {
+      handleSkip();
     }
   }));
+
+  // Xử lý khi người dùng chọn chỉ tải ảnh (bỏ qua nhập SĐT)
+  const handleSkip = () => {
+    setVisible(false);
+    if (skipCallback) {
+      skipCallback();
+    }
+  };
 
   // 2. Xử lý lưu số điện thoại mới lên máy chủ
   const handleSubmit = async () => {
@@ -77,19 +90,19 @@ const UpdatePhoneModal = forwardRef(({ onUpdateSuccess }, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <SmoothModal visible={visible} onClose={handleSkip}>
       <View style={styles.modalView}>
         <Text style={styles.modalTitle}>📞 THIẾT LẬP SỐ ĐIỆN THOẠI ZALO</Text>
         
         <Text style={styles.description}>
-          Khách hàng <Text style={styles.boldText}>{customer?.name}</Text> chưa có số điện thoại liên hệ. Vui lòng nhập số điện thoại để hệ thống tải ảnh và mở Zalo gửi công nợ.
+          Khách hàng <Text style={styles.boldText}>{customer?.name}</Text> chưa có số điện thoại liên hệ. Bạn có thể nhập SĐT để gửi qua Zalo, hoặc chọn <Text style={styles.boldText}>"Chỉ tải ảnh"</Text> để lưu ảnh về máy.
         </Text>
 
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
         <TextInput
           style={styles.input}
-          placeholder="Nhập số điện thoại Zalo (ví dụ: 0912345678)"
+          placeholder="Nhập số điện thoại Zalo (không bắt buộc)..."
           placeholderTextColor={COLORS.textLight}
           keyboardType="phone-pad"
           value={phone}
@@ -109,8 +122,16 @@ const UpdatePhoneModal = forwardRef(({ onUpdateSuccess }, ref) => {
             {loading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
-              <Text style={styles.submitButtonText}>LƯU & TIẾP TỤC</Text>
+              <Text style={styles.submitButtonText}>💾 LƯU & GỬI ZALO</Text>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.skipButton]}
+            onPress={handleSkip}
+            disabled={loading}
+          >
+            <Text style={styles.skipButtonText}>📸 CHỈ TẢI ẢNH</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -118,7 +139,7 @@ const UpdatePhoneModal = forwardRef(({ onUpdateSuccess }, ref) => {
             onPress={() => setVisible(false)}
             disabled={loading}
           >
-            <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+            <Text style={styles.cancelButtonText}>ĐÓNG</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -131,10 +152,12 @@ export default UpdatePhoneModal;
 const styles = StyleSheet.create({
   modalView: {
     backgroundColor: COLORS.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderRadius: 16,
     padding: 20,
-    maxHeight: '90%',
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+    ...SHADOWS.large,
   },
   modalTitle: {
     fontSize: 16,
@@ -176,36 +199,43 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   button: {
-    flex: 1,
     height: 46,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
   submitButton: {
-    backgroundColor: COLORS.primary,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 2,
+    flex: 1.3,
+    backgroundColor: '#059669',
+    ...SHADOWS.small,
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  skipButton: {
+    flex: 1.1,
+    backgroundColor: '#0284C7',
+    ...SHADOWS.small,
+  },
+  skipButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: 'bold',
   },
   cancelButton: {
+    flex: 0.7,
     backgroundColor: COLORS.inputBg,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   cancelButtonText: {
     color: COLORS.textSecondary,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
   },
 });

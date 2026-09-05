@@ -734,10 +734,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
   };
 
-  // Thực hiện tải ảnh về máy và tự động mở Zalo gửi cho khách hàng
-  const executeDownloadAndZalo = async () => {
-    const targetPhone = customer?.phone;
-
+  // Thực hiện tải ảnh về máy và tự động mở Zalo gửi cho khách hàng (nếu có SĐT)
+  const executeDownloadAndZalo = async (targetPhone = customer?.phone) => {
     if (Platform.OS === 'web' && imageUri) {
       const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
       const safeMonth = selectedMonth.replace('/', '-');
@@ -752,18 +750,20 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           const imageFile = new File([blob], fileName, { type: 'image/png' });
 
           if (navigator.canShare({ files: [imageFile] })) {
-            // Hiện Share Sheet của hệ thống — sau khi người dùng đóng mới mở Zalo
+            // Hiện Share Sheet của hệ thống — sau khi người dùng đóng mới mở Zalo nếu có SĐT
             await navigator.share({
               files: [imageFile],
               title: `Ảnh công nợ tháng ${selectedMonth}`,
             });
-            // Mở Zalo sau khi đã chia sẻ/lưu ảnh xong
-            proceedZalo(targetPhone);
+            // Mở Zalo sau khi đã chia sẻ/lưu ảnh xong nếu có SĐT
+            if (targetPhone) {
+              proceedZalo(targetPhone);
+            }
             return;
           }
         }
 
-        // Android / Desktop: tải ảnh bằng Blob Object URL rồi mở Zalo sau 800ms
+        // Android / Desktop: tải ảnh bằng Blob Object URL rồi mở Zalo sau 800ms nếu có SĐT
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = blobUrl;
@@ -775,8 +775,10 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         // Giải phóng bộ nhớ Object URL sau khi hoàn tất
         setTimeout(() => URL.revokeObjectURL(blobUrl), 200);
 
-        // Đợi một chút để trình duyệt kịp lưu file trước khi mở Zalo
-        setTimeout(() => proceedZalo(targetPhone), 800);
+        // Đợi một chút để trình duyệt kịp lưu file trước khi mở Zalo (chỉ khi có SĐT)
+        if (targetPhone) {
+          setTimeout(() => proceedZalo(targetPhone), 800);
+        }
         return;
       } catch (err) {
         // Người dùng huỷ Share Sheet hoặc lỗi — chỉ log, không mở Zalo
@@ -787,8 +789,10 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       }
     }
 
-    // Không có ảnh: chỉ mở Zalo
-    proceedZalo(targetPhone);
+    // Không có ảnh: chỉ mở Zalo nếu có SĐT
+    if (targetPhone) {
+      proceedZalo(targetPhone);
+    }
   };
 
   // Kiểm tra các ngày trống đơn nợ và mở popup cảnh báo nếu có
@@ -800,28 +804,35 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         selectedMonth,
         () => {
           // Người dùng chọn tiếp tục xuất
-          executeDownloadAndZalo();
+          executeDownloadAndZalo(phone);
         },
         () => {
           // Người dùng chọn hủy xuất (không làm gì)
         }
       );
     } else {
-      executeDownloadAndZalo();
+      executeDownloadAndZalo(phone);
     }
   };
 
-  // 4. Tải ảnh về máy và tự động điều hướng sang Zalo gửi cho khách hàng
+  // 4. Tải ảnh về máy và tự động điều hướng sang Zalo gửi cho khách hàng (nếu có SĐT) hoặc chỉ tải ảnh
   const handleDownloadAndZalo = async () => {
     const targetPhone = customer?.phone;
 
-    // Kiểm tra SĐT trước — nếu thiếu thì mở popup nhập, không làm gì thêm
+    // Nếu thiếu SĐT thì mở popup nhập, nhưng có thêm nút "Chỉ tải ảnh" không bắt buộc
     if (!targetPhone) {
-      updatePhoneModalRef.current?.open(customer, (newPhone) => {
-        setCustomer(prev => ({ ...prev, phone: newPhone }));
-        if (onRefresh) onRefresh();
-        checkEmptyDaysAndProceed(newPhone);
-      });
+      updatePhoneModalRef.current?.open(
+        customer,
+        (newPhone) => {
+          setCustomer(prev => ({ ...prev, phone: newPhone }));
+          if (onRefresh) onRefresh();
+          checkEmptyDaysAndProceed(newPhone);
+        },
+        () => {
+          // Người dùng không nhập SĐT / chọn Chỉ tải ảnh
+          checkEmptyDaysAndProceed(null);
+        }
+      );
       return;
     }
 
