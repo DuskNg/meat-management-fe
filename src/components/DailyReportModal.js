@@ -1501,13 +1501,17 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           items.forEach((item, idx) => {
             const status = getItemStatus(item);
             const isDebt = item.type === 'debt';
+            const isEdited = status === 'edited';
             const isReturnGoods = status === 'return';
 
             const isDuplicate = isItemDuplicateDebt(item);
             const palette = isDuplicate ? getDuplicatePalette(item) : null;
             const seqText = isDuplicate ? getItemDebtSequence(item) : '';
 
-            if (isReturnGoods) {
+            if (isEdited) {
+              ctx.fillStyle = idx % 2 === 0 ? '#FAF5FF' : '#F3E8FF';
+              ctx.strokeStyle = '#D8B4FE';
+            } else if (isReturnGoods) {
               ctx.fillStyle = idx % 2 === 0 ? '#FFF7ED' : '#FFEDD5';
               ctx.strokeStyle = '#FED7AA';
             } else if (isDebt) {
@@ -1540,7 +1544,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             ctx.fillText(subText, startX + 22, colY + Math.round(rowHeight * 0.8));
 
             // Số tiền (căn phải)
-            if (isReturnGoods) {
+            if (isEdited) {
+              ctx.fillStyle = '#7E22CE';
+            } else if (isReturnGoods) {
               ctx.fillStyle = '#EA580C';
             } else if (isDebt) {
               ctx.fillStyle = '#DC2626';
