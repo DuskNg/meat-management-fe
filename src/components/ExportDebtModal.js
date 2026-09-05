@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/ExportDebtModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,7 +14,6 @@ import {
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
-import ConfirmExportModal from './ConfirmExportModal';
 
 // Hàm helper để xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
 const getPaymentTargetMonth = (p) => {
@@ -49,7 +48,6 @@ const formatPaymentNote = (note, paidAt) => {
 };
 
 const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
-  const confirmExportModalRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -185,7 +183,6 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       let totalDebtVal = 0;
       let totalPaymentVal = 0;
 
-      // Tạo trước các ngày trong tháng được chọn (chỉ liệt kê các ngày trống đến ngày hiện tại nếu là tháng hiện tại)
       const [mm, yyyy] = month.split('/').map(Number);
       const daysInMonth = new Date(yyyy, mm, 0).getDate();
 
@@ -196,18 +193,6 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       const isCurrentMonth = (mm === currentMonth && yyyy === currentYear);
       const maxDay = isCurrentMonth ? Math.min(daysInMonth, currentDay) : daysInMonth;
-
-      for (let day = 1; day <= maxDay; day++) {
-        const dateKey = `${day.toString().padStart(2, '0')}/${mm.toString().padStart(2, '0')}/${yyyy}`;
-        dayMap[dateKey] = {
-          date: new Date(yyyy, mm - 1, day),
-          dateKey,
-          debtAmount: 0,
-          paymentAmount: 0,
-          items: [],
-          notes: []
-        };
-      }
 
       filteredTrans.forEach(t => {
         const d = new Date(t.date);
@@ -266,8 +251,23 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         }
       });
 
+      // Lọc các ngày thực sự có phát sinh giao dịch hoặc thanh toán
+      const activeRows = Object.values(dayMap).filter(
+        r => r.debtAmount > 0 || r.paymentAmount > 0 || r.items.length > 0 || r.notes.length > 0
+      );
+      const activeDateKeys = new Set(activeRows.map(r => r.dateKey));
+
       // Sắp xếp tăng dần theo thời gian (cũ tới mới)
-      const sortedRows = Object.values(dayMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+      const sortedRows = activeRows.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      // Tính danh sách các ngày không có công nợ
+      const emptyDays = [];
+      for (let day = 1; day <= maxDay; day++) {
+        const dateKey = `${day.toString().padStart(2, '0')}/${mm.toString().padStart(2, '0')}/${yyyy}`;
+        if (!activeDateKeys.has(dateKey)) {
+          emptyDays.push(day.toString().padStart(2, '0'));
+        }
+      }
 
       // Lưu trữ dữ liệu vào State
       setRows(sortedRows);
@@ -327,7 +327,6 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       };
 
       const startTableY = 180;
-      const footerHeight = 220;
 
       // Tạo một canvas tạm thời để đo độ rộng chữ và tính toán chiều cao hàng
       const tempCanvas = document.createElement('canvas');
@@ -348,13 +347,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const rowsWithLayout = sortedRows.map(row => {
         let descText = '';
         const parts = [];
-        if (row.debtAmount === 0 && row.paymentAmount === 0) {
-          // Ngày không có cả đơn nợ và thanh toán
-          parts.push('Trống');
-        } else {
-          if (row.items && row.items.length > 0) {
-            parts.push(row.items.join(', '));
-          }
+        if (row.items && row.items.length > 0) {
+          parts.push(row.items.join(', '));
         }
         if (row.notes && row.notes.length > 0) {
           parts.push(row.notes.join('; '));
@@ -365,7 +359,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         const descLines = wrapText(tempCtx, descText, colDescMaxWidth);
 
         // Chiều cao tính toán của hàng
-        const textHeight = descLines.length * lineHeight;
+        const textHeight = Math.max(1, descLines.length) * lineHeight;
         const calculatedHeight = textHeight + paddingY * 2;
         const rowHeight = Math.max(minRowHeight, calculatedHeight);
 
@@ -397,6 +391,17 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         return col.length > 0 ? col.reduce((sum, r) => sum + r.rowHeight, 0) : 80;
       });
       const contentHeight = Math.max(...colHeights);
+
+      // Tính toán chiều cao dòng ghi chú các ngày không có công nợ
+      let emptyDaysLinesCount = 0;
+      if (emptyDays.length > 0) {
+        const emptyDaysText = `* Các ngày không có công nợ: Ngày ${emptyDays.join(', ')}`;
+        tempCtx.font = 'italic 15px Arial';
+        const lines = wrapText(tempCtx, emptyDaysText, width - 80);
+        emptyDaysLinesCount = lines.length;
+      }
+      const footerExtraHeight = emptyDaysLinesCount > 0 ? (emptyDaysLinesCount * 22 + 15) : 0;
+      const footerHeight = 220 + footerExtraHeight;
       const canvasHeight = startTableY + 42 + contentHeight + footerHeight;
 
       // Tạo canvas chính thức để vẽ
@@ -483,12 +488,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           ctx.fillText('Không có giao dịch phát sinh trong tháng này', startX + 400, currentY + 48);
         } else {
           colRows.forEach((row, idx) => {
-            // Tô màu nền đỏ nhạt cho ngày hoàn toàn trống (không có đơn nợ và không có thanh toán)
-            if (row.debtAmount === 0 && row.paymentAmount === 0) {
-              ctx.fillStyle = '#FEF2F2'; // Đỏ nhạt cho ngày trống
-            } else {
-              ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-            }
+            ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
             ctx.fillRect(startX + 40, currentY, 720, row.rowHeight);
 
             ctx.strokeStyle = '#E2E8F0';
@@ -507,33 +507,12 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
             // Cột Chi tiết mô tả - vẽ nhiều dòng
             ctx.textAlign = 'left';
-
-            // Tính toán vị trí Y xuất phát sao cho toàn bộ cụm chữ được căn giữa theo chiều dọc của hàng
             const startTextY = currentY + row.rowHeight / 2 - ((row.descLines.length - 1) * lineHeight) / 2;
             row.descLines.forEach((line, lineIdx) => {
               const textY = startTextY + lineIdx * lineHeight;
-              if (line === 'Trống') {
-                ctx.fillStyle = '#DC2626'; // Bôi đỏ chữ Trống
-                ctx.font = 'bold 15px Arial';
-                ctx.fillText(line, startX + colDescX, textY);
-              } else if (line.startsWith('Trống |')) {
-                // Vẽ chữ "Trống" màu đỏ in đậm
-                ctx.fillStyle = '#DC2626';
-                ctx.font = 'bold 15px Arial';
-                ctx.fillText('Trống', startX + colDescX, textY);
-
-                // Đo chiều rộng chữ "Trống" để vẽ tiếp phần sau
-                const trongWidth = ctx.measureText('Trống').width;
-
-                // Vẽ phần còn lại với màu chữ bình thường
-                ctx.fillStyle = '#0F172A';
-                ctx.font = '15px Arial';
-                ctx.fillText(line.substring('Trống'.length), startX + colDescX + trongWidth, textY);
-              } else {
-                ctx.fillStyle = '#0F172A';
-                ctx.font = '15px Arial';
-                ctx.fillText(line, startX + colDescX, textY);
-              }
+              ctx.fillStyle = '#0F172A';
+              ctx.font = '15px Arial';
+              ctx.fillText(line, startX + colDescX, textY);
             });
 
             // Cột tiền nợ
@@ -560,6 +539,20 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       // ─── PHẦN TỔNG KẾT (FOOTER) ───────────────────
       let currentFooterY = startTableY + 42 + contentHeight + 20;
+
+      // Vẽ dòng ghi chú các ngày không có công nợ nếu có
+      if (emptyDays.length > 0) {
+        const emptyDaysText = `* Các ngày không có công nợ: Ngày ${emptyDays.join(', ')}`;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#64748B';
+        ctx.font = 'italic 15px Arial';
+        const emptyLines = wrapText(ctx, emptyDaysText, width - 80);
+        emptyLines.forEach((l) => {
+          ctx.fillText(l, 40, currentFooterY);
+          currentFooterY += 22;
+        });
+        currentFooterY += 10;
+      }
 
       // Vẽ nét gạch ngang trước tổng kết
       ctx.strokeStyle = '#CBD5E1';
@@ -637,13 +630,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       rows.forEach(row => {
         let descText = '';
         const parts = [];
-        if (row.debtAmount === 0 && row.paymentAmount === 0) {
-          // Ngày không có cả đơn nợ và thanh toán
-          parts.push('Trống');
-        } else {
-          if (row.items && row.items.length > 0) {
-            parts.push(row.items.join(', '));
-          }
+        if (row.items && row.items.length > 0) {
+          parts.push(row.items.join(', '));
         }
         if (row.notes && row.notes.length > 0) {
           parts.push(row.notes.join('; '));
@@ -727,29 +715,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Kiểm tra các ngày trống đơn nợ và mở popup cảnh báo nếu có
-  const checkEmptyDaysAndProceed = () => {
-    const emptyDays = rows.filter(r => r.debtAmount === 0 && r.paymentAmount === 0).map(r => r.dateKey.split('/')[0]);
-    if (emptyDays.length > 0) {
-      confirmExportModalRef.current?.open(
-        emptyDays,
-        selectedMonth,
-        () => {
-          // Người dùng chọn tiếp tục xuất
-          executeDownloadImage();
-        },
-        () => {
-          // Người dùng chọn hủy xuất (không làm gì)
-        }
-      );
-    } else {
-      executeDownloadImage();
-    }
-  };
-
   // 4. Tải ảnh công nợ về máy
   const handleDownloadImage = async () => {
-    checkEmptyDaysAndProceed();
+    executeDownloadImage();
   };
 
   return (
@@ -890,7 +858,6 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
       </SmoothModal>
-      <ConfirmExportModal ref={confirmExportModalRef} />
     </>
   );
 });
