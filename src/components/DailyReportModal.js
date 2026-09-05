@@ -1753,6 +1753,12 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     }
   };
 
+  // Xử lý chuyển đổi bộ lọc trạng thái và tự động xóa từ khóa tìm kiếm trong ô search
+  const handleFilterToggle = (filterType) => {
+    setSearchText('');
+    setActiveFilter(prev => (prev === filterType ? 'all' : filterType));
+  };
+
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
@@ -1868,7 +1874,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                 ]}
                 onPress={() => {
                   if (activeReportTab === 'day') {
-                    setActiveFilter(prev => prev === 'debt' ? 'all' : 'debt');
+                    handleFilterToggle('debt');
                   }
                 }}
                 activeOpacity={activeReportTab === 'day' ? 0.7 : 1}
@@ -1885,7 +1891,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                 ]}
                 onPress={() => {
                   if (activeReportTab === 'day') {
-                    setActiveFilter(prev => prev === 'payment' ? 'all' : 'payment');
+                    handleFilterToggle('payment');
                   }
                 }}
                 activeOpacity={activeReportTab === 'day' ? 0.7 : 1}
@@ -1897,7 +1903,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                 <Text style={[styles.summaryBoxLabel, { color: '#0369A1' }]}>
                   {`💰 Lợi nhuận${profitMarginPercent > 0 ? ` (${profitMarginPercent}%)` : ''}`}
                 </Text>
-                <Text style={[styles.summaryBoxValue, { color: '#0369A1' }]}>{formatCurrency(totalProfit)}</Text>
+                <Text style={styles.summaryBoxValue, { color: '#0369A1' }]}>{formatCurrency(totalProfit)}</Text>
               </View>
             </View>
 
@@ -1917,7 +1923,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                     styles.duplicateBannerBtn,
                     activeFilter === 'duplicate' && styles.duplicateBannerBtnActive
                   ]}
-                  onPress={() => setActiveFilter(prev => prev === 'duplicate' ? 'all' : 'duplicate')}
+                  onPress={() => handleFilterToggle('duplicate')}
                   activeOpacity={0.7}
                 >
                   <Text style={[
@@ -1939,7 +1945,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                     styles.legendBadgeEdited,
                     activeFilter === 'edited' && styles.legendBadgeActive
                   ]}
-                  onPress={() => setActiveFilter(prev => prev === 'edited' ? 'all' : 'edited')}
+                  onPress={() => handleFilterToggle('edited')}
                   activeOpacity={0.7}
                 >
                   <View style={[styles.legendDot, { backgroundColor: '#8B5CF6' }]} />
@@ -1952,7 +1958,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                     styles.legendBadgeReturn,
                     activeFilter === 'return' && styles.legendBadgeActive
                   ]}
-                  onPress={() => setActiveFilter(prev => prev === 'return' ? 'all' : 'return')}
+                  onPress={() => handleFilterToggle('return')}
                   activeOpacity={0.7}
                 >
                   <View style={[styles.legendDot, { backgroundColor: '#EA580C' }]} />
@@ -1965,7 +1971,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                     styles.legendBadgePayment,
                     activeFilter === 'payment' && styles.legendBadgeActive
                   ]}
-                  onPress={() => setActiveFilter(prev => prev === 'payment' ? 'all' : 'payment')}
+                  onPress={() => handleFilterToggle('payment')}
                   activeOpacity={0.7}
                 >
                   <View style={[styles.legendDot, { backgroundColor: '#16A34A' }]} />
@@ -1978,7 +1984,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                     styles.legendBadgeDebt,
                     activeFilter === 'debt' && styles.legendBadgeActive
                   ]}
-                  onPress={() => setActiveFilter(prev => prev === 'debt' ? 'all' : 'debt')}
+                  onPress={() => handleFilterToggle('debt')}
                   activeOpacity={0.7}
                 >
                   <View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} />
