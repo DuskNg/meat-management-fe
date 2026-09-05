@@ -501,57 +501,105 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
             </View>
           )}
 
+          {/* ── DANH SÁCH HÀNG TRẢ LẠI ── */}
+          {payments.filter((p) => isReturnGoodsItem(p)).length > 0 && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: '#C2410C' }]}>↩️ Hàng khách trả lại</Text>
+              {payments.filter((p) => isReturnGoodsItem(p)).map((p, pIdx) => (
+                <View key={p.id || pIdx} style={[styles.paymentCard, styles.paymentCardReturnGoods]}>
+                  <View style={styles.transCardHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+                      <Text style={[styles.paymentLabel, { color: '#C2410C' }]}>
+                        Trả hàng #{pIdx + 1}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.editCardBtn}
+                        onPress={() => {
+                          setVisible(false);
+                          if (onEditPayment) onEditPayment(p);
+                        }}
+                      >
+                        <Text style={styles.editCardText}>✏️ Sửa</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteCardBtn}
+                        onPress={() => handleDeletePayment(p.id)}
+                      >
+                        <Text style={styles.deleteCardText}>🗑️ Xóa</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={[styles.transCardTotal, { color: '#EA580C' }]}>
+                      -{formatCurrency(p.amount)}
+                    </Text>
+                  </View>
+                  {p.note ? (
+                    <Text style={styles.transNote}>📝 {formatPaymentNote(p.note, p.paidAt)}</Text>
+                  ) : null}
+
+                  {/* Lịch sử khấu trừ hóa đơn nợ */}
+                  {p.allocations && p.allocations.length > 0 && (
+                    <View style={styles.allocationBox}>
+                      <Text style={styles.allocationTitle}>🔗 Khấu trừ cho các đơn nợ:</Text>
+                      {p.allocations.map((alloc, aIdx) => (
+                        <Text key={aIdx} style={styles.allocationItem}>
+                          • Khấu trừ <Text style={styles.boldText}>{formatCurrency(alloc.amount)}</Text> cho đơn nợ ngày {toDateKey(alloc.date)}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+
           {/* ── DANH SÁCH LƯỢT THU TIỀN ── */}
-          {payments.length > 0 && (
+          {payments.filter((p) => !isReturnGoodsItem(p)).length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>💵 Thu tiền khách trả nợ</Text>
-              {payments.map((p) => {
-                const isReturnGoods = p.note?.includes('Trả hàng') || p.note?.includes('Trả lại');
-                return (
-                  <View key={p.id} style={[styles.paymentCard, isReturnGoods && styles.paymentCardReturnGoods]}>
-                    <View style={styles.transCardHeader}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.paymentLabel, isReturnGoods && { color: '#D97706' }]}>
-                          {isReturnGoods ? '↩️ Khách trả lại hàng' : 'Khách đã trả'}
-                        </Text>
-                        <TouchableOpacity
-                          style={styles.editCardBtn}
-                          onPress={() => {
-                            setVisible(false);
-                            if (onEditPayment) onEditPayment(p);
-                          }}
-                        >
-                          <Text style={styles.editCardText}>✏️ Sửa</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.deleteCardBtn}
-                          onPress={() => handleDeletePayment(p.id)}
-                        >
-                          <Text style={styles.deleteCardText}>🗑️ Xóa</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={[styles.transCardTotal, { color: isReturnGoods ? '#D97706' : COLORS.primaryDark }]}>
-                        {formatCurrency(p.amount)}
+              {payments.filter((p) => !isReturnGoodsItem(p)).map((p, pIdx) => (
+                <View key={p.id || pIdx} style={styles.paymentCard}>
+                  <View style={styles.transCardHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+                      <Text style={styles.paymentLabel}>
+                        Lượt #{pIdx + 1}
                       </Text>
+                      <TouchableOpacity
+                        style={styles.editCardBtn}
+                        onPress={() => {
+                          setVisible(false);
+                          if (onEditPayment) onEditPayment(p);
+                        }}
+                      >
+                        <Text style={styles.editCardText}>✏️ Sửa</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteCardBtn}
+                        onPress={() => handleDeletePayment(p.id)}
+                      >
+                        <Text style={styles.deleteCardText}>🗑️ Xóa</Text>
+                      </TouchableOpacity>
                     </View>
-                    {p.note ? (
-                      <Text style={styles.transNote}>📝 {formatPaymentNote(p.note, p.paidAt)}</Text>
-                    ) : null}
-
-                    {/* Lịch sử khấu trừ hóa đơn nợ */}
-                    {p.allocations && p.allocations.length > 0 && (
-                      <View style={styles.allocationBox}>
-                        <Text style={styles.allocationTitle}>🔗 Khấu trừ cho các đơn nợ:</Text>
-                        {p.allocations.map((alloc, aIdx) => (
-                          <Text key={aIdx} style={styles.allocationItem}>
-                            • Khấu trừ <Text style={styles.boldText}>{formatCurrency(alloc.amount)}</Text> cho đơn nợ ngày {toDateKey(alloc.date)}
-                          </Text>
-                        ))}
-                      </View>
-                    )}
+                    <Text style={[styles.transCardTotal, { color: COLORS.primaryDark }]}>
+                      -{formatCurrency(p.amount)}
+                    </Text>
                   </View>
-                );
-              })}
+                  {p.note ? (
+                    <Text style={styles.transNote}>📝 {formatPaymentNote(p.note, p.paidAt)}</Text>
+                  ) : null}
+
+                  {/* Lịch sử khấu trừ hóa đơn nợ */}
+                  {p.allocations && p.allocations.length > 0 && (
+                    <View style={styles.allocationBox}>
+                      <Text style={styles.allocationTitle}>🔗 Khấu trừ cho các đơn nợ:</Text>
+                      {p.allocations.map((alloc, aIdx) => (
+                        <Text key={aIdx} style={styles.allocationItem}>
+                          • Khấu trừ <Text style={styles.boldText}>{formatCurrency(alloc.amount)}</Text> cho đơn nợ ngày {toDateKey(alloc.date)}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              ))}
             </View>
           )}
         </ScrollView>
@@ -792,10 +840,10 @@ const styles = StyleSheet.create({
     borderLeftColor: COLORS.primary,
   },
   paymentCardReturnGoods: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FEF3C7',
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
     borderLeftWidth: 4,
-    borderLeftColor: '#F59E0B',
+    borderLeftColor: '#EA580C',
   },
   paymentLabel: {
     fontSize: FONTS.body,
