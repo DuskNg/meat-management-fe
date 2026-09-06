@@ -214,7 +214,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
       if (recentOrders.length > 0) {
         // Đếm số ngày khác nhau mà khách hàng đặt hàng trong 3 ngày qua
         const uniqueOrderedDays = new Set(recentOrders.map((o) => toDateKey(o.date)));
-        
+
         // Tìm đơn hàng gần nhất trong 3 ngày qua
         const sortedRecent = [...recentOrders].sort((a, b) => new Date(b.date) - new Date(a.date));
         const lastOrder = sortedRecent[0];
@@ -463,59 +463,38 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
 
   const isToday = selectedDate === getTodayFormatted();
 
-  // Render từng thẻ khách quen - Tối ưu siêu gọn, bỏ các phần thừa thãi chiếm diện tích
+  // Render từng ô vuông khách quen - Xếp dạng lưới 3 cột, mỗi ô chứa đúng 3 phần tử: Tên, Tần suất, Nút lên đơn
   const renderItem = ({ item }) => {
-    const firstLetter = (item.name || 'K').trim().charAt(0).toUpperCase();
     const hasOrder = item.hasOrderToday;
 
     return (
-      <View style={[styles.customerCard, hasOrder ? styles.cardCompleted : styles.cardMissing]}>
-        <View style={styles.cardMainRow}>
-          {/* Avatar tròn */}
-          <View style={[styles.avatar, hasOrder ? styles.avatarCompleted : styles.avatarMissing]}>
-            <Text style={[styles.avatarText, hasOrder ? styles.avatarTextCompleted : styles.avatarTextMissing]}>
-              {firstLetter}
-            </Text>
-          </View>
+      <AnimatedPressable
+        style={[
+          styles.customerSquareCard,
+          hasOrder ? styles.cardCompletedSquare : styles.cardMissingSquare,
+        ]}
+        onPress={() => handleAddDebtForCustomer(item)}
+        activeOpacity={0.7}
+      >
+        {/* 1. Tên khách hàng */}
+        <Text style={styles.squareCustomerName} numberOfLines={2}>
+          {item.name}
+        </Text>
 
-          {/* Cột thông tin: Tên + Tần suất 3 ngày */}
-          <View style={styles.infoCol}>
-            <Text style={styles.customerName} numberOfLines={1}>
-              {item.name}
-            </Text>
-
-            {item.address ? (
-              <Text style={styles.addressText} numberOfLines={1}>
-                📍 {item.address}
-              </Text>
-            ) : null}
-
-            <Text style={styles.statValHighlightCompact}>
-              Tần suất 3 ngày: <Text style={styles.statValHighlightBold}>Đặt {item.uniqueDaysCount}/3 ngày ({item.recentOrdersCount} đơn)</Text>
-            </Text>
-          </View>
-
-          {/* Nút Lên đơn ngay nằm gọn gàng bên phải */}
-          <AnimatedPressable
-            style={[styles.btnAddDebtCompact, !hasOrder && styles.btnAddDebtPriority]}
-            onPress={() => handleAddDebtForCustomer(item)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.btnAddDebtTextCompact}>
-              {hasOrder ? '➕ Thêm đơn' : '📝 Lên đơn ngay'}
-            </Text>
-          </AnimatedPressable>
+        {/* 2. Tần suất đặt hàng 3 ngày */}
+        <View style={styles.squareFreqContainer}>
+          <Text style={styles.squareFreqText} numberOfLines={1}>
+            {item.uniqueDaysCount}/3 ngày ({item.recentOrdersCount}đ)
+          </Text>
         </View>
 
-        {/* Nếu đã có đơn hôm nay thì hiển thị thanh nhỏ nợ hôm nay */}
-        {hasOrder && item.todayTotalDebt > 0 && (
-          <View style={styles.todayOrderRowCompact}>
-            <Text style={styles.todayOrderText}>
-              🧾 Đã phát sinh hôm nay: <Text style={styles.todayOrderAmount}>{formatCurrency(item.todayTotalDebt)}</Text>
-            </Text>
-          </View>
-        )}
-      </View>
+        {/* 3. Nút hành động lên đơn */}
+        <View style={[styles.squareActionBtn, !hasOrder ? styles.squareActionMissing : styles.squareActionCompleted]}>
+          <Text style={[styles.squareActionText, !hasOrder ? styles.squareActionTextMissing : styles.squareActionTextCompleted]}>
+            {hasOrder ? '✓ Đã lên' : '📝 Lên đơn'}
+          </Text>
+        </View>
+      </AnimatedPressable>
     );
   };
 
@@ -651,6 +630,26 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
           </View>
         </View>
 
+        {/* DÒNG TIÊU ĐỀ THÔNG BÁO BÊN TRÊN DANH SÁCH */}
+        <View style={styles.listHeaderRow}>
+          <Text
+            style={[
+              styles.listHeaderTitle,
+              activeTab === 'COMPLETED' && styles.listHeaderTitleCompleted,
+              activeTab === 'ALL' && styles.listHeaderTitleAll,
+            ]}
+          >
+            {activeTab === 'MISSING'
+              ? '⚠️ Đây là danh sách khách quen chưa có đơn trong ngày'
+              : activeTab === 'COMPLETED'
+                ? '✅ Đây là danh sách khách quen đã lên đơn trong ngày'
+                : '👥 Đây là danh sách khách quen trong 3 ngày gần nhất'}
+          </Text>
+          <Text style={styles.listHeaderCount}>
+            ({displayCustomers.length} khách)
+          </Text>
+        </View>
+
         {/* DANH SÁCH KHÁCH HÀNG */}
         {loading ? (
           <View style={styles.loadingWrapper}>
@@ -659,9 +658,12 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
           </View>
         ) : (
           <FlatList
+            key="regular-cust-grid-3"
             data={displayCustomers}
             renderItem={renderItem}
             keyExtractor={(item) => item.id}
+            numColumns={3}
+            columnWrapperStyle={styles.gridRow}
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={
               <View style={styles.emptyWrapper}>
@@ -1008,130 +1010,112 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 24,
-    gap: 10,
-  },
-  customerCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
-    ...SHADOWS.card,
-  },
-  cardMissing: {
-    borderColor: '#FDE68A',
-    borderLeftWidth: 4,
-    borderLeftColor: '#F59E0B', // Viền cam cảnh báo
-    backgroundColor: '#FFFDF9',
-  },
-  cardCompleted: {
-    borderColor: '#E2E8F0',
-    borderLeftWidth: 4,
-    borderLeftColor: '#10B981', // Viền xanh thành công
-  },
-  cardMainRow: {
+  listHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 4,
   },
-  avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  listHeaderTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#B45309', // Màu cam cảnh báo
+  },
+  listHeaderTitleCompleted: {
+    color: '#15803D', // Màu xanh lá cho đã lên đơn
+  },
+  listHeaderTitleAll: {
+    color: '#6B21A8', // Màu tím cho tất cả khách
+  },
+  listHeaderCount: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#64748B',
+  },
+  listContent: {
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    paddingBottom: 24,
+  },
+  gridRow: {
+    gap: 8,
+    marginBottom: 8,
+  },
+  customerSquareCard: {
+    flex: 1,
+    maxWidth: '32.2%',
+    minHeight: 104,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1.5,
+    ...SHADOWS.small,
+  },
+  cardMissingSquare: {
+    borderColor: '#FDE68A',
+    borderTopWidth: 3.5,
+    borderTopColor: '#F59E0B',
+    backgroundColor: '#FFFDF9',
+  },
+  cardCompletedSquare: {
+    borderColor: '#E2E8F0',
+    borderTopWidth: 3.5,
+    borderTopColor: '#10B981',
+    backgroundColor: '#FFFFFF',
+  },
+  squareCustomerName: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+  squareFreqContainer: {
+    backgroundColor: '#F5F3FF',
+    paddingVertical: 2.5,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#DDD6FE',
+    marginVertical: 4,
+    width: '100%',
+    alignItems: 'center',
+  },
+  squareFreqText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#7C3AED',
+    textAlign: 'center',
+  },
+  squareActionBtn: {
+    width: '100%',
+    paddingVertical: 5,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarMissing: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
+  squareActionMissing: {
+    backgroundColor: '#EA580C',
   },
-  avatarText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  avatarTextMissing: {
-    color: '#D97706',
-  },
-  avatarCompleted: {
+  squareActionCompleted: {
     backgroundColor: '#DCFCE7',
     borderWidth: 1,
     borderColor: '#BBF7D0',
   },
-  avatarTextCompleted: {
-    color: '#15803D',
-  },
-  infoCol: {
-    flex: 1,
-  },
-  customerName: {
-    fontSize: 14.5,
-    fontWeight: 'bold',
-    color: '#0F172A',
-  },
-  subInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 1,
-    gap: 6,
-  },
-  phoneText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  addressText: {
+  squareActionText: {
     fontSize: 11,
-    color: '#94A3B8',
-    flex: 1,
-  },
-  statValHighlightCompact: {
-    fontSize: 11.5,
-    color: '#64748B',
-    marginTop: 3,
-  },
-  statValHighlightBold: {
-    color: '#7C3AED',
     fontWeight: 'bold',
   },
-  btnAddDebtCompact: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#10B981',
-    borderWidth: 1,
-    borderColor: '#059669',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  btnAddDebtPriority: {
-    backgroundColor: '#EA580C', // Cam đỏ nổi bật cho khách chưa lên đơn
-    borderColor: '#C2410C',
-  },
-  btnAddDebtTextCompact: {
-    fontSize: 12,
-    fontWeight: 'bold',
+  squareActionTextMissing: {
     color: '#FFFFFF',
   },
-  todayOrderRowCompact: {
-    marginTop: 6,
-    backgroundColor: '#F0FDF4',
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  todayOrderText: {
-    fontSize: 11,
+  squareActionTextCompleted: {
     color: '#15803D',
-  },
-  todayOrderAmount: {
-    fontWeight: 'bold',
-    color: '#059669',
   },
   loadingWrapper: {
     paddingVertical: 50,

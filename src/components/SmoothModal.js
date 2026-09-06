@@ -19,7 +19,7 @@ import {
  *   và xử lý đẩy bàn phím (KeyboardAvoidingView) mà không làm lệch kích thước.
  * - Toast (isToast=true): Trượt vào từ góc trên bên phải màn hình.
  */
-const SmoothModal = ({ visible, onClose, children, isToast }) => {
+const SmoothModal = ({ visible, onClose, children, isToast, centered, animationType }) => {
   // Animation trượt từ phải vào / ra cho Toast (translateX: 400 → 0 → 400)
   const slideX = useRef(new Animated.Value(400)).current;
 
@@ -51,6 +51,8 @@ const SmoothModal = ({ visible, onClose, children, isToast }) => {
     }
   }, [visible, isToast]);
 
+  const resolvedAnimationType = animationType || (isToast ? 'none' : centered ? 'fade' : 'slide');
+
   return (
     <>
       {/* Modal 1: Hiển thị lớp nền tối tĩnh mờ dần / rõ dần (chỉ hiển thị nếu KHÔNG phải dạng Toast) */}
@@ -67,16 +69,20 @@ const SmoothModal = ({ visible, onClose, children, isToast }) => {
         </Modal>
       )}
 
-      {/* Modal 2: Trượt nội dung chính lên/xuống và tránh bàn phím */}
+      {/* Modal 2: Trượt nội dung chính lên/xuống hoặc fade ở giữa màn hình và tránh bàn phím */}
       <Modal
         transparent={true}
         visible={isToast ? toastInternalVisible : visible}
-        animationType={isToast ? 'none' : 'slide'}
+        animationType={resolvedAnimationType}
         onRequestClose={onClose}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={[styles.centeredView, isToast && styles.centeredViewToast]}
+          style={[
+            styles.centeredView,
+            centered && styles.centeredViewCenter,
+            isToast && styles.centeredViewToast,
+          ]}
           pointerEvents="box-none"
         >
           {/* Lớp nền trong suốt click ngoài để đóng (chỉ cho dialog) - pointerEvents="box-only" để không chặn children */}
@@ -112,6 +118,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'transparent', // Nền trong suốt để không trượt theo popup
+  },
+  // Hỗ trợ căn giữa màn hình theo cả 2 trục
+  centeredViewCenter: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
   },
   // Toast hiển thị ở góc trên bên phải màn hình
   centeredViewToast: {

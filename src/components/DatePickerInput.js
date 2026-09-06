@@ -432,6 +432,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9', // Xám nhạt Slate 100
     borderColor: '#E2E8F0', // Viền xám nhạt Slate 200
   },
+  containerCompact: {
+    height: 36,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    marginBottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  dateContentCompact: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  dateDisplayTextCompact: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    letterSpacing: 0.2,
+    textAlign: 'center',
+  },
 
   // Vùng icon lịch bên trái (thu nhỏ kích thước)
   iconWrapper: {

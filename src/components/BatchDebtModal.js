@@ -175,6 +175,11 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
+  const handleClose = () => {
+    setVisible(false);
+    setDateStr(getTodayFormatted());
+  };
+
   // Phơi bày hàm điều khiển ra bên ngoài
   useImperativeHandle(ref, () => ({
     open: () => {
@@ -186,10 +191,10 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       isLoadedCacheRef.current = false;
       fetchData();
     },
-    close: () => setVisible(false),
+    close: handleClose,
   }));
 
-  // Tự động lưu bản nháp khi quickRows, detailRows, activeTab, dateStr thay đổi
+  // Tự động lưu bản nháp khi quickRows, detailRows, activeTab thay đổi (chỉ lưu nháp đơn nợ, không lưu ngày)
   useEffect(() => {
     if (!visible || !isLoadedCacheRef.current) return;
     const hasDataQuick = quickRows.some((r) => r.selectedCustomerId || parseNumberString(r.quickAmount) > 0);
@@ -199,11 +204,10 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
         quickRows,
         detailRows,
         activeTab,
-        dateStr,
         savedAt: new Date().toISOString(),
       });
     }
-  }, [quickRows, detailRows, activeTab, dateStr, visible]);
+  }, [quickRows, detailRows, activeTab, visible]);
 
   // Tải danh sách khách hàng và sản phẩm thịt từ server
   const fetchData = async () => {
@@ -256,7 +260,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
         }
 
         if (draft.activeTab) setActiveTab(draft.activeTab);
-        if (draft.dateStr) setDateStr(draft.dateStr);
+        // Không phục hồi ngày từ nháp, luôn giữ ngày hôm nay
+        setDateStr(getTodayFormatted());
         isLoadedCacheRef.current = true;
         return;
       }
@@ -275,13 +280,14 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Reset xóa toàn bộ nháp cho cả 2 tab
+  // Reset xóa toàn bộ nháp cho cả 2 tab và đặt ngày về hôm nay
   const handleClearDraft = async () => {
     await clearDraftCache();
     const freshQuick = [createEmptyRow(products), createEmptyRow(products), createEmptyRow(products), createEmptyRow(products)];
     const freshDetail = [createEmptyRow(products), createEmptyRow(products), createEmptyRow(products), createEmptyRow(products)];
     setQuickRows(freshQuick);
     setDetailRows(freshDetail);
+    setDateStr(getTodayFormatted());
     setError('');
   };
 
@@ -563,8 +569,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       if (onRefresh) onRefresh();
 
-      // Đóng modal ngay lập tức
-      setVisible(false);
+      // Đóng modal ngay lập tức và reset ngày về hôm nay
+      handleClose();
 
       // Phát thông báo Toast toàn cục (Global Toast)
       const totalSaved = validQuick.length + validDetail.length;
@@ -582,14 +588,14 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <SmoothModal visible={visible} onClose={handleClose}>
       <View style={styles.modalViewFullScreen}>
         {/* Header Modal Full Màn Hình Cực Kỳ Tinh Gọn */}
         <View style={styles.modalHeader}>
           <View style={styles.titleRow}>
             <Text style={styles.modalTitle}>⚡ NHẬP CÔNG NỢ HÀNG LOẠT</Text>
           </View>
-          <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
+          <TouchableOpacity style={styles.closeHeaderButton} onPress={handleClose}>
             <Text style={styles.closeHeaderText}>✕</Text>
           </TouchableOpacity>
         </View>

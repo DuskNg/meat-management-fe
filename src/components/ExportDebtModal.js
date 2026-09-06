@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/ExportDebtModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,6 +16,7 @@ import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
+import ImagePreviewModal from './ImagePreviewModal';
 import { showGlobalToast } from '../store/toastStore';
 
 // Helper: lấy ngày hôm nay dạng DD/MM/YYYY
@@ -25,6 +26,97 @@ const getTodayFormatted = () => {
   const m = String(today.getMonth() + 1).padStart(2, '0');
   const y = today.getFullYear();
   return `${d}/${m}/${y}`;
+};
+
+// Helper: Lấy ngày bắt đầu, ngày giữa và ngày kết thúc của tháng (dạng DD/MM/YYYY)
+const getMonthBounds = (monthStr) => {
+  if (!monthStr || !monthStr.includes('/')) {
+    return { start: '', midEnd: '', midStart: '', end: '' };
+  }
+  const [mm, yyyy] = monthStr.split('/').map(Number);
+  const mmStr = mm.toString().padStart(2, '0');
+  const daysInMonth = new Date(yyyy, mm, 0).getDate();
+  return {
+    start: `01/${mmStr}/${yyyy}`,
+    midEnd: `15/${mmStr}/${yyyy}`,
+    midStart: `16/${mmStr}/${yyyy}`,
+    end: `${daysInMonth.toString().padStart(2, '0')}/${mmStr}/${yyyy}`
+  };
+};
+
+// Helper: Chuyển đổi chuỗi DD/MM/YYYY thành đối tượng Date
+const parseDDMMYYYY = (str, isEndOfDay = false) => {
+  if (!str) return null;
+  const parts = str.split('/');
+  if (parts.length !== 3) return null;
+  const [d, m, y] = parts.map(Number);
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+  if (isEndOfDay) {
+    return new Date(y, m - 1, d, 23, 59, 59, 999);
+  }
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
+};
+
+// Helper: Lấy khoảng ngày theo các mốc thời gian thông dụng (Tháng này, Tháng trước, 1-15, 16-hết, 7 ngày, Tất cả)
+const getPresetRange = (presetKey, currentFrom, transList) => {
+  const today = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmt = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+
+  if (presetKey === 'this_month') {
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    const first = new Date(y, m, 1);
+    const last = new Date(y, m + 1, 0);
+    return { from: fmt(first), to: fmt(last) };
+  }
+
+  if (presetKey === 'last_month') {
+    const y = today.getFullYear();
+    const m = today.getMonth() - 1;
+    const first = new Date(y, m, 1);
+    const last = new Date(y, m + 1, 0);
+    return { from: fmt(first), to: fmt(last) };
+  }
+
+  // Lấy mốc thời gian cơ sở từ currentFrom nếu có
+  const baseDate = parseDDMMYYYY(currentFrom, false) || today;
+  const y = baseDate.getFullYear();
+  const m = baseDate.getMonth();
+  const lastDay = new Date(y, m + 1, 0).getDate();
+
+  if (presetKey === 'first_half') {
+    return {
+      from: `01/${pad(m + 1)}/${y}`,
+      to: `15/${pad(m + 1)}/${y}`,
+    };
+  }
+
+  if (presetKey === 'second_half') {
+    return {
+      from: `16/${pad(m + 1)}/${y}`,
+      to: `${pad(lastDay)}/${pad(m + 1)}/${y}`,
+    };
+  }
+
+  if (presetKey === 'last_7_days') {
+    const from = new Date(today);
+    from.setDate(today.getDate() - 6);
+    return { from: fmt(from), to: fmt(today) };
+  }
+
+  if (presetKey === 'all') {
+    if (transList && transList.length > 0) {
+      const sorted = [...transList].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const first = new Date(sorted[0].date);
+      return { from: fmt(first), to: fmt(today) };
+    }
+    const first = new Date(y, m, 1);
+    const last = new Date(y, m + 1, 0);
+    return { from: fmt(first), to: fmt(last) };
+  }
+
+  return { from: currentFrom, to: currentFrom };
 };
 
 // Hàm helper để xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
@@ -69,6 +161,45 @@ const isReturnPayment = (p) => {
     trimNote.includes('Trả hàng') ||
     trimNote.includes('Trả lại')
   );
+};
+
+// Helper phân tích danh sách các món thịt trả lại từ ghi chú
+const parseReturnItems = (note, defaultAmount) => {
+  if (!note) return [{ type: 'RETURN', name: '[TRẢ HÀNG]', quantity: null, price: null, amount: defaultAmount }];
+  const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]/gi, '').trim();
+
+  // Khớp từng món: <số lượng><đơn vị> <tên thịt> (<thành tiền>)
+  const itemRegex = /(\d+(?:[.,]\d+)?)\s*([a-zA-ZÀ-ỹ]*)\s+(.+?)\s*\(\s*([\d.,]+)[\s\u00a0]*[đ₫VND]?\s*\)(?:\s*,|\s*-|$)/gi;
+  const items = [];
+  let match;
+  while ((match = itemRegex.exec(clean)) !== null) {
+    const qtyStr = match[1].replace(',', '.');
+    const qty = parseFloat(qtyStr);
+    const prodName = match[3].trim().toUpperCase();
+    const amtStr = match[4].replace(/\./g, '').replace(/,/g, '');
+    const amt = parseFloat(amtStr) || 0;
+    const price = (qty && qty > 0 && amt > 0) ? Math.round(amt / qty) : null;
+    items.push({
+      type: 'RETURN',
+      name: `[TRẢ HÀNG] ${prodName}`,
+      quantity: !isNaN(qty) ? qty : null,
+      price: price,
+      amount: amt,
+    });
+  }
+
+  if (items.length === 0) {
+    const cleanName = clean ? `[TRẢ HÀNG] ${clean.toUpperCase()}` : '[TRẢ HÀNG]';
+    return [{
+      type: 'RETURN',
+      name: cleanName,
+      quantity: null,
+      price: null,
+      amount: defaultAmount,
+    }];
+  }
+
+  return items;
 };
 
 // Helper tạo tin nhắn công nợ theo ngày đúng chuẩn gửi Zalo/SMS
@@ -166,6 +297,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [customer, setCustomer] = useState(null);
   const [activeTab, setActiveTab] = useState('month'); // 'month' | 'day'
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [availableMonths, setAvailableMonths] = useState([]);
   const [selectedDayKey, setSelectedDayKey] = useState('');
   const [availableDays, setAvailableDays] = useState([]);
@@ -182,6 +315,10 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [totalDebtInMonth, setTotalDebtInMonth] = useState(0);
   const [totalPaymentInMonth, setTotalPaymentInMonth] = useState(0);
   const [totalReturnInMonth, setTotalReturnInMonth] = useState(0);
+  const [totalWholeMonthDebt, setTotalWholeMonthDebt] = useState(0);
+
+  // Ref điều khiển modal phóng to ảnh xem trước
+  const imagePreviewModalRef = useRef(null);
 
   // 1. Phơi bày các hàm điều khiển ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -189,6 +326,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       setCustomer(c);
       setVisible(true);
       setSelectedMonth(targetMonth || '');
+      setFromDate('');
+      setToDate('');
       setActiveTab(defaultTab || (targetDay ? 'day' : 'month'));
       setAvailableMonths([]);
       setAvailableDays([]);
@@ -278,21 +417,31 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const daysArray = Array.from(daysMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
       setAvailableDays(daysArray);
 
-      // Chọn tháng mặc định là tháng được chỉ định (hoặc tháng gần nhất có giao dịch)
-      let defaultMonth = targetMonth;
-      if (!defaultMonth) {
-        if (monthsArray.length > 0) {
-          defaultMonth = monthsArray[0];
-        } else {
-          const d = new Date();
-          const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-          const yyyy = d.getFullYear();
-          defaultMonth = `${mm}/${yyyy}`;
-        }
-      }
-      setSelectedMonth(defaultMonth);
+      // Xác định khoảng thời gian mặc định ban đầu:
+      let initialFrom = '';
+      let initialTo = '';
 
-      // Chọn ngày mặc định: ngày được chỉ định hoặc ngày gần nhất có giao dịch
+      if (targetDay) {
+        initialFrom = targetDay;
+        initialTo = targetDay;
+      } else if (targetMonth) {
+        const bounds = getMonthBounds(targetMonth);
+        initialFrom = bounds.start;
+        initialTo = bounds.end;
+      } else if (monthsArray.length > 0) {
+        const bounds = getMonthBounds(monthsArray[0]);
+        initialFrom = bounds.start;
+        initialTo = bounds.end;
+      } else {
+        const thisMonthRange = getPresetRange('this_month');
+        initialFrom = thisMonthRange.from;
+        initialTo = thisMonthRange.to;
+      }
+
+      setFromDate(initialFrom);
+      setToDate(initialTo);
+
+      // Chọn ngày mặc định: ngày được chỉ định hoặc ngày gần nhất có giao dịch cho tab tin nhắn
       let defaultDay = targetDay;
       if (!defaultDay) {
         if (daysArray.length > 0) {
@@ -308,9 +457,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       setDailyMessageText(msg);
 
       // Tự động tạo ảnh công nợ ngay khi tải xong dữ liệu
-      if (monthsArray.length > 0 || targetMonth) {
-        generateDebtImage(defaultMonth, transList, payList, currentCust);
-      }
+      generateDebtImage(transList, payList, currentCust, initialFrom, initialTo);
 
     } catch (err) {
       console.error(err);
@@ -328,37 +475,61 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }).format(amount).replace('₫', 'đ');
   };
 
-  // 3. Tạo file ảnh công nợ từ dữ liệu tháng được chọn bằng HTML5 Canvas (Cứ 16 dòng chia thành 1 cột, tự động giãn ngang)
-  const generateDebtImage = (month, transList, payList, cust) => {
+  // 3. Tạo file ảnh công nợ dạng bảng kẻ chi tiết gọn gàng, trực quan chuẩn Excel (như mẫu thực tế)
+  const generateDebtImage = (transList, payList, cust, customFromDate, customToDate) => {
     if (Platform.OS !== 'web') {
       return; // Không vẽ trên môi trường Native để tránh lỗi Canvas
     }
 
-    if (!month || !cust) return;
+    if (!cust) return;
+
+    const activeFrom = customFromDate !== undefined ? customFromDate : fromDate;
+    const activeTo = customToDate !== undefined ? customToDate : toDate;
 
     setGenerating(true);
     setImageUri(null); // Reset ảnh cũ trong khi vẽ ảnh mới
 
     try {
-      // Lọc các giao dịch phát sinh trong tháng đã chọn
-      const filteredTrans = transList.filter(t => {
+      const fromD = parseDDMMYYYY(activeFrom, false);
+      const toD = parseDDMMYYYY(activeTo, true);
+
+      // Kiểm tra xem khoảng ngày có phải trọn vẹn 1 tháng hay không
+      const isFullMonth = fromD && toD &&
+        fromD.getDate() === 1 &&
+        fromD.getMonth() === toD.getMonth() &&
+        fromD.getFullYear() === toD.getFullYear() &&
+        toD.getDate() === new Date(toD.getFullYear(), toD.getMonth() + 1, 0).getDate();
+
+      const mm = fromD ? (fromD.getMonth() + 1) : (new Date().getMonth() + 1);
+      const yyyy = fromD ? fromD.getFullYear() : new Date().getFullYear();
+      const monthStr = `${mm.toString().padStart(2, '0')}/${yyyy}`;
+
+      // Lọc các giao dịch phát sinh trong khoảng ngày
+      const filteredTrans = (transList || []).filter(t => {
         const d = new Date(t.date);
-        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-        const yyyy = d.getFullYear();
-        return `${mm}/${yyyy}` === month;
+        if (isNaN(d.getTime())) return false;
+        if (fromD && toD) {
+          return d >= fromD && d <= toD;
+        }
+        return true;
       });
 
-      const filteredPays = payList.filter(p => {
-        return getPaymentTargetMonth(p) === month;
+      const filteredPays = (payList || []).filter(p => {
+        const pDate = new Date(p.paidAt);
+        if (fromD && toD) {
+          const trimNote = (p.note || '').trim();
+          const dateMatch = trimNote.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+          let effDate = pDate;
+          if (dateMatch) {
+            effDate = new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]), 12, 0, 0);
+          }
+          const inRange = effDate >= fromD && effDate <= toD;
+          const isTarget = isFullMonth && getPaymentTargetMonth(p) === monthStr;
+          return inRange || isTarget;
+        }
+        return true;
       });
 
-      // Nhóm giao dịch & thanh toán theo ngày (mỗi ngày chỉ 1 mảng thôi)
-      const dayMap = {};
-      let totalDebtVal = 0;
-      let totalPaymentVal = 0;
-      let totalReturnVal = 0;
-
-      const [mm, yyyy] = month.split('/').map(Number);
       const daysInMonth = new Date(yyyy, mm, 0).getDate();
 
       const currentDate = new Date();
@@ -369,492 +540,686 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const isCurrentMonth = (mm === currentMonth && yyyy === currentYear);
       const maxDay = isCurrentMonth ? Math.min(daysInMonth, currentDay) : daysInMonth;
 
+      // Gom toàn bộ giao dịch mua hàng, trả hàng và thanh toán theo từng ngày
+      // dayMap: { [dateKey]: { dateObj, dayStr, entries: [] } }
+      const dayMap = {};
+      let totalMeatAmount = 0;
+      let totalReturnAmount = 0;
+      let totalPaymentAmount = 0;
+
+      // 1. Thêm các món hàng từ giao dịch (Transactions)
       filteredTrans.forEach(t => {
         const d = new Date(t.date);
-        const dateKey = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+        const dayNum = d.getDate().toString().padStart(2, '0');
+        const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
+        const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
+        const displayDate = `${dayNum}/${monthNum}`;
+
         if (!dayMap[dateKey]) {
           dayMap[dateKey] = {
             date: t.date,
             dateKey,
-            debtAmount: 0,
-            paymentAmount: 0,
-            returnAmount: 0,
-            items: [],
-            notes: []
+            displayDate,
+            entries: [],
           };
         }
+
         const amt = parseFloat(t.totalAmount || 0);
-        dayMap[dateKey].debtAmount += amt;
-        totalDebtVal += amt;
 
         if (t.items && t.items.length > 0) {
           t.items.forEach(item => {
             const q = parseFloat(item.quantity);
             const p = parseFloat(item.price);
-            const name = item.product?.name || 'Thịt';
-            const isQuick = name === 'Tiền hàng' || name.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
-            if (isQuick) {
-              dayMap[dateKey].items.push(name);
-            } else {
-              dayMap[dateKey].items.push(`${q}${item.product?.unit || 'kg'} ${name} (giá ${p / 1000}k)`);
-            }
+            const itemAmt = parseFloat(item.amount) || Math.round((q || 0) * (p || 0));
+            const rawName = item.product?.name || item.productName || 'Thịt';
+            const isQuick = rawName === 'Tiền hàng' || rawName.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
+
+            totalMeatAmount += itemAmt;
+            dayMap[dateKey].entries.push({
+              type: 'DELIVERY',
+              name: isQuick ? 'TIỀN HÀNG' : rawName.toUpperCase(),
+              quantity: isQuick ? null : (isNaN(q) ? null : q),
+              price: isQuick ? null : (isNaN(p) ? null : p),
+              amount: itemAmt,
+            });
           });
-        }
-        if (t.note && t.note !== 'Ghi nợ nhanh') {
-          dayMap[dateKey].notes.push(t.note);
+        } else {
+          // Giao dịch không có danh sách items (nợ nhanh)
+          totalMeatAmount += amt;
+          const noteName = (t.note && t.note !== 'Ghi nợ nhanh') ? t.note : 'TIỀN HÀNG';
+          dayMap[dateKey].entries.push({
+            type: 'DELIVERY',
+            name: noteName.toUpperCase(),
+            quantity: null,
+            price: null,
+            amount: amt,
+          });
         }
       });
 
+      // 2. Thêm các khoản thanh toán / trả hàng từ payments
+      const paymentsForSummary = [];
       filteredPays.forEach(p => {
         const d = new Date(p.paidAt);
-        const dateKey = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+        const dayNum = d.getDate().toString().padStart(2, '0');
+        const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
+        const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
+        const displayDate = `${dayNum}/${monthNum}`;
+
+        // Trích xuất ngày đã thu định dạng DD/MM/YYYY chuẩn (ví dụ 31/07/2026)
+        const trimNote = (p.note || '').trim();
+        const noteDateMatch = trimNote.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        const paidDateStr = noteDateMatch
+          ? `${noteDateMatch[1]}/${noteDateMatch[2]}/${noteDateMatch[3]}`
+          : `${dayNum}/${monthNum}/${d.getFullYear()}`;
+
         if (!dayMap[dateKey]) {
           dayMap[dateKey] = {
             date: p.paidAt,
             dateKey,
-            debtAmount: 0,
-            paymentAmount: 0,
-            returnAmount: 0,
-            items: [],
-            notes: []
+            displayDate,
+            entries: [],
           };
         }
+
         const amt = parseFloat(p.amount || 0);
         const isReturn = isReturnPayment(p);
 
         if (isReturn) {
-          dayMap[dateKey].returnAmount += amt;
-          totalReturnVal += amt;
+          totalReturnAmount += amt;
+          // Tách từng món trả hàng để hiển thị thành từng dòng riêng biệt như các loại thịt
+          const returnItems = parseReturnItems(p.note, amt);
+          returnItems.forEach(ritem => {
+            dayMap[dateKey].entries.push(ritem);
+          });
         } else {
-          dayMap[dateKey].paymentAmount += amt;
-          totalPaymentVal += amt;
-        }
+          totalPaymentAmount += amt;
+          // Tiền đã thu: chỉ hiển thị "ĐÃ THU" (không kèm ngày để khách không nhầm là chỉ thu cho ngày đó)
+          const payName = 'ĐÃ THU';
 
-        if (p.note && !p.note.startsWith('Thanh toán nợ ngày')) {
-          dayMap[dateKey].notes.push(formatPaymentNote(p.note, p.paidAt));
+          dayMap[dateKey].entries.push({
+            type: 'PAYMENT',
+            name: payName,
+            quantity: null,
+            price: null,
+            amount: amt,
+          });
         }
       });
 
-      // Lọc các ngày thực sự có phát sinh giao dịch hoặc thanh toán hoặc trả hàng
-      const activeRows = Object.values(dayMap).filter(
-        r => r.debtAmount > 0 || r.paymentAmount > 0 || r.returnAmount > 0 || r.items.length > 0 || r.notes.length > 0
+      // Lọc các ngày thực sự có phát sinh dữ liệu
+      const activeDays = Object.values(dayMap).filter(d => d.entries && d.entries.length > 0);
+      // Sắp xếp theo ngày tăng dần (từ đầu tháng đến cuối tháng)
+      const sortedDays = activeDays.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      // Tính danh sách các ngày không phát sinh công nợ trong khoảng ngày đã chọn
+      // KHÔNG liệt kê các ngày trong tương lai chưa tới
+      const deliveryDateKeys = new Set(
+        sortedDays.filter(d => (d.entries || []).some(e => e.type === 'DELIVERY')).map(d => d.dateKey)
       );
-      const activeDateKeys = new Set(activeRows.map(r => r.dateKey));
-
-      // Sắp xếp tăng dần theo thời gian (cũ tới mới)
-      const sortedRows = activeRows.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-      // Tính danh sách các ngày không có công nợ
       const emptyDays = [];
-      for (let day = 1; day <= maxDay; day++) {
-        const dateKey = `${day.toString().padStart(2, '0')}/${mm.toString().padStart(2, '0')}/${yyyy}`;
-        if (!activeDateKeys.has(dateKey)) {
-          emptyDays.push(day.toString().padStart(2, '0'));
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+
+      if (fromD && toD) {
+        // Chỉ xét nếu khoảng ngày bắt đầu trước hoặc bằng ngày hôm nay
+        if (fromD <= today) {
+          const cur = new Date(fromD);
+          cur.setHours(0, 0, 0, 0);
+          // Giới hạn ngày tối đa là ngày hôm nay, không liệt kê ngày tương lai
+          const endLimit = toD < today ? new Date(toD) : today;
+          endLimit.setHours(23, 59, 59, 999);
+
+          while (cur <= endLimit) {
+            const dStr = cur.getDate().toString().padStart(2, '0');
+            const mStr = (cur.getMonth() + 1).toString().padStart(2, '0');
+            const yStr = cur.getFullYear();
+            const dateKey = `${dStr}/${mStr}/${yStr}`;
+            if (!deliveryDateKeys.has(dateKey)) {
+              emptyDays.push(`${dStr}/${mStr}`);
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+      } else {
+        // maxDay đã được chặn bởi currentDay nếu là tháng hiện tại
+        for (let day = 1; day <= maxDay; day++) {
+          const dStr = day.toString().padStart(2, '0');
+          const mStr = mm.toString().padStart(2, '0');
+          const dateKey = `${dStr}/${mStr}/${yyyy}`;
+          if (!deliveryDateKeys.has(dateKey)) {
+            emptyDays.push(`${dStr}/${mStr}`);
+          }
         }
       }
 
-      // Lưu trữ dữ liệu vào State
-      setRows(sortedRows);
-      setTotalDebtInMonth(totalDebtVal);
-      setTotalPaymentInMonth(totalPaymentVal);
-      setTotalReturnInMonth(totalReturnVal);
+      // Tính toán toàn bộ công nợ thực tế trong cả tháng của khách hàng
+      let wholeMonthMeat = 0;
+      (transList || []).forEach(t => {
+        const d = new Date(t.date);
+        if (!isNaN(d.getTime()) && (d.getMonth() + 1) === mm && d.getFullYear() === yyyy) {
+          if (t.items && t.items.length > 0) {
+            t.items.forEach(it => {
+              wholeMonthMeat += parseFloat(it.amount) || Math.round((parseFloat(it.quantity) || 0) * (parseFloat(it.price) || 0));
+            });
+          } else {
+            wholeMonthMeat += parseFloat(t.totalAmount || 0);
+          }
+        }
+      });
 
-      // Nếu vượt quá 100 ngày giao dịch, không vẽ ảnh mà hiển thị xuất Excel
-      if (sortedRows.length > 100) {
+      let wholeMonthReturn = 0;
+      let wholeMonthPayment = 0;
+      (payList || []).forEach(p => {
+        const isTarget = getPaymentTargetMonth(p) === monthStr;
+        const pDate = new Date(p.paidAt);
+        const trimNote = (p.note || '').trim();
+        const dateMatch = trimNote.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        let effDate = pDate;
+        if (dateMatch) {
+          effDate = new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]), 12, 0, 0);
+        }
+        const isSameMonth = !isNaN(effDate.getTime()) && (effDate.getMonth() + 1) === mm && effDate.getFullYear() === yyyy;
+        if (isTarget || isSameMonth) {
+          const amt = parseFloat(p.amount || 0);
+          if (isReturnPayment(p)) {
+            wholeMonthReturn += amt;
+          } else {
+            wholeMonthPayment += amt;
+          }
+        }
+      });
+
+      const wholeMonthDebt = Math.max(0, wholeMonthMeat - wholeMonthReturn - wholeMonthPayment);
+
+      // Lưu state phục vụ Excel & thống kê
+      setRows(sortedDays);
+      setTotalDebtInMonth(totalMeatAmount);
+      setTotalPaymentInMonth(totalPaymentAmount);
+      setTotalReturnInMonth(totalReturnAmount);
+      setTotalWholeMonthDebt(wholeMonthDebt);
+
+      // Nếu không có bất kỳ giao dịch nào
+      if (sortedDays.length === 0) {
         setGenerating(false);
         setImageUri(null);
         return;
       }
 
-      // Hàm ngắt dòng cho chữ tiếng Việt trên canvas
-      const wrapText = (context, text, maxWidth) => {
-        const lines = [];
-        let currentLine = '';
-        const words = text.split(' ');
+      const totalEntriesCount = sortedDays.reduce((sum, d) => sum + d.entries.length, 0);
 
-        for (let i = 0; i < words.length; i++) {
-          let word = words[i];
+      // ─── THIẾT KẾ BẢNG VẼ CANVAS 2 CỘT CHUẨN ĐỒ HỌA CAO CẤP (PREMIUM INVOICE) ───
+      // Tăng lề 2 bên rìa trái và phải (từ 20 lên 36) để các bảng co vào trong, không bị sát mép ảnh
+      const startX = 36;
+      // Cột: [Ngày: 60px, Tên hàng: 200px, SL (KG): 65px, Đơn giá: 100px, Thành tiền: 135px]
+      const colWidths = [60, 200, 65, 100, 135]; // Tổng chiều rộng 1 panel: 560px
+      const panelWidth = colWidths.reduce((a, b) => a + b, 0); // 560px
+      const panelGap = 16;
+      // Chỉ khi có trên 10 phần tử công nợ (ngày phát sinh giao dịch) mới chia đôi cột bảng
+      // Nếu <= 10 phần tử công nợ: Giữ 1 CỘT DUY NHẤT để hóa đơn đứng dọc đẹp, chữ to rõ ràng
+      const isSplit = sortedDays.length > 10;
+      const canvasWidth = isSplit ? (startX * 2 + panelWidth * 2 + panelGap) : (startX * 2 + panelWidth);
 
-          // Nếu bản thân một từ dài hơn maxWidth, cần bẻ từ đó ra
-          while (context.measureText(word).width > maxWidth) {
-            let breakIndex = 1;
-            while (context.measureText(word.substring(0, breakIndex)).width <= maxWidth && breakIndex <= word.length) {
-              breakIndex++;
-            }
-            breakIndex--; // Lùi lại để lấy phần an toàn
+      // Chia danh sách ngày thành 2 cột bảng (trái và phải) nếu trên 10 phần tử
+      let leftDays = [];
+      let rightDays = [];
 
-            const part = word.substring(0, breakIndex);
-
-            if (currentLine) {
-              lines.push(currentLine);
-              currentLine = '';
-            }
-            lines.push(part);
-            word = word.substring(breakIndex);
-          }
-
-          if (!word) continue;
-
-          const testLine = currentLine ? currentLine + ' ' + word : word;
-          const metrics = context.measureText(testLine);
-
-          if (metrics.width <= maxWidth) {
-            currentLine = testLine;
-          } else {
-            if (currentLine) lines.push(currentLine);
-            currentLine = word;
-          }
-        }
-        if (currentLine) {
-          lines.push(currentLine);
-        }
-        return lines;
-      };
-
-      const startTableY = 180;
-
-      // Tạo một canvas tạm thời để đo độ rộng chữ và tính toán chiều cao hàng
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.font = '15px Arial';
-
-      const colDateX = 50;
-      const colDescX = 110;
-      const colDebtX = 800 - 170; // 630 (tính từ startX của mỗi cột)
-      const colPayX = 800 - 50;   // 750 (tính từ startX của mỗi cột)
-      const colDescMaxWidth = 380;
-
-      const lineHeight = 20;
-      const paddingY = 15;
-      const minRowHeight = 55;
-
-      // Tính toán số dòng chữ mô tả và chiều cao của từng hàng
-      const rowsWithLayout = sortedRows.map(row => {
-        let descText = '';
-        const parts = [];
-        if (row.items && row.items.length > 0) {
-          parts.push(row.items.join(', '));
-        }
-        if (row.notes && row.notes.length > 0) {
-          parts.push(row.notes.join('; '));
-        }
-        descText = parts.join(' | ');
-
-        // Sử dụng hàm wrapText để ngắt dòng chi tiết giao dịch
-        const descLines = wrapText(tempCtx, descText, colDescMaxWidth);
-
-        // Chiều cao tính toán của hàng
-        const textHeight = Math.max(1, descLines.length) * lineHeight;
-        const calculatedHeight = textHeight + paddingY * 2;
-        // Nếu trong ngày có cả trả hàng và thu tiền thì cần tối thiểu 75px để hiển thị đẹp
-        const hasBothPayAndReturn = row.returnAmount > 0 && row.paymentAmount > 0;
-        const minHeightNeeded = hasBothPayAndReturn ? 75 : minRowHeight;
-        const rowHeight = Math.max(minHeightNeeded, calculatedHeight);
-
-        return {
-          ...row,
-          descLines,
-          rowHeight
-        };
-      });
-
-      // Chia các dòng thành các cột:
-      // Nếu tổng số dòng >= 20, chia thành 2 cột bằng nhau. Nếu lẻ thì cột bên trái nhiều hơn cột bên phải 1 sản phẩm.
-      // Nếu tổng số dòng < 20, chỉ chia làm 1 cột.
-      const totalRowsCount = rowsWithLayout.length;
-      const columns = [];
-      if (totalRowsCount >= 20) {
-        const leftColSize = Math.ceil(totalRowsCount / 2);
-        columns.push(rowsWithLayout.slice(0, leftColSize));
-        columns.push(rowsWithLayout.slice(leftColSize));
+      if (!isSplit) {
+        // <= 10 phần tử công nợ: Trình bày 1 cột duy nhất
+        leftDays = sortedDays;
+        rightDays = [];
       } else {
-        columns.push(rowsWithLayout);
+        // > 10 phần tử công nợ: Tự động chia đôi thành 2 cột trái/phải
+        // Không cắt giữa các dòng của cùng 1 ngày, tìm vị trí chia ngày tối ưu nhất
+        // sao cho độ chênh lệch số dòng giữa 2 cột là nhỏ nhất tuyệt đối (chỉ 1-2 dòng)
+        let bestK = 1;
+        let minDiff = Infinity;
+        let runningLeft = 0;
+
+        for (let k = 1; k < sortedDays.length; k++) {
+          runningLeft += sortedDays[k - 1].entries.length;
+          const runningRight = totalEntriesCount - runningLeft;
+          const diff = Math.abs(runningLeft - runningRight);
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestK = k;
+          }
+        }
+
+        leftDays = sortedDays.slice(0, bestK);
+        rightDays = sortedDays.slice(bestK);
       }
-      const numCols = columns.length;
-      const colWidth = 800;
-      const width = numCols * colWidth;
 
-      // Tính chiều cao nội dung cao nhất trong các cột
-      const colHeights = columns.map(col => {
-        return col.length > 0 ? col.reduce((sum, r) => sum + r.rowHeight, 0) : 80;
-      });
-      const contentHeight = Math.max(...colHeights);
+      // Chiều cao dòng chuẩn hóa đơn kế toán, cân đối thanh lịch
+      const rowHeight = 34;
+      const tableHeaderHeight = 38;
+      // Tăng kích thước chiều cao dòng tổng kết để thoáng và chữ to hơn
+      const summaryRowHeight = 46;
+      const startTableY = 78;
 
-      // Tính toán chiều cao khung thông tin các ngày không có công nợ
-      let emptyDaysLines = [];
-      let emptyBoxHeight = 0;
-      if (emptyDays.length > 0) {
-        const emptyDaysText = `📌 Các ngày không phát sinh công nợ: Ngày ${emptyDays.join(', ')}`;
-        tempCtx.font = 'bold 18px Arial';
-        // Chiều rộng khả dụng bên trong khung (width - 80px lề 2 bên - 36px padding trong khung)
-        emptyDaysLines = wrapText(tempCtx, emptyDaysText, width - 116);
-        emptyBoxHeight = emptyDaysLines.length * 28 + 24; // 24px padding trên dưới
-      }
-      const hasReturnInMonth = totalReturnVal > 0;
-      const footerExtraHeight = emptyDays.length > 0 ? (emptyBoxHeight + 20) : 0;
-      // Nếu có hàng trả về thì thêm 45px cho dòng "Trừ tiền hàng trả về"
-      const footerBaseHeight = hasReturnInMonth ? 265 : 220;
-      const footerHeight = footerBaseHeight + footerExtraHeight;
-      const canvasHeight = startTableY + 42 + contentHeight + footerHeight;
+      const leftEntriesCount = leftDays.reduce((sum, d) => sum + d.entries.length, 0);
+      const rightEntriesCount = rightDays.reduce((sum, d) => sum + d.entries.length, 0);
+      const maxRowsInCol = Math.max(leftEntriesCount, rightEntriesCount, 1);
+      const tableContentHeight = maxRowsInCol * rowHeight;
 
-      // Tạo canvas chính thức để vẽ
+      // Các dòng tổng kết cuối bảng:
+      // 1. Tổng tiền hàng (mở ngoặc ngày đang lọc)
+      // 2. Tiền hàng trả về (nếu > 0)
+      // 3. Tiền đã thu (nếu > 0)
+      // 4. Còn lại phải thu (mở ngoặc ngày đang lọc)
+      // 5. Tổng công nợ cả tháng (chỉ thêm khi lọc khoảng ngày trong tháng, lọc cả tháng thì bỏ)
+      const summaryRowsCount = 1 + (totalReturnAmount > 0 ? 1 : 0) + (totalPaymentAmount > 0 ? 1 : 0) + 1 + (!isFullMonth ? 1 : 0);
+      const summaryHeight = summaryRowsCount * summaryRowHeight;
+      const summaryStartY = startTableY + tableHeaderHeight + tableContentHeight + 16;
+
+      // Chiều cao bổ sung cho dòng ghi chú ngày không lấy hàng nếu là bảng 1 cột
+      const emptyDaysHeight = (!isSplit && emptyDays.length > 0) ? 28 : 0;
+      const canvasHeight = summaryStartY + summaryHeight + emptyDaysHeight + 30;
+
+      // Tạo canvas và phóng tỉ lệ 2x cho độ nét cao (Retina)
       const canvas = document.createElement('canvas');
-
-      // Thiết lập kích thước canvas nhân với tỉ lệ scale 1.3 để xuất ảnh sắc nét hơn
-      const scale = 1.3;
-      canvas.width = width * scale;
+      const scale = 2;
+      canvas.width = canvasWidth * scale;
       canvas.height = canvasHeight * scale;
       const ctx = canvas.getContext('2d');
-
-      // Áp dụng tỉ lệ scale cho context vẽ để phóng to tất cả các thành phần tương ứng
       ctx.scale(scale, scale);
 
-      // Vẽ nền trắng phẳng tinh tế
+      // Nền trắng tinh khôi
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, width, canvasHeight);
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-      // Vẽ viền bo nhẹ ngoài cùng
-      ctx.strokeStyle = '#E2E8F0';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(15, 15, width - 30, canvasHeight - 30);
+      // ─── PHẦN TIÊU ĐỀ KHÁCH HÀNG: CARD BO GÓC TRANG NHÃ ───
+      const headerCardHeight = 44;
+      const headerCardY = 20;
+      const cardRadius = 8;
+      const cardX = startX;
+      const cardW = canvasWidth - startX * 2;
 
-      // ─── PHẦN TIÊU ĐỀ (HEADER) ───────────────────
-      ctx.fillStyle = '#0F172A'; // Chữ tối màu tương phản cao
-      ctx.font = 'bold 28px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(`BẢNG CHI TIẾT CÔNG NỢ THÁNG ${month}`, width / 2, 65);
-
-      // Vẽ đường phân cách nét mảnh
+      ctx.fillStyle = '#F8FAFC';
       ctx.strokeStyle = '#CBD5E1';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(35, 95);
-      ctx.lineTo(width - 35, 95);
+      ctx.moveTo(cardX + cardRadius, headerCardY);
+      ctx.lineTo(cardX + cardW - cardRadius, headerCardY);
+      ctx.quadraticCurveTo(cardX + cardW, headerCardY, cardX + cardW, headerCardY + cardRadius);
+      ctx.lineTo(cardX + cardW, headerCardY + headerCardHeight - cardRadius);
+      ctx.quadraticCurveTo(cardX + cardW, headerCardY + headerCardHeight, cardX + cardW - cardRadius, headerCardY + headerCardHeight);
+      ctx.lineTo(cardX + cardRadius, headerCardY + headerCardHeight);
+      ctx.quadraticCurveTo(cardX, headerCardY + headerCardHeight, cardX, headerCardY + headerCardHeight - cardRadius);
+      ctx.lineTo(cardX, headerCardY + cardRadius);
+      ctx.quadraticCurveTo(cardX, headerCardY, cardX + cardRadius, headerCardY);
+      ctx.closePath();
+      ctx.fill();
       ctx.stroke();
 
-      // Thông tin khách hàng - RẤT TO & RÕ RÀNG
-      ctx.textAlign = 'left';
+      let titleText = `Khách hàng: ${cust?.name || ''}`;
+      if (isFullMonth && monthStr) {
+        titleText += ` - Tháng ${monthStr}`;
+      } else if (activeFrom === activeTo) {
+        titleText += ` (Ngày ${activeFrom})`;
+      } else {
+        titleText += ` (Từ ${activeFrom} đến ${activeTo})`;
+      }
+
       ctx.fillStyle = '#0F172A';
-      ctx.font = 'bold 26px Arial';
-      ctx.fillText(`Khách hàng: ${cust?.name || ''}`, 40, 142);
+      ctx.font = 'bold 16.5px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(titleText, canvasWidth / 2, headerCardY + headerCardHeight / 2);
 
-      ctx.textAlign = 'right';
-      ctx.font = 'bold 18px Arial';
-      ctx.fillStyle = '#475569';
-      ctx.fillText(`Số ĐT: ${cust?.phone || 'Không có'}`, width - 40, 142);
+      // Hàm vẽ 1 panel bảng (gồm Header và các dòng)
+      const drawPanel = (panelDays, panelStartX) => {
+        let panelY = startTableY;
 
-      // ─── PHẦN BẢNG DỮ LIỆU (TABLE HEADER & ROWS) ──────────
-      columns.forEach((colRows, colIdx) => {
-        const startX = colIdx * colWidth;
+        // 1. Tiêu đề bảng của panel
+        ctx.fillStyle = '#F8FAFC';
+        ctx.fillRect(panelStartX, panelY, panelWidth, tableHeaderHeight);
+        ctx.strokeStyle = '#94A3B8';
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(panelStartX, panelY, panelWidth, tableHeaderHeight);
 
-        // Vẽ Header bảng màu xanh lá cho cột này
-        ctx.fillStyle = '#10B981';
-        ctx.fillRect(startX + 40, startTableY, 720, 42);
-        ctx.strokeStyle = '#059669';
+        // Kẻ dọc các cột header
+        const pColX = [
+          panelStartX,
+          panelStartX + colWidths[0],
+          panelStartX + colWidths[0] + colWidths[1],
+          panelStartX + colWidths[0] + colWidths[1] + colWidths[2],
+          panelStartX + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3],
+        ];
+
+        ctx.strokeStyle = '#CBD5E1';
         ctx.lineWidth = 1;
-        ctx.strokeRect(startX + 40, startTableY, 720, 42);
+        for (let c = 1; c < pColX.length; c++) {
+          ctx.beginPath();
+          ctx.moveTo(pColX[c], panelY);
+          ctx.lineTo(pColX[c], panelY + tableHeaderHeight);
+          ctx.stroke();
+        }
 
-        // Chữ tiêu đề cột
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 15px Arial';
+        // Chữ header (nhã nhặn, sắc nét)
+        ctx.fillStyle = '#334155';
+        ctx.font = 'bold 13.5px Arial, sans-serif';
+        ctx.textBaseline = 'middle';
+        const hMid = panelY + tableHeaderHeight / 2;
+
+        ctx.textAlign = 'center';
+        ctx.fillText('NGÀY', pColX[0] + colWidths[0] / 2, hMid);
+
         ctx.textAlign = 'left';
-        ctx.fillText('Ngày', startX + colDateX, startTableY + 27);
-        ctx.fillText('Nội dung / Chi tiết giao dịch trong ngày', startX + colDescX, startTableY + 27);
+        ctx.fillText('TÊN HÀNG', pColX[1] + 8, hMid);
 
         ctx.textAlign = 'right';
-        ctx.fillText('Tiền Nợ (+)', startX + colDebtX, startTableY + 27);
-        ctx.fillText('Đã Trả (-)', startX + colPayX, startTableY + 27);
+        ctx.fillText('SL (KG)', pColX[2] + colWidths[2] - 8, hMid);
+        ctx.fillText('ĐƠN GIÁ', pColX[3] + colWidths[3] - 8, hMid);
+        ctx.fillText('THÀNH TIỀN', pColX[4] + colWidths[4] - 8, hMid);
 
-        // Vẽ các dòng giao dịch của cột này
-        let currentY = startTableY + 42;
-        ctx.textAlign = 'left';
+        panelY += tableHeaderHeight;
 
-        if (colRows.length === 0) {
-          ctx.fillStyle = '#F8FAFC';
-          ctx.fillRect(startX + 40, currentY, 720, 80);
-          ctx.strokeStyle = '#E2E8F0';
-          ctx.strokeRect(startX + 40, currentY, 720, 80);
+        // 2. Các dòng dữ liệu
+        panelDays.forEach((day) => {
+          const dayHeight = day.entries.length * rowHeight;
+          const dayStartY = panelY;
 
-          ctx.fillStyle = '#94A3B8';
-          ctx.font = 'italic 16px Arial';
-          ctx.textAlign = 'center';
-          ctx.fillText('Không có giao dịch phát sinh trong tháng này', startX + 400, currentY + 48);
-        } else {
-          colRows.forEach((row, idx) => {
-            ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-            ctx.fillRect(startX + 40, currentY, 720, row.rowHeight);
+          day.entries.forEach((entry, idx) => {
+            const itemY = dayStartY + idx * rowHeight;
+            const midY = itemY + rowHeight / 2;
 
-            ctx.strokeStyle = '#E2E8F0';
-            ctx.strokeRect(startX + 40, currentY, 720, row.rowHeight);
+            // Nền trắng
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(panelStartX, itemY, panelWidth, rowHeight);
 
-            // Thiết lập textBaseline là middle để căn giữa dọc dễ dàng hơn
-            ctx.textBaseline = 'middle';
-
-            // Cột ngày
-            ctx.fillStyle = '#0F172A';
-            ctx.font = '15px Arial';
+            // Cột 1: Tên hàng (Chữ nét thường, 13.5px - KHÔNG BÔI ĐẬM)
             ctx.textAlign = 'left';
-
-            const [day, monthStr] = row.dateKey.split('/');
-            ctx.fillText(`${day}/${monthStr}`, startX + colDateX, currentY + row.rowHeight / 2);
-
-            // Cột Chi tiết mô tả - vẽ nhiều dòng
-            ctx.textAlign = 'left';
-            const startTextY = currentY + row.rowHeight / 2 - ((row.descLines.length - 1) * lineHeight) / 2;
-            row.descLines.forEach((line, lineIdx) => {
-              const textY = startTextY + lineIdx * lineHeight;
-              ctx.fillStyle = '#0F172A';
-              ctx.font = '15px Arial';
-              ctx.fillText(line, startX + colDescX, textY);
-            });
-
-            // Cột tiền nợ
-            ctx.textAlign = 'right';
-            if (row.debtAmount > 0) {
+            if (entry.type === 'RETURN') {
               ctx.fillStyle = '#DC2626';
-              ctx.font = 'bold 15px Arial';
-              ctx.fillText(formatCurrency(row.debtAmount), startX + colDebtX, currentY + row.rowHeight / 2);
+              ctx.font = '13.5px Arial, sans-serif';
+              ctx.fillText(entry.name, pColX[1] + 8, midY);
+            } else if (entry.type === 'PAYMENT') {
+              ctx.fillStyle = '#059669';
+              ctx.font = '13.5px Arial, sans-serif';
+              ctx.fillText(entry.name, pColX[1] + 8, midY);
+            } else {
+              ctx.fillStyle = '#0F172A';
+              ctx.font = '13.5px Arial, sans-serif';
+              ctx.fillText(entry.name, pColX[1] + 8, midY);
             }
 
-            // Cột tiền trả (phân biệt giữa hàng trả về bôi màu cam và tiền đã thu màu xanh lá)
-            const hasReturn = row.returnAmount > 0;
-            const hasPayment = row.paymentAmount > 0;
+            // Cột 2: Số lượng (Chữ nét thường, 14px - KHÔNG BÔI ĐẬM)
+            ctx.textAlign = 'right';
+            const numQty = parseFloat(entry.quantity);
+            const qtyText = (entry.quantity !== null && entry.quantity !== undefined && !isNaN(numQty))
+              ? (Number.isInteger(numQty) ? String(numQty) : parseFloat(numQty.toFixed(2)).toString())
+              : '-';
+            if (entry.type === 'RETURN') {
+              ctx.fillStyle = '#DC2626';
+            } else {
+              ctx.fillStyle = '#0F172A';
+            }
+            ctx.font = '14px Arial, sans-serif';
+            ctx.fillText(qtyText, pColX[2] + colWidths[2] - 8, midY);
 
-            if (hasReturn && hasPayment) {
-              // Trường hợp trong ngày có cả 2: hàng trả về và thu tiền
-              const midY = currentY + row.rowHeight / 2;
+            // Cột 3: Đơn giá (Bôi đậm rõ nét, màu tối tương phản cao không bị mờ)
+            ctx.textAlign = 'right';
+            const numPrice = parseFloat(entry.price);
+            const priceText = (entry.price !== null && entry.price !== undefined && !isNaN(numPrice) && numPrice > 0)
+              ? new Intl.NumberFormat('vi-VN').format(Math.round(numPrice))
+              : '-';
+            if (entry.type === 'RETURN') {
+              ctx.fillStyle = '#DC2626';
+              ctx.font = 'bold 14.5px Arial, sans-serif';
+            } else {
+              ctx.fillStyle = '#0F172A';
+              ctx.font = 'bold 14.5px Arial, sans-serif';
+            }
+            ctx.fillText(priceText, pColX[3] + colWidths[3] - 8, midY);
 
-              // 1. Tiền hàng trả về (màu cam)
-              ctx.fillStyle = '#EA580C';
-              ctx.font = 'bold 13px Arial';
-              ctx.fillText(`-${formatCurrency(row.returnAmount)}`, startX + colPayX, midY - 20);
-              ctx.font = 'bold 11px Arial';
-              ctx.fillText('(tiền hàng trả về)', startX + colPayX, midY - 6);
-
-              // 2. Tiền đã thu (màu xanh lá)
-              ctx.fillStyle = '#10B981';
-              ctx.font = 'bold 13px Arial';
-              ctx.fillText(formatCurrency(row.paymentAmount), startX + colPayX, midY + 12);
-              ctx.font = 'italic 11px Arial';
-              ctx.fillText('(đã thu)', startX + colPayX, midY + 25);
-            } else if (hasReturn) {
-              // Trường hợp chỉ có hàng trả về: bôi màu cam và chú thích trong ngoặc là tiền hàng trả về
-              const midY = currentY + row.rowHeight / 2;
-              ctx.fillStyle = '#EA580C';
-              ctx.font = 'bold 15px Arial';
-              ctx.fillText(formatCurrency(row.returnAmount), startX + colPayX, midY - 9);
-
-              ctx.fillStyle = '#EA580C';
-              ctx.font = 'bold 11px Arial';
-              ctx.fillText('(tiền hàng trả về)', startX + colPayX, midY + 10);
-            } else if (hasPayment) {
-              // Trường hợp chỉ có tiền đã thu: giữ màu xanh lá
-              ctx.fillStyle = '#10B981';
-              ctx.font = 'bold 15px Arial';
-              ctx.fillText(formatCurrency(row.paymentAmount), startX + colPayX, currentY + row.rowHeight / 2);
+            // Cột 4: Thành tiền (CHỈ BÔI ĐẬM CỘT THÀNH TIỀN, 15px bold)
+            ctx.textAlign = 'right';
+            const numAmount = parseFloat(entry.amount || 0);
+            const formattedAmount = new Intl.NumberFormat('vi-VN').format(Math.round(numAmount));
+            if (entry.type === 'RETURN') {
+              ctx.fillStyle = '#DC2626';
+              ctx.font = 'bold 15px Arial, sans-serif';
+              ctx.fillText(`-${formattedAmount}`, pColX[4] + colWidths[4] - 8, midY);
+            } else if (entry.type === 'PAYMENT') {
+              ctx.fillStyle = '#059669';
+              ctx.font = 'bold 15px Arial, sans-serif';
+              ctx.fillText(`-${formattedAmount}`, pColX[4] + colWidths[4] - 8, midY);
+            } else {
+              ctx.fillStyle = '#0F172A';
+              ctx.font = 'bold 15px Arial, sans-serif';
+              ctx.fillText(formattedAmount, pColX[4] + colWidths[4] - 8, midY);
             }
 
-            currentY += row.rowHeight;
-            ctx.textBaseline = 'alphabetic'; // Trả về mặc định cho các phần vẽ sau
-            ctx.textAlign = 'left';
+            // Đường kẻ ngang giữa các món trong ngày (rất mảnh nhẹ)
+            if (idx < day.entries.length - 1) {
+              ctx.strokeStyle = '#F1F5F9';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(pColX[1], itemY + rowHeight);
+              ctx.lineTo(panelStartX + panelWidth, itemY + rowHeight);
+              ctx.stroke();
+            }
           });
-        }
-      });
 
-      // ─── PHẦN TỔNG KẾT (FOOTER) ───────────────────
-      let currentFooterY = startTableY + 42 + contentHeight + 20;
+          // Kẻ dọc giữa các cột cho toàn ngày này
+          ctx.strokeStyle = '#CBD5E1';
+          ctx.lineWidth = 1;
+          for (let c = 1; c < pColX.length; c++) {
+            ctx.beginPath();
+            ctx.moveTo(pColX[c], dayStartY);
+            ctx.lineTo(pColX[c], dayStartY + dayHeight);
+            ctx.stroke();
+          }
 
-      // Vẽ Khung thông tin nổi bật các ngày không có công nợ
-      if (emptyDays.length > 0) {
-        const boxX = 40;
-        const boxY = currentFooterY;
-        const boxW = width - 80;
-        const boxH = emptyBoxHeight;
+          // Cột 0: Ô ngày gộp chung (nền xám nhẹ làm nổi bật ngày)
+          ctx.fillStyle = '#F8FAFC';
+          ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
+          ctx.strokeStyle = '#CBD5E1';
+          ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
-        // Nền khung nổi bật
-        ctx.fillStyle = '#F8FAFC';
-        ctx.fillRect(boxX, boxY, boxW, boxH);
+          // Chữ ngày căn giữa (Chữ nét thường, 13.5px)
+          ctx.fillStyle = '#334155';
+          ctx.font = '13.5px Arial, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2);
 
-        // Viền xung quanh khung
-        ctx.strokeStyle = '#94A3B8';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(boxX, boxY, boxW, boxH);
+          // Đường kẻ ngang phân tách giữa các ngày (đậm và rõ hơn)
+          ctx.strokeStyle = '#94A3B8';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(panelStartX, dayStartY + dayHeight);
+          ctx.lineTo(panelStartX + panelWidth, dayStartY + dayHeight);
+          ctx.stroke();
 
-        // Vạch màu nhấn bên trái
-        ctx.fillStyle = '#0F172A';
-        ctx.fillRect(boxX, boxY, 6, boxH);
-
-        // Vẽ nội dung chữ to, đậm và rõ ràng
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.font = 'bold 18px Arial';
-        ctx.fillStyle = '#0F172A';
-
-        let textY = boxY + 12;
-        emptyDaysLines.forEach((line) => {
-          ctx.fillText(line, boxX + 18, textY);
-          textY += 28;
+          panelY += dayHeight;
         });
 
-        ctx.textBaseline = 'alphabetic'; // Trả về mặc định
-        currentFooterY += boxH + 20;
+        // Viền bao quanh toàn bộ panel (mảnh, sắc nét)
+        ctx.strokeStyle = '#64748B';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(panelStartX, startTableY, panelWidth, panelY - startTableY);
+
+        return panelY;
+      };
+
+      // Vẽ Panel Trái (Cột 1)
+      const leftEndY = drawPanel(leftDays, startX);
+
+      // Vẽ Panel Phải (Cột 2) nếu có chia đôi
+      let rightEndY = leftEndY;
+      if (isSplit && rightDays.length > 0) {
+        const rightStartX = startX + panelWidth + panelGap;
+        rightEndY = drawPanel(rightDays, rightStartX);
       }
 
-      // Vẽ nét gạch ngang trước tổng kết
+      // ─── PHẦN TỔNG KẾT CUỐI BẢNG (CHUẨN KẾ TOÁN SANG TRỌNG) ───
+      // Đặt khối tổng kết ở bên phải (dưới Cột 2 nếu chia đôi, hoặc dưới Cột 1 nếu không chia)
+      const summaryStartX = isSplit ? (startX + panelWidth + panelGap) : startX;
+      // Tăng chiều rộng cột trái lên 350px để nhãn kèm ngày hiển thị thoải mái
+      const summaryColLeftWidth = 350;
+      let curSummaryY = summaryStartY;
+
+      // Chuỗi hiển thị khoảng ngày đang lọc (ví dụ: 01/08 - 15/08)
+      let filterRangeStr = '';
+      if (activeFrom && activeTo) {
+        if (activeFrom === activeTo) {
+          filterRangeStr = activeFrom.substring(0, 5);
+        } else {
+          filterRangeStr = `${activeFrom.substring(0, 5)} - ${activeTo.substring(0, 5)}`;
+        }
+      } else if (monthStr) {
+        filterRangeStr = `Tháng ${monthStr}`;
+      }
+
+      // Dòng 1: TỔNG TIỀN HÀNG (Mở ngoặc thêm ngày đang lọc)
+      const meatLabel = filterRangeStr ? `TỔNG TIỀN HÀNG (${filterRangeStr}):` : 'TỔNG TIỀN HÀNG:';
+      ctx.fillStyle = '#F8FAFC';
+      ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
       ctx.strokeStyle = '#CBD5E1';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+
       ctx.beginPath();
-      ctx.moveTo(40, currentFooterY);
-      ctx.lineTo(width - 40, currentFooterY);
+      ctx.moveTo(summaryStartX + summaryColLeftWidth, curSummaryY);
+      ctx.lineTo(summaryStartX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
       ctx.stroke();
 
-      currentFooterY += 45;
-
-      // Hàng 1: Tổng tiền nợ
+      ctx.fillStyle = '#475569';
+      ctx.font = 'bold 14px Arial, sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillStyle = '#334155';
-      ctx.font = 'bold 22px Arial';
-      ctx.fillText('Tổng tiền nợ:', width - 360, currentFooterY);
+      ctx.fillText(meatLabel, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+      ctx.fillStyle = '#0F172A';
+      ctx.font = 'bold 17.5px Arial, sans-serif';
+      ctx.fillText(`${new Intl.NumberFormat('vi-VN').format(totalMeatAmount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
+      curSummaryY += summaryRowHeight;
 
-      ctx.fillStyle = '#DC2626';
-      ctx.font = 'bold 26px Arial';
-      ctx.fillText(formatCurrency(totalDebtVal), width - 40, currentFooterY);
+      // Dòng 2: TIỀN HÀNG TRẢ VỀ (Nếu có)
+      if (totalReturnAmount > 0) {
+        ctx.fillStyle = '#FFF7ED';
+        ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+        ctx.strokeStyle = '#FED7AA';
+        ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
 
-      // Hàng 2: Trừ tiền hàng trả về (nếu trong tháng có hàng trả về thì thêm 1 dòng màu cam)
-      if (hasReturnInMonth) {
-        currentFooterY += 45;
-        ctx.fillStyle = '#334155';
-        ctx.font = 'bold 22px Arial';
-        ctx.fillText('Trừ tiền hàng trả về:', width - 360, currentFooterY);
+        ctx.beginPath();
+        ctx.moveTo(summaryStartX + summaryColLeftWidth, curSummaryY);
+        ctx.lineTo(summaryStartX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
+        ctx.stroke();
 
-        ctx.fillStyle = '#EA580C';
-        ctx.font = 'bold 26px Arial';
-        ctx.fillText(`- ${formatCurrency(totalReturnVal)}`, width - 40, currentFooterY);
+        ctx.fillStyle = '#C2410C';
+        ctx.font = 'bold 14px Arial, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('TIỀN HÀNG TRẢ VỀ:', summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+        ctx.fillStyle = '#DC2626';
+        ctx.font = 'bold 17.5px Arial, sans-serif';
+        ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totalReturnAmount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
+        curSummaryY += summaryRowHeight;
       }
 
-      // Hàng 3: Tổng tiền đã thanh toán (chỉ tính các khoản tiền đã thu thực tế)
-      currentFooterY += 45;
-      ctx.fillStyle = '#334155';
-      ctx.font = 'bold 22px Arial';
-      ctx.fillText('Tổng tiền đã thanh toán:', width - 360, currentFooterY);
+      // Dòng 3: CÁC KHOẢN ĐÃ THU (Chỉ hiển thị "ĐÃ THU:", không hiển thị ngày để khách không nhầm là chỉ thu của ngày đó)
+      if (totalPaymentAmount > 0) {
+        ctx.fillStyle = '#F0FDF4';
+        ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+        ctx.strokeStyle = '#BBF7D0';
+        ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
 
-      ctx.fillStyle = '#059669';
-      ctx.font = 'bold 26px Arial';
-      ctx.fillText(formatCurrency(totalPaymentVal), width - 40, currentFooterY);
+        ctx.beginPath();
+        ctx.moveTo(summaryStartX + summaryColLeftWidth, curSummaryY);
+        ctx.lineTo(summaryStartX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
+        ctx.stroke();
 
-      // Hàng 4: Tiền nợ còn lại (Rất to và nổi bật)
-      currentFooterY += 52;
-      ctx.fillStyle = '#0F172A';
-      ctx.font = 'bold 26px Arial';
-      ctx.fillText('Tiền nợ còn lại:', width - 360, currentFooterY);
+        ctx.fillStyle = '#047857';
+        ctx.font = 'bold 14px Arial, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('ĐÃ THU:', summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+        ctx.fillStyle = '#059669';
+        ctx.font = 'bold 17.5px Arial, sans-serif';
+        ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totalPaymentAmount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
+        curSummaryY += summaryRowHeight;
+      }
 
-      // Chỉ tính nợ còn lại của riêng tháng được chọn: Tổng nợ - Trả về - Đã thanh toán
-      const overallDebt = Math.max(0, totalDebtVal - totalReturnVal - totalPaymentVal);
-      ctx.fillStyle = overallDebt > 0 ? '#DC2626' : '#059669';
-      ctx.font = 'bold 34px Arial';
-      ctx.fillText(formatCurrency(overallDebt), width - 40, currentFooterY);
+      // Dòng 4: CÒN LẠI PHẢI THU (Mở ngoặc thêm ngày đang lọc)
+      const finalDebt = Math.max(0, totalMeatAmount - totalReturnAmount - totalPaymentAmount);
+      const debtLabel = filterRangeStr ? `CÒN LẠI PHẢI THU (${filterRangeStr}):` : 'CÒN LẠI PHẢI THU:';
+      ctx.fillStyle = '#EFF6FF';
+      ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+      ctx.strokeStyle = '#93C5FD';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
 
-      // Xuất base64
+      ctx.beginPath();
+      ctx.moveTo(summaryStartX + summaryColLeftWidth, curSummaryY);
+      ctx.lineTo(summaryStartX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
+      ctx.stroke();
+
+      ctx.fillStyle = '#1E3A8A';
+      ctx.font = 'bold 14.5px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(debtLabel, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+
+      ctx.fillStyle = finalDebt > 0 ? '#DC2626' : '#059669';
+      ctx.font = 'bold 20.5px Arial, sans-serif';
+      ctx.fillText(`${new Intl.NumberFormat('vi-VN').format(finalDebt)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
+      curSummaryY += summaryRowHeight;
+
+      // Dòng 5: TỔNG CÔNG NỢ CẢ THÁNG (Chỉ hiển thị khi lọc khoảng ngày, nếu lọc cả tháng thì bỏ vì đã có dòng Còn lại phải thu)
+      if (!isFullMonth) {
+        const wholeMonthLabel = monthStr ? `TỔNG CÔNG NỢ CẢ THÁNG (Tháng ${monthStr}):` : 'TỔNG CÔNG NỢ CẢ THÁNG:';
+        ctx.fillStyle = '#FEF2F2';
+        ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+        ctx.strokeStyle = '#FECACA';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+
+        ctx.beginPath();
+        ctx.moveTo(summaryStartX + summaryColLeftWidth, curSummaryY);
+        ctx.lineTo(summaryStartX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
+        ctx.stroke();
+
+        ctx.fillStyle = '#991B1B';
+        ctx.font = 'bold 14.5px Arial, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(wholeMonthLabel, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+
+        ctx.fillStyle = wholeMonthDebt > 0 ? '#DC2626' : '#059669';
+        ctx.font = 'bold 21px Arial, sans-serif';
+        ctx.fillText(`${new Intl.NumberFormat('vi-VN').format(wholeMonthDebt)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
+        curSummaryY += summaryRowHeight;
+      }
+
+      // Viền khung ngoài khối tổng kết
+      ctx.strokeStyle = '#64748B';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(summaryStartX, summaryStartY, panelWidth, curSummaryY - summaryStartY);
+
+      // ─── LIỆT KÊ CÁC NGÀY KHÔNG PHÁT SINH CÔNG NỢ (LIỆT KÊ BÌNH THƯỜNG, KHÔNG DÙNG BẢNG) ───
+      if (emptyDays.length > 0) {
+        ctx.font = 'italic 13.5px Arial, sans-serif';
+        ctx.fillStyle = '#475569';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        const noteText = `* Các ngày không phát sinh công nợ: Ngày ${emptyDays.join(', ')}`;
+        const maxTextWidth = isSplit ? panelWidth : (canvasWidth - startX * 2);
+        const words = noteText.split(' ');
+        let line = '';
+        let noteCurY = isSplit ? (summaryStartY + 14) : (curSummaryY + 16);
+
+        for (let n = 0; n < words.length; n++) {
+          const testLine = line + words[n] + ' ';
+          const metrics = ctx.measureText(testLine);
+          if (metrics.width > maxTextWidth && n > 0) {
+            ctx.fillText(line.trim(), startX, noteCurY);
+            line = words[n] + ' ';
+            noteCurY += 22;
+          } else {
+            line = testLine;
+          }
+        }
+        ctx.fillText(line.trim(), startX, noteCurY);
+      }
+
+      // Xuất Base64 ảnh
       const url = canvas.toDataURL('image/png');
       setImageUri(url);
 
@@ -877,48 +1242,63 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       let csvContent = '\uFEFF';
 
       // Tiêu đề báo cáo
-      csvContent += `BẢNG CHI TIẾT CÔNG NỢ THÁNG ${selectedMonth}\r\n`;
+      const rangeText = (fromDate && toDate) ? `(TỪ ${fromDate} ĐẾN ${toDate})` : `THÁNG ${selectedMonth}`;
+      csvContent += `BẢNG KÊ TIỀN HÀNG & CÔNG NỢ ${rangeText}\r\n`;
       csvContent += `Khách hàng: ${customer?.name}\r\n`;
-      csvContent += `Số ĐT: ${customer?.phone || 'Không có'}\r\n\r\n`;
+      csvContent += `Số ĐT: ${customer?.phone || 'Chưa lưu'}\r\n\r\n`;
 
       // Tiêu đề cột
-      csvContent += 'Ngày,Nội dung / Chi tiết giao dịch,Tiền Nợ (+),Đã Trả (-)\r\n';
+      csvContent += 'Ngày,Tên hàng,Số lượng (kg),Đơn giá (đ),Thành tiền (đ)\r\n';
 
-      // Duyệt qua danh sách để điền thông tin chi tiết
-      rows.forEach(row => {
-        let descText = '';
-        const parts = [];
-        if (row.items && row.items.length > 0) {
-          parts.push(row.items.join(', '));
-        }
-        if (row.notes && row.notes.length > 0) {
-          parts.push(row.notes.join('; '));
-        }
-        descText = parts.join(' | ');
+      // Duyệt qua từng ngày và từng món
+      rows.forEach(day => {
+        (day.entries || []).forEach((entry, idx) => {
+          const dateStr = idx === 0 ? day.displayDate : '';
+          const nameStr = `"${entry.name.replace(/"/g, '""')}"`;
+          const qtyStr = entry.quantity !== null && entry.quantity !== undefined ? entry.quantity : '';
+          const priceStr = entry.price ? Math.round(entry.price) : '';
+          let amtStr = Math.round(entry.amount);
+          if (entry.type === 'RETURN' || entry.type === 'PAYMENT') {
+            amtStr = -amtStr;
+          }
 
-        const dateFormatted = row.dateKey;
-        const descEscaped = `"${descText.replace(/"/g, '""')}"`;
-        const debtStr = row.debtAmount > 0 ? row.debtAmount : '';
-        let paymentStr = '';
-        if (row.returnAmount > 0 && row.paymentAmount > 0) {
-          paymentStr = `${row.returnAmount} (tiền hàng trả về) | ${row.paymentAmount} (đã thanh toán)`;
-        } else if (row.returnAmount > 0) {
-          paymentStr = `${row.returnAmount} (tiền hàng trả về)`;
-        } else if (row.paymentAmount > 0) {
-          paymentStr = row.paymentAmount;
-        }
-
-        csvContent += `${dateFormatted},${descEscaped},${debtStr},${paymentStr}\r\n`;
+          csvContent += `${dateStr},${nameStr},${qtyStr},${priceStr},${amtStr}\r\n`;
+        });
       });
+
+      // Chuỗi hiển thị khoảng ngày đang lọc (ví dụ: 01/08 - 15/08)
+      let filterRangeStr = '';
+      if (fromDate && toDate) {
+        if (fromDate === toDate) {
+          filterRangeStr = fromDate.substring(0, 5);
+        } else {
+          filterRangeStr = `${fromDate.substring(0, 5)} - ${toDate.substring(0, 5)}`;
+        }
+      } else if (selectedMonth) {
+        filterRangeStr = `Tháng ${selectedMonth}`;
+      }
+
+      const fromD = parseDDMMYYYY(fromDate, false);
+      const toD = parseDDMMYYYY(toDate, true);
+      const isFull = fromD && toD &&
+        fromD.getDate() === 1 &&
+        fromD.getMonth() === toD.getMonth() &&
+        fromD.getFullYear() === toD.getFullYear() &&
+        toD.getDate() === new Date(toD.getFullYear(), toD.getMonth() + 1, 0).getDate();
 
       // Phần tổng kết báo cáo
       csvContent += '\r\n';
-      csvContent += `Tổng tiền nợ,,,,${totalDebtInMonth}\r\n`;
+      csvContent += `,,,TỔNG TIỀN HÀNG${filterRangeStr ? ` (${filterRangeStr})` : ''},${totalDebtInMonth}\r\n`;
       if (totalReturnInMonth > 0) {
-        csvContent += `Trừ tiền hàng trả về,,,,${totalReturnInMonth}\r\n`;
+        csvContent += `,,,TIỀN HÀNG TRẢ VỀ,-${totalReturnInMonth}\r\n`;
       }
-      csvContent += `Tổng tiền đã thanh toán,,,,${totalPaymentInMonth}\r\n`;
-      csvContent += `Tiền nợ còn lại,,,,${Math.max(0, totalDebtInMonth - totalReturnInMonth - totalPaymentInMonth)}\r\n`;
+      if (totalPaymentInMonth > 0) {
+        csvContent += `,,,TIỀN ĐÃ THANH TOÁN,-${totalPaymentInMonth}\r\n`;
+      }
+      csvContent += `,,,CÒN LẠI PHẢI THU${filterRangeStr ? ` (${filterRangeStr})` : ''},${Math.max(0, totalDebtInMonth - totalReturnInMonth - totalPaymentInMonth)}\r\n`;
+      if (!isFull) {
+        csvContent += `,,,TỔNG CÔNG NỢ CẢ THÁNG (Tháng ${selectedMonth}),${totalWholeMonthDebt}\r\n`;
+      }
 
       // Tải tệp tin về trình duyệt
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -926,8 +1306,10 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const link = document.createElement('a');
       link.href = url;
       const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
-      const safeMonth = selectedMonth.replace('/', '-');
-      link.download = `CongNo_${safeName}_Thang_${safeMonth}.csv`;
+      const safeRange = (fromDate && toDate)
+        ? `${fromDate.replace(/\//g, '-')}_den_${toDate.replace(/\//g, '-')}`
+        : selectedMonth.replace('/', '-');
+      link.download = `BangKe_CongNo_${safeName}_${safeRange}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -958,15 +1340,45 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     return new Blob(byteArrays, { type: contentType });
   };
 
-  // Thực hiện tải ảnh về máy
+  // Thực hiện tải ảnh về máy hoặc chia sẻ qua Web Share API (cho phép lưu thẳng vào Thư viện ảnh hoặc gửi Zalo trên iPhone/Android)
   const executeDownloadImage = async () => {
     if (Platform.OS === 'web' && imageUri) {
       const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
-      const safeMonth = selectedMonth.replace('/', '-');
-      const fileName = `CongNo_${safeName}_Thang_${safeMonth}.png`;
+      const safeRange = (fromDate && toDate)
+        ? `${fromDate.replace(/\//g, '-')}_den_${toDate.replace(/\//g, '-')}`
+        : selectedMonth.replace('/', '-');
+      const fileName = `CongNo_${safeName}_${safeRange}.png`;
 
       try {
         const blob = base64ToBlob(imageUri, 'image/png');
+
+        // Kiểm tra thiết bị có phải là điện thoại/máy tính bảng hay không
+        const isMobileDevice = typeof navigator !== 'undefined' && 
+          /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+        // CHỈ sử dụng Web Share API trên thiết bị Điện thoại (iOS Safari, Android Chrome) để lưu vào Thư viện ảnh hoặc gửi Zalo
+        // Trên PC / Laptop: Luôn tải file ảnh trực tiếp về máy tính qua thẻ <a>
+        if (isMobileDevice && typeof navigator !== 'undefined' && navigator.share && typeof File !== 'undefined') {
+          const file = new File([blob], fileName, { type: 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+              await navigator.share({
+                files: [file],
+                title: `Công nợ ${customer?.name || ''}`,
+                text: `Bảng kê công nợ khách hàng ${customer?.name || ''}`,
+              });
+              return; // Người dùng đã mở bảng chia sẻ / lưu ảnh thành công
+            } catch (shareErr) {
+              // Nếu người dùng bấm "Hủy" bảng chia sẻ thì dừng, không tải file thừa
+              if (shareErr.name === 'AbortError') {
+                return;
+              }
+              console.warn('[WebShare] Không thể mở bảng chia sẻ, chuyển sang phương thức tải truyền thống:', shareErr);
+            }
+          }
+        }
+
+        // Phương thức tải file truyền thống (PC hoặc trình duyệt không hỗ trợ Web Share API)
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = blobUrl;
@@ -976,9 +1388,10 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         document.body.removeChild(link);
 
         // Giải phóng bộ nhớ Object URL sau khi hoàn tất
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 200);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
       } catch (err) {
         console.error('Lỗi khi tải ảnh:', err);
+        alert('Đã xảy ra lỗi khi tải ảnh. Bạn có thể nhấn giữ vào ảnh và chọn "Lưu hình ảnh".');
       }
     }
   };
@@ -986,6 +1399,21 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   // 4. Tải ảnh công nợ về máy
   const handleDownloadImage = async () => {
     executeDownloadImage();
+  };
+
+  // Xử lý áp dụng các mốc thời gian chọn nhanh (Tháng này, Tháng trước, 1-15, 16-hết, 7 ngày, Toàn bộ)
+  const handleApplyPreset = (presetKey) => {
+    const range = getPresetRange(presetKey, fromDate, transactions);
+    setFromDate(range.from);
+    setToDate(range.to);
+    generateDebtImage(transactions, payments, customer, range.from, range.to);
+  };
+
+  // Xử lý khi thay đổi từ ngày hoặc đến ngày thủ công
+  const handleDateRangeChange = (newFrom, newTo) => {
+    setFromDate(newFrom);
+    setToDate(newTo);
+    generateDebtImage(transactions, payments, customer, newFrom, newTo);
   };
 
   // 5. Chọn ngày để xuất tin nhắn công nợ
@@ -1040,7 +1468,17 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
         <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>📊 XUẤT CÔNG NỢ KHÁCH HÀNG</Text>
+          {/* Header modal có tiêu đề và nút đóng nhanh */}
+          <View style={styles.modalHeaderRow}>
+            <Text style={styles.modalTitle}>📊 XUẤT CÔNG NỢ KHÁCH HÀNG</Text>
+            <TouchableOpacity
+              style={styles.modalCloseIconBtn}
+              onPress={() => setVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalCloseIconText}>✕</Text>
+            </TouchableOpacity>
+          </View>
 
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -1059,13 +1497,23 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             </View>
           ) : (
             <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-              <View style={styles.customerBox}>
-                <Text style={styles.customerText}>
-                  Khách hàng: <Text style={styles.boldText}>{customer?.name}</Text>
-                </Text>
-                <Text style={styles.customerText}>
-                  Số điện thoại: <Text style={styles.boldText}>{customer?.phone || 'Chưa ghi nhận'}</Text>
-                </Text>
+              {/* Thẻ khách hàng thiết kế dạng hồ sơ hiện đại */}
+              <View style={styles.customerCard}>
+                <View style={styles.customerAvatarCircle}>
+                  <Text style={styles.customerAvatarText}>
+                    {customer?.name ? customer.name.trim().charAt(0).toUpperCase() : '👤'}
+                  </Text>
+                </View>
+                <View style={styles.customerInfoCol}>
+                  <Text style={styles.customerCardName} numberOfLines={1}>
+                    {customer?.name || 'Khách hàng'}
+                  </Text>
+                  <View style={styles.customerPhoneBadge}>
+                    <Text style={styles.customerPhoneText}>
+                      📞 {customer?.phone || 'Chưa có SĐT'}
+                    </Text>
+                  </View>
+                </View>
               </View>
 
               {/* ── 2 TABS CHUYỂN ĐỔI CHẾ ĐỘ XUẤT ── */}
@@ -1076,7 +1524,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.tabButtonText, activeTab === 'month' && styles.activeTabButtonText]}>
-                    📸 Xuất theo tháng (Ảnh)
+                    📸 Xuất bảng kê (Ảnh)
                   </Text>
                 </TouchableOpacity>
 
@@ -1096,46 +1544,201 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                 </TouchableOpacity>
               </View>
 
-              {/* ── NỘI DUNG TAB 1: XUẤT THEO THÁNG (DẠNG ẢNH) ── */}
+              {/* ── NỘI DUNG TAB 1: XUẤT BẢNG KÊ (DẠNG ẢNH) ── */}
               {activeTab === 'month' ? (
                 <>
-                  <Text style={styles.sectionLabel}>Chọn tháng cần xuất công nợ:</Text>
+                  {/* BỘ LỌC KHOẢNG THỜI GIAN ĐỐI SOÁT */}
+                  <View style={styles.dateFilterCard}>
+                    <View style={styles.dateFilterHeader}>
+                      <View style={styles.dateFilterTitleRow}>
+                        <Text style={styles.dateFilterTitleIcon}>📅</Text>
+                        <Text style={styles.dateFilterTitle}>KHOẢNG THỜI GIAN ĐỐI SOÁT</Text>
+                      </View>
+                    </View>
 
-                  {availableMonths.length === 0 ? (
-                    <Text style={styles.noMonthsText}>
-                      Khách hàng này chưa phát sinh giao dịch nào để xuất công nợ.
-                    </Text>
-                  ) : (
+                    {/* Danh sách các nút chọn nhanh mốc thời gian */}
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
-                      style={styles.monthScroll}
-                      contentContainerStyle={styles.monthScrollContent}
+                      style={styles.quickFilterScroll}
+                      contentContainerStyle={styles.quickFilterRow}
                     >
-                      {availableMonths.map((m) => (
-                        <TouchableOpacity
-                          key={m}
-                          style={[styles.monthItem, selectedMonth === m && styles.activeMonthItem]}
-                          onPress={() => {
-                            setSelectedMonth(m);
-                            generateDebtImage(m, transactions, payments, customer);
-                          }}
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('this_month').from &&
+                          toDate === getPresetRange('this_month').to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('this_month')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('this_month').from &&
+                            toDate === getPresetRange('this_month').to &&
+                            styles.activeQuickChipText
+                          ]}
                         >
-                          <Text style={[styles.monthItemText, selectedMonth === m && styles.activeMonthItemText]}>
-                            Tháng {m}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  )}
+                          Tháng này
+                        </Text>
+                      </TouchableOpacity>
 
-                  {/* TRẠNG THÁI ĐANG VẼ ẢNH */}
-                  {generating && (
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('last_month').from &&
+                          toDate === getPresetRange('last_month').to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('last_month')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('last_month').from &&
+                            toDate === getPresetRange('last_month').to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          Tháng trước
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('first_half', fromDate).from &&
+                          toDate === getPresetRange('first_half', fromDate).to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('first_half')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('first_half', fromDate).from &&
+                            toDate === getPresetRange('first_half', fromDate).to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          Đầu tháng (1 - 15)
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('second_half', fromDate).from &&
+                          toDate === getPresetRange('second_half', fromDate).to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('second_half')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('second_half', fromDate).from &&
+                            toDate === getPresetRange('second_half', fromDate).to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          Cuối tháng (16 - hết)
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('last_7_days').from &&
+                          toDate === getPresetRange('last_7_days').to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('last_7_days')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('last_7_days').from &&
+                            toDate === getPresetRange('last_7_days').to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          7 ngày qua
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('all', fromDate, transactions).from &&
+                          toDate === getPresetRange('all', fromDate, transactions).to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('all')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('all', fromDate, transactions).from &&
+                            toDate === getPresetRange('all', fromDate, transactions).to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          Toàn bộ
+                        </Text>
+                      </TouchableOpacity>
+                    </ScrollView>
+
+                    {/* Hàng 2 ô chọn ngày Từ ngày ➔ Đến ngày */}
+                    <View style={styles.dateInputsRow}>
+                      <View style={styles.dateInputCol}>
+                        <Text style={styles.dateInputSubLabel}>Từ ngày</Text>
+                        <DatePickerInput
+                          value={fromDate}
+                          onChange={(val) => handleDateRangeChange(val, toDate)}
+                          allowFuture={true}
+                          compact={true}
+                          style={styles.compactDatePicker}
+                        />
+                      </View>
+
+                      <View style={styles.dateInputDivider}>
+                        <Text style={styles.dateInputDividerText}>➔</Text>
+                      </View>
+
+                      <View style={styles.dateInputCol}>
+                        <Text style={styles.dateInputSubLabel}>Đến ngày</Text>
+                        <DatePickerInput
+                          value={toDate}
+                          onChange={(val) => handleDateRangeChange(fromDate, val)}
+                          allowFuture={true}
+                          compact={true}
+                          style={styles.compactDatePicker}
+                        />
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* TRẠNG THÁI ĐANG VẼ ẢNH HOẶC KHÔNG CÓ DỮ LIỆU */}
+                  {generating ? (
                     <View style={styles.generatingBox}>
                       <ActivityIndicator size="small" color={COLORS.primary} />
                       <Text style={styles.generatingText}>Đang vẽ ảnh công nợ...</Text>
                     </View>
-                  )}
+                  ) : !imageUri ? (
+                    <View style={styles.noImagePlaceholder}>
+                      <Text style={styles.placeholderText}>
+                        Không có giao dịch hoặc khoản thu nào trong khoảng ngày đã chọn.
+                      </Text>
+                    </View>
+                  ) : null}
 
                   {/* PHẦN HIỂN THỊ KHI SỐ LƯỢNG DÒNG QUÁ LỚN (> 100) */}
                   {!generating && availableMonths.length > 0 && rows.length > 100 && (
@@ -1155,40 +1758,58 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                   )}
 
                   {/* PHẦN HIỂN THỊ XEM TRƯỚC VÀ NÚT TẢI */}
-                  {imageUri && !generating && rows.length <= 100 && (
+                  {imageUri && !generating && (
                     <View style={styles.previewBox}>
                       <View style={styles.previewHeaderRow}>
                         <Text style={styles.sectionLabelInline}>Bảng ảnh xem trước:</Text>
-                        <TouchableOpacity
-                          style={[
-                            styles.downloadButtonInline,
-                            styles.normalActiveColor
-                          ]}
-                          onPress={handleDownloadImage}
-                        >
-                          <Text style={styles.downloadButtonInlineText}>
-                            💾 TẢI ẢNH VỀ MÁY
-                          </Text>
-                        </TouchableOpacity>
+                        <View style={styles.inlineButtonsGroup}>
+                          <TouchableOpacity
+                            style={styles.previewZoomButtonInline}
+                            onPress={() => imagePreviewModalRef.current?.open(imageUri)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.previewZoomButtonText}>
+                              🔍 PHÓNG TO
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[
+                              styles.downloadButtonInline,
+                              styles.normalActiveColor
+                            ]}
+                            onPress={handleDownloadImage}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.downloadButtonInlineText}>
+                              {typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+                                ? '📲 LƯU / GỬI ẢNH'
+                                : '💾 TẢI ẢNH VỀ MÁY'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
 
-                      <View style={styles.imageShadowFrame}>
+                      <TouchableOpacity
+                        style={styles.imageShadowFrame}
+                        activeOpacity={0.9}
+                        onPress={() => imagePreviewModalRef.current?.open(imageUri)}
+                      >
                         <Image
                           source={{ uri: imageUri }}
                           style={styles.previewImage}
                           resizeMode="contain"
                         />
-                      </View>
+                        <View style={styles.zoomImageOverlayBadge}>
+                          <Text style={styles.zoomImageOverlayText}>
+                            🔍 Bấm vào ảnh để xem phóng to chi tiết
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
 
-                      {Platform.OS === 'web' ? (
-                        <Text style={styles.helperText}>
-                          💡 Mẹo trên điện thoại: Bạn có thể nhấn giữ lâu vào ảnh trên và chọn "Lưu hình ảnh" để lưu trực tiếp vào Thư viện ảnh (Gallery) của máy.
-                        </Text>
-                      ) : (
-                        <Text style={styles.helperText}>
-                          💡 Mẹo: Nhấn giữ vào ảnh trên để lưu vào Thư viện ảnh của thiết bị.
-                        </Text>
-                      )}
+                      <Text style={styles.helperText}>
+                        💡 Mẹo trên iPhone/Android: Bấm "📲 LƯU / GỬI ẢNH" để lưu trực tiếp vào Thư viện ảnh (Photos) hoặc gửi qua Zalo. Bạn cũng có thể nhấn giữ lâu vào ảnh và chọn "Lưu hình ảnh".
+                      </Text>
                     </View>
                   )}
                 </>
@@ -1244,9 +1865,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                   <View style={styles.messageBox}>
                     <View style={styles.messageHeaderRow}>
                       <Text style={styles.messageBoxTitle}>
-                        📝 Tin nhắn công nợ ({selectedDayKey}):
+                        📝 Tin nhắn ({selectedDayKey}):
                       </Text>
-                      <Text style={styles.messageBoxHint}>Có thể chỉnh sửa</Text>
+                      <Text style={styles.messageBoxHint}>Chạm vào để sửa trước khi gửi</Text>
                     </View>
 
                     <TextInput
@@ -1267,7 +1888,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                         activeOpacity={0.8}
                       >
                         <Text style={styles.copyMessageButtonText}>
-                          {isCopied ? '✅ ĐÃ SAO CHÉP TIN NHẮN!' : '📋 SAO CHÉP TIN NHẮN (COPY)'}
+                          {isCopied ? '✅ ĐÃ SAO CHÉP' : '📋 SAO CHÉP TIN NHẮN'}
                         </Text>
                       </TouchableOpacity>
 
@@ -1277,13 +1898,13 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                           onPress={handleShareMessage}
                           activeOpacity={0.8}
                         >
-                          <Text style={styles.shareMessageButtonText}>📲 GỬI / CHIA SẺ</Text>
+                          <Text style={styles.shareMessageButtonText}>📤 GỬI / CHIA SẺ</Text>
                         </TouchableOpacity>
                       ) : null}
                     </View>
 
                     <Text style={styles.helperText}>
-                      💡 Mẹo: Bấm "SAO CHÉP TIN NHẮN" để copy nhanh, sau đó mở nhóm Zalo hoặc tin nhắn khách hàng dán (Paste) vào để gửi ngay.
+                      💡 Mẹo: Bấm "SAO CHÉP TIN NHẮN" để copy nhanh, sau đó dán (Paste) vào Zalo khách hàng.
                     </Text>
                   </View>
                 </View>
@@ -1301,6 +1922,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
       </SmoothModal>
+
+      {/* Modal hiển thị ảnh phóng to toàn màn hình hỗ trợ zoom đa cấp độ */}
+      <ImagePreviewModal ref={imagePreviewModalRef} />
     </>
   );
 });
@@ -1309,18 +1933,40 @@ export default ExportDebtModal;
 
 const styles = StyleSheet.create({
   modalView: {
-    backgroundColor: COLORS.card,
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '90%',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+    maxHeight: '92%',
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    paddingBottom: 2,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: FONTS.weightBold,
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: 15,
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    letterSpacing: 0.3,
+  },
+  modalCloseIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseIconText: {
+    fontSize: 16,
+    color: '#64748B',
+    fontWeight: 'bold',
+    lineHeight: 18,
   },
   loadingContainer: {
     paddingVertical: 40,
@@ -1348,29 +1994,61 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   scrollContent: {
-    marginBottom: 15,
+    marginBottom: 10,
   },
-  customerBox: {
-    backgroundColor: COLORS.inputBg,
+  customerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
     padding: 12,
-    borderRadius: 10,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 16,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+    gap: 12,
   },
-  customerText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+  customerAvatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customerAvatarText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#059669',
+  },
+  customerInfoCol: {
+    flex: 1,
+  },
+  customerCardName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0F172A',
     marginBottom: 4,
   },
-  boldText: {
-    fontWeight: 'bold',
-    color: COLORS.text,
+  customerPhoneBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  customerPhoneText: {
+    fontSize: 12.5,
+    color: '#475569',
+    fontWeight: '600',
   },
   sectionLabel: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#1E293B',
     marginBottom: 10,
   },
   noMonthsText: {
@@ -1455,6 +2133,31 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text,
   },
+  // Nhóm các nút thao tác nhanh ở tiêu đề ảnh xem trước
+  inlineButtonsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  // Nút xem phóng to ảnh
+  previewZoomButtonInline: {
+    backgroundColor: '#3B82F6', // Màu xanh dương nổi bật
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  previewZoomButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
   // Nút tải ảnh dạng inline nằm góc phải
   downloadButtonInline: {
     paddingVertical: 6,
@@ -1492,11 +2195,29 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 16,
+    position: 'relative',
+    cursor: Platform.OS === 'web' ? 'zoom-in' : undefined,
     ...SHADOWS.card,
+  },
+  zoomImageOverlayBadge: {
+    position: 'absolute',
+    bottom: 12,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  zoomImageOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   previewImage: {
     width: '100%',
-    height: 380,
+    height: 560,
   },
   noImagePlaceholder: {
     height: 150,
@@ -1586,27 +2307,122 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  // ─── STYLES CHO BỘ LỌC KHOẢNG NGÀY ĐỐI SOÁT ───
+  dateFilterCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
+    ...SHADOWS.card,
+  },
+  dateFilterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  dateFilterTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dateFilterTitleIcon: {
+    fontSize: 14,
+  },
+  dateFilterTitle: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+    color: '#334155',
+    letterSpacing: 0.3,
+  },
+  quickFilterScroll: {
+    marginBottom: 12,
+  },
+  quickFilterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 6,
+  },
+  quickChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  activeQuickChip: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#059669',
+    borderWidth: 1.5,
+  },
+  quickChipText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  activeQuickChipText: {
+    color: '#059669',
+    fontWeight: 'bold',
+  },
+  dateInputsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  dateInputCol: {
+    flex: 1,
+  },
+  dateInputSubLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  compactDatePicker: {
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    marginBottom: 0,
+  },
+  dateInputDivider: {
+    paddingTop: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateInputDividerText: {
+    fontSize: 16,
+    color: '#94A3B8',
+    fontWeight: 'bold',
+  },
   // ─── STYLES CHO 2 TABS & XUẤT THEO NGÀY ───
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: '#F1F5F9',
     borderRadius: 12,
     padding: 4,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 9,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
   },
   activeTabButton: {
     backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 3,
     elevation: 2,
   },
   tabButtonText: {
@@ -1615,7 +2431,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   activeTabButtonText: {
-    color: COLORS.primaryDark,
+    color: '#059669',
     fontWeight: 'bold',
   },
   dayTabContent: {
@@ -1628,12 +2444,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginRight: 8,
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
     alignItems: 'center',
   },
   activeDayItem: {
     backgroundColor: '#ECFDF5',
-    borderColor: COLORS.primary,
+    borderColor: '#059669',
   },
   dayItemText: {
     fontSize: 13,
@@ -1641,36 +2457,36 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   activeDayItemText: {
-    color: COLORS.primaryDark,
+    color: '#059669',
   },
   dayItemSubText: {
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#64748B',
     marginTop: 2,
   },
   activeDayItemSubText: {
-    color: COLORS.primaryDark,
-    fontWeight: '600',
+    color: '#059669',
+    fontWeight: '700',
   },
   customDateRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 2,
     marginBottom: 14,
     gap: 8,
   },
   customDateLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.textSecondary,
+    color: '#475569',
   },
   messageBox: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    marginBottom: 16,
+    borderColor: '#E2E8F0',
+    marginBottom: 12,
     ...SHADOWS.card,
   },
   messageHeaderRow: {
@@ -1680,65 +2496,65 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   messageBoxTitle: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#0F172A',
   },
   messageBoxHint: {
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#94A3B8',
     fontStyle: 'italic',
   },
   messageInput: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     padding: 12,
-    fontSize: 13,
+    fontSize: 13.5,
     color: '#0F172A',
     minHeight: 180,
-    maxHeight: 280,
+    maxHeight: 260,
     lineHeight: 22,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   messageActionsRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
     marginTop: 12,
     marginBottom: 8,
   },
   copyMessageButton: {
     flex: 1,
-    backgroundColor: COLORS.primary,
+    backgroundColor: '#059669',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: COLORS.primary,
+    shadowColor: '#059669',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.18,
     shadowRadius: 4,
     elevation: 2,
   },
   copiedButton: {
-    backgroundColor: '#059669',
+    backgroundColor: '#047857',
   },
   copyMessageButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: 'bold',
+    letterSpacing: 0.2,
   },
   shareMessageButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#2563EB',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#3B82F6',
+    shadowColor: '#2563EB',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.18,
     shadowRadius: 4,
     elevation: 2,
   },

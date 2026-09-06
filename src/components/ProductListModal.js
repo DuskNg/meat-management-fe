@@ -577,7 +577,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
           {/* Tiêu đề các cột trong danh sách */}
           <View style={styles.batchTableHead}>
             <Text style={[styles.batchHeadCol, { flex: 1.2 }]}>Loại thịt</Text>
-            <Text style={[styles.batchHeadCol, { width: 110, textAlign: 'center' }]}>Giá bán (VND)</Text>
+            <Text style={[styles.batchHeadCol, { width: 110, textAlign: 'center' }]}>Giá bán chung (VND)</Text>
             <Text style={[styles.batchHeadCol, { width: 110, textAlign: 'center' }]}>Giá nhập (VND)</Text>
           </View>
 

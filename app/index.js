@@ -50,6 +50,7 @@ import ReturnGoodsModal from '../src/components/ReturnGoodsModal';
 import ProfitFeatureIntroModal from '../src/components/ProfitFeatureIntroModal';
 import RecurringDebtModal from '../src/components/RecurringDebtModal';
 import RegularCustomersModal from '../src/components/RegularCustomersModal';
+import DailyPriceManagementModal from '../src/components/DailyPriceManagementModal';
 import AnimatedPressable from '../src/components/AnimatedPressable';
 import { useLockStore } from '../src/store/lockStore';
 import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
@@ -138,6 +139,7 @@ export default function DashboardScreen() {
   const employeeHistoryModalRef = useRef(null);
   const editEmployeeModalRef = useRef(null);
   const memberActionsModalRef = useRef(null);
+  const dailyPriceManagementModalRef = useRef(null);
   const employeeDailyDebtModalRef = useRef(null); // Modal danh sách ghi nợ trong ngày (chỉ dùng cho tk thành viên)
   const returnGoodsModalRef = useRef(null); // Modal trả hàng (nhanh & thủ công)
   const profitFeatureIntroModalRef = useRef(null); // Modal giới thiệu tính năng tính Lợi Nhuận mới
@@ -3016,6 +3018,22 @@ export default function DashboardScreen() {
                   style={styles.smartDebtMenuItem}
                   onPress={() => {
                     setShowDebtToolsMenu(false);
+                    dailyPriceManagementModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🏷️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Quản lý cập nhật giá thịt</Text>
+                    <Text style={styles.smartDebtMenuSub}>Theo dõi giá thịt thay đổi qua đơn nợ theo ngày</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
                     recurringDebtModalRef.current?.open();
                   }}
                 >
@@ -3228,6 +3246,11 @@ export default function DashboardScreen() {
       <ProfitFeatureIntroModal
         ref={profitFeatureIntroModalRef}
         onOpenProductList={() => productModalRef.current?.open()}
+      />
+      {/* MODAL QUẢN LÝ GIÁ THỊT THEO NGÀY (Ẩn) */}
+      <DailyPriceManagementModal
+        ref={dailyPriceManagementModalRef}
+        onRefresh={handleRefreshAll}
       />
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />
