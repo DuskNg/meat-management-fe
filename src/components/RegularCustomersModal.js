@@ -478,25 +478,20 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
             </Text>
           </View>
 
-          {/* Cột thông tin: Tên + SĐT + Tần suất 3 ngày */}
+          {/* Cột thông tin: Tên + Tần suất 3 ngày */}
           <View style={styles.infoCol}>
             <Text style={styles.customerName} numberOfLines={1}>
               {item.name}
             </Text>
 
-            <View style={styles.subInfoRow}>
-              <Text style={styles.phoneText}>
-                {item.phone ? `📞 ${item.phone}` : '📞 Chưa có SĐT'}
+            {item.address ? (
+              <Text style={styles.addressText} numberOfLines={1}>
+                📍 {item.address}
               </Text>
-              {item.address ? (
-                <Text style={styles.addressText} numberOfLines={1}>
-                  • 📍 {item.address}
-                </Text>
-              ) : null}
-            </View>
+            ) : null}
 
             <Text style={styles.statValHighlightCompact}>
-              Tần suất 3 ngày qua: <Text style={styles.statValHighlightBold}>Đặt {item.uniqueDaysCount}/3 ngày ({item.recentOrdersCount} đơn)</Text>
+              Tần suất 3 ngày: <Text style={styles.statValHighlightBold}>Đặt {item.uniqueDaysCount}/3 ngày ({item.recentOrdersCount} đơn)</Text>
             </Text>
           </View>
 
