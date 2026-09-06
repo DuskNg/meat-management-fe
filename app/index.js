@@ -2657,7 +2657,7 @@ export default function DashboardScreen() {
         <AddSupplierModal ref={addSupplierModalRef} onRefresh={refetchSuppliers} />
         <SupplierDebtModal ref={supplierDebtModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
         <SupplierPaymentModal ref={supplierPaymentModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
-        <SupplierHistoryModal ref={supplierHistoryModalRef} supplier={selectedSupplier} />
+        <SupplierHistoryModal ref={supplierHistoryModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
 
         {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
         {auth.user?.isWorkspaceOwner && (

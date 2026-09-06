@@ -1,6 +1,7 @@
 // meat-management-fe/src/components/SupplierPaymentModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
 import MoneyInput from './MoneyInput';
+import DatePickerInput from './DatePickerInput';
 import {
   StyleSheet,
   Text,
@@ -14,10 +15,38 @@ import { api } from '../api/client';
 import { COLORS, FONTS } from '../theme';
 import SmoothModal from './SmoothModal';
 
+// Helper: lấy ngày hôm nay dạng DD/MM/YYYY
+const getTodayFormatted = () => {
+  const today = new Date();
+  const d = String(today.getDate()).padStart(2, '0');
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const y = today.getFullYear();
+  return `${d}/${m}/${y}`;
+};
+
+// Helper: chuyển DD/MM/YYYY sang ISO string
+const parseDateString = (str) => {
+  if (!str) return null;
+  const parts = str.trim().split(/[\/\-]/);
+  if (parts.length !== 3) return null;
+  const day = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const year = parseInt(parts[2], 10);
+  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+  const dateObj = new Date(year, month - 1, day);
+  if (
+    dateObj.getFullYear() !== year ||
+    dateObj.getMonth() !== month - 1 ||
+    dateObj.getDate() !== day
+  ) return null;
+  return dateObj.toISOString();
+};
+
 // Modal ghi nhận việc chủ sạp trả tiền hàng cho nhà cung cấp
 const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [currentSupplier, setCurrentSupplier] = useState(supplier);
+  const [dateStr, setDateStr] = useState(getTodayFormatted());
   const [amountVND, setAmountVND] = useState(0);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,6 +66,7 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
         setCurrentSupplier(targetSupplier);
       }
       setVisible(true);
+      setDateStr(getTodayFormatted());
       const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
       setAmountVND(numericAmount);
       setNote('');
@@ -67,6 +97,12 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
       return;
     }
 
+    const isoDate = parseDateString(dateStr);
+    if (!isoDate) {
+      setError('Ngày thanh toán không đúng định dạng (Ví dụ: 14/06/2026).');
+      return;
+    }
+
     const activeSupplier = currentSupplier || supplier;
     if (!activeSupplier?.id) {
       setError('Không tìm thấy thông tin nhà cung cấp.');
@@ -81,7 +117,7 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
         supplierId: activeSupplier.id,
         amount: payAmount,
         note: note.trim() || null,
-        paidAt: new Date(),
+        paidAt: isoDate,
       });
 
       if (response.data.success) {
@@ -109,6 +145,19 @@ const SupplierPaymentModal = forwardRef(({ supplier, onRefresh }, ref) => {
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
         <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+          {/* Ô chọn ngày thanh toán */}
+          <Text style={styles.label}>📅 Ngày thanh toán:</Text>
+          <View style={styles.datePickerWrapper}>
+            <DatePickerInput
+              value={dateStr}
+              onChange={(val) => {
+                setDateStr(val);
+                setError('');
+              }}
+              allowFuture={true}
+            />
+          </View>
+
           <Text style={styles.label}>Số tiền đã trả (VND):</Text>
           <MoneyInput
             style={styles.amountInputContainer}
@@ -198,6 +247,9 @@ const styles = StyleSheet.create({
     fontWeight: FONTS.weightBold,
     color: COLORS.text,
     marginBottom: 6,
+  },
+  datePickerWrapper: {
+    marginBottom: 8,
   },
   input: {
     backgroundColor: COLORS.inputBg,

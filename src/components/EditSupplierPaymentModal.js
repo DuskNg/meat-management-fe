@@ -1,5 +1,5 @@
-// meat-management-fe/src/components/SupplierDebtModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
+// meat-management-fe/src/components/EditSupplierPaymentModal.js
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import MoneyInput from './MoneyInput';
 import DatePickerInput from './DatePickerInput';
 import {
@@ -11,16 +11,18 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import SmoothModal from './SmoothModal';
 import { api } from '../api/client';
 import { COLORS, FONTS } from '../theme';
-import SmoothModal from './SmoothModal';
+import { showGlobalToast } from '../store/toastStore';
 
-// Helper: lấy ngày hôm nay dạng DD/MM/YYYY
-const getTodayFormatted = () => {
-  const today = new Date();
-  const d = String(today.getDate()).padStart(2, '0');
-  const m = String(today.getMonth() + 1).padStart(2, '0');
-  const y = today.getFullYear();
+// Helper: chuyển ISO date thành DD/MM/YYYY
+const formatDateToDisplay = (dateInput) => {
+  if (!dateInput) return '';
+  const date = new Date(dateInput);
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const y = date.getFullYear();
   return `${d}/${m}/${y}`;
 };
 
@@ -42,70 +44,45 @@ const parseDateString = (str) => {
   return dateObj.toISOString();
 };
 
-// Modal để ghi nợ mới (chủ sạp nợ nhà cung cấp khi nhập hàng)
-const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
+// Modal chỉnh sửa giao dịch trả tiền cho nhà cung cấp
+const EditSupplierPaymentModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
-  const [currentSupplier, setCurrentSupplier] = useState(supplier);
-  const [dateStr, setDateStr] = useState(getTodayFormatted());
+  const [paymentId, setPaymentId] = useState(null);
+  const [supplierName, setSupplierName] = useState('');
   const [amountVND, setAmountVND] = useState(0);
+  const [dateStr, setDateStr] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const isSubmittingRef = useRef(false);
 
-  // Đồng bộ nhà cung cấp khi prop supplier thay đổi
-  useEffect(() => {
-    if (supplier) {
-      setCurrentSupplier(supplier);
-    }
-  }, [supplier]);
-
   useImperativeHandle(ref, () => ({
-    open: (targetSupplier) => {
-      if (targetSupplier) {
-        setCurrentSupplier(targetSupplier);
-      }
-      setVisible(true);
-      setDateStr(getTodayFormatted());
-      setAmountVND(0);
-      setNote('');
+    open: (payment, name = '') => {
+      if (!payment) return;
+      setPaymentId(payment.id);
+      setSupplierName(name || payment.supplierName || '');
+      setAmountVND(payment.amount || 0);
+      setDateStr(formatDateToDisplay(payment.date || payment.paidAt || payment.createdAt));
+      setNote(payment.note || '');
       setError('');
+      setVisible(true);
     },
     close: () => {
       setVisible(false);
     },
   }));
 
-  // Hàm định dạng số tiền nhập vào
-  const formatNumberString = (value) => {
-    const cleanValue = value.replace(/[^0-9]/g, '');
-    if (cleanValue === '') return '';
-    return new Intl.NumberFormat('vi-VN').format(parseInt(cleanValue, 10));
-  };
-
-  const parseNumberString = (formattedValue) => {
-    const cleanValue = formattedValue.replace(/[^0-9]/g, '');
-    return cleanValue ? parseInt(cleanValue, 10) : 0;
-  };
-
-  // Xác nhận lưu giao dịch nhập hàng
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return;
-    const debtAmount = amountVND;
-    if (!debtAmount || debtAmount <= 0) {
-      setError('Số tiền hàng nhập không được để trống và phải lớn hơn 0.');
+    const payAmount = amountVND;
+    if (!payAmount || payAmount <= 0) {
+      setError('Số tiền thanh toán không được để trống và phải lớn hơn 0.');
       return;
     }
 
     const isoDate = parseDateString(dateStr);
     if (!isoDate) {
-      setError('Ngày nhập hàng không đúng định dạng (Ví dụ: 14/06/2026).');
-      return;
-    }
-
-    const activeSupplier = currentSupplier || supplier;
-    if (!activeSupplier?.id) {
-      setError('Không tìm thấy thông tin nhà cung cấp.');
+      setError('Ngày thanh toán không đúng định dạng (Ví dụ: 14/06/2026).');
       return;
     }
 
@@ -113,18 +90,18 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
     setLoading(true);
     isSubmittingRef.current = true;
     try {
-      const response = await api.post('/suppliers/transactions', {
-        supplierId: activeSupplier.id,
-        totalAmount: debtAmount,
+      const response = await api.put(`/suppliers/payments/${paymentId}`, {
+        amount: payAmount,
+        paidAt: isoDate,
         note: note.trim() || null,
-        date: isoDate,
       });
 
       if (response.data.success) {
         setVisible(false);
+        showGlobalToast('Đã cập nhật lượt thanh toán thành công!', 'success');
         if (onRefresh) onRefresh();
       } else {
-        setError(response.data.message || 'Lỗi ghi nhận tiền hàng. Vui lòng thử lại.');
+        setError(response.data.message || 'Lỗi cập nhật thanh toán. Vui lòng thử lại.');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
@@ -137,16 +114,16 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
-        <Text style={styles.modalTitle}>📥 GHI NHẬN NHẬP HÀNG (GHI NỢ)</Text>
-        <Text style={styles.supplierName}>
-          Nhà cung cấp: {currentSupplier?.name || supplier?.name || ''}
-        </Text>
+        <Text style={styles.modalTitle}>✏️ SỬA LƯỢT TRẢ TIỀN</Text>
+        {supplierName ? (
+          <Text style={styles.supplierName}>Nhà cung cấp: {supplierName}</Text>
+        ) : null}
 
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
         <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-          {/* Ô chọn ngày nhập hàng */}
-          <Text style={styles.label}>📅 Ngày nhập hàng:</Text>
+          {/* Ngày thanh toán */}
+          <Text style={styles.label}>📅 Ngày thanh toán:</Text>
           <View style={styles.datePickerWrapper}>
             <DatePickerInput
               value={dateStr}
@@ -158,7 +135,8 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
             />
           </View>
 
-          <Text style={styles.label}>Số tiền hàng nhập (VND):</Text>
+          {/* Số tiền thanh toán */}
+          <Text style={styles.label}>Số tiền đã trả (VND):</Text>
           <MoneyInput
             style={styles.amountInputContainer}
             inputStyle={styles.amountInput}
@@ -167,13 +145,14 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
               setAmountVND(val);
               setError('');
             }}
-            placeholder="Ví dụ: 10.000"
+            placeholder="Ví dụ: 5.000"
           />
 
-          <Text style={styles.label}>Ghi chú đơn hàng (Có thể bỏ qua):</Text>
+          {/* Ghi chú */}
+          <Text style={styles.label}>Cách thức thanh toán / Ghi chú (Có thể bỏ qua):</Text>
           <TextInput
             style={styles.input}
-            placeholder="Ví dụ: Nhập 150kg thịt mông sấn"
+            placeholder="Ví dụ: Chuyển khoản Vietcombank / Tiền mặt tại sạp"
             placeholderTextColor={COLORS.textLight}
             value={note}
             onChangeText={setNote}
@@ -189,7 +168,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
             {loading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
-              <Text style={styles.submitButtonText}>GHI NỢ MỚI</Text>
+              <Text style={styles.submitButtonText}>LƯU THAY ĐỔI</Text>
             )}
           </TouchableOpacity>
 
@@ -206,7 +185,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
   );
 });
 
-export default SupplierDebtModal;
+export default EditSupplierPaymentModal;
 
 const styles = StyleSheet.create({
   modalView: {
@@ -219,7 +198,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: FONTS.weightBold,
-    color: '#7F1D1D', // Màu đỏ đun Bordeaux cảnh báo nợ
+    color: '#059669',
     textAlign: 'center',
     marginBottom: 4,
   },
@@ -270,7 +249,7 @@ const styles = StyleSheet.create({
   amountInput: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#7F1D1D',
+    color: '#059669',
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -295,7 +274,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   submitButton: {
-    backgroundColor: '#7F1D1D',
+    backgroundColor: '#059669',
   },
   submitButtonText: {
     color: '#FFFFFF',

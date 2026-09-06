@@ -48,6 +48,17 @@ const formatPaymentNote = (note, paidAt) => {
   return trimNote;
 };
 
+// Helper kiểm tra xem một giao dịch/khoản thanh toán có phải là "Trả hàng" hay không
+const isReturnPayment = (p) => {
+  if (!p) return false;
+  const trimNote = (p.note || '').trim();
+  return (
+    trimNote.includes('Trả lại hàng') ||
+    trimNote.includes('Trả hàng') ||
+    trimNote.includes('Trả lại')
+  );
+};
+
 const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
@@ -62,6 +73,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [rows, setRows] = useState([]);
   const [totalDebtInMonth, setTotalDebtInMonth] = useState(0);
   const [totalPaymentInMonth, setTotalPaymentInMonth] = useState(0);
+  const [totalReturnInMonth, setTotalReturnInMonth] = useState(0);
 
   // 1. Phơi bày các hàm điều khiển ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -183,6 +195,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const dayMap = {};
       let totalDebtVal = 0;
       let totalPaymentVal = 0;
+      let totalReturnVal = 0;
 
       const [mm, yyyy] = month.split('/').map(Number);
       const daysInMonth = new Date(yyyy, mm, 0).getDate();
@@ -204,6 +217,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             dateKey,
             debtAmount: 0,
             paymentAmount: 0,
+            returnAmount: 0,
             items: [],
             notes: []
           };
@@ -239,22 +253,30 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             dateKey,
             debtAmount: 0,
             paymentAmount: 0,
+            returnAmount: 0,
             items: [],
             notes: []
           };
         }
         const amt = parseFloat(p.amount || 0);
-        dayMap[dateKey].paymentAmount += amt;
-        totalPaymentVal += amt;
+        const isReturn = isReturnPayment(p);
+
+        if (isReturn) {
+          dayMap[dateKey].returnAmount += amt;
+          totalReturnVal += amt;
+        } else {
+          dayMap[dateKey].paymentAmount += amt;
+          totalPaymentVal += amt;
+        }
 
         if (p.note && !p.note.startsWith('Thanh toán nợ ngày')) {
           dayMap[dateKey].notes.push(formatPaymentNote(p.note, p.paidAt));
         }
       });
 
-      // Lọc các ngày thực sự có phát sinh giao dịch hoặc thanh toán
+      // Lọc các ngày thực sự có phát sinh giao dịch hoặc thanh toán hoặc trả hàng
       const activeRows = Object.values(dayMap).filter(
-        r => r.debtAmount > 0 || r.paymentAmount > 0 || r.items.length > 0 || r.notes.length > 0
+        r => r.debtAmount > 0 || r.paymentAmount > 0 || r.returnAmount > 0 || r.items.length > 0 || r.notes.length > 0
       );
       const activeDateKeys = new Set(activeRows.map(r => r.dateKey));
 
@@ -274,6 +296,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       setRows(sortedRows);
       setTotalDebtInMonth(totalDebtVal);
       setTotalPaymentInMonth(totalPaymentVal);
+      setTotalReturnInMonth(totalReturnVal);
 
       // Nếu vượt quá 100 ngày giao dịch, không vẽ ảnh mà hiển thị xuất Excel
       if (sortedRows.length > 100) {
@@ -362,7 +385,10 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         // Chiều cao tính toán của hàng
         const textHeight = Math.max(1, descLines.length) * lineHeight;
         const calculatedHeight = textHeight + paddingY * 2;
-        const rowHeight = Math.max(minRowHeight, calculatedHeight);
+        // Nếu trong ngày có cả trả hàng và thu tiền thì cần tối thiểu 75px để hiển thị đẹp
+        const hasBothPayAndReturn = row.returnAmount > 0 && row.paymentAmount > 0;
+        const minHeightNeeded = hasBothPayAndReturn ? 75 : minRowHeight;
+        const rowHeight = Math.max(minHeightNeeded, calculatedHeight);
 
         return {
           ...row,
@@ -403,8 +429,11 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         emptyDaysLines = wrapText(tempCtx, emptyDaysText, width - 116);
         emptyBoxHeight = emptyDaysLines.length * 28 + 24; // 24px padding trên dưới
       }
+      const hasReturnInMonth = totalReturnVal > 0;
       const footerExtraHeight = emptyDays.length > 0 ? (emptyBoxHeight + 20) : 0;
-      const footerHeight = 220 + footerExtraHeight;
+      // Nếu có hàng trả về thì thêm 45px cho dòng "Trừ tiền hàng trả về"
+      const footerBaseHeight = hasReturnInMonth ? 265 : 220;
+      const footerHeight = footerBaseHeight + footerExtraHeight;
       const canvasHeight = startTableY + 42 + contentHeight + footerHeight;
 
       // Tạo canvas chính thức để vẽ
@@ -526,8 +555,39 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
               ctx.fillText(formatCurrency(row.debtAmount), startX + colDebtX, currentY + row.rowHeight / 2);
             }
 
-            // Cột tiền trả
-            if (row.paymentAmount > 0) {
+            // Cột tiền trả (phân biệt giữa hàng trả về bôi màu cam và tiền đã thu màu xanh lá)
+            const hasReturn = row.returnAmount > 0;
+            const hasPayment = row.paymentAmount > 0;
+
+            if (hasReturn && hasPayment) {
+              // Trường hợp trong ngày có cả 2: hàng trả về và thu tiền
+              const midY = currentY + row.rowHeight / 2;
+
+              // 1. Tiền hàng trả về (màu cam)
+              ctx.fillStyle = '#EA580C';
+              ctx.font = 'bold 13px Arial';
+              ctx.fillText(`-${formatCurrency(row.returnAmount)}`, startX + colPayX, midY - 20);
+              ctx.font = 'bold 11px Arial';
+              ctx.fillText('(tiền hàng trả về)', startX + colPayX, midY - 6);
+
+              // 2. Tiền đã thu (màu xanh lá)
+              ctx.fillStyle = '#10B981';
+              ctx.font = 'bold 13px Arial';
+              ctx.fillText(formatCurrency(row.paymentAmount), startX + colPayX, midY + 12);
+              ctx.font = 'italic 11px Arial';
+              ctx.fillText('(đã thu)', startX + colPayX, midY + 25);
+            } else if (hasReturn) {
+              // Trường hợp chỉ có hàng trả về: bôi màu cam và chú thích trong ngoặc là tiền hàng trả về
+              const midY = currentY + row.rowHeight / 2;
+              ctx.fillStyle = '#EA580C';
+              ctx.font = 'bold 15px Arial';
+              ctx.fillText(formatCurrency(row.returnAmount), startX + colPayX, midY - 9);
+
+              ctx.fillStyle = '#EA580C';
+              ctx.font = 'bold 11px Arial';
+              ctx.fillText('(tiền hàng trả về)', startX + colPayX, midY + 10);
+            } else if (hasPayment) {
+              // Trường hợp chỉ có tiền đã thu: giữ màu xanh lá
               ctx.fillStyle = '#10B981';
               ctx.font = 'bold 15px Arial';
               ctx.fillText(formatCurrency(row.paymentAmount), startX + colPayX, currentY + row.rowHeight / 2);
@@ -593,30 +653,42 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       ctx.textAlign = 'right';
       ctx.fillStyle = '#334155';
       ctx.font = 'bold 22px Arial';
-      ctx.fillText('Tổng tiền nợ:', width - 320, currentFooterY);
+      ctx.fillText('Tổng tiền nợ:', width - 360, currentFooterY);
 
       ctx.fillStyle = '#DC2626';
       ctx.font = 'bold 26px Arial';
       ctx.fillText(formatCurrency(totalDebtVal), width - 40, currentFooterY);
 
-      // Hàng 2: Tổng tiền đã thanh toán
+      // Hàng 2: Trừ tiền hàng trả về (nếu trong tháng có hàng trả về thì thêm 1 dòng màu cam)
+      if (hasReturnInMonth) {
+        currentFooterY += 45;
+        ctx.fillStyle = '#334155';
+        ctx.font = 'bold 22px Arial';
+        ctx.fillText('Trừ tiền hàng trả về:', width - 360, currentFooterY);
+
+        ctx.fillStyle = '#EA580C';
+        ctx.font = 'bold 26px Arial';
+        ctx.fillText(`- ${formatCurrency(totalReturnVal)}`, width - 40, currentFooterY);
+      }
+
+      // Hàng 3: Tổng tiền đã thanh toán (chỉ tính các khoản tiền đã thu thực tế)
       currentFooterY += 45;
       ctx.fillStyle = '#334155';
       ctx.font = 'bold 22px Arial';
-      ctx.fillText('Tổng tiền đã thanh toán:', width - 320, currentFooterY);
+      ctx.fillText('Tổng tiền đã thanh toán:', width - 360, currentFooterY);
 
       ctx.fillStyle = '#059669';
       ctx.font = 'bold 26px Arial';
       ctx.fillText(formatCurrency(totalPaymentVal), width - 40, currentFooterY);
 
-      // Hàng 3: Tiền nợ còn lại (Rất to và nổi bật)
+      // Hàng 4: Tiền nợ còn lại (Rất to và nổi bật)
       currentFooterY += 52;
       ctx.fillStyle = '#0F172A';
       ctx.font = 'bold 26px Arial';
-      ctx.fillText('Tiền nợ còn lại:', width - 320, currentFooterY);
+      ctx.fillText('Tiền nợ còn lại:', width - 360, currentFooterY);
 
-      // Chỉ tính nợ còn lại của riêng tháng được chọn
-      const overallDebt = Math.max(0, totalDebtVal - totalPaymentVal);
+      // Chỉ tính nợ còn lại của riêng tháng được chọn: Tổng nợ - Trả về - Đã thanh toán
+      const overallDebt = Math.max(0, totalDebtVal - totalReturnVal - totalPaymentVal);
       ctx.fillStyle = overallDebt > 0 ? '#DC2626' : '#059669';
       ctx.font = 'bold 34px Arial';
       ctx.fillText(formatCurrency(overallDebt), width - 40, currentFooterY);
@@ -666,7 +738,14 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         const dateFormatted = row.dateKey;
         const descEscaped = `"${descText.replace(/"/g, '""')}"`;
         const debtStr = row.debtAmount > 0 ? row.debtAmount : '';
-        const paymentStr = row.paymentAmount > 0 ? row.paymentAmount : '';
+        let paymentStr = '';
+        if (row.returnAmount > 0 && row.paymentAmount > 0) {
+          paymentStr = `${row.returnAmount} (tiền hàng trả về) | ${row.paymentAmount} (đã thanh toán)`;
+        } else if (row.returnAmount > 0) {
+          paymentStr = `${row.returnAmount} (tiền hàng trả về)`;
+        } else if (row.paymentAmount > 0) {
+          paymentStr = row.paymentAmount;
+        }
 
         csvContent += `${dateFormatted},${descEscaped},${debtStr},${paymentStr}\r\n`;
       });
@@ -674,8 +753,11 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       // Phần tổng kết báo cáo
       csvContent += '\r\n';
       csvContent += `Tổng tiền nợ,,,,${totalDebtInMonth}\r\n`;
+      if (totalReturnInMonth > 0) {
+        csvContent += `Trừ tiền hàng trả về,,,,${totalReturnInMonth}\r\n`;
+      }
       csvContent += `Tổng tiền đã thanh toán,,,,${totalPaymentInMonth}\r\n`;
-      csvContent += `Tiền nợ còn lại,,,,${Math.max(0, totalDebtInMonth - totalPaymentInMonth)}\r\n`;
+      csvContent += `Tiền nợ còn lại,,,,${Math.max(0, totalDebtInMonth - totalReturnInMonth - totalPaymentInMonth)}\r\n`;
 
       // Tải tệp tin về trình duyệt
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

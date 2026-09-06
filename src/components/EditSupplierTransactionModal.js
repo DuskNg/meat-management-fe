@@ -1,5 +1,5 @@
-// meat-management-fe/src/components/SupplierDebtModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
+// meat-management-fe/src/components/EditSupplierTransactionModal.js
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import MoneyInput from './MoneyInput';
 import DatePickerInput from './DatePickerInput';
 import {
@@ -11,16 +11,18 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import SmoothModal from './SmoothModal';
 import { api } from '../api/client';
 import { COLORS, FONTS } from '../theme';
-import SmoothModal from './SmoothModal';
+import { showGlobalToast } from '../store/toastStore';
 
-// Helper: lấy ngày hôm nay dạng DD/MM/YYYY
-const getTodayFormatted = () => {
-  const today = new Date();
-  const d = String(today.getDate()).padStart(2, '0');
-  const m = String(today.getMonth() + 1).padStart(2, '0');
-  const y = today.getFullYear();
+// Helper: chuyển ISO date thành DD/MM/YYYY
+const formatDateToDisplay = (dateInput) => {
+  if (!dateInput) return '';
+  const date = new Date(dateInput);
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const y = date.getFullYear();
   return `${d}/${m}/${y}`;
 };
 
@@ -42,53 +44,34 @@ const parseDateString = (str) => {
   return dateObj.toISOString();
 };
 
-// Modal để ghi nợ mới (chủ sạp nợ nhà cung cấp khi nhập hàng)
-const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
+// Modal chỉnh sửa giao dịch nhập hàng (nợ nhà cung cấp)
+const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
-  const [currentSupplier, setCurrentSupplier] = useState(supplier);
-  const [dateStr, setDateStr] = useState(getTodayFormatted());
+  const [transactionId, setTransactionId] = useState(null);
+  const [supplierName, setSupplierName] = useState('');
   const [amountVND, setAmountVND] = useState(0);
+  const [dateStr, setDateStr] = useState('');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const isSubmittingRef = useRef(false);
 
-  // Đồng bộ nhà cung cấp khi prop supplier thay đổi
-  useEffect(() => {
-    if (supplier) {
-      setCurrentSupplier(supplier);
-    }
-  }, [supplier]);
-
   useImperativeHandle(ref, () => ({
-    open: (targetSupplier) => {
-      if (targetSupplier) {
-        setCurrentSupplier(targetSupplier);
-      }
-      setVisible(true);
-      setDateStr(getTodayFormatted());
-      setAmountVND(0);
-      setNote('');
+    open: (transaction, name = '') => {
+      if (!transaction) return;
+      setTransactionId(transaction.id);
+      setSupplierName(name || transaction.supplierName || '');
+      setAmountVND(transaction.amount || 0);
+      setDateStr(formatDateToDisplay(transaction.date || transaction.createdAt));
+      setNote(transaction.note || '');
       setError('');
+      setVisible(true);
     },
     close: () => {
       setVisible(false);
     },
   }));
 
-  // Hàm định dạng số tiền nhập vào
-  const formatNumberString = (value) => {
-    const cleanValue = value.replace(/[^0-9]/g, '');
-    if (cleanValue === '') return '';
-    return new Intl.NumberFormat('vi-VN').format(parseInt(cleanValue, 10));
-  };
-
-  const parseNumberString = (formattedValue) => {
-    const cleanValue = formattedValue.replace(/[^0-9]/g, '');
-    return cleanValue ? parseInt(cleanValue, 10) : 0;
-  };
-
-  // Xác nhận lưu giao dịch nhập hàng
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return;
     const debtAmount = amountVND;
@@ -103,28 +86,22 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
       return;
     }
 
-    const activeSupplier = currentSupplier || supplier;
-    if (!activeSupplier?.id) {
-      setError('Không tìm thấy thông tin nhà cung cấp.');
-      return;
-    }
-
     setError('');
     setLoading(true);
     isSubmittingRef.current = true;
     try {
-      const response = await api.post('/suppliers/transactions', {
-        supplierId: activeSupplier.id,
+      const response = await api.put(`/suppliers/transactions/${transactionId}`, {
         totalAmount: debtAmount,
-        note: note.trim() || null,
         date: isoDate,
+        note: note.trim() || null,
       });
 
       if (response.data.success) {
         setVisible(false);
+        showGlobalToast('Đã cập nhật đơn nhập hàng thành công!', 'success');
         if (onRefresh) onRefresh();
       } else {
-        setError(response.data.message || 'Lỗi ghi nhận tiền hàng. Vui lòng thử lại.');
+        setError(response.data.message || 'Lỗi cập nhật đơn hàng. Vui lòng thử lại.');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
@@ -137,15 +114,15 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
-        <Text style={styles.modalTitle}>📥 GHI NHẬN NHẬP HÀNG (GHI NỢ)</Text>
-        <Text style={styles.supplierName}>
-          Nhà cung cấp: {currentSupplier?.name || supplier?.name || ''}
-        </Text>
+        <Text style={styles.modalTitle}>✏️ SỬA ĐƠN NHẬP HÀNG</Text>
+        {supplierName ? (
+          <Text style={styles.supplierName}>Nhà cung cấp: {supplierName}</Text>
+        ) : null}
 
         {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
         <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-          {/* Ô chọn ngày nhập hàng */}
+          {/* Ngày nhập hàng */}
           <Text style={styles.label}>📅 Ngày nhập hàng:</Text>
           <View style={styles.datePickerWrapper}>
             <DatePickerInput
@@ -158,6 +135,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
             />
           </View>
 
+          {/* Số tiền hàng nhập */}
           <Text style={styles.label}>Số tiền hàng nhập (VND):</Text>
           <MoneyInput
             style={styles.amountInputContainer}
@@ -170,6 +148,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
             placeholder="Ví dụ: 10.000"
           />
 
+          {/* Ghi chú */}
           <Text style={styles.label}>Ghi chú đơn hàng (Có thể bỏ qua):</Text>
           <TextInput
             style={styles.input}
@@ -189,7 +168,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
             {loading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
-              <Text style={styles.submitButtonText}>GHI NỢ MỚI</Text>
+              <Text style={styles.submitButtonText}>LƯU THAY ĐỔI</Text>
             )}
           </TouchableOpacity>
 
@@ -206,7 +185,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
   );
 });
 
-export default SupplierDebtModal;
+export default EditSupplierTransactionModal;
 
 const styles = StyleSheet.create({
   modalView: {
@@ -219,7 +198,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: FONTS.weightBold,
-    color: '#7F1D1D', // Màu đỏ đun Bordeaux cảnh báo nợ
+    color: '#7F1D1D',
     textAlign: 'center',
     marginBottom: 4,
   },

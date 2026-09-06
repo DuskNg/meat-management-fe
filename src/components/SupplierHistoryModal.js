@@ -13,9 +13,13 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import CustomSelect from './CustomSelect';
 import ExportSupplierHistoryModal from './ExportSupplierHistoryModal';
+import EditSupplierTransactionModal from './EditSupplierTransactionModal';
+import EditSupplierPaymentModal from './EditSupplierPaymentModal';
+import PopupModal from './PopupModal';
+import { showGlobalToast } from '../store/toastStore';
 
-// Modal xem lịch sử dòng công nợ của nhà cung cấp
-const SupplierHistoryModal = forwardRef(({ supplier }, ref) => {
+// Modal xem lịch sử dòng công nợ của nhà cung cấp kèm sửa/xóa giao dịch
+const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [currentSupplier, setCurrentSupplier] = useState(supplier);
   const [history, setHistory] = useState([]);
@@ -25,6 +29,9 @@ const SupplierHistoryModal = forwardRef(({ supplier }, ref) => {
   const [selectContainerZIndex, setSelectContainerZIndex] = useState(10);
   const activeSupplierIdRef = useRef(null);
   const exportSupplierHistoryModalRef = useRef(null);
+  const editSupplierTransactionModalRef = useRef(null);
+  const editSupplierPaymentModalRef = useRef(null);
+  const popupModalRef = useRef(null);
 
   // Đồng bộ nhà cung cấp khi prop supplier thay đổi
   useEffect(() => {
@@ -165,24 +172,96 @@ const SupplierHistoryModal = forwardRef(({ supplier }, ref) => {
 
   const selectedMonthOption = monthOptions.find((opt) => opt.id === selectedMonth) || monthOptions[0];
 
+  // Mở modal sửa giao dịch
+  const handleEditItem = (item) => {
+    const sName = currentSupplier?.name || supplier?.name || '';
+    if (item.type === 'DEBT') {
+      editSupplierTransactionModalRef.current?.open(item, sName);
+    } else {
+      editSupplierPaymentModalRef.current?.open(item, sName);
+    }
+  };
+
+  // Xác nhận xóa giao dịch
+  const confirmDeleteItem = (item) => {
+    const isDebt = item.type === 'DEBT';
+    const typeLabel = isDebt ? 'đơn nhập hàng' : 'lượt trả tiền';
+    const formattedAmt = formatCurrency(item.amount);
+    const dateFormatted = formatDate(item.date);
+
+    popupModalRef.current?.show({
+      type: 'confirm',
+      title: 'XÁC NHẬN XÓA GIAO DỊCH',
+      message: `Bạn có chắc chắn muốn xóa ${typeLabel} ${formattedAmt} (ngày ${dateFormatted}) không? Thao tác này sẽ cập nhật lại số dư công nợ.`,
+      onConfirm: () => handleDeleteItem(item),
+    });
+  };
+
+  // Thực hiện xóa giao dịch qua API
+  const handleDeleteItem = async (item) => {
+    try {
+      const endpoint = item.type === 'DEBT'
+        ? `/suppliers/transactions/${item.id}`
+        : `/suppliers/payments/${item.id}`;
+
+      const response = await api.delete(endpoint);
+      if (response.data?.success) {
+        showGlobalToast('Đã xóa giao dịch thành công!', 'success');
+        fetchHistory(currentSupplier?.id || supplier?.id);
+        if (onRefresh) onRefresh();
+      } else {
+        showGlobalToast(response.data?.message || 'Không thể xóa giao dịch.', 'error');
+      }
+    } catch (err) {
+      showGlobalToast(err.response?.data?.message || 'Có lỗi xảy ra khi xóa giao dịch.', 'error');
+    }
+  };
+
+  // Tải lại dữ liệu sau khi sửa thành công
+  const handleSubModalRefresh = () => {
+    fetchHistory(currentSupplier?.id || supplier?.id);
+    if (onRefresh) onRefresh();
+  };
+
   const renderHistoryItem = ({ item }) => {
     const isDebt = item.type === 'DEBT';
     return (
       <View style={styles.historyCard}>
-        <View style={styles.cardLeft}>
-          <View style={[styles.typeBadge, isDebt ? styles.badgeDebt : styles.badgePayment]}>
-            <Text style={[styles.typeText, isDebt ? styles.textDebt : styles.textPayment]}>
-              {isDebt ? '📥 Nhập nợ' : '💵 Trả tiền'}
-            </Text>
+        <View style={styles.cardMain}>
+          <View style={styles.cardLeft}>
+            <View style={[styles.typeBadge, isDebt ? styles.badgeDebt : styles.badgePayment]}>
+              <Text style={[styles.typeText, isDebt ? styles.textDebt : styles.textPayment]}>
+                {isDebt ? '📥 Nhập nợ' : '💵 Trả tiền'}
+              </Text>
+            </View>
+            <Text style={styles.dateText}>{formatDate(item.date)}</Text>
           </View>
-          <Text style={styles.dateText}>{formatDate(item.date)}</Text>
+
+          <View style={styles.cardRight}>
+            <Text style={[styles.amountText, isDebt ? styles.amountDebt : styles.amountPayment]}>
+              {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
+            </Text>
+            {item.note ? <Text style={styles.noteText} numberOfLines={2}>{item.note}</Text> : null}
+          </View>
         </View>
 
-        <View style={styles.cardRight}>
-          <Text style={[styles.amountText, isDebt ? styles.amountDebt : styles.amountPayment]}>
-            {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
-          </Text>
-          {item.note ? <Text style={styles.noteText} numberOfLines={2}>{item.note}</Text> : null}
+        {/* Hàng nút bấm thao tác Sửa & Xóa */}
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.actionBtnEdit}
+            onPress={() => handleEditItem(item)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionBtnEditText}>✏️ Sửa</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionBtnDelete}
+            onPress={() => confirmDeleteItem(item)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionBtnDeleteText}>🗑️ Xóa</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -286,6 +365,21 @@ const SupplierHistoryModal = forwardRef(({ supplier }, ref) => {
 
       {/* Modal xuất báo cáo lịch sử dạng ảnh */}
       <ExportSupplierHistoryModal ref={exportSupplierHistoryModalRef} />
+
+      {/* Modal chỉnh sửa đơn nhập hàng */}
+      <EditSupplierTransactionModal
+        ref={editSupplierTransactionModalRef}
+        onRefresh={handleSubModalRefresh}
+      />
+
+      {/* Modal chỉnh sửa giao dịch trả tiền */}
+      <EditSupplierPaymentModal
+        ref={editSupplierPaymentModalRef}
+        onRefresh={handleSubModalRefresh}
+      />
+
+      {/* Modal xác nhận xóa */}
+      <PopupModal ref={popupModalRef} />
     </SmoothModal>
   );
 });
@@ -382,14 +476,16 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   historyCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     backgroundColor: '#F8FAFC',
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  cardMain: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   cardLeft: {
     flexDirection: 'column',
@@ -443,6 +539,41 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'right',
   },
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#EDF2F7',
+  },
+  actionBtnEdit: {
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  actionBtnEditText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1D4ED8',
+  },
+  actionBtnDelete: {
+    backgroundColor: '#FEF2F2',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  actionBtnDeleteText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
   errorContainer: {
     paddingVertical: 30,
     alignItems: 'center',
@@ -492,3 +623,4 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
+
