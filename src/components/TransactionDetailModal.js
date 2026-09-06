@@ -18,6 +18,7 @@ import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import PopupModal from './PopupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
+import { showGlobalToast } from '../store/toastStore';
 
 /**
  * Modal hiển thị chi tiết tất cả giao dịch trong một ngày.
@@ -306,6 +307,86 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
     return ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'][d.getDay()];
   };
 
+  // Helper sao chép tin nhắn công nợ của ngày này theo đúng cấu trúc yêu cầu
+  const handleCopyDailyMessage = async () => {
+    if (!dayGroup) return;
+    const { transactions: dayTrans = [], payments: dayPays = [], totalDebt: dayTotalDebt = 0, dateKey } = dayGroup;
+
+    const lines = [];
+    lines.push(`Ngày ${dateKey}`);
+
+    let totalD = 0;
+    let totalR = 0;
+    let totalP = 0;
+
+    dayTrans.forEach((t) => {
+      totalD += parseFloat(t.amount || t.totalAmount || 0);
+      if (t.items && t.items.length > 0) {
+        t.items.forEach((item) => {
+          const q = parseFloat(item.quantity);
+          const p = parseFloat(item.price);
+          const amt = parseFloat(item.amount || (q * p));
+          const name = item.product?.name || item.productName || 'Thịt';
+          const unit = item.product?.unit || 'kg';
+
+          const isQuick = name === 'Tiền hàng' || name.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
+          if (isQuick) {
+            lines.push(`${name}: ${new Intl.NumberFormat('vi-VN').format(amt)} đ`);
+          } else {
+            const priceDisplay = (p >= 1000 && p % 1000 === 0) ? `${p / 1000}k` : `${new Intl.NumberFormat('vi-VN').format(p)}đ`;
+            lines.push(`${q}${unit} ${name} x ${priceDisplay} = ${new Intl.NumberFormat('vi-VN').format(amt)} đ`);
+          }
+        });
+      } else {
+        lines.push(`Tiền hàng: ${new Intl.NumberFormat('vi-VN').format(t.amount || t.totalAmount)} đ`);
+      }
+
+      if (t.note && t.note !== 'Ghi nợ nhanh' && !t.note.includes('tự động') && !t.note.includes('hàng loạt')) {
+        lines.push(`(Ghi chú: ${t.note})`);
+      }
+    });
+
+    dayPays.forEach((p) => {
+      const amt = parseFloat(p.amount || 0);
+      if (isReturnGoodsItem(p)) {
+        totalR += amt;
+        const cleanNote = p.note ? p.note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]/g, '').trim() : '';
+        if (cleanNote) {
+          lines.push(`- Trả lại hàng: ${cleanNote} (-${new Intl.NumberFormat('vi-VN').format(amt)} đ)`);
+        } else {
+          lines.push(`- Trả lại hàng: -${new Intl.NumberFormat('vi-VN').format(amt)} đ`);
+        }
+      } else {
+        totalP += amt;
+        lines.push(`- Đã thanh toán: -${new Intl.NumberFormat('vi-VN').format(amt)} đ`);
+      }
+    });
+
+    const net = totalD - totalR - totalP;
+    if (totalR > 0 || totalP > 0) {
+      lines.push(`Tổng: ${new Intl.NumberFormat('vi-VN').format(net)} đ`);
+    } else {
+      lines.push(`Tổng: ${new Intl.NumberFormat('vi-VN').format(totalD)} đ`);
+    }
+
+    const msg = lines.join('\n');
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(msg);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = msg;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      showGlobalToast(`Đã sao chép tin nhắn công nợ ngày ${dateKey}!`, 'success');
+    } catch (err) {
+      Alert.alert('Tin nhắn công nợ', msg);
+    }
+  };
+
   if (!dayGroup) return null;
 
   const { transactions = [], payments = [], totalDebt = 0, totalPayment = 0, dateKey } = dayGroup;
@@ -400,6 +481,15 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
             </Text>
           </View>
         )}
+
+        {/* ── NÚT SAO CHÉP TIN NHẮN CÔNG NỢ NGÀY DỄ DÀNG GỬI ZALO/SMS ── */}
+        <TouchableOpacity
+          style={styles.copyDailyBtn}
+          onPress={handleCopyDailyMessage}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.copyDailyBtnText}>💬 Sao chép tin nhắn công nợ ngày</Text>
+        </TouchableOpacity>
 
         <ScrollView style={styles.detailScroll} showsVerticalScrollIndicator={false}>
 
@@ -943,5 +1033,22 @@ const styles = StyleSheet.create({
   boldText: {
     fontWeight: 'bold',
     color: COLORS.text,
+  },
+  copyDailyBtn: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  copyDailyBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: COLORS.primaryDark,
   },
 });

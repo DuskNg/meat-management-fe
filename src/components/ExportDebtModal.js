@@ -10,10 +10,22 @@ import {
   Platform,
   Alert,
   Image,
+  TextInput,
 } from 'react-native';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
+import DatePickerInput from './DatePickerInput';
+import { showGlobalToast } from '../store/toastStore';
+
+// Helper: lấy ngày hôm nay dạng DD/MM/YYYY
+const getTodayFormatted = () => {
+  const today = new Date();
+  const d = String(today.getDate()).padStart(2, '0');
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const y = today.getFullYear();
+  return `${d}/${m}/${y}`;
+};
 
 // Hàm helper để xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
 const getPaymentTargetMonth = (p) => {
@@ -59,11 +71,107 @@ const isReturnPayment = (p) => {
   );
 };
 
+// Helper tạo tin nhắn công nợ theo ngày đúng chuẩn gửi Zalo/SMS
+// Quy tắc: Hàng trên cùng là ngày, hàng dưới tên thịt nhân đơn giá thành tiền, hàng cuối cùng là tổng
+const buildDailyMessage = (dateKey, transList, payList, cust) => {
+  if (!dateKey) return '';
+
+  const dayTrans = (transList || []).filter(t => {
+    const d = new Date(t.date);
+    const dd = d.getDate().toString().padStart(2, '0');
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}` === dateKey;
+  });
+
+  const dayPays = (payList || []).filter(p => {
+    const d = new Date(p.paidAt);
+    const dd = d.getDate().toString().padStart(2, '0');
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}` === dateKey;
+  });
+
+  if (dayTrans.length === 0 && dayPays.length === 0) {
+    return `Ngày ${dateKey}\n(Không có phát sinh giao dịch công nợ trong ngày này)`;
+  }
+
+  const lines = [];
+  // Hàng trên cùng là ngày
+  lines.push(`Ngày ${dateKey}`);
+
+  let totalDebt = 0;
+  let totalReturn = 0;
+  let totalPayment = 0;
+
+  // Hàng dưới: tên thịt nhân đơn giá thành tiền
+  dayTrans.forEach(t => {
+    totalDebt += parseFloat(t.totalAmount || 0);
+
+    if (t.items && t.items.length > 0) {
+      t.items.forEach(item => {
+        const q = parseFloat(item.quantity);
+        const p = parseFloat(item.price);
+        const amt = parseFloat(item.amount || (q * p));
+        const name = item.product?.name || 'Thịt';
+        const unit = item.product?.unit || 'kg';
+
+        const isQuick = name === 'Tiền hàng' || name.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
+        if (isQuick) {
+          lines.push(`${name}: ${new Intl.NumberFormat('vi-VN').format(amt)} đ`);
+        } else {
+          const priceDisplay = (p >= 1000 && p % 1000 === 0) ? `${p / 1000}k` : `${new Intl.NumberFormat('vi-VN').format(p)}đ`;
+          lines.push(`${q}${unit} ${name} x ${priceDisplay} = ${new Intl.NumberFormat('vi-VN').format(amt)} đ`);
+        }
+      });
+    } else {
+      lines.push(`Tiền hàng: ${new Intl.NumberFormat('vi-VN').format(t.totalAmount)} đ`);
+    }
+
+    if (t.note && t.note !== 'Ghi nợ nhanh' && !t.note.includes('tự động') && !t.note.includes('hàng loạt')) {
+      lines.push(`(Ghi chú: ${t.note})`);
+    }
+  });
+
+  // Hàng trừ trả lại hàng hoặc đã thanh toán trong ngày
+  dayPays.forEach(p => {
+    const amt = parseFloat(p.amount || 0);
+    if (isReturnPayment(p)) {
+      totalReturn += amt;
+      const cleanNote = p.note ? p.note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]/g, '').trim() : '';
+      if (cleanNote) {
+        lines.push(`- Trả lại hàng: ${cleanNote} (-${new Intl.NumberFormat('vi-VN').format(amt)} đ)`);
+      } else {
+        lines.push(`- Trả lại hàng: -${new Intl.NumberFormat('vi-VN').format(amt)} đ`);
+      }
+    } else {
+      totalPayment += amt;
+      lines.push(`- Đã thanh toán: -${new Intl.NumberFormat('vi-VN').format(amt)} đ`);
+    }
+  });
+
+  // Hàng cuối cùng là tổng
+  const netTotal = totalDebt - totalReturn - totalPayment;
+  if (totalReturn > 0 || totalPayment > 0) {
+    lines.push(`Tổng: ${new Intl.NumberFormat('vi-VN').format(netTotal)} đ`);
+  } else {
+    lines.push(`Tổng: ${new Intl.NumberFormat('vi-VN').format(totalDebt)} đ`);
+  }
+
+  return lines.join('\n');
+};
+
 const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
+  const [activeTab, setActiveTab] = useState('month'); // 'month' | 'day'
   const [selectedMonth, setSelectedMonth] = useState('');
   const [availableMonths, setAvailableMonths] = useState([]);
+  const [selectedDayKey, setSelectedDayKey] = useState('');
+  const [availableDays, setAvailableDays] = useState([]);
+  const [dailyMessageText, setDailyMessageText] = useState('');
+  const [isCopied, setIsCopied] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [imageUri, setImageUri] = useState(null);
@@ -77,24 +185,27 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
   // 1. Phơi bày các hàm điều khiển ra bên ngoài
   useImperativeHandle(ref, () => ({
-    open: (c, targetMonth) => {
+    open: (c, targetMonth, targetDay, defaultTab) => {
       setCustomer(c);
       setVisible(true);
       setSelectedMonth(targetMonth || '');
+      setActiveTab(defaultTab || (targetDay ? 'day' : 'month'));
       setAvailableMonths([]);
+      setAvailableDays([]);
       setTransactions([]);
       setPayments([]);
       setImageUri(null);
       setError('');
-      fetchData(c.id, c, targetMonth);
+      setIsCopied(false);
+      fetchData(c.id, c, targetMonth, targetDay);
     },
     close: () => {
       setVisible(false);
     }
   }));
 
-  // 2. Tải toàn bộ giao dịch & thu tiền để trích xuất các tháng khả dụng
-  const fetchData = async (customerId, currentCust, targetMonth) => {
+  // 2. Tải toàn bộ giao dịch & thu tiền để trích xuất các tháng và ngày khả dụng
+  const fetchData = async (customerId, currentCust, targetMonth, targetDay) => {
     setLoading(true);
     setError('');
     try {
@@ -111,16 +222,48 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       // Trích xuất các tháng duy nhất có giao dịch phát sinh
       const monthsSet = new Set();
+      // Trích xuất các ngày duy nhất có giao dịch phát sinh
+      const daysMap = new Map();
 
       transList.forEach(t => {
         const d = new Date(t.date);
+        const dd = d.getDate().toString().padStart(2, '0');
         const mm = (d.getMonth() + 1).toString().padStart(2, '0');
         const yyyy = d.getFullYear();
         monthsSet.add(`${mm}/${yyyy}`);
+
+        const dateKey = `${dd}/${mm}/${yyyy}`;
+        if (!daysMap.has(dateKey)) {
+          daysMap.set(dateKey, {
+            dateKey,
+            date: t.date,
+            totalDebt: 0,
+            hasReturn: false,
+          });
+        }
+        daysMap.get(dateKey).totalDebt += parseFloat(t.totalAmount || 0);
       });
 
       payList.forEach(p => {
         monthsSet.add(getPaymentTargetMonth(p));
+
+        const d = new Date(p.paidAt);
+        const dd = d.getDate().toString().padStart(2, '0');
+        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+        const yyyy = d.getFullYear();
+        const dateKey = `${dd}/${mm}/${yyyy}`;
+
+        if (!daysMap.has(dateKey)) {
+          daysMap.set(dateKey, {
+            dateKey,
+            date: p.paidAt,
+            totalDebt: 0,
+            hasReturn: false,
+          });
+        }
+        if (isReturnPayment(p)) {
+          daysMap.get(dateKey).hasReturn = true;
+        }
       });
 
       // Chuyển set thành mảng và sắp xếp ngược lại (tháng mới nhất lên đầu)
@@ -129,8 +272,11 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         const [bM, bY] = b.split('/').map(Number);
         return bY - aY || bM - aM;
       });
-
       setAvailableMonths(monthsArray);
+
+      // Sắp xếp các ngày từ mới nhất đến cũ nhất
+      const daysArray = Array.from(daysMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+      setAvailableDays(daysArray);
 
       // Chọn tháng mặc định là tháng được chỉ định (hoặc tháng gần nhất có giao dịch)
       let defaultMonth = targetMonth;
@@ -145,6 +291,21 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         }
       }
       setSelectedMonth(defaultMonth);
+
+      // Chọn ngày mặc định: ngày được chỉ định hoặc ngày gần nhất có giao dịch
+      let defaultDay = targetDay;
+      if (!defaultDay) {
+        if (daysArray.length > 0) {
+          defaultDay = daysArray[0].dateKey;
+        } else {
+          defaultDay = getTodayFormatted();
+        }
+      }
+      setSelectedDayKey(defaultDay);
+
+      // Tạo tin nhắn cho ngày mặc định
+      const msg = buildDailyMessage(defaultDay, transList, payList, currentCust);
+      setDailyMessageText(msg);
 
       // Tự động tạo ảnh công nợ ngay khi tải xong dữ liệu
       if (monthsArray.length > 0 || targetMonth) {
@@ -827,11 +988,59 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     executeDownloadImage();
   };
 
+  // 5. Chọn ngày để xuất tin nhắn công nợ
+  const handleSelectDay = (dayKey) => {
+    setSelectedDayKey(dayKey);
+    const msg = buildDailyMessage(dayKey, transactions, payments, customer);
+    setDailyMessageText(msg);
+    setIsCopied(false);
+  };
+
+  // 6. Sao chép tin nhắn công nợ vào Clipboard
+  const handleCopyMessage = async () => {
+    if (!dailyMessageText) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(dailyMessageText);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = dailyMessageText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setIsCopied(true);
+      showGlobalToast(`Đã sao chép tin nhắn công nợ ngày ${selectedDayKey}!`, 'success');
+      setTimeout(() => setIsCopied(false), 2500);
+    } catch (err) {
+      console.error('Lỗi khi sao chép:', err);
+      showGlobalToast('Không thể sao chép, vui lòng bôi đen và sao chép thủ công.', 'error');
+    }
+  };
+
+  // 7. Chia sẻ tin nhắn qua Zalo hoặc menu hệ thống
+  const handleShareMessage = async () => {
+    if (!dailyMessageText) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({
+          title: `Công nợ ngày ${selectedDayKey} - ${customer?.name || ''}`,
+          text: dailyMessageText,
+        });
+      } else {
+        handleCopyMessage();
+      }
+    } catch (err) {
+      // Hủy bỏ chia sẻ
+    }
+  };
+
   return (
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
         <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>📊 XUẤT ẢNH CÔNG NỢ CHI TIẾT</Text>
+          <Text style={styles.modalTitle}>📊 XUẤT CÔNG NỢ KHÁCH HÀNG</Text>
 
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -843,7 +1052,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
               <Text style={styles.errorText}>⚠️ {error}</Text>
               <TouchableOpacity
                 style={[styles.button, styles.retryButton]}
-                onPress={() => fetchData(customer?.id, customer)}
+                onPress={() => fetchData(customer?.id, customer, selectedMonth, selectedDayKey)}
               >
                 <Text style={styles.retryButtonText}>TẢI LẠI DỮ LIỆU</Text>
               </TouchableOpacity>
@@ -859,97 +1068,224 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                 </Text>
               </View>
 
-              <Text style={styles.sectionLabel}>Chọn tháng cần xuất công nợ:</Text>
-
-              {availableMonths.length === 0 ? (
-                <Text style={styles.noMonthsText}>
-                  Khách hàng này chưa phát sinh giao dịch nào để xuất công nợ.
-                </Text>
-              ) : (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.monthScroll}
-                  contentContainerStyle={styles.monthScrollContent}
+              {/* ── 2 TABS CHUYỂN ĐỔI CHẾ ĐỘ XUẤT ── */}
+              <View style={styles.tabContainer}>
+                <TouchableOpacity
+                  style={[styles.tabButton, activeTab === 'month' && styles.activeTabButton]}
+                  onPress={() => setActiveTab('month')}
+                  activeOpacity={0.7}
                 >
-                  {availableMonths.map((m) => (
-                    <TouchableOpacity
-                      key={m}
-                      style={[styles.monthItem, selectedMonth === m && styles.activeMonthItem]}
-                      onPress={() => {
-                        setSelectedMonth(m);
-                        // Kích hoạt vẽ lại ảnh tức thì khi đổi tháng
-                        generateDebtImage(m, transactions, payments, customer);
-                      }}
-                    >
-                      <Text style={[styles.monthItemText, selectedMonth === m && styles.activeMonthItemText]}>
-                        Tháng {m}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              )}
-
-              {/* TRẠNG THÁI ĐANG VẼ ẢNH */}
-              {generating && (
-                <View style={styles.generatingBox}>
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                  <Text style={styles.generatingText}>Đang vẽ ảnh công nợ...</Text>
-                </View>
-              )}
-
-              {/* PHẦN HIỂN THỊ KHI SỐ LƯỢNG DÒNG QUÁ LỚN (> 100) */}
-              {!generating && availableMonths.length > 0 && rows.length > 100 && (
-                <View style={styles.excelExportBox}>
-                  <Text style={styles.excelWarningText}>
-                    ⚠️ Số lượng giao dịch trong tháng quá lớn ({rows.length} ngày có giao dịch). Vui lòng xuất báo cáo dưới dạng tệp Excel để dễ dàng đối chiếu.
+                  <Text style={[styles.tabButtonText, activeTab === 'month' && styles.activeTabButtonText]}>
+                    📸 Xuất theo tháng (Ảnh)
                   </Text>
-                  <TouchableOpacity
-                    style={styles.excelExportButton}
-                    onPress={handleExportExcel}
-                  >
-                    <Text style={styles.excelExportButtonText}>
-                      📊 XUẤT FILE EXCEL CÔNG NỢ
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                </TouchableOpacity>
 
-              {/* PHẦN HIỂN THỊ XEM TRƯỚC VÀ NÚT TẢI */}
-              {imageUri && !generating && rows.length <= 100 && (
-                <View style={styles.previewBox}>
-                  <View style={styles.previewHeaderRow}>
-                    <Text style={styles.sectionLabelInline}>Bảng ảnh xem trước:</Text>
-                    <TouchableOpacity
-                      style={[
-                        styles.downloadButtonInline,
-                        styles.normalActiveColor
-                      ]}
-                      onPress={handleDownloadImage}
-                    >
-                      <Text style={styles.downloadButtonInlineText}>
-                        💾 TẢI ẢNH VỀ MÁY
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                <TouchableOpacity
+                  style={[styles.tabButton, activeTab === 'day' && styles.activeTabButton]}
+                  onPress={() => {
+                    setActiveTab('day');
+                    if (!selectedDayKey && availableDays.length > 0) {
+                      handleSelectDay(availableDays[0].dateKey);
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.tabButtonText, activeTab === 'day' && styles.activeTabButtonText]}>
+                    💬 Xuất theo ngày (Tin nhắn)
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-                  <View style={styles.imageShadowFrame}>
-                    <Image
-                      source={{ uri: imageUri }}
-                      style={styles.previewImage}
-                      resizeMode="contain"
-                    />
-                  </View>
+              {/* ── NỘI DUNG TAB 1: XUẤT THEO THÁNG (DẠNG ẢNH) ── */}
+              {activeTab === 'month' ? (
+                <>
+                  <Text style={styles.sectionLabel}>Chọn tháng cần xuất công nợ:</Text>
 
-                  {Platform.OS === 'web' ? (
-                    <Text style={styles.helperText}>
-                      💡 Mẹo trên điện thoại: Bạn có thể nhấn giữ lâu vào ảnh trên và chọn "Lưu hình ảnh" để lưu trực tiếp vào Thư viện ảnh (Gallery) của máy.
+                  {availableMonths.length === 0 ? (
+                    <Text style={styles.noMonthsText}>
+                      Khách hàng này chưa phát sinh giao dịch nào để xuất công nợ.
                     </Text>
                   ) : (
-                    <Text style={styles.helperText}>
-                      💡 Mẹo: Nhấn giữ vào ảnh trên để lưu vào Thư viện ảnh của thiết bị.
-                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.monthScroll}
+                      contentContainerStyle={styles.monthScrollContent}
+                    >
+                      {availableMonths.map((m) => (
+                        <TouchableOpacity
+                          key={m}
+                          style={[styles.monthItem, selectedMonth === m && styles.activeMonthItem]}
+                          onPress={() => {
+                            setSelectedMonth(m);
+                            generateDebtImage(m, transactions, payments, customer);
+                          }}
+                        >
+                          <Text style={[styles.monthItemText, selectedMonth === m && styles.activeMonthItemText]}>
+                            Tháng {m}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
                   )}
+
+                  {/* TRẠNG THÁI ĐANG VẼ ẢNH */}
+                  {generating && (
+                    <View style={styles.generatingBox}>
+                      <ActivityIndicator size="small" color={COLORS.primary} />
+                      <Text style={styles.generatingText}>Đang vẽ ảnh công nợ...</Text>
+                    </View>
+                  )}
+
+                  {/* PHẦN HIỂN THỊ KHI SỐ LƯỢNG DÒNG QUÁ LỚN (> 100) */}
+                  {!generating && availableMonths.length > 0 && rows.length > 100 && (
+                    <View style={styles.excelExportBox}>
+                      <Text style={styles.excelWarningText}>
+                        ⚠️ Số lượng giao dịch trong tháng quá lớn ({rows.length} ngày có giao dịch). Vui lòng xuất báo cáo dưới dạng tệp Excel để dễ dàng đối chiếu.
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.excelExportButton}
+                        onPress={handleExportExcel}
+                      >
+                        <Text style={styles.excelExportButtonText}>
+                          📊 XUẤT FILE EXCEL CÔNG NỢ
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* PHẦN HIỂN THỊ XEM TRƯỚC VÀ NÚT TẢI */}
+                  {imageUri && !generating && rows.length <= 100 && (
+                    <View style={styles.previewBox}>
+                      <View style={styles.previewHeaderRow}>
+                        <Text style={styles.sectionLabelInline}>Bảng ảnh xem trước:</Text>
+                        <TouchableOpacity
+                          style={[
+                            styles.downloadButtonInline,
+                            styles.normalActiveColor
+                          ]}
+                          onPress={handleDownloadImage}
+                        >
+                          <Text style={styles.downloadButtonInlineText}>
+                            💾 TẢI ẢNH VỀ MÁY
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.imageShadowFrame}>
+                        <Image
+                          source={{ uri: imageUri }}
+                          style={styles.previewImage}
+                          resizeMode="contain"
+                        />
+                      </View>
+
+                      {Platform.OS === 'web' ? (
+                        <Text style={styles.helperText}>
+                          💡 Mẹo trên điện thoại: Bạn có thể nhấn giữ lâu vào ảnh trên và chọn "Lưu hình ảnh" để lưu trực tiếp vào Thư viện ảnh (Gallery) của máy.
+                        </Text>
+                      ) : (
+                        <Text style={styles.helperText}>
+                          💡 Mẹo: Nhấn giữ vào ảnh trên để lưu vào Thư viện ảnh của thiết bị.
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                </>
+              ) : (
+                /* ── NỘI DUNG TAB 2: XUẤT THEO NGÀY (TIN NHẮN COPY) ── */
+                <View style={styles.dayTabContent}>
+                  <Text style={styles.sectionLabel}>📅 Chọn ngày cần xuất tin nhắn:</Text>
+
+                  {availableDays.length === 0 ? (
+                    <Text style={styles.noMonthsText}>
+                      Khách hàng này chưa có phát sinh giao dịch nào.
+                    </Text>
+                  ) : (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.monthScroll}
+                      contentContainerStyle={styles.monthScrollContent}
+                    >
+                      {availableDays.map((d) => (
+                        <TouchableOpacity
+                          key={d.dateKey}
+                          style={[styles.dayItem, selectedDayKey === d.dateKey && styles.activeDayItem]}
+                          onPress={() => handleSelectDay(d.dateKey)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.dayItemText, selectedDayKey === d.dateKey && styles.activeDayItemText]}>
+                            {d.dateKey}
+                          </Text>
+                          {d.totalDebt > 0 && (
+                            <Text style={[styles.dayItemSubText, selectedDayKey === d.dateKey && styles.activeDayItemSubText]}>
+                              {formatCurrency(d.totalDebt)}
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+
+                  {/* Chọn ngày tùy ý qua DatePicker */}
+                  <View style={styles.customDateRow}>
+                    <Text style={styles.customDateLabel}>Hoặc chọn ngày khác:</Text>
+                    <View style={{ flex: 1 }}>
+                      <DatePickerInput
+                        value={selectedDayKey}
+                        onChange={(newDate) => handleSelectDay(newDate)}
+                        allowFuture={true}
+                      />
+                    </View>
+                  </View>
+
+                  {/* KHUNG XEM TRƯỚC VÀ CHỈNH SỬA TIN NHẮN */}
+                  <View style={styles.messageBox}>
+                    <View style={styles.messageHeaderRow}>
+                      <Text style={styles.messageBoxTitle}>
+                        📝 Tin nhắn công nợ ({selectedDayKey}):
+                      </Text>
+                      <Text style={styles.messageBoxHint}>Có thể chỉnh sửa</Text>
+                    </View>
+
+                    <TextInput
+                      style={styles.messageInput}
+                      multiline
+                      value={dailyMessageText}
+                      onChangeText={setDailyMessageText}
+                      placeholder="Nội dung tin nhắn công nợ..."
+                      placeholderTextColor="#94A3B8"
+                      textAlignVertical="top"
+                    />
+
+                    {/* NÚT THAO TÁC SAO CHÉP VÀ GỬI ZALO */}
+                    <View style={styles.messageActionsRow}>
+                      <TouchableOpacity
+                        style={[styles.copyMessageButton, isCopied && styles.copiedButton]}
+                        onPress={handleCopyMessage}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.copyMessageButtonText}>
+                          {isCopied ? '✅ ĐÃ SAO CHÉP TIN NHẮN!' : '📋 SAO CHÉP TIN NHẮN (COPY)'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.share ? (
+                        <TouchableOpacity
+                          style={styles.shareMessageButton}
+                          onPress={handleShareMessage}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.shareMessageButtonText}>📲 GỬI / CHIA SẺ</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+
+                    <Text style={styles.helperText}>
+                      💡 Mẹo: Bấm "SAO CHÉP TIN NHẮN" để copy nhanh, sau đó mở nhóm Zalo hoặc tin nhắn khách hàng dán (Paste) vào để gửi ngay.
+                    </Text>
+                  </View>
                 </View>
               )}
             </ScrollView>
@@ -1248,6 +1584,167 @@ const styles = StyleSheet.create({
   excelExportButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: 'bold',
+  },
+  // ─── STYLES CHO 2 TABS & XUẤT THEO NGÀY ───
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  activeTabButton: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  tabButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  activeTabButtonText: {
+    color: COLORS.primaryDark,
+    fontWeight: 'bold',
+  },
+  dayTabContent: {
+    marginTop: 2,
+  },
+  dayItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    marginRight: 8,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+  },
+  activeDayItem: {
+    backgroundColor: '#ECFDF5',
+    borderColor: COLORS.primary,
+  },
+  dayItemText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#334155',
+  },
+  activeDayItemText: {
+    color: COLORS.primaryDark,
+  },
+  dayItemSubText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  activeDayItemSubText: {
+    color: COLORS.primaryDark,
+    fontWeight: '600',
+  },
+  customDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 14,
+    gap: 8,
+  },
+  customDateLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  messageBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    marginBottom: 16,
+    ...SHADOWS.card,
+  },
+  messageHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  messageBoxTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  messageBoxHint: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  messageInput: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    fontSize: 13,
+    color: '#0F172A',
+    minHeight: 180,
+    maxHeight: 280,
+    lineHeight: 22,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  messageActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  copyMessageButton: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  copiedButton: {
+    backgroundColor: '#059669',
+  },
+  copyMessageButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  shareMessageButton: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  shareMessageButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: 'bold',
   },
 });
