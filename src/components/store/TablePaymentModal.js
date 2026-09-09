@@ -119,6 +119,7 @@ const TablePaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
     isSubmittingRef.current = true;
     try {
       let finalNote = note.trim();
+      let finalPaidAt = undefined;
       if (targetMonthKey) {
         const d = new Date();
         const dd = d.getDate().toString().padStart(2, '0');
@@ -128,11 +129,18 @@ const TablePaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
         
         const prefix = `Thanh toán hóa đơn tháng ${targetMonthKey} (ngày ${dateStr})`;
         finalNote = finalNote ? `${prefix} - ${finalNote}` : prefix;
+
+        const [tM, tY] = targetMonthKey.split('/').map(Number);
+        if (tM && tY) {
+          const lastDay = new Date(tY, tM, 0).getDate();
+          finalPaidAt = new Date(Date.UTC(tY, tM - 1, lastDay, 5, 0, 0, 0)).toISOString();
+        }
       }
 
       const response = await api.post('/store/payments', {
         customerId,
         amount: payAmount,
+        paidAt: finalPaidAt,
         note: finalNote || null,
       });
 

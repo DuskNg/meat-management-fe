@@ -40,13 +40,17 @@ function RootLayoutNav() {
     const inAuthGroup = segments[0] === 'login' || (segments[0] === 'admin' && segments[1] === 'login');
     const inAdminGroup = segments[0] === 'admin';
     const inPendingScreen = segments[0] === 'workspace-pending';
+    const inPortalGroup = segments[0] === 'portal';
 
     if (!isAuthenticated) {
-      if (!inAuthGroup) {
+      if (!inAuthGroup && !inPortalGroup) {
         // Chưa đăng nhập -> Chuyển ngay về trang Đăng nhập
         router.replace('/login');
       }
     } else {
+      // Nếu đang mở link Portal ghim Zalo thì cho phép xem trực tiếp
+      if (inPortalGroup) return;
+
       // Đã đăng nhập
       if (currentUser?.isAdmin) {
         // Tài khoản Admin tối cao

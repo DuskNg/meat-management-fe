@@ -808,7 +808,7 @@ export default function CustomerDetailScreen() {
         });
       }
       const g = mGroup.daysMap.get(payDateKey);
-      
+
       // Kiểm tra xem lượt trả này đã được thêm vào ngày này chưa để tránh nhân đôi
       if (!g.payments.some((existingPay) => existingPay.id === p.id)) {
         const allocations = payAllocations[p.id] || [];

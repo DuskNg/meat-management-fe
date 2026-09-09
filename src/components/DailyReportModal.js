@@ -15,6 +15,10 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
 import PopupModal from './PopupModal';
+import ExportDailyReportModal from './ExportDailyReportModal';
+import InvoiceImageViewerModal from './InvoiceImageViewerModal';
+import InvoiceImageUploadModal from './InvoiceImageUploadModal';
+import { showGlobalToast } from '../store/toastStore';
 import { matchSearch } from '../utils/searchHelper';
 
 // Bảng màu đa dạng, tương phản cao, dễ phân biệt cho các nhóm khách hàng trùng đơn
@@ -128,6 +132,9 @@ const DUPLICATE_COLOR_PALETTES = [
 
 const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransaction, onEditPayment }, ref) => {
   const popupModalRef = useRef(null);
+  const exportDailyReportModalRef = useRef(null);
+  const invoiceImageViewerModalRef = useRef(null);
+  const invoiceImageUploadModalRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(''); // Định dạng DD/MM/YYYY
@@ -265,12 +272,10 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     return 'payment';
   };
 
-  // Helper lấy chuỗi thời gian cập nhật/tạo đơn trong ngày
+  // Helper lấy chuỗi thời gian tạo đơn trong ngày (bỏ chữ 'Cập nhật', chỉ để thời gian tạo)
   const formatItemTime = (item) => {
     if (!item) return '';
-    const updatedAt = item.updatedAt || item.rawObj?.updatedAt;
-    const createdAt = item.createdAt || item.rawObj?.createdAt || item.time;
-    const isEdited = getItemStatus(item) === 'edited';
+    const createdAt = item.createdAt || item.rawObj?.createdAt || item.time || item.rawObj?.date || item.updatedAt;
 
     const formatT = (dateStr) => {
       if (!dateStr) return '';
@@ -281,11 +286,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       return `${h}:${m}`;
     };
 
-    if (isEdited && createdAt && updatedAt && formatT(createdAt) !== formatT(updatedAt)) {
-      return `Cập nhật: ${formatT(updatedAt)} (Tạo: ${formatT(createdAt)})`;
-    }
-    const t = updatedAt || createdAt;
-    return t ? `Cập nhật: ${formatT(t)}` : '';
+    return createdAt ? formatT(createdAt) : '';
   };
 
   // Thứ tự ưu tiên hiển thị: 1. Đã sửa -> 2. Trả hàng -> 3. Thu nợ -> 4. Đơn nợ mới
@@ -332,6 +333,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   // Xử lý khi người dùng đổi ngày trên DatePicker
   const handleDateChange = (newDateStr) => {
     setSelectedDate(newDateStr);
+    // Reset bộ lọc trạng thái và tìm kiếm khi đổi ngày
+    setActiveFilter('all');
+    setSearchText('');
     const dateParts = newDateStr.split('/');
     let targetMonth = selectedMonth;
     if (dateParts.length === 3) {
@@ -343,6 +347,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
   // Các hàm xử lý đổi tháng cho bộ chọn tháng
   const handlePrevMonth = () => {
+    // Reset bộ lọc trạng thái và tìm kiếm khi đổi tháng
+    setActiveFilter('all');
+    setSearchText('');
     const [m, y] = selectedMonth.split('/').map(Number);
     let prevM = m - 1;
     let prevY = y;
@@ -356,6 +363,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   };
 
   const handleNextMonth = () => {
+    // Reset bộ lọc trạng thái và tìm kiếm khi đổi tháng
+    setActiveFilter('all');
+    setSearchText('');
     const [m, y] = selectedMonth.split('/').map(Number);
     let nextM = m + 1;
     let nextY = y;
@@ -461,6 +471,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         updatedAt: t.updatedAt,
         customerId: t.customerId,
         rawObj: t,
+        invoices: t.invoices || [],
         customerName: t.customer?.name || 'Khách ẩn danh',
         amount: parseFloat(t.totalAmount || 0),
         profit: getTransactionProfit(t),
@@ -584,23 +595,37 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   };
 
   // Helper sắp xếp danh sách giao dịch trong ngày:
-  // - Gom các đơn nợ trùng của cùng 1 khách hàng lại liền kề nhau
-  // - Trong cùng 1 khách hàng: xếp thứ tự từ Đơn 1/2 rồi tới Đơn 2/2
-  // - Giữa các nhóm khách hàng khác nhau: xếp theo độ ưu tiên trạng thái và thời gian mới nhất của nhóm
+  // - Ưu tiên tuyệt đối các đơn đã sửa lên đầu danh sách (1. Đã sửa -> 2. Trả hàng -> 3. Thu nợ -> 4. Đơn nợ mới)
+  // - Với các đơn đã sửa: đơn nào vừa sửa mới nhất (updatedAt) sẽ hiển thị lên trên cùng
+  // - Gom các đơn nợ trùng của cùng 1 khách hàng khi cùng trạng thái (hoặc khi bật lọc đơn trùng)
   const sortDailyTimelineItems = (items) => {
     if (!items || items.length === 0) return [];
 
-    const getItemTime = (item) => new Date(item.time || item.createdAt || item.date || 0).getTime();
+    const getItemTime = (item) => {
+      const isEdited = getItemStatus(item) === 'edited';
+      if (isEdited) {
+        const u = item.updatedAt || item.rawObj?.updatedAt;
+        if (u) return new Date(u).getTime();
+      }
+      return new Date(item.time || item.createdAt || item.date || 0).getTime();
+    };
 
-    // 1. Phân nhóm và tính toán thời gian mới nhất + độ ưu tiên tốt nhất của từng nhóm
+    // Khi đang xem ở chế độ lọc 'duplicate' (Đơn nợ trùng): gom tất cả đơn trùng của 1 khách cạnh nhau để tiện so sánh
+    const isDuplicateFilter = activeFilter === 'duplicate';
+
     const groupLatestTime = {};
     const groupPriority = {};
 
     items.forEach(item => {
+      const status = getItemStatus(item);
       const isDup = isItemDuplicateDebt(item);
-      const groupKey = isDup ? `dup:${getCustomerKey(item)}` : `single:${item.id}`;
+      // Ở chế độ bình thường: gom theo status + customer để đơn chưa sửa TUYỆT ĐỐI KHÔNG bị kéo lên nhóm đã sửa
+      const groupKey = isDuplicateFilter
+        ? (isDup ? `dup:${getCustomerKey(item)}` : `single:${item.id}`)
+        : (isDup ? `${status}:dup:${getCustomerKey(item)}` : `${status}:single:${item.id}`);
+
       const t = getItemTime(item);
-      const p = STATUS_PRIORITY[getItemStatus(item)] || 99;
+      const p = STATUS_PRIORITY[status] || 99;
 
       if (!groupLatestTime[groupKey] || t > groupLatestTime[groupKey]) {
         groupLatestTime[groupKey] = t;
@@ -610,36 +635,48 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       }
     });
 
-    // 2. Sắp xếp danh sách
     return [...items].sort((a, b) => {
+      const statusA = getItemStatus(a);
+      const statusB = getItemStatus(b);
+      const priorityA = STATUS_PRIORITY[statusA] || 99;
+      const priorityB = STATUS_PRIORITY[statusB] || 99;
+
+      // 1. Ở chế độ xem thông thường: Ưu tiên tuyệt đối theo trạng thái: Đã sửa (1) -> Trả hàng (2) -> Thu nợ (3) -> Đơn nợ mới (4)
+      if (!isDuplicateFilter && priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+
       const isDupA = isItemDuplicateDebt(a);
       const isDupB = isItemDuplicateDebt(b);
       const keyA = getCustomerKey(a);
       const keyB = getCustomerKey(b);
-      const groupA = isDupA ? `dup:${keyA}` : `single:${a.id}`;
-      const groupB = isDupB ? `dup:${keyB}` : `single:${b.id}`;
+      const groupA = isDuplicateFilter
+        ? (isDupA ? `dup:${keyA}` : `single:${a.id}`)
+        : (isDupA ? `${statusA}:dup:${keyA}` : `${statusA}:single:${a.id}`);
+      const groupB = isDuplicateFilter
+        ? (isDupB ? `dup:${keyB}` : `single:${b.id}`)
+        : (isDupB ? `${statusB}:dup:${keyB}` : `${statusB}:single:${b.id}`);
 
-      // Khác nhóm: xếp theo độ ưu tiên trạng thái rồi tới thời gian mới nhất của nhóm đó
+      // Khác nhóm: xếp theo độ ưu tiên rồi tới thời gian mới nhất của nhóm đó
       if (groupA !== groupB) {
-        const priorityA = groupPriority[groupA] || 99;
-        const priorityB = groupPriority[groupB] || 99;
-        if (priorityA !== priorityB) {
-          return priorityA - priorityB;
+        if (isDuplicateFilter) {
+          const pA = groupPriority[groupA] || 99;
+          const pB = groupPriority[groupB] || 99;
+          if (pA !== pB) return pA - pB;
         }
 
         const timeGroupA = groupLatestTime[groupA] || 0;
         const timeGroupB = groupLatestTime[groupB] || 0;
         if (timeGroupA !== timeGroupB) {
-          return timeGroupB - timeGroupA; // Nhóm có giao dịch mới hơn xếp trước
+          return timeGroupB - timeGroupA; // Nhóm cập nhật/sửa mới hơn xếp trước
         }
-
         return groupA.localeCompare(groupB);
       }
 
-      // Cùng nhóm (cùng một khách hàng có đơn nợ trùng):
-      // Xếp theo thời gian tăng dần: đơn cũ trước (Đơn 1/2), đơn mới sau (Đơn 2/2) để tiện đối chiếu
-      const tA = getItemTime(a);
-      const tB = getItemTime(b);
+      // Cùng nhóm (cùng một khách hàng):
+      // Xếp theo thứ tự tạo đơn: Đơn 1/2 rồi tới Đơn 2/2
+      const tA = new Date(a.date || a.createdAt || a.time || 0).getTime();
+      const tB = new Date(b.date || b.createdAt || b.time || 0).getTime();
       if (tA !== tB) {
         return tA - tB;
       }
@@ -668,10 +705,49 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           if (onRefresh) onRefresh();
         } catch (err) {
           const errMsg = err.response?.data?.message || err.message || 'Lỗi khi xóa.';
-          alert(errMsg);
+          showGlobalToast(errMsg, 'error');
         }
       }
     });
+  };
+
+  // Xử lý xem ảnh hóa đơn của đơn hàng hoặc tải ảnh mới
+  const handleViewItemImages = (item) => {
+    const raw = item.rawObj || item;
+    const invoices = item.invoices || raw.invoices || [];
+    if (invoices.length > 0) {
+      invoiceImageViewerModalRef.current?.open({
+        images: invoices,
+        initialIndex: 0,
+        title: `Hóa đơn: ${item.customerName || 'Khách hàng'}`,
+        subtitle: `Số tiền: ${formatCurrency(item.amount)} (${item.time ? toDateKey(item.time) : selectedDate})`,
+        onDelete: async (inv, callback) => {
+          try {
+            await api.delete(`/transactions/invoices/${inv.id}`);
+            showGlobalToast('Đã xóa ảnh hóa đơn thành công.', 'success');
+            if (callback) callback();
+            fetchReportData();
+            if (onRefresh) onRefresh();
+          } catch (err) {
+            showGlobalToast('Không thể xóa ảnh hóa đơn. Vui lòng thử lại.', 'error');
+          }
+        },
+      });
+    } else {
+      popupModalRef.current?.show({
+        type: 'confirm',
+        title: 'Chưa có ảnh hóa đơn',
+        message: `Đơn hàng của khách "${item.customerName}" chưa có ảnh hóa đơn đính kèm. Bạn có muốn tải ảnh lên ngay không?`,
+        confirmText: 'Tải ảnh',
+        cancelText: 'Đóng',
+        onConfirm: () => {
+          invoiceImageUploadModalRef.current?.open(
+            item.customerId,
+            toDateKey(item.time || item.createdAt) || selectedDate
+          );
+        },
+      });
+    }
   };
 
   // Nhóm nợ theo khách hàng và lọc khách còn nợ trong tháng được chọn
@@ -1189,7 +1265,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     }
   };
 
-  const handleExportDailyReportImage = () => {
+  // Xuất ảnh theo bộ lọc (giữ nguyên giao diện canvas báo cáo theo nhóm/bộ lọc đang chọn)
+  const handleExportFilteredDailyReportImage = () => {
     if (Platform.OS !== 'web') {
       alert('Chức năng xuất ảnh hiện hỗ trợ trên giao diện Web.');
       return;
@@ -1205,7 +1282,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       const totalNewDebt = newDebtOrders.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
       const totalPayment = paymentsCollected.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
       const totalReturn = returnsCollected.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-      const netBalance = totalNewDebt - totalPayment - totalReturn;
 
       // 2. Xác định danh sách khách quen theo thời gian gần đây (trong 2 tuần gần nhất có nhiều hơn 3 đơn nợ)
       const [dayStr, monthStr, yearStr] = selectedDate.split('/').map(Number);
@@ -1215,14 +1291,12 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       const twoWeeksAgo = new Date(reportDate);
       twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
-      // Đếm số đơn nợ của từng khách hàng trong khoảng 2 tuần gần đây
       const customerRecentTxCounts = {};
       rawTransactions.forEach(t => {
         if (!t.customerId || !t.date) return;
         const txDate = new Date(t.date);
         txDate.setHours(0, 0, 0, 0);
 
-        // Kiểm tra xem ngày giao dịch có nằm trong khoảng 14 ngày qua (cho đến ngày báo cáo) hay không
         if (txDate >= twoWeeksAgo && txDate <= reportDate) {
           customerRecentTxCounts[t.customerId] = (customerRecentTxCounts[t.customerId] || 0) + 1;
         }
@@ -1231,10 +1305,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       const regularCustomers = rawCustomers.filter(c => {
         if (!c.isActive || c.isBadDebt) return false;
         const txCount = customerRecentTxCounts[c.id] || 0;
-        return txCount > 3; // Nhiều hơn 3 đơn nợ trong 2 tuần
+        return txCount > 3;
       });
 
-      // Lọc ra các khách quen chưa có đơn nợ trong ngày được chọn
       const customersWithOrderToday = new Set(newDebtOrders.map(t => t.customerId));
       const missingRegularCustomers = regularCustomers.filter(c => !customersWithOrderToday.has(c.id));
 
@@ -1254,13 +1327,11 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         leftItems = allDailyTx;
       }
 
-      // Đánh chỉ số toàn cục (globalIdx)
       leftItems = leftItems.map((item, idx) => ({ ...item, globalIdx: idx + 1 }));
       rightItems = rightItems.map((item, idx) => ({ ...item, globalIdx: leftItems.length + idx + 1 }));
 
       const numRows = Math.max(1, leftItems.length);
 
-      // Tự động tính toán chiều cao hàng, kích thước chữ dựa trên số lượng phần tử
       let rowHeight = 48;
       let fontSizeName = 14;
       let fontSizeDetail = 11.5;
@@ -1293,7 +1364,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         fontSizeAmount = fontSizeName;
       }
 
-      // Helper bẻ dòng text dài
       const wrapText = (context, text, maxWidth) => {
         const lines = [];
         let currentLine = '';
@@ -1332,7 +1402,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         return lines;
       };
 
-      // 4. Tính toán kích thước canvas chuẩn xác (vừa khít không bị thừa khoảng trắng phía dưới)
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
 
@@ -1345,10 +1414,10 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
       const headerTop = 15;
       const headerHeight = 110;
-      const boxY = headerTop + headerHeight + 10; // 135
+      const boxY = headerTop + headerHeight + 10;
       const boxH = 70;
       const colHeaderHeight = 42;
-      const listStartY = boxY + boxH + 20; // 225
+      const listStartY = boxY + boxH + 20;
       const listHeight = colHeaderHeight + numRows * rowHeight;
       const footerGap = 20;
       const footerHeight = 55;
@@ -1356,23 +1425,20 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
       const totalHeight = listStartY + listHeight + footerGap + footerHeight + bottomPadding;
 
-      // Scale 2x giúp hình ảnh xuất ra siêu nét, xem rõ ràng trên mọi thiết bị
       const scale = 2;
       canvas.width = width * scale;
       canvas.height = totalHeight * scale;
 
       ctx.scale(scale, scale);
 
-      // Nền trắng toàn ảnh
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, width, totalHeight);
 
-      // Viền bo khung ngoài
       ctx.strokeStyle = '#CBD5E1';
       ctx.lineWidth = 3;
       ctx.strokeRect(10, 10, width - 20, totalHeight - 20);
 
-      // ─── 1. HEADER BÁO CÁO ───────────────────
+      // 1. Header báo cáo
       ctx.fillStyle = '#065F46';
       ctx.fillRect(15, 15, width - 30, 110);
 
@@ -1408,12 +1474,11 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ctx.font = 'italic 12px Arial, sans-serif';
       ctx.fillText(`Thời gian xuất: ${timeStr}`, width / 2, 107);
 
-      // ─── 2. HỘP TỔNG KẾT (3 HỘP TRÊN CÙNG) ───────────────────
+      // 2. Hộp tóm tắt
       const boxW = (width - sidePadding * 2 - 20) / 3;
 
       if (activeFilter === 'duplicate') {
         const totalDupAmount = allDailyTx.reduce((sum, it) => sum + parseFloat(it.amount || 0), 0);
-        // Hộp 1: Tổng tiền nợ trùng
         ctx.fillStyle = '#FFFBEB';
         ctx.fillRect(sidePadding, boxY, boxW, boxH);
         ctx.strokeStyle = '#FDE68A';
@@ -1427,7 +1492,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx.font = 'bold 18px Arial, sans-serif';
         ctx.fillText(formatCurrency(totalDupAmount), sidePadding + 14, boxY + 54);
 
-        // Hộp 2: Số khách hàng có trùng đơn
         const box2X = sidePadding + boxW + 10;
         ctx.fillStyle = '#EFF6FF';
         ctx.fillRect(box2X, boxY, boxW, boxH);
@@ -1440,7 +1504,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx.font = 'bold 18px Arial, sans-serif';
         ctx.fillText(`${duplicateCustomerCount} khách hàng`, box2X + 14, boxY + 54);
 
-        // Hộp 3: Tổng số đơn trùng
         const box3X = box2X + boxW + 10;
         ctx.fillStyle = '#F8FAFC';
         ctx.fillRect(box3X, boxY, boxW, boxH);
@@ -1453,10 +1516,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx.font = 'bold 18px Arial, sans-serif';
         ctx.fillText(`${allDailyTx.length} đơn nợ`, box3X + 14, boxY + 54);
       } else {
-        // Chỉ hiển thị 2 hộp: Đơn nợ mới & Tiền đã thu trong ngày (Bỏ chênh lệch công nợ ròng)
         const box2W = (width - sidePadding * 2 - 16) / 2;
 
-        // Hộp Nợ Mới
         ctx.fillStyle = '#FEF2F2';
         ctx.fillRect(sidePadding, boxY, box2W, boxH);
         ctx.strokeStyle = '#FECACA';
@@ -1470,7 +1531,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx.font = 'bold 18px Arial, sans-serif';
         ctx.fillText(formatCurrency(totalNewDebt), sidePadding + 14, boxY + 54);
 
-        // Hộp Thu Nợ
         const box2X = sidePadding + box2W + 16;
         ctx.fillStyle = '#F0FDF4';
         ctx.fillRect(box2X, boxY, box2W, boxH);
@@ -1485,11 +1545,10 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         ctx.fillText(formatCurrency(totalPayment), box2X + 14, boxY + 54);
       }
 
-      // ─── 3. VẼ DANH SÁCH CHI TIẾT GIAO DỊCH ───────────────────
+      // 3. Vẽ danh sách
       const drawColumn = (items, startX, colW, headerTitle) => {
         let colY = listStartY;
 
-        // Header cột
         ctx.fillStyle = '#1E293B';
         ctx.fillRect(startX, colY, colW, colHeaderHeight);
         ctx.fillStyle = '#FFFFFF';
@@ -1513,7 +1572,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           items.forEach((item, idx) => {
             const status = getItemStatus(item);
             const isDebt = item.type === 'debt';
-            // Chỉ hiển thị màu sắc/status đã sửa khi người dùng đang xuất ảnh ở chế độ lọc 'edited'
             const isEdited = activeFilter === 'edited' && status === 'edited';
             const isReturnGoods = status === 'return';
 
@@ -1529,7 +1587,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               ctx.strokeStyle = '#FED7AA';
             } else if (isDebt) {
               if (isDuplicate && activeFilter === 'duplicate') {
-                ctx.fillStyle = idx % 2 === 0 ? palette.canvasBgEven : palette.canvasBgOdd;
+                ctx.fillStyle = palette.canvasBgEven;
                 ctx.strokeStyle = palette.canvasStroke;
               } else {
                 ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#FEF2F2';
@@ -1543,20 +1601,17 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             ctx.fillRect(startX, colY, colW, rowHeight);
             ctx.strokeRect(startX, colY, colW, rowHeight);
 
-            // Tên khách hàng (căn trái)
             ctx.fillStyle = (isDuplicate && activeFilter === 'duplicate') ? palette.canvasText : '#0F172A';
             ctx.font = `bold ${fontSizeName}px Arial, sans-serif`;
             ctx.textAlign = 'left';
             const dupTag = isDuplicate ? ` [${seqText}]` : '';
             ctx.fillText(`${item.globalIdx || idx + 1}. ${item.customerName}${dupTag}`, startX + 12, colY + Math.round(rowHeight * 0.42));
 
-            // Chi tiết mặt hàng / ghi chú (căn trái)
             ctx.fillStyle = '#64748B';
             ctx.font = `${fontSizeDetail}px Arial, sans-serif`;
             const subText = wrapText(ctx, item.details || '', colW - 170)[0] || '';
             ctx.fillText(subText, startX + 22, colY + Math.round(rowHeight * 0.8));
 
-            // Số tiền (căn phải)
             if (isEdited) {
               ctx.fillStyle = '#7E22CE';
             } else if (isReturnGoods) {
@@ -1571,7 +1626,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             ctx.textAlign = 'right';
             ctx.fillText(`${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`, startX + colW - 12, colY + Math.round(rowHeight * 0.44));
 
-            // Thời gian cập nhật đơn (căn phải)
             const itemTimeStr = formatItemTime(item);
             if (itemTimeStr) {
               ctx.fillStyle = isEdited ? '#7E22CE' : '#64748B';
@@ -1605,7 +1659,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         drawColumn(rightItems, rightColX, colWidth, `${colTitlePrefix} (Phần 2 - ${rightItems.length} đơn)`);
       }
 
-      // ─── 4. VẼ FOOTER CHO CANVAS 1 & TẢI XUỐNG ───────────────────
+      // 4. Footer
       const footerY1 = listStartY + listHeight + footerGap;
       ctx.strokeStyle = '#CBD5E1';
       ctx.lineWidth = 1;
@@ -1620,7 +1674,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ctx.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, footerY1 + 22);
       ctx.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, footerY1 + 40);
 
-      // Tải ảnh báo cáo chính (Ảnh 1)
+      // Tải file ảnh về máy
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       const filterFileSuffixMap = {
@@ -1636,141 +1690,26 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       link.download = `BaoCao_CongNo_Ngay_${selectedDate.replace(/\//g, '_')}${fSuffix}${sSuffix}.png`;
       link.href = dataUrl;
       link.click();
-
-      // ─── 5. XỬ LÝ ẢNH 2 (CHỈ XUẤT KHI ĐANG Ở TAB TẤT CẢ VÀ KHÔNG TÌM KIẾM) ───────────────────
-      if (activeFilter === 'all' && !searchText && missingRegularCustomers.length > 0) {
-        const isTwoColC2 = missingRegularCustomers.length > 15;
-        const c2Width = isTwoColC2 ? 750 : 550;
-        const numMissingRows = isTwoColC2 ? Math.ceil(missingRegularCustomers.length / 2) : Math.max(1, missingRegularCustomers.length);
-        const missingRowHeight = 44;
-        const missingFontSize = 16;
-
-        const c2HeaderH = 80;
-        const c2StartY = 15 + c2HeaderH + 15;
-        const c2ListH = numMissingRows * missingRowHeight;
-        const canvas2Height = c2StartY + c2ListH + footerGap + footerHeight + bottomPadding;
-
-        const canvas2 = document.createElement('canvas');
-        const ctx2 = canvas2.getContext('2d');
-
-        canvas2.width = c2Width * scale;
-        canvas2.height = canvas2Height * scale;
-        ctx2.scale(scale, scale);
-
-        // Nền trắng toàn ảnh
-        ctx2.fillStyle = '#FFFFFF';
-        ctx2.fillRect(0, 0, c2Width, canvas2Height);
-
-        // Viền bo khung ngoài
-        ctx2.strokeStyle = '#CBD5E1';
-        ctx2.lineWidth = 3;
-        ctx2.strokeRect(10, 10, c2Width - 20, canvas2Height - 20);
-
-        // Header của ảnh 2
-        ctx2.fillStyle = '#065F46';
-        ctx2.fillRect(15, 15, c2Width - 30, c2HeaderH);
-
-        ctx2.fillStyle = '#FFFFFF';
-        ctx2.font = 'bold 20px Arial, sans-serif';
-        ctx2.textAlign = 'center';
-        ctx2.fillText('DANH SÁCH KHÁCH CHƯA LÊN ĐƠN HÔM NAY', c2Width / 2, 45);
-
-        ctx2.fillStyle = '#A7F3D0';
-        ctx2.font = 'bold 13px Arial, sans-serif';
-        ctx2.fillText(`Ngày báo cáo: ${selectedDate}   •   Tổng số: ${missingRegularCustomers.length} khách`, c2Width / 2, 70);
-
-        let currentY = c2StartY;
-
-        if (missingRegularCustomers.length === 0) {
-          ctx2.fillStyle = '#F8FAFC';
-          ctx2.fillRect(sidePadding, currentY, c2Width - sidePadding * 2, missingRowHeight);
-          ctx2.strokeStyle = '#E2E8F0';
-          ctx2.strokeRect(sidePadding, currentY, c2Width - sidePadding * 2, missingRowHeight);
-
-          ctx2.fillStyle = '#94A3B8';
-          ctx2.font = 'italic 13px Arial, sans-serif';
-          ctx2.fillText('Không có khách nào bị sót.', sidePadding + 14, currentY + Math.round(missingRowHeight / 2) + 5);
-          currentY += missingRowHeight;
-        } else if (!isTwoColC2) {
-          missingRegularCustomers.forEach((c, idx) => {
-            ctx2.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-            ctx2.fillRect(sidePadding, currentY, c2Width - sidePadding * 2, missingRowHeight);
-            ctx2.strokeStyle = '#E2E8F0';
-            ctx2.strokeRect(sidePadding, currentY, c2Width - sidePadding * 2, missingRowHeight);
-
-            ctx2.fillStyle = '#0F172A';
-            ctx2.font = `bold ${missingFontSize}px Arial, sans-serif`;
-            ctx2.textAlign = 'left';
-            ctx2.fillText(`${idx + 1}. ${c.name || ''}`, sidePadding + 16, currentY + Math.round(missingRowHeight / 2) + 5);
-
-            currentY += missingRowHeight;
-          });
-        } else {
-          const half = Math.ceil(missingRegularCustomers.length / 2);
-          const colW = (c2Width - sidePadding * 2 - 16) / 2;
-          const leftX = sidePadding;
-          const rightX = sidePadding + colW + 16;
-
-          for (let i = 0; i < half; i++) {
-            const rowY = currentY + i * missingRowHeight;
-
-            // Cột trái
-            const leftItem = missingRegularCustomers[i];
-            if (leftItem) {
-              ctx2.fillStyle = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-              ctx2.fillRect(leftX, rowY, colW, missingRowHeight);
-              ctx2.strokeStyle = '#E2E8F0';
-              ctx2.strokeRect(leftX, rowY, colW, missingRowHeight);
-
-              ctx2.fillStyle = '#0F172A';
-              ctx2.font = 'bold 15px Arial, sans-serif';
-              ctx2.textAlign = 'left';
-              ctx2.fillText(`${i + 1}. ${leftItem.name || ''}`, leftX + 16, rowY + Math.round(missingRowHeight / 2) + 5);
-            }
-
-            // Cột phải
-            const rightIdx = half + i;
-            if (rightIdx < missingRegularCustomers.length) {
-              const rightItem = missingRegularCustomers[rightIdx];
-              ctx2.fillStyle = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-              ctx2.fillRect(rightX, rowY, colW, missingRowHeight);
-              ctx2.strokeStyle = '#E2E8F0';
-              ctx2.strokeRect(rightX, rowY, colW, missingRowHeight);
-
-              ctx2.fillStyle = '#0F172A';
-              ctx2.font = 'bold 15px Arial, sans-serif';
-              ctx2.textAlign = 'left';
-              ctx2.fillText(`${rightIdx + 1}. ${rightItem.name || ''}`, rightX + 16, rowY + Math.round(missingRowHeight / 2) + 5);
-            }
-          }
-          currentY += half * missingRowHeight;
-        }
-
-        // Footer ảnh 2
-        const finalY = currentY + footerGap;
-        ctx2.strokeStyle = '#CBD5E1';
-        ctx2.lineWidth = 1;
-        ctx2.beginPath();
-        ctx2.moveTo(sidePadding, finalY);
-        ctx2.lineTo(c2Width - sidePadding, finalY);
-        ctx2.stroke();
-
-        ctx2.fillStyle = '#64748B';
-        ctx2.font = '12px Arial, sans-serif';
-        ctx2.textAlign = 'center';
-        ctx2.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', c2Width / 2, finalY + 22);
-        ctx2.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', c2Width / 2, finalY + 40);
-
-        // Download Ảnh 2
-        const dataUrl2 = canvas2.toDataURL('image/png');
-        const link2 = document.createElement('a');
-        link2.download = `Khach_Chua_Len_Don_${selectedDate.replace(/\//g, '_')}.png`;
-        link2.href = dataUrl2;
-        link2.click();
-      }
     } catch (err) {
       console.error('[EXPORT IMAGE ERROR]', err);
       alert('Đã xảy ra lỗi khi xuất ảnh báo cáo.');
+    }
+  };
+
+  // Xử lý xuất báo cáo ngày:
+  // - Nếu không có bộ lọc: mở modal bảng kê hóa đơn đẹp như ảnh 2 (ExportDailyReportModal)
+  // - Nếu có bộ lọc (lọc trùng, lọc nợ, thu nợ, trả hàng, đã sửa, hoặc tìm kiếm): xuất ảnh trực tiếp theo giao diện canvas có bộ lọc
+  const handleExportDailyReportImage = () => {
+    const hasFilter = activeFilter !== 'all' || Boolean(searchText && searchText.trim());
+    if (hasFilter) {
+      handleExportFilteredDailyReportImage();
+    } else {
+      exportDailyReportModalRef.current?.open({
+        selectedDate,
+        rawTransactions,
+        rawPayments,
+        rawCustomers,
+      });
     }
   };
 
@@ -1799,6 +1738,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             onPress={() => {
               setActiveReportTab('day');
               setError('');
+              setActiveFilter('all');
               setSearchText('');
               fetchReportData(selectedDate, selectedMonth, 'day');
             }}
@@ -1812,6 +1752,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             onPress={() => {
               setActiveReportTab('month');
               setError('');
+              setActiveFilter('all');
               setSearchText('');
               fetchReportData(selectedDate, selectedMonth, 'month');
             }}
@@ -2077,22 +2018,36 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                         <View style={styles.itemHeader}>
                           <View style={styles.customerNameRow}>
                             <Text style={styles.customerName}>{item.customerName}</Text>
-                            {isDuplicate && (
-                              <View style={[
-                                styles.duplicateBadge,
-                                activeFilter === 'duplicate' && {
-                                  backgroundColor: palette.badgeBg,
-                                  borderColor: palette.badgeBorder,
-                                }
-                              ]}>
-                                <Text style={[
-                                  styles.duplicateBadgeText,
-                                  activeFilter === 'duplicate' && { color: palette.badgeText }
-                                ]}>
-                                  ⚠️ {seqText}
+                            {/* Nút Xem ảnh hóa đơn bên cạnh nút Sửa */}
+                            {isDebt && (
+                              <TouchableOpacity
+                                style={[
+                                  styles.itemImageBtn,
+                                  (item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)
+                                    ? styles.itemImageBtnActive
+                                    : styles.itemImageBtnEmpty,
+                                ]}
+                                onPress={() => handleViewItemImages(item)}
+                                activeOpacity={0.7}
+                                title={(item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)
+                                  ? `Xem ${(item.invoices?.length || item.rawObj?.invoices?.length)} ảnh hóa đơn`
+                                  : 'Chưa có ảnh hóa đơn'}
+                              >
+                                <Text
+                                  style={[
+                                    styles.itemImageBtnText,
+                                    (item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)
+                                      ? styles.itemImageBtnActiveText
+                                      : styles.itemImageBtnEmptyText,
+                                  ]}
+                                >
+                                  Xem ảnh{(item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)
+                                    ? ` (${item.invoices?.length || item.rawObj?.invoices?.length})`
+                                    : ''}
                                 </Text>
-                              </View>
+                              </TouchableOpacity>
                             )}
+
                             <TouchableOpacity
                               style={styles.itemEditBtn}
                               onPress={() => {
@@ -2203,8 +2158,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               activeOpacity={0.7}
             >
               <Text style={styles.exportReportBtnText} numberOfLines={1}>
-                {activeFilter === 'duplicate' 
-                  ? '📸 XUẤT BÁO CÁO ĐƠN TRÙNG' 
+                {activeFilter === 'duplicate'
+                  ? '📸 XUẤT BÁO CÁO ĐƠN TRÙNG'
                   : activeFilter === 'debt'
                     ? '📸 XUẤT BÁO CÁO ĐƠN NỢ'
                     : activeFilter === 'payment'
@@ -2213,7 +2168,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                         ? '📸 XUẤT BÁO CÁO TRẢ HÀNG'
                         : activeFilter === 'edited'
                           ? '📸 XUẤT BÁO CÁO ĐÃ SỬA'
-                          : '📸 XUẤT BÁO CÁO NGÀY'}
+                          : searchText && searchText.trim()
+                            ? `📸 XUẤT BÁO CÁO (${searchText.trim()})`
+                            : '📸 XUẤT BÁO CÁO NGÀY'}
               </Text>
             </TouchableOpacity>
           )}
@@ -2228,6 +2185,18 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       </View>
       {/* Popup xác nhận xóa */}
       <PopupModal ref={popupModalRef} />
+      {/* Modal xuất báo cáo ngày dạng bảng hóa đơn */}
+      <ExportDailyReportModal ref={exportDailyReportModalRef} />
+      {/* Modal xem ảnh hóa đơn phóng to */}
+      <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
+      {/* Modal tải ảnh hóa đơn */}
+      <InvoiceImageUploadModal
+        ref={invoiceImageUploadModalRef}
+        onSuccess={() => {
+          fetchReportData();
+          if (onRefresh) onRefresh();
+        }}
+      />
     </SmoothModal>
   );
 });
@@ -2445,6 +2414,32 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: 'bold',
     color: '#DC2626',
+  },
+  itemImageBtn: {
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemImageBtnActive: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#86EFAC',
+  },
+  itemImageBtnActiveText: {
+    fontSize: 10.5,
+    fontWeight: 'bold',
+    color: '#16A34A',
+  },
+  itemImageBtnEmpty: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#CBD5E1',
+  },
+  itemImageBtnEmptyText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#64748B',
   },
   itemCardDebt: {
     backgroundColor: COLORS.card,

@@ -157,6 +157,17 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
     amount: '',
   });
 
+  // Khởi tạo danh sách hàng mặc định (10 hàng)
+  const createInitialRows = (count = 10) =>
+    Array.from({ length: count }, () => createEmptyRow());
+
+  // Đảm bảo danh sách luôn có tối thiểu 10 hàng
+  const padRowsToMin = (rowsList, count = 10) => {
+    if (!Array.isArray(rowsList) || rowsList.length === 0) return createInitialRows(count);
+    if (rowsList.length >= count) return rowsList;
+    return [...rowsList, ...createInitialRows(count - rowsList.length)];
+  };
+
   // Tải danh sách khách hàng từ server
   const fetchData = async () => {
     setLoading(true);
@@ -171,14 +182,14 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
       // Đọc bản nháp từ cache nếu có
       const draft = await loadDraftCache();
       if (draft && Array.isArray(draft.rows) && draft.rows.length > 0) {
-        setRows(draft.rows);
+        setRows(padRowsToMin(draft.rows, 10));
         if (draft.dateStr) setDateStr(draft.dateStr);
         isLoadedCacheRef.current = true;
         return;
       }
 
-      // Khởi tạo sẵn 4 dòng trống ban đầu
-      setRows([createEmptyRow(), createEmptyRow(), createEmptyRow(), createEmptyRow()]);
+      // Khởi tạo sẵn 10 dòng trống ban đầu
+      setRows(createInitialRows(10));
       isLoadedCacheRef.current = true;
     } catch (err) {
       console.error('[BATCH PAYMENT FETCH ERROR]', err);
@@ -204,7 +215,7 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
   // Xóa toàn bộ nháp
   const handleClearDraft = async () => {
     await clearDraftCache();
-    setRows([createEmptyRow(), createEmptyRow(), createEmptyRow(), createEmptyRow()]);
+    setRows(createInitialRows(10));
     setError('');
   };
 
@@ -321,8 +332,8 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
       isLoadedCacheRef.current = false;
       await clearDraftCache();
 
-      // Reset về 4 dòng trống
-      setRows([createEmptyRow(), createEmptyRow(), createEmptyRow(), createEmptyRow()]);
+      // Reset về 10 dòng trống
+      setRows(createInitialRows(10));
 
       if (onRefresh) onRefresh();
 

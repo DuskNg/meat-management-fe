@@ -120,6 +120,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
     try {
       // Nếu có chọn tháng cụ thể, tự động thêm tiền tố đặc thù để khấu trừ đúng tháng đó kèm ngày thanh toán cụ thể
       let finalNote = note.trim();
+      let finalPaidAt = undefined;
       if (targetMonthKey) {
         const d = new Date();
         const dd = d.getDate().toString().padStart(2, '0');
@@ -129,11 +130,19 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
         
         const prefix = `Thanh toán nợ Tháng ${targetMonthKey} (ngày ${dateStr})`;
         finalNote = finalNote ? `${prefix} - ${finalNote}` : prefix;
+
+        // Chuyển ngày thanh toán về ngày cuối cùng của tháng nợ mục tiêu để số liệu khớp đúng tháng
+        const [tM, tY] = targetMonthKey.split('/').map(Number);
+        if (tM && tY) {
+          const lastDay = new Date(tY, tM, 0).getDate();
+          finalPaidAt = new Date(Date.UTC(tY, tM - 1, lastDay, 5, 0, 0, 0)).toISOString();
+        }
       }
 
       const response = await api.post('/payments', {
         customerId,
         amount: payAmount,
+        paidAt: finalPaidAt,
         note: finalNote || null,
       });
 

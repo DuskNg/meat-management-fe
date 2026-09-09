@@ -125,6 +125,13 @@ const injectWebStyles = () => {
       height: 100%;
       cursor: pointer;
     }
+    .date-picker-input-rtl {
+      direction: rtl;
+    }
+    .date-picker-input-rtl::-webkit-calendar-picker-indicator {
+      left: 0;
+      right: auto;
+    }
   `;
   document.head.appendChild(style);
 };
@@ -148,6 +155,8 @@ const DatePickerInput = ({
   maxDate = null,
   compact = false, // Thêm prop compact
   dense = false, // Chế độ thu gọn chiều cao tối đa cho modal
+  showIcon = false, // Hiển thị icon lịch và mũi tên trong chế độ compact
+  alignRight = false, // Căn popup lịch sang phải (mở về bên trái) khi input ở sát mép phải
   style, // Custom style cho container
 }) => {
   // Tự động inject CSS cho Web để dãn rộng vùng click của bộ chọn ngày
@@ -235,11 +244,13 @@ const DatePickerInput = ({
         disabled={disabled || (Platform.OS === 'web' && !isSingleMonthLimit)}
       >
         {/* Icon lịch bên trái */}
-        {!compact && (
+        {!compact ? (
           <View style={[styles.iconWrapper, dense && styles.iconWrapperDense]}>
             <Text style={[styles.icon, dense && styles.iconDense]}>📅</Text>
           </View>
-        )}
+        ) : showIcon ? (
+          <Text style={{ fontSize: 13, marginRight: 5 }}>📅</Text>
+        ) : null}
 
         {/* Phần nội dung ngày */}
         <View style={[styles.dateContent, compact && styles.dateContentCompact]}>
@@ -252,6 +263,10 @@ const DatePickerInput = ({
             {value || formatDateToDisplay(new Date())}
           </Text>
         </View>
+
+        {compact && showIcon && (
+          <Text style={{ fontSize: 10, color: '#64748B', marginLeft: 4 }}>▼</Text>
+        )}
 
         {/* Nhãn "Đổi ngày" / "Cố định" */}
         {!compact && (
@@ -270,7 +285,8 @@ const DatePickerInput = ({
         {Platform.OS === 'web' && !isSingleMonthLimit && (
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
             <input
-              className="date-picker-input"
+              className={`date-picker-input ${alignRight ? 'date-picker-input-rtl' : ''}`}
+              dir={alignRight ? 'rtl' : 'ltr'}
               type="date"
               disabled={disabled}
               value={formatDateToISO(parsedDate)}
@@ -293,6 +309,7 @@ const DatePickerInput = ({
                 width: '100%',
                 height: '100%',
                 cursor: disabled ? 'not-allowed' : 'pointer',
+                direction: alignRight ? 'rtl' : 'ltr',
               }}
             />
           </View>

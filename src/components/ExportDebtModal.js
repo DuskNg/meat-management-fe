@@ -11,6 +11,7 @@ import {
   Alert,
   Image,
   TextInput,
+  Linking,
 } from 'react-native';
 import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
@@ -18,6 +19,7 @@ import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
 import ImagePreviewModal from './ImagePreviewModal';
 import { showGlobalToast } from '../store/toastStore';
+import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../utils/debtMessageHelper';
 
 // Helper: lấy ngày hôm nay dạng DD/MM/YYYY
 const getTodayFormatted = () => {
@@ -122,14 +124,17 @@ const getPresetRange = (presetKey, currentFrom, transList) => {
 // Hàm helper để xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
 const getPaymentTargetMonth = (p) => {
   const trimNote = (p.note || '').trim();
-  const monthMatch = trimNote.match(/^Thanh toán nợ Tháng (\d{2})\/(\d{4})/);
-  const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
+  const monthMatch = trimNote.match(/^Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i) ||
+                     trimNote.match(/Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i);
+  const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
 
   if (monthMatch) {
-    return `${monthMatch[1]}/${monthMatch[2]}`;
+    const mm = monthMatch[1].padStart(2, '0');
+    return `${mm}/${monthMatch[2]}`;
   }
   if (dateMatch) {
-    return `${dateMatch[2]}/${dateMatch[3]}`;
+    const mm = dateMatch[2].padStart(2, '0');
+    return `${mm}/${dateMatch[3]}`;
   }
   const d = new Date(p.paidAt);
   const mm = (d.getMonth() + 1).toString().padStart(2, '0');
@@ -206,6 +211,11 @@ const parseReturnItems = (note, defaultAmount) => {
 // Quy tắc: Hàng trên cùng là ngày, hàng dưới tên thịt nhân đơn giá thành tiền, hàng cuối cùng là tổng
 const buildDailyMessage = (dateKey, transList, payList, cust) => {
   if (!dateKey) return '';
+
+  // Áp dụng định dạng tin nhắn riêng cho khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
+  if (isChiTuyetToanNgaCustomer(cust)) {
+    return buildChiTuyetDailyMessage(dateKey, transList, payList);
+  }
 
   const dayTrans = (transList || []).filter(t => {
     const d = new Date(t.date);
@@ -518,7 +528,20 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         const pDate = new Date(p.paidAt);
         if (fromD && toD) {
           const trimNote = (p.note || '').trim();
-          const dateMatch = trimNote.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+          const hasExplicitTargetMonth = Boolean(
+            trimNote.match(/^Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i) ||
+            trimNote.match(/Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i)
+          );
+
+          if (hasExplicitTargetMonth) {
+            const targetMonth = getPaymentTargetMonth(p);
+            if (isFullMonth) {
+              return targetMonth === monthStr;
+            }
+            return pDate >= fromD && pDate <= toD;
+          }
+
+          const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
           let effDate = pDate;
           if (dateMatch) {
             effDate = new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]), 12, 0, 0);
@@ -652,6 +675,36 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       // Sắp xếp theo ngày tăng dần (từ đầu tháng đến cuối tháng)
       const sortedDays = activeDays.sort((a, b) => new Date(a.date) - new Date(b.date));
 
+      // Thêm dòng TỔNG tiền thịt cho các ngày có từ 2 loại thịt trở lên
+      sortedDays.forEach((day) => {
+        const deliveryEntries = (day.entries || []).filter((e) => e.type === 'DELIVERY');
+        if (deliveryEntries.length > 1) {
+          const dayMeatTotal = deliveryEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+
+          let lastDeliveryIdx = -1;
+          for (let i = day.entries.length - 1; i >= 0; i--) {
+            if (day.entries[i].type === 'DELIVERY') {
+              lastDeliveryIdx = i;
+              break;
+            }
+          }
+
+          const totalEntry = {
+            type: 'DAY_TOTAL',
+            name: 'TỔNG',
+            quantity: null,
+            price: null,
+            amount: dayMeatTotal,
+          };
+
+          if (lastDeliveryIdx >= 0) {
+            day.entries.splice(lastDeliveryIdx + 1, 0, totalEntry);
+          } else {
+            day.entries.push(totalEntry);
+          }
+        }
+      });
+
       // Tính danh sách các ngày không phát sinh công nợ trong khoảng ngày đã chọn
       // KHÔNG liệt kê các ngày trong tương lai chưa tới
       const deliveryDateKeys = new Set(
@@ -711,16 +764,28 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       let wholeMonthReturn = 0;
       let wholeMonthPayment = 0;
       (payList || []).forEach(p => {
-        const isTarget = getPaymentTargetMonth(p) === monthStr;
-        const pDate = new Date(p.paidAt);
         const trimNote = (p.note || '').trim();
-        const dateMatch = trimNote.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-        let effDate = pDate;
-        if (dateMatch) {
-          effDate = new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]), 12, 0, 0);
+        const hasExplicitTargetMonth = Boolean(
+          trimNote.match(/^Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i) ||
+          trimNote.match(/Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i)
+        );
+
+        let shouldInclude = false;
+        if (hasExplicitTargetMonth) {
+          shouldInclude = (getPaymentTargetMonth(p) === monthStr);
+        } else {
+          const targetMonth = getPaymentTargetMonth(p);
+          const pDate = new Date(p.paidAt);
+          const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+          let effDate = pDate;
+          if (dateMatch) {
+            effDate = new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]), 12, 0, 0);
+          }
+          const isSameMonth = !isNaN(effDate.getTime()) && (effDate.getMonth() + 1) === mm && effDate.getFullYear() === yyyy;
+          shouldInclude = (targetMonth === monthStr) || isSameMonth;
         }
-        const isSameMonth = !isNaN(effDate.getTime()) && (effDate.getMonth() + 1) === mm && effDate.getFullYear() === yyyy;
-        if (isTarget || isSameMonth) {
+
+        if (shouldInclude) {
           const amt = parseFloat(p.amount || 0);
           if (isReturnPayment(p)) {
             wholeMonthReturn += amt;
@@ -924,13 +989,29 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             const itemY = dayStartY + idx * rowHeight;
             const midY = itemY + rowHeight / 2;
 
-            // Nền trắng
-            ctx.fillStyle = '#FFFFFF';
+            const isDayTotal = entry.type === 'DAY_TOTAL';
+
+            // Nền trắng (dòng tổng ngày dùng nền xám rất nhạt)
+            ctx.fillStyle = isDayTotal ? '#F8FAFC' : '#FFFFFF';
             ctx.fillRect(panelStartX, itemY, panelWidth, rowHeight);
 
-            // Cột 1: Tên hàng (Chữ nét thường, 13.5px - KHÔNG BÔI ĐẬM)
+            // Đường viền trên phân cách giữa danh sách thịt và dòng tổng
+            if (isDayTotal) {
+              ctx.strokeStyle = '#CBD5E1';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(pColX[1], itemY);
+              ctx.lineTo(panelStartX + panelWidth, itemY);
+              ctx.stroke();
+            }
+
+            // Cột 1: Tên hàng
             ctx.textAlign = 'left';
-            if (entry.type === 'RETURN') {
+            if (isDayTotal) {
+              ctx.fillStyle = '#0F172A';
+              ctx.font = 'bold 13.5px Arial, sans-serif';
+              ctx.fillText(entry.name, pColX[1] + 8, midY);
+            } else if (entry.type === 'RETURN') {
               ctx.fillStyle = '#DC2626';
               ctx.font = '13.5px Arial, sans-serif';
               ctx.fillText(entry.name, pColX[1] + 8, midY);
@@ -944,40 +1025,56 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
               ctx.fillText(entry.name, pColX[1] + 8, midY);
             }
 
-            // Cột 2: Số lượng (Chữ nét thường, 14px - KHÔNG BÔI ĐẬM)
+            // Cột 2: Số lượng
             ctx.textAlign = 'right';
-            const numQty = parseFloat(entry.quantity);
-            const qtyText = (entry.quantity !== null && entry.quantity !== undefined && !isNaN(numQty))
-              ? (Number.isInteger(numQty) ? String(numQty) : parseFloat(numQty.toFixed(2)).toString())
-              : '-';
-            if (entry.type === 'RETURN') {
-              ctx.fillStyle = '#DC2626';
+            if (isDayTotal) {
+              ctx.fillStyle = '#64748B';
+              ctx.font = '14px Arial, sans-serif';
+              ctx.fillText('-', pColX[2] + colWidths[2] - 8, midY);
             } else {
-              ctx.fillStyle = '#0F172A';
+              const numQty = parseFloat(entry.quantity);
+              const qtyText = (entry.quantity !== null && entry.quantity !== undefined && !isNaN(numQty))
+                ? (Number.isInteger(numQty) ? String(numQty) : parseFloat(numQty.toFixed(2)).toString())
+                : '-';
+              if (entry.type === 'RETURN') {
+                ctx.fillStyle = '#DC2626';
+              } else {
+                ctx.fillStyle = '#0F172A';
+              }
+              ctx.font = '14px Arial, sans-serif';
+              ctx.fillText(qtyText, pColX[2] + colWidths[2] - 8, midY);
             }
-            ctx.font = '14px Arial, sans-serif';
-            ctx.fillText(qtyText, pColX[2] + colWidths[2] - 8, midY);
 
-            // Cột 3: Đơn giá (Bôi đậm rõ nét, màu tối tương phản cao không bị mờ)
+            // Cột 3: Đơn giá
             ctx.textAlign = 'right';
-            const numPrice = parseFloat(entry.price);
-            const priceText = (entry.price !== null && entry.price !== undefined && !isNaN(numPrice) && numPrice > 0)
-              ? new Intl.NumberFormat('vi-VN').format(Math.round(numPrice))
-              : '-';
-            if (entry.type === 'RETURN') {
-              ctx.fillStyle = '#DC2626';
+            if (isDayTotal) {
+              ctx.fillStyle = '#64748B';
               ctx.font = 'bold 14.5px Arial, sans-serif';
+              ctx.fillText('-', pColX[3] + colWidths[3] - 8, midY);
             } else {
-              ctx.fillStyle = '#0F172A';
-              ctx.font = 'bold 14.5px Arial, sans-serif';
+              const numPrice = parseFloat(entry.price);
+              const priceText = (entry.price !== null && entry.price !== undefined && !isNaN(numPrice) && numPrice > 0)
+                ? new Intl.NumberFormat('vi-VN').format(Math.round(numPrice))
+                : '-';
+              if (entry.type === 'RETURN') {
+                ctx.fillStyle = '#DC2626';
+                ctx.font = 'bold 14.5px Arial, sans-serif';
+              } else {
+                ctx.fillStyle = '#0F172A';
+                ctx.font = 'bold 14.5px Arial, sans-serif';
+              }
+              ctx.fillText(priceText, pColX[3] + colWidths[3] - 8, midY);
             }
-            ctx.fillText(priceText, pColX[3] + colWidths[3] - 8, midY);
 
-            // Cột 4: Thành tiền (CHỈ BÔI ĐẬM CỘT THÀNH TIỀN, 15px bold)
+            // Cột 4: Thành tiền
             ctx.textAlign = 'right';
             const numAmount = parseFloat(entry.amount || 0);
             const formattedAmount = new Intl.NumberFormat('vi-VN').format(Math.round(numAmount));
-            if (entry.type === 'RETURN') {
+            if (isDayTotal) {
+              ctx.fillStyle = '#0F172A';
+              ctx.font = 'bold 15px Arial, sans-serif';
+              ctx.fillText(formattedAmount, pColX[4] + colWidths[4] - 8, midY);
+            } else if (entry.type === 'RETURN') {
               ctx.fillStyle = '#DC2626';
               ctx.font = 'bold 15px Arial, sans-serif';
               ctx.fillText(`-${formattedAmount}`, pColX[4] + colWidths[4] - 8, midY);
@@ -1340,25 +1437,49 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     return new Blob(byteArrays, { type: contentType });
   };
 
-  // Thực hiện tải ảnh về máy hoặc chia sẻ qua Web Share API (cho phép lưu thẳng vào Thư viện ảnh hoặc gửi Zalo trên iPhone/Android)
-  const executeDownloadImage = async () => {
-    if (Platform.OS === 'web' && imageUri) {
-      const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
-      const safeRange = (fromDate && toDate)
-        ? `${fromDate.replace(/\//g, '-')}_den_${toDate.replace(/\//g, '-')}`
-        : selectedMonth.replace('/', '-');
-      const fileName = `CongNo_${safeName}_${safeRange}.png`;
+  // Xử lý hành động tương ứng theo 3 trường hợp người dùng yêu cầu:
+  // 1. Web PC -> Tải file ảnh trực tiếp về máy tính
+  // 2. Web Mobile + Khách có SĐT -> Chuyển tiếp ảnh vào Zalo
+  // 3. Web Mobile + Khách không có SĐT -> Phóng to full ảnh vừa vặn chiều ngang và hướng dẫn chụp ảnh màn hình
+  const handleDownloadImage = async () => {
+    if (!imageUri || Platform.OS !== 'web') return;
 
+    const isMobileDevice = typeof navigator !== 'undefined' && 
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    const cleanPhone = (customer?.phone || '').replace(/[^0-9]/g, '');
+    const hasPhone = cleanPhone && cleanPhone.length >= 9;
+
+    const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
+    const safeRange = (fromDate && toDate)
+      ? `${fromDate.replace(/\//g, '-')}_den_${toDate.replace(/\//g, '-')}`
+      : selectedMonth.replace('/', '-');
+    const fileName = `CongNo_${safeName}_${safeRange}.png`;
+
+    // ── TRƯỜNG HỢP 1: WEB PC -> CHỈ CẦN TẢI ẢNH VỀ MÁY ──
+    if (!isMobileDevice) {
       try {
         const blob = base64ToBlob(imageUri, 'image/png');
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+        showGlobalToast('Đã tải ảnh công nợ về máy thành công!', 'success');
+      } catch (err) {
+        console.error('Lỗi khi tải ảnh trên PC:', err);
+        showGlobalToast('Đã xảy ra lỗi khi tải ảnh.', 'error');
+      }
+      return;
+    }
 
-        // Kiểm tra thiết bị có phải là điện thoại/máy tính bảng hay không
-        const isMobileDevice = typeof navigator !== 'undefined' && 
-          /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-
-        // CHỈ sử dụng Web Share API trên thiết bị Điện thoại (iOS Safari, Android Chrome) để lưu vào Thư viện ảnh hoặc gửi Zalo
-        // Trên PC / Laptop: Luôn tải file ảnh trực tiếp về máy tính qua thẻ <a>
-        if (isMobileDevice && typeof navigator !== 'undefined' && navigator.share && typeof File !== 'undefined') {
+    // ── TRƯỜNG HỢP 2: WEB MOBILE + KHÁCH CÓ SĐT -> CHUYỂN TIẾP ẢNH VÀO ZALO ──
+    if (hasPhone) {
+      try {
+        const blob = base64ToBlob(imageUri, 'image/png');
+        if (typeof navigator !== 'undefined' && navigator.share && typeof File !== 'undefined') {
           const file = new File([blob], fileName, { type: 'image/png' });
           if (navigator.canShare && navigator.canShare({ files: [file] })) {
             try {
@@ -1367,38 +1488,33 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                 title: `Công nợ ${customer?.name || ''}`,
                 text: `Bảng kê công nợ khách hàng ${customer?.name || ''}`,
               });
-              return; // Người dùng đã mở bảng chia sẻ / lưu ảnh thành công
+              return; // Mở bảng chia sẻ thành công (người dùng chọn Zalo)
             } catch (shareErr) {
-              // Nếu người dùng bấm "Hủy" bảng chia sẻ thì dừng, không tải file thừa
               if (shareErr.name === 'AbortError') {
-                return;
+                return; // Người dùng bấm Hủy
               }
-              console.warn('[WebShare] Không thể mở bảng chia sẻ, chuyển sang phương thức tải truyền thống:', shareErr);
+              console.warn('[WebShare] Mở thẳng Zalo do lỗi chia sẻ file:', shareErr);
             }
           }
         }
 
-        // Phương thức tải file truyền thống (PC hoặc trình duyệt không hỗ trợ Web Share API)
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        // Giải phóng bộ nhớ Object URL sau khi hoàn tất
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+        // Nếu Web Share không khả dụng hoặc muốn mở trực tiếp đoạn chat Zalo
+        const zaloUrl = `https://zalo.me/${cleanPhone}`;
+        if (typeof window !== 'undefined') {
+          window.open(zaloUrl, '_blank');
+        } else {
+          Linking.openURL(zaloUrl).catch(() => {});
+        }
+        showGlobalToast(`Đang chuyển tiếp tới Zalo của ${customer?.name}...`, 'info');
       } catch (err) {
-        console.error('Lỗi khi tải ảnh:', err);
-        alert('Đã xảy ra lỗi khi tải ảnh. Bạn có thể nhấn giữ vào ảnh và chọn "Lưu hình ảnh".');
+        console.error('Lỗi khi chuyển tiếp ảnh vào Zalo:', err);
+        showGlobalToast('Không thể mở chuyển tiếp Zalo.', 'error');
       }
+      return;
     }
-  };
 
-  // 4. Tải ảnh công nợ về máy
-  const handleDownloadImage = async () => {
-    executeDownloadImage();
+    // ── TRƯỜNG HỢP 3: WEB MOBILE + KHÁCH KHÔNG CÓ SĐT -> ZOOM FULL ĐỂ CHỤP MÀN HÌNH ──
+    imagePreviewModalRef.current?.open(imageUri, { autoFitWidth: true, isCaptureMode: true });
   };
 
   // Xử lý áp dụng các mốc thời gian chọn nhanh (Tháng này, Tháng trước, 1-15, 16-hết, 7 ngày, Toàn bộ)
@@ -1463,6 +1579,12 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       // Hủy bỏ chia sẻ
     }
   };
+
+  // Xác định môi trường thiết bị (Mobile vs PC) và kiểm tra số điện thoại khách hàng
+  const isMobileDevice = typeof navigator !== 'undefined' && 
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const cleanPhone = (customer?.phone || '').replace(/[^0-9]/g, '');
+  const hasPhone = Boolean(cleanPhone && cleanPhone.length >= 9);
 
   return (
     <>
@@ -1765,7 +1887,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                         <View style={styles.inlineButtonsGroup}>
                           <TouchableOpacity
                             style={styles.previewZoomButtonInline}
-                            onPress={() => imagePreviewModalRef.current?.open(imageUri)}
+                            onPress={() => imagePreviewModalRef.current?.open(imageUri, { autoFitWidth: isMobileDevice })}
                             activeOpacity={0.8}
                           >
                             <Text style={styles.previewZoomButtonText}>
@@ -1776,14 +1898,16 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                           <TouchableOpacity
                             style={[
                               styles.downloadButtonInline,
-                              styles.normalActiveColor
+                              isMobileDevice
+                                ? (hasPhone ? styles.zaloActiveColor : styles.captureActiveColor)
+                                : styles.normalActiveColor
                             ]}
                             onPress={handleDownloadImage}
                             activeOpacity={0.8}
                           >
                             <Text style={styles.downloadButtonInlineText}>
-                              {typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-                                ? '📲 LƯU / GỬI ẢNH'
+                              {isMobileDevice
+                                ? (hasPhone ? '💬 CHUYỂN TIẾP ZALO' : '📸 CHỤP MÀN HÌNH')
                                 : '💾 TẢI ẢNH VỀ MÁY'}
                             </Text>
                           </TouchableOpacity>
@@ -1793,7 +1917,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                       <TouchableOpacity
                         style={styles.imageShadowFrame}
                         activeOpacity={0.9}
-                        onPress={() => imagePreviewModalRef.current?.open(imageUri)}
+                        onPress={() => imagePreviewModalRef.current?.open(imageUri, { autoFitWidth: isMobileDevice })}
                       >
                         <Image
                           source={{ uri: imageUri }}
@@ -1808,7 +1932,11 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                       </TouchableOpacity>
 
                       <Text style={styles.helperText}>
-                        💡 Mẹo trên iPhone/Android: Bấm "📲 LƯU / GỬI ẢNH" để lưu trực tiếp vào Thư viện ảnh (Photos) hoặc gửi qua Zalo. Bạn cũng có thể nhấn giữ lâu vào ảnh và chọn "Lưu hình ảnh".
+                        {isMobileDevice
+                          ? (hasPhone
+                              ? '💡 Khách có SĐT: Bấm "💬 CHUYỂN TIẾP ZALO" để gửi ảnh bảng kê trực tiếp vào Zalo khách hàng.'
+                              : '💡 Khách chưa có SĐT: Bấm "📸 CHỤP MÀN HÌNH" để phóng to full ảnh sắc nét và chụp ảnh màn hình lưu vào Thư viện ảnh.')
+                          : '💡 Trên máy tính: Bấm "💾 TẢI ẢNH VỀ MÁY" để tải file ảnh bảng kê PNG về máy.'}
                       </Text>
                     </View>
                   )}
@@ -2177,7 +2305,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#0068FF',
     shadowColor: '#0068FF',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  // Nền màu tím chụp màn hình khi mobile không có SĐT
+  captureActiveColor: {
+    backgroundColor: '#7C3AED',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
     shadowRadius: 4,
   },
   // Nền màu xanh lá thông thường khi khách hàng không có SĐT

@@ -51,6 +51,9 @@ import ProfitFeatureIntroModal from '../src/components/ProfitFeatureIntroModal';
 import RecurringDebtModal from '../src/components/RecurringDebtModal';
 import RegularCustomersModal from '../src/components/RegularCustomersModal';
 import DailyPriceManagementModal from '../src/components/DailyPriceManagementModal';
+import PortalManagementModal from '../src/components/PortalManagementModal';
+import InvoiceImageUploadModal from '../src/components/InvoiceImageUploadModal';
+import InvoiceImageViewerModal from '../src/components/InvoiceImageViewerModal';
 import AnimatedPressable from '../src/components/AnimatedPressable';
 import { useLockStore } from '../src/store/lockStore';
 import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
@@ -142,9 +145,12 @@ export default function DashboardScreen() {
   const dailyPriceManagementModalRef = useRef(null);
   const employeeDailyDebtModalRef = useRef(null); // Modal danh sách ghi nợ trong ngày (chỉ dùng cho tk thành viên)
   const returnGoodsModalRef = useRef(null); // Modal trả hàng (nhanh & thủ công)
+  const invoiceImageUploadModalRef = useRef(null); // Modal tải ảnh hóa đơn hàng loạt & dán Ctrl+V
+  const invoiceImageViewerModalRef = useRef(null); // Modal xem phóng to ảnh hóa đơn
   const profitFeatureIntroModalRef = useRef(null); // Modal giới thiệu tính năng tính Lợi Nhuận mới
   const recurringDebtModalRef = useRef(null); // Modal đơn nợ cố định hàng ngày (00:30 mỗi ngày)
   const regularCustomersModalRef = useRef(null); // Modal quản lý khách quen và đối chiếu công nợ tránh sót đơn
+  const portalManagementModalRef = useRef(null); // Modal quản lý Link Ghim Zalo cho nhóm khách và NCC
 
   const [showFloatingLogs, setShowFloatingLogs] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -2758,49 +2764,60 @@ export default function DashboardScreen() {
 
         {/* TỔNG TIỀN NỢ & KINH DOANH: Chỉ hiện với chủ tài khoản, ẩn với tài khoản thành viên */}
         {!auth.user?.workspaceMember && <View style={styles.summaryCard}>
+          {/* Thanh tiêu đề nhỏ hiển thị tháng và gợi ý mở rộng */}
           <TouchableOpacity
+            style={styles.summaryCardTopHeader}
             onPress={() => setShowDebtSummary((prev) => !prev)}
-            activeOpacity={0.85}
+            activeOpacity={0.8}
           >
-            {/* Thanh tiêu đề nhỏ hiển thị tháng và gợi ý mở rộng */}
-            <View style={styles.summaryCardTopHeader}>
-              <View style={styles.summaryMonthBadge}>
-                <Text style={styles.summaryMonthBadgeText}>
-                  📊 Thống kê Tháng {getShortMonthYear(selectedRevenueMonth)}
-                </Text>
-              </View>
-              <Text style={styles.summaryExpandHint}>
-                {showDebtSummary ? 'Thu gọn ▲' : 'Xem chi tiết ▼'}
+            <View style={styles.summaryMonthBadge}>
+              <Text style={styles.summaryMonthBadgeText}>
+                📊 Thống kê Tháng {getShortMonthYear(selectedRevenueMonth)}
               </Text>
             </View>
-
-            {/* Chia giao diện thành 3 ô thống kê con màu sắc trực quan */}
-            <View style={styles.summaryColumnsRow}>
-              {/* 1. Tổng tiền nợ */}
-              <View style={[styles.summaryMicroBox, styles.summaryMicroBoxDebt]}>
-                <Text style={styles.summaryMicroBoxLabelDebt}>🔴 TỔNG NỢ</Text>
-                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueDebt}>
-                  {formatCurrency(totalDebt)}
-                </Text>
-              </View>
-
-              {/* 2. Doanh thu đã thu trong tháng */}
-              <View style={[styles.summaryMicroBox, styles.summaryMicroBoxRevenue]}>
-                <Text style={styles.summaryMicroBoxLabelRevenue}>🟢 DOANH THU</Text>
-                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueRevenue}>
-                  {isLoadingPayments ? '...' : formatCurrency(totalCollectedInSelectedMonth)}
-                </Text>
-              </View>
-
-              {/* 3. Lợi nhuận trong tháng */}
-              <View style={[styles.summaryMicroBox, styles.summaryMicroBoxProfit]}>
-                <Text style={styles.summaryMicroBoxLabelProfit}>🔵 LỢI NHUẬN</Text>
-                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueProfit}>
-                  {isLoadingTransactions ? '...' : formatCurrency(totalProfitInSelectedMonth)}
-                </Text>
-              </View>
-            </View>
+            <Text style={styles.summaryExpandHint}>
+              {showDebtSummary ? 'Thu gọn ▲' : 'Xem chi tiết ▼'}
+            </Text>
           </TouchableOpacity>
+
+          {/* Chia giao diện thành 3 ô thống kê con màu sắc trực quan */}
+          <View style={styles.summaryColumnsRow}>
+            {/* 1. Tổng tiền nợ: Bấm vào để đóng/mở chi tiết */}
+            <TouchableOpacity
+              style={[styles.summaryMicroBox, styles.summaryMicroBoxDebt]}
+              onPress={() => setShowDebtSummary((prev) => !prev)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.summaryMicroBoxLabelDebt}>🔴 TỔNG NỢ</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueDebt}>
+                {formatCurrency(totalDebt)}
+              </Text>
+            </TouchableOpacity>
+
+            {/* 2. Doanh thu đã thu trong tháng: Bấm vào để đóng/mở chi tiết */}
+            <TouchableOpacity
+              style={[styles.summaryMicroBox, styles.summaryMicroBoxRevenue]}
+              onPress={() => setShowDebtSummary((prev) => !prev)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.summaryMicroBoxLabelRevenue}>🟢 DOANH THU</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueRevenue}>
+                {isLoadingPayments ? '...' : formatCurrency(totalCollectedInSelectedMonth)}
+              </Text>
+            </TouchableOpacity>
+
+            {/* 3. Lợi nhuận trong tháng: Bấm vào để mở modal hướng dẫn tính lợi nhuận */}
+            <TouchableOpacity
+              style={[styles.summaryMicroBox, styles.summaryMicroBoxProfit]}
+              onPress={() => profitFeatureIntroModalRef.current?.open(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.summaryMicroBoxLabelProfit}>🔵 LỢI NHUẬN</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueProfit}>
+                {isLoadingTransactions ? '...' : formatCurrency(totalProfitInSelectedMonth)}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           {showDebtSummary && (
             <View style={styles.debtSummaryDetail}>
@@ -2913,9 +2930,16 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
 
-            {/* Dropdown Menu chứa tất cả 5 tính năng */}
+            {/* Dropdown Menu chứa các tính năng tiện ích nợ */}
             {showDebtToolsMenu && (
               <View style={styles.smartDebtDropdownMenu}>
+                <ScrollView
+                  style={styles.smartDebtMenuScroll}
+                  contentContainerStyle={styles.smartDebtMenuScrollContent}
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
+                >
+
                 <TouchableOpacity
                   style={styles.smartDebtMenuItem}
                   onPress={() => {
@@ -2943,6 +2967,54 @@ export default function DashboardScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.smartDebtMenuTitle}>Thu nợ hàng loạt</Text>
                     <Text style={styles.smartDebtMenuSub}>Thu tiền trả nợ từ nhiều khách hàng cùng lúc</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    invoiceImageUploadModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🧾</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Lưu ảnh hóa đơn</Text>
+                    <Text style={styles.smartDebtMenuSub}>Tải nhiều ảnh, dán Ctrl+V, đính kèm đơn nợ</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    regularCustomersModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🌟</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Quản lý khách quen</Text>
+                    <Text style={styles.smartDebtMenuSub}>Đối chiếu khách đặt 5 buổi qua để tránh sót đơn</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    productModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🥩</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Thêm loại thịt mới</Text>
+                    <Text style={styles.smartDebtMenuSub}>Cập nhật bảng giá sản phẩm</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -2986,38 +3058,6 @@ export default function DashboardScreen() {
                   style={styles.smartDebtMenuItem}
                   onPress={() => {
                     setShowDebtToolsMenu(false);
-                    regularCustomersModalRef.current?.open();
-                  }}
-                >
-                  <Text style={styles.smartDebtMenuIcon}>🌟</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.smartDebtMenuTitle}>Quản lý khách quen</Text>
-                    <Text style={styles.smartDebtMenuSub}>Đối chiếu khách đặt 3 ngày qua để tránh sót đơn</Text>
-                  </View>
-                </TouchableOpacity>
-
-                <View style={styles.smartDebtMenuDivider} />
-
-                <TouchableOpacity
-                  style={styles.smartDebtMenuItem}
-                  onPress={() => {
-                    setShowDebtToolsMenu(false);
-                    productModalRef.current?.open();
-                  }}
-                >
-                  <Text style={styles.smartDebtMenuIcon}>🥩</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.smartDebtMenuTitle}>Thêm loại thịt mới</Text>
-                    <Text style={styles.smartDebtMenuSub}>Cập nhật bảng giá sản phẩm</Text>
-                  </View>
-                </TouchableOpacity>
-
-                <View style={styles.smartDebtMenuDivider} />
-
-                <TouchableOpacity
-                  style={styles.smartDebtMenuItem}
-                  onPress={() => {
-                    setShowDebtToolsMenu(false);
                     dailyPriceManagementModalRef.current?.open();
                   }}
                 >
@@ -3025,6 +3065,22 @@ export default function DashboardScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.smartDebtMenuTitle}>Quản lý cập nhật giá thịt</Text>
                     <Text style={styles.smartDebtMenuSub}>Theo dõi giá thịt thay đổi qua đơn nợ theo ngày</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    portalManagementModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🔗</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Link Ghim Zalo (Khách & NCC)</Text>
+                    <Text style={styles.smartDebtMenuSub}>Ghim link tra cứu công nợ, giá và phản hồi vào nhóm Zalo</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -3044,21 +3100,7 @@ export default function DashboardScreen() {
                   </View>
                 </TouchableOpacity>
 
-                <View style={styles.smartDebtMenuDivider} />
-
-                <TouchableOpacity
-                  style={styles.smartDebtMenuItem}
-                  onPress={() => {
-                    setShowDebtToolsMenu(false);
-                    profitFeatureIntroModalRef.current?.open(true);
-                  }}
-                >
-                  <Text style={styles.smartDebtMenuIcon}>💡</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.smartDebtMenuTitle}>Hướng dẫn tính Lợi Nhuận</Text>
-                    <Text style={styles.smartDebtMenuSub}>Xem lại hướng dẫn tính lãi nợ nhanh & thủ công</Text>
-                  </View>
-                </TouchableOpacity>
+                </ScrollView>
               </View>
             )}
           </View>
@@ -3146,6 +3188,16 @@ export default function DashboardScreen() {
 
       </View>
 
+      {/* MODAL TẢI ẢNH HÓA ĐƠN HÀNG LOẠT (Ẩn) */}
+      <InvoiceImageUploadModal
+        ref={invoiceImageUploadModalRef}
+        onRefresh={handleRefreshAll}
+        popupModalRef={popupModalRef}
+      />
+
+      {/* MODAL XEM PHÓNG TO ẢNH HÓA ĐƠN (Ẩn) */}
+      <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
+
       {/* MODAL THÊM KHÁCH MỚI (Ẩn) */}
       <AddCustomerModal ref={modalRef} onRefresh={handleRefreshAll} />
 
@@ -3189,6 +3241,8 @@ export default function DashboardScreen() {
         onRefresh={handleRefreshAll}
         onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
         onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
+        invoiceImageViewerModalRef={invoiceImageViewerModalRef}
+        invoiceImageUploadModalRef={invoiceImageUploadModalRef}
       />
       {/* Modal danh sách ghi nợ trong ngày dành cho nhân viên - render TRƯỚC EditDebtModal để EditDebtModal nằm đè trên khi cùng mở */}
       <EmployeeDailyDebtModal
@@ -3252,6 +3306,8 @@ export default function DashboardScreen() {
         ref={dailyPriceManagementModalRef}
         onRefresh={handleRefreshAll}
       />
+      {/* MODAL QUẢN LÝ LINK GHIM ZALO CHO KHÁCH & NHÀ CUNG CẤP */}
+      <PortalManagementModal ref={portalManagementModalRef} />
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />
 
@@ -5274,17 +5330,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '105%',
     left: 0,
-    width: 280,
-    minWidth: 280,
+    width: 340,
+    minWidth: 320,
+    maxWidth: 360,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingVertical: 6,
     ...SHADOWS.large,
     boxShadow: '0px 10px 30px rgba(15, 23, 42, 0.25)',
     zIndex: 99999,
     elevation: 99999,
+    overflow: 'hidden',
+  },
+  smartDebtMenuScroll: {
+    maxHeight: 400, // Giới hạn chiều cao tối đa 400px và cho phép cuộn nội dung mượt mà
+  },
+  smartDebtMenuScrollContent: {
+    paddingVertical: 6,
   },
   smartDebtMenuItem: {
     flexDirection: 'row',

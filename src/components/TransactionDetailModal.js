@@ -8,15 +8,17 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Platform,
+  Image,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
-import { api } from '../api/client';
+import { api, API_HOST } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import PopupModal from './PopupModal';
+import InvoiceImageViewerModal from './InvoiceImageViewerModal';
+import InvoiceImageUploadModal from './InvoiceImageUploadModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
 import { showGlobalToast } from '../store/toastStore';
 
@@ -33,7 +35,15 @@ import { showGlobalToast } from '../store/toastStore';
  *   totalPayment: number,
  * }
  */
-const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh, onEditTransaction, onEditPayment }, ref) => {
+const TransactionDetailModal = forwardRef(({
+  customerId,
+  monthGroups,
+  onRefresh,
+  onEditTransaction,
+  onEditPayment,
+  invoiceImageViewerModalRef,
+  invoiceImageUploadModalRef,
+}, ref) => {
   const queryClient = useQueryClient();
   const [visible, setVisible] = useState(false);
   const [dayGroupState, setDayGroupState] = useState(null);
@@ -56,7 +66,61 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
   const popupModalRef = useRef(null);
+  const internalViewerRef = useRef(null);
+  const internalUploadRef = useRef(null);
   const isSubmittingRef = useRef(false);
+
+  // Chuẩn hóa đường dẫn đầy đủ của ảnh
+  const getFullImageUrl = (path) => {
+    if (!path) return '';
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:image/')) {
+      return path;
+    }
+    return `${API_HOST}${path.startsWith('/') ? '' : '/'}${path}`;
+  };
+
+  // Mở modal xem ảnh hóa đơn phóng to
+  const handleViewInvoices = (t, initialIndex = 0) => {
+    const viewer = invoiceImageViewerModalRef?.current || internalViewerRef.current;
+    if (viewer && t.invoices && t.invoices.length > 0) {
+      viewer.open({
+        images: t.invoices,
+        initialIndex,
+        title: `Hóa đơn đơn #${toDateKey(t.date)}`,
+        subtitle: `Số tiền: ${formatCurrency(t.amount || t.totalAmount)}`,
+        onDelete: (inv, callback) => handleDeleteInvoice(inv, callback),
+      });
+    }
+  };
+
+  // Xóa ảnh hóa đơn đính kèm
+  const handleDeleteInvoice = (invoice, callback) => {
+    popupModalRef.current?.show({
+      type: 'confirm',
+      title: 'Xóa ảnh hóa đơn',
+      message: 'Bạn có chắc chắn muốn xóa ảnh hóa đơn này không?',
+      confirmText: 'Xóa',
+      cancelText: 'Hủy',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/transactions/invoices/${invoice.id}`);
+          showGlobalToast('Đã xóa ảnh hóa đơn thành công.', 'success');
+          if (callback) callback();
+          if (onRefresh) onRefresh();
+        } catch (err) {
+          showGlobalToast('Không thể xóa ảnh hóa đơn. Vui lòng thử lại.', 'error');
+        }
+      },
+    });
+  };
+
+  // Mở modal tải ảnh hóa đơn gắn trực tiếp cho khách và ngày này
+  const handleOpenAddInvoice = (t) => {
+    const uploader = invoiceImageUploadModalRef?.current || internalUploadRef.current;
+    if (uploader) {
+      uploader.open(customerId, dayGroup?.dateKey || toDateKey(t.date));
+    }
+  };
 
   // Kiểm tra mã PIN trước khi thực hiện thao tác nhạy cảm
   const requirePin = async (action) => {
@@ -239,7 +303,7 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
     try {
       // Lấy số nợ còn lại thực tế của ngày sau khi đã phân bổ
       const remainingDebt = dayGroup.remainingDebt !== undefined ? dayGroup.remainingDebt : (dayGroup.totalDebt - dayGroup.totalPayment);
-      
+
       const response = await api.post('/payments', {
         customerId,
         amount: remainingDebt,
@@ -501,7 +565,7 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
                 <View key={t.id} style={styles.transactionCard}>
                   {/* Header đơn: số thứ tự + nút sửa + tổng tiền đơn */}
                   <View style={styles.transCardHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
                       <Text style={styles.transCardNum}>Đơn #{tIdx + 1}</Text>
                       <TouchableOpacity
                         style={styles.editCardBtn}
@@ -518,6 +582,26 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
                       >
                         <Text style={styles.deleteCardText}>🗑️ Xóa</Text>
                       </TouchableOpacity>
+
+                      {/* Nút thêm ảnh hóa đơn nhanh */}
+                      <TouchableOpacity
+                        style={styles.addInvoiceBtn}
+                        onPress={() => handleOpenAddInvoice(t)}
+                        title="Đính kèm ảnh hóa đơn cho đơn này"
+                      >
+                        <Text style={styles.addInvoiceBtnText}>+ 📷 Ảnh HĐ</Text>
+                      </TouchableOpacity>
+
+                      {/* Huy hiệu xem ảnh hóa đơn */}
+                      {t.invoices && t.invoices.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.invoiceBadgeBtn}
+                          onPress={() => handleViewInvoices(t, 0)}
+                          title="Xem ảnh hóa đơn"
+                        >
+                          <Text style={styles.invoiceBadgeText}>🧾 {t.invoices.length} ảnh</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                     <Text style={styles.transCardTotal}>{formatCurrency(t.amount)}</Text>
                   </View>
@@ -584,6 +668,32 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
                           </Text>
                         );
                       })}
+                    </View>
+                  )}
+
+                  {/* Danh sách ảnh hóa đơn đính kèm trực tiếp dưới đơn */}
+                  {t.invoices && t.invoices.length > 0 && (
+                    <View style={styles.invoiceThumbnailsBox}>
+                      <Text style={styles.invoiceThumbnailsTitle}>🧾 Ảnh hóa đơn ({t.invoices.length}):</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.invoiceThumbScroll}>
+                        {t.invoices.map((inv, invIdx) => (
+                          <TouchableOpacity
+                            key={inv.id || invIdx}
+                            style={styles.invoiceThumbCard}
+                            onPress={() => handleViewInvoices(t, invIdx)}
+                            activeOpacity={0.8}
+                          >
+                            <Image
+                              source={{ uri: getFullImageUrl(inv.imageUrl) }}
+                              style={styles.invoiceThumbImg}
+                              resizeMode="cover"
+                            />
+                            <View style={styles.invoiceThumbBadge}>
+                              <Text style={styles.invoiceThumbBadgeText}>#{invIdx + 1}</Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
                     </View>
                   )}
                 </View>
@@ -724,6 +834,14 @@ const TransactionDetailModal = forwardRef(({ customerId, monthGroups, onRefresh,
       <PinSetupModal ref={pinSetupRef} />
       {/* Popup thông báo dùng chung */}
       <PopupModal ref={popupModalRef} />
+      {/* Modal xem ảnh hóa đơn phóng to fallback */}
+      <InvoiceImageViewerModal ref={internalViewerRef} />
+      {/* Modal tải ảnh hóa đơn fallback */}
+      <InvoiceImageUploadModal
+        ref={internalUploadRef}
+        onRefresh={onRefresh}
+        popupModalRef={popupModalRef}
+      />
     </SmoothModal>
   );
 });
@@ -1050,5 +1168,75 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
     color: COLORS.primaryDark,
+  },
+  addInvoiceBtn: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  addInvoiceBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  invoiceBadgeBtn: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  invoiceBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  invoiceThumbnailsBox: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  invoiceThumbnailsTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  invoiceThumbScroll: {
+    flexDirection: 'row',
+  },
+  invoiceThumbCard: {
+    position: 'relative',
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#0F172A',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  invoiceThumbImg: {
+    width: '100%',
+    height: '100%',
+  },
+  invoiceThumbBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  invoiceThumbBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: 'bold',
   },
 });

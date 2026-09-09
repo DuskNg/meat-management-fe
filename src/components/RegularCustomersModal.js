@@ -137,6 +137,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
     regularCustomers,
     missingCustomers,
     completedCustomers,
+    fiveDaysLabels,
     threeDaysLabels,
   } = useMemo(() => {
     // 1. Phân tích mốc ngày được chọn (selectedDate: DD/MM/YYYY)
@@ -146,6 +147,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
         regularCustomers: [],
         missingCustomers: [],
         completedCustomers: [],
+        fiveDaysLabels: [],
         threeDaysLabels: [],
       };
     }
@@ -157,23 +159,42 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
     const targetDateObj = new Date(targetYear, targetMonth - 1, targetDay);
     targetDateObj.setHours(0, 0, 0, 0);
 
-    // 2. Xác định khoảng thời gian 3 ngày gần nhất (3 ngày liền kề trước ngày kiểm tra)
-    // Ví dụ: Ngày kiểm tra là 05/09 -> 3 ngày trước là 04/09, 03/09, 02/09
-    const day1Obj = new Date(targetDateObj);
-    day1Obj.setDate(day1Obj.getDate() - 1); // 1 ngày trước
+    // 2. Xác định khoảng thời gian 5 buổi (5 ngày) gần nhất trước ngày kiểm tra
+    // Ưu tiên lấy 5 ngày bán hàng có phát sinh giao dịch gần nhất thực tế, hoặc 5 ngày lịch liền kề
+    const pastTxDates = Array.from(
+      new Set(
+        transactions
+          .filter((t) => {
+            if (!t.date) return false;
+            const dKey = toDateKey(t.date);
+            if (dKey === selectedDate) return false;
+            const d = new Date(t.date);
+            d.setHours(0, 0, 0, 0);
+            return d < targetDateObj;
+          })
+          .map((t) => toDateKey(t.date))
+      )
+    ).sort((a, b) => {
+      const [d1, m1, y1] = a.split('/').map(Number);
+      const [d2, m2, y2] = b.split('/').map(Number);
+      return new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1);
+    });
 
-    const day2Obj = new Date(targetDateObj);
-    day2Obj.setDate(day2Obj.getDate() - 2); // 2 ngày trước
+    let labels = [];
+    if (pastTxDates.length >= 5) {
+      labels = pastTxDates.slice(0, 5).reverse(); // 5 buổi bán gần nhất theo thứ tự thời gian tăng dần
+    } else {
+      // Fallback: 5 ngày lịch liền kề trước ngày kiểm tra
+      const fallbackLabels = [];
+      for (let i = 5; i >= 1; i--) {
+        const dObj = new Date(targetDateObj);
+        dObj.setDate(dObj.getDate() - i);
+        fallbackLabels.push(toDateKey(dObj));
+      }
+      labels = fallbackLabels;
+    }
 
-    const day3Obj = new Date(targetDateObj);
-    day3Obj.setDate(day3Obj.getDate() - 3); // 3 ngày trước
-
-    const day1Key = toDateKey(day1Obj);
-    const day2Key = toDateKey(day2Obj);
-    const day3Key = toDateKey(day3Obj);
-
-    const recent3DaysSet = new Set([day1Key, day2Key, day3Key]);
-    const labels = [day3Key, day2Key, day1Key];
+    const recent5DaysSet = new Set(labels);
 
     // Gom nhóm các đơn nợ phát sinh theo từng khách hàng
     const recentTxByCustomer = {};
@@ -183,8 +204,8 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
       if (!tx.customerId || !tx.date) return;
       const txDateKey = toDateKey(tx.date);
 
-      // Đơn nợ thuộc 3 ngày gần nhất
-      if (recent3DaysSet.has(txDateKey)) {
+      // Đơn nợ thuộc 5 buổi gần nhất
+      if (recent5DaysSet.has(txDateKey)) {
         if (!recentTxByCustomer[tx.customerId]) {
           recentTxByCustomer[tx.customerId] = [];
         }
@@ -201,7 +222,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
     });
 
     // 3. Lọc danh sách khách quen:
-    // Khách hàng còn hoạt động, không phải nợ xấu và ĐÃ CÓ ÍT NHẤT 1 ĐƠN ĐẶT HÀNG TRONG 3 NGÀY GẦN NHẤT
+    // Khách hàng còn hoạt động, không phải nợ xấu và ĐÃ CÓ ÍT NHẤT 1 ĐƠN ĐẶT HÀNG TRONG 5 BUỔI GẦN NHẤT
     const regulars = [];
     const missing = [];
     const completed = [];
@@ -210,12 +231,12 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
       if (cust.isBadDebt) return;
 
       const recentOrders = recentTxByCustomer[cust.id] || [];
-      // Khách hàng có phát sinh đơn trong 3 ngày gần nhất
+      // Khách hàng có phát sinh đơn trong 5 buổi gần nhất
       if (recentOrders.length > 0) {
-        // Đếm số ngày khác nhau mà khách hàng đặt hàng trong 3 ngày qua
+        // Đếm số buổi khác nhau mà khách hàng đặt hàng trong 5 buổi qua
         const uniqueOrderedDays = new Set(recentOrders.map((o) => toDateKey(o.date)));
 
-        // Tìm đơn hàng gần nhất trong 3 ngày qua
+        // Tìm đơn hàng gần nhất trong 5 buổi qua
         const sortedRecent = [...recentOrders].sort((a, b) => new Date(b.date) - new Date(a.date));
         const lastOrder = sortedRecent[0];
 
@@ -245,7 +266,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
       }
     });
 
-    // Sắp xếp danh sách: Ưu tiên khách có tần suất đặt nhiều ngày hơn, nợ hiện tại cao hơn
+    // Sắp xếp danh sách: Ưu tiên khách có tần suất đặt nhiều buổi hơn, nợ hiện tại cao hơn
     const sortFn = (a, b) => {
       if (b.uniqueDaysCount !== a.uniqueDaysCount) {
         return b.uniqueDaysCount - a.uniqueDaysCount;
@@ -261,6 +282,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
       regularCustomers: regulars,
       missingCustomers: missing,
       completedCustomers: completed,
+      fiveDaysLabels: labels,
       threeDaysLabels: labels,
     };
   }, [customers, transactions, selectedDate]);
@@ -481,10 +503,10 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
           {item.name}
         </Text>
 
-        {/* 2. Tần suất đặt hàng 3 ngày */}
+        {/* 2. Tần suất đặt hàng 5 buổi */}
         <View style={styles.squareFreqContainer}>
           <Text style={styles.squareFreqText} numberOfLines={1}>
-            {item.uniqueDaysCount}/3 ngày ({item.recentOrdersCount}đ)
+            {item.uniqueDaysCount}/5 buổi ({item.recentOrdersCount}đ)
           </Text>
         </View>
 
@@ -510,7 +532,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
             <View style={styles.headerTitleWrapper}>
               <Text style={styles.headerTitle} numberOfLines={1}>QUẢN LÝ KHÁCH QUEN</Text>
               <Text style={styles.headerSubtitle} numberOfLines={1}>
-                Đối chiếu khách đặt hàng 3 ngày gần nhất
+                Đối chiếu khách đặt hàng 5 buổi gần nhất
               </Text>
             </View>
           </View>
@@ -534,7 +556,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
           </View>
         </View>
 
-        {/* THANH CHỌN NGÀY & PHẠM VI 3 NGÀY ĐỐI CHIẾU */}
+        {/* THANH CHỌN NGÀY & PHẠM VI 5 BUỔI ĐỐI CHIẾU */}
         <View style={styles.dateControlBar}>
           <View style={styles.dateSelectorRow}>
             <TouchableOpacity style={styles.dateArrowBtn} onPress={handlePrevDate} activeOpacity={0.7}>
@@ -559,9 +581,9 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
             )}
           </View>
 
-          {threeDaysLabels.length > 0 && (
+          {(fiveDaysLabels || threeDaysLabels).length > 0 && (
             <Text style={styles.threeDaysHint}>
-              🔍 3 ngày gần nhất phân tích: <Text style={styles.threeDaysRange}>{threeDaysLabels.join('  •  ')}</Text>
+              🔍 5 buổi gần nhất phân tích: <Text style={styles.threeDaysRange}>{(fiveDaysLabels || threeDaysLabels).join('  •  ')}</Text>
             </Text>
           )}
         </View>
@@ -598,7 +620,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
           >
             <Text style={styles.kpiLabelAll}>👥 TỔNG KHÁCH QUEN</Text>
             <Text style={styles.kpiValAll}>{regularCustomers.length}</Text>
-            <Text style={styles.kpiSubAll}>Có đơn trong 3 ngày qua</Text>
+            <Text style={styles.kpiSubAll}>Có đơn trong 5 buổi qua</Text>
           </TouchableOpacity>
         </View>
 
@@ -643,7 +665,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
               ? '⚠️ Đây là danh sách khách quen chưa có đơn trong ngày'
               : activeTab === 'COMPLETED'
                 ? '✅ Đây là danh sách khách quen đã lên đơn trong ngày'
-                : '👥 Đây là danh sách khách quen trong 3 ngày gần nhất'}
+                : '👥 Đây là danh sách khách quen trong 5 buổi gần nhất'}
           </Text>
           <Text style={styles.listHeaderCount}>
             ({displayCustomers.length} khách)
@@ -672,7 +694,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
                     <Text style={styles.emptyIcon}>🎉</Text>
                     <Text style={styles.emptyTitle}>Không còn khách quen nào bị sót đơn!</Text>
                     <Text style={styles.emptySubtitle}>
-                      Tất cả khách quen trong 3 ngày gần nhất đều đã được lên đơn nợ hôm nay ({selectedDate}).
+                      Tất cả khách quen trong 5 buổi gần nhất đều đã được lên đơn nợ hôm nay ({selectedDate}).
                     </Text>
                   </>
                 ) : (

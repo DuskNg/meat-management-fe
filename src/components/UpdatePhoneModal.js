@@ -21,7 +21,7 @@ const UpdatePhoneModal = forwardRef(({ onUpdateSuccess }, ref) => {
   const [successCallback, setSuccessCallback] = useState(null);
   const [skipCallback, setSkipCallback] = useState(null);
 
-  // 1. Cung cấp các hành động ra bên ngoài thông qua useImperativeHandler và forwardRef
+  // 1. Cung cấp các hành động ra bên ngoài thông qua useImperativeHandle và forwardRef
   useImperativeHandle(ref, () => ({
     open: (customerData, callback, onSkip) => {
       setCustomer(customerData);

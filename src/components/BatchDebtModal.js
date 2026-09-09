@@ -126,7 +126,7 @@ import CustomSelect from './CustomSelect';
 
 const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
-  const [activeTab, setActiveTab] = useState('quick'); // 'quick' (Ghi nợ nhanh) hoặc 'detail' (Ghi nợ chi tiết)
+  const [activeTab, setActiveTab] = useState('quick'); // 'quick' (Nợ nhanh), 'detail' (Nợ chi tiết), 'return' (Trả hàng)
   const [dateStr, setDateStr] = useState(getTodayFormatted());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -137,17 +137,20 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   // Quản lý giá thịt riêng theo từng khách hàng { [customerId]: productListWithCustomPrices }
   const [custProductsMap, setCustProductsMap] = useState({});
 
-  // State độc lập cho 2 tab Nợ nhanh & Nợ chi tiết
+  // State độc lập cho 3 tab: Nợ nhanh, Nợ chi tiết, Trả hàng
   const [quickRows, setQuickRows] = useState([]);
   const [detailRows, setDetailRows] = useState([]);
+  const [returnRows, setReturnRows] = useState([]);
 
   // Getter & Setter động theo Tab đang hoạt động
-  const rows = activeTab === 'quick' ? quickRows : detailRows;
+  const rows = activeTab === 'quick' ? quickRows : activeTab === 'detail' ? detailRows : returnRows;
   const setRows = (newRowsOrFn) => {
     if (activeTab === 'quick') {
       setQuickRows(newRowsOrFn);
-    } else {
+    } else if (activeTab === 'detail') {
       setDetailRows(newRowsOrFn);
+    } else {
+      setReturnRows(newRowsOrFn);
     }
   };
 
@@ -194,22 +197,52 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     close: handleClose,
   }));
 
-  // Tự động lưu bản nháp khi quickRows, detailRows, activeTab thay đổi (chỉ lưu nháp đơn nợ, không lưu ngày)
+  // Tự động lưu bản nháp khi quickRows, detailRows, returnRows, activeTab thay đổi (chỉ lưu nháp đơn nợ & trả hàng, không lưu ngày)
   useEffect(() => {
     if (!visible || !isLoadedCacheRef.current) return;
     const hasDataQuick = quickRows.some((r) => r.selectedCustomerId || parseNumberString(r.quickAmount) > 0);
     const hasDataDetail = detailRows.some((r) => r.selectedCustomerId || (r.items && r.items.some((i) => i.productId)));
-    if (hasDataQuick || hasDataDetail) {
+    const hasDataReturn = returnRows.some((r) => r.selectedCustomerId || (r.items && r.items.some((i) => i.productId)));
+    if (hasDataQuick || hasDataDetail || hasDataReturn) {
       saveDraftCache({
         quickRows,
         detailRows,
+        returnRows,
         activeTab,
         savedAt: new Date().toISOString(),
       });
     }
-  }, [quickRows, detailRows, activeTab, visible]);
+  }, [quickRows, detailRows, returnRows, activeTab, visible]);
 
-  // Tải danh sách khách hàng và sản phẩm thịt từ server
+
+  // Helper tạo 1 dòng ghi nợ mới với ID duy nhất tuyệt đối
+  const createEmptyRow = (prodList = products) => ({
+    tempId: `row_${rowIdCounterRef.current++}`,
+    selectedCustomerId: null,
+    // Dành cho Nợ Nhanh
+    quickAmount: '',
+    quickProfitPercent: '',
+    quickProductName: 'Tiền hàng',
+    // Dành cho Nợ Chi Tiết (mặc định sẵn 3 dòng chọn loại thịt)
+    items: [
+      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', costPrice: '', unit: 'kg' },
+      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', costPrice: '', unit: 'kg' },
+      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', costPrice: '', unit: 'kg' },
+    ],
+  });
+
+  // Khởi tạo danh sách hàng mặc định (10 hàng)
+  const createInitialRows = (count = 10, prodList = products) =>
+    Array.from({ length: count }, () => createEmptyRow(prodList));
+
+  // Đảm bảo danh sách luôn có tối thiểu 10 hàng
+  const padRowsToMin = (rowsList, count = 10, prodList = products) => {
+    if (!Array.isArray(rowsList) || rowsList.length === 0) return createInitialRows(count, prodList);
+    if (rowsList.length >= count) return rowsList;
+    return [...rowsList, ...createInitialRows(count - rowsList.length, prodList)];
+  };
+
+  // Tải danh sách khách hàng và sản phẩm từ server
   const fetchData = async () => {
     setLoading(true);
     setError('');
@@ -244,19 +277,26 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       // Đọc bản nháp từ cache nếu có
       const draft = await loadDraftCache();
-      if (draft && (draft.quickRows || draft.detailRows)) {
+      if (draft && (draft.quickRows || draft.detailRows || draft.returnRows)) {
         if (Array.isArray(draft.quickRows) && draft.quickRows.length > 0) {
-          // Sanitize: gán lại ID mới để tránh duplicate key từ cache cũ
-          setQuickRows(sanitizeRows(draft.quickRows));
+          // Sanitize: gán lại ID mới để tránh duplicate key và bổ sung tối thiểu 10 hàng
+          setQuickRows(padRowsToMin(sanitizeRows(draft.quickRows), 10, prodData));
         } else {
-          setQuickRows([createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData)]);
+          setQuickRows(createInitialRows(10, prodData));
         }
 
         if (Array.isArray(draft.detailRows) && draft.detailRows.length > 0) {
-          // Sanitize: gán lại ID mới để tránh duplicate key từ cache cũ
-          setDetailRows(sanitizeRows(draft.detailRows));
+          // Sanitize: gán lại ID mới để tránh duplicate key và bổ sung tối thiểu 10 hàng
+          setDetailRows(padRowsToMin(sanitizeRows(draft.detailRows), 10, prodData));
         } else {
-          setDetailRows([createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData)]);
+          setDetailRows(createInitialRows(10, prodData));
+        }
+
+        if (Array.isArray(draft.returnRows) && draft.returnRows.length > 0) {
+          // Sanitize: gán lại ID mới để tránh duplicate key và bổ sung tối thiểu 10 hàng
+          setReturnRows(padRowsToMin(sanitizeRows(draft.returnRows), 10, prodData));
+        } else {
+          setReturnRows(createInitialRows(10, prodData));
         }
 
         if (draft.activeTab) setActiveTab(draft.activeTab);
@@ -266,11 +306,13 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
         return;
       }
 
-      // Khởi tạo sẵn 4 dòng trống ban đầu cho cả 2 tab nếu không có nháp
-      const initialQuick = [createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData)];
-      const initialDetail = [createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData), createEmptyRow(prodData)];
+      // Khởi tạo sẵn 10 dòng trống ban đầu cho cả 3 tab nếu không có nháp
+      const initialQuick = createInitialRows(10, prodData);
+      const initialDetail = createInitialRows(10, prodData);
+      const initialReturn = createInitialRows(10, prodData);
       setQuickRows(initialQuick);
       setDetailRows(initialDetail);
+      setReturnRows(initialReturn);
       isLoadedCacheRef.current = true;
     } catch (err) {
       console.error('[BATCH DEBT FETCH ERROR]', err);
@@ -280,32 +322,18 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Reset xóa toàn bộ nháp cho cả 2 tab và đặt ngày về hôm nay
+  // Reset xóa toàn bộ nháp cho cả 3 tab và đặt ngày về hôm nay (mặc định 10 hàng)
   const handleClearDraft = async () => {
     await clearDraftCache();
-    const freshQuick = [createEmptyRow(products), createEmptyRow(products), createEmptyRow(products), createEmptyRow(products)];
-    const freshDetail = [createEmptyRow(products), createEmptyRow(products), createEmptyRow(products), createEmptyRow(products)];
+    const freshQuick = createInitialRows(10, products);
+    const freshDetail = createInitialRows(10, products);
+    const freshReturn = createInitialRows(10, products);
     setQuickRows(freshQuick);
     setDetailRows(freshDetail);
+    setReturnRows(freshReturn);
     setDateStr(getTodayFormatted());
     setError('');
   };
-
-  // Helper tạo 1 dòng ghi nợ mới với ID duy nhất tuyệt đối
-  const createEmptyRow = (prodList = products) => ({
-    tempId: `row_${rowIdCounterRef.current++}`,
-    selectedCustomerId: null,
-    // Dành cho Nợ Nhanh
-    quickAmount: '',
-    quickProfitPercent: '',
-    quickProductName: 'Tiền hàng',
-    // Dành cho Nợ Chi Tiết (mặc định sẵn 3 dòng chọn loại thịt)
-    items: [
-      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', costPrice: '', unit: 'kg' },
-      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', costPrice: '', unit: 'kg' },
-      { tempItemId: `item_${rowIdCounterRef.current++}`, productId: null, quantity: '', price: '', costPrice: '', unit: 'kg' },
-    ],
-  });
 
   // Helper cuộn xuống đáy danh sách đa nền tảng (Web & Native)
   const scrollToBottom = (smooth = true) => {
@@ -334,9 +362,9 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     } catch (_) {}
   };
 
-  // Tự động cuộn xuống tận cùng khi chuyển sang tab Nợ chi tiết
+  // Tự động cuộn xuống tận cùng khi chuyển sang tab Nợ chi tiết hoặc Trả hàng
   useEffect(() => {
-    if (activeTab === 'detail' && visible) {
+    if ((activeTab === 'detail' || activeTab === 'return') && visible) {
       const t1 = setTimeout(() => scrollToBottom(true), 60);
       const t2 = setTimeout(() => scrollToBottom(true), 180);
       const t3 = setTimeout(() => scrollToBottom(true), 350);
@@ -428,18 +456,27 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   // Hàm tổng quát: tính tổng tiền theo loại row
   const getRowTotal = (row, type) => {
     if (type === 'quick') return getQuickRowTotal(row);
-    if (type === 'detail') return getDetailRowTotal(row);
+    if (type === 'detail' || type === 'return') return getDetailRowTotal(row);
     // Fallback: dùng activeTab
     return activeTab === 'quick' ? getQuickRowTotal(row) : getDetailRowTotal(row);
   };
 
-  // Gộp cả 2 tab để tính tổng chung hiển thị ở footer
+  // Gộp các tab để tính tổng chung hiển thị ở footer
   const validQuickRows = quickRows.filter((r) => r.selectedCustomerId && getQuickRowTotal(r) > 0);
   const validDetailRows = detailRows.filter((r) => r.selectedCustomerId && getDetailRowTotal(r) > 0);
-  const totalBatchAmount =
+  const validReturnRows = returnRows.filter((r) => r.selectedCustomerId && getDetailRowTotal(r) > 0);
+
+  const validDebtRowsCount = validQuickRows.length + validDetailRows.length;
+  const validRowsCount = validDebtRowsCount + validReturnRows.length;
+
+  const totalDebtAmount =
     validQuickRows.reduce((s, r) => s + getQuickRowTotal(r), 0) +
     validDetailRows.reduce((s, r) => s + getDetailRowTotal(r), 0);
-  const validRowsCount = validQuickRows.length + validDetailRows.length;
+  const totalReturnAmount = validReturnRows.reduce((s, r) => s + getDetailRowTotal(r), 0);
+
+  // Tổng tiền hiển thị theo ngữ cảnh tab
+  const displayTotalAmount = activeTab === 'return' ? totalReturnAmount : (totalDebtAmount + totalReturnAmount);
+  const displayCount = activeTab === 'return' ? validReturnRows.length : (validDebtRowsCount > 0 ? validDebtRowsCount : validRowsCount);
 
   // Lợi nhuận ước tính của đợt ghi nợ hàng loạt
   const totalBatchProfit = useMemo(() => {
@@ -485,12 +522,13 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       return;
     }
 
-    // Lấy các dòng hợp lệ từ CẢ 2 TAB
+    // Lấy các dòng hợp lệ từ CẢ 3 TAB
     const validQuick = quickRows.filter((r) => r.selectedCustomerId && getQuickRowTotal(r) > 0);
     const validDetail = detailRows.filter((r) => r.selectedCustomerId && getDetailRowTotal(r) > 0);
+    const validReturn = returnRows.filter((r) => r.selectedCustomerId && getDetailRowTotal(r) > 0);
 
-    if (validQuick.length === 0 && validDetail.length === 0) {
-      setError('Vui lòng chọn khách hàng và nhập số tiền nợ cho ít nhất 1 dòng (ở bất kỳ tab nào).');
+    if (validQuick.length === 0 && validDetail.length === 0 && validReturn.length === 0) {
+      setError('Vui lòng chọn khách hàng và nhập số tiền hoặc loại thịt cho ít nhất 1 dòng (ở bất kỳ tab nào).');
       return;
     }
 
@@ -506,6 +544,23 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
         }
         if (item.productId && p <= 0) {
           setError(`Vui lòng nhập đơn giá > 0 cho đơn của [${custName}].`);
+          return;
+        }
+      }
+    }
+
+    // Validate trả hàng: kiểm tra SL & đơn giá cho các dòng trả hàng
+    for (const row of validReturn) {
+      const custName = customers.find((c) => c.id === row.selectedCustomerId)?.name || 'Khách hàng';
+      for (const item of row.items) {
+        const q = parseFloat((item.quantity || '0').replace(',', '.'));
+        const p = parseNumberString(item.price);
+        if (item.productId && (isNaN(q) || q <= 0)) {
+          setError(`Vui lòng nhập khối lượng > 0 cho đơn trả hàng của [${custName}].`);
+          return;
+        }
+        if (item.productId && p <= 0) {
+          setError(`Vui lòng nhập đơn giá > 0 cho đơn trả hàng của [${custName}].`);
           return;
         }
       }
@@ -551,8 +606,33 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
         });
       });
 
+      // Tạo các promise cho TRẢ HÀNG (lưu dưới dạng thanh toán trừ công nợ với tiền tố [Trả lại hàng])
+      const returnPromises = validReturn.map((row) => {
+        const validItems = row.items.filter(
+          (i) => i.productId && parseFloat((i.quantity || '0').replace(',', '.')) > 0
+        );
+        const itemsDesc = validItems
+          .map((i) => {
+            const p = products.find((prod) => prod.id === i.productId);
+            const pName = p?.name || 'Thịt';
+            const unit = p?.unit || 'kg';
+            const qty = parseFloat((i.quantity || '0').replace(',', '.'));
+            const price = parseNumberString(i.price);
+            const amt = i.amount !== undefined ? i.amount : Math.round(qty * price);
+            return `${qty}${unit} ${pName} (${formatCurrency(amt)})`;
+          })
+          .join(', ');
+        const formattedNote = `[Trả lại hàng] ${itemsDesc}`;
+        return api.post('/payments', {
+          customerId: row.selectedCustomerId,
+          amount: getDetailRowTotal(row),
+          note: formattedNote,
+          paidAt: isoDate,
+        });
+      });
+
       // Submit tất cả cùng lúc (parallel)
-      await Promise.all([...quickPromises, ...detailPromises]);
+      await Promise.all([...quickPromises, ...detailPromises, ...returnPromises]);
 
       // Đánh dấu tắt chế độ tự lưu để useEffect không ghi đè dữ liệu vừa submit vào cache
       isLoadedCacheRef.current = false;
@@ -561,11 +641,13 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       await clearDraftCache();
       setCustProductsMap({});
 
-      // Reset state 2 tab về 4 dòng trống chuẩn bị cho lần nhập tiếp theo
-      const freshQuick = [createEmptyRow(products), createEmptyRow(products), createEmptyRow(products), createEmptyRow(products)];
-      const freshDetail = [createEmptyRow(products), createEmptyRow(products), createEmptyRow(products), createEmptyRow(products)];
+      // Reset state cả 3 tab về 10 dòng trống chuẩn bị cho lần nhập tiếp theo
+      const freshQuick = createInitialRows(10, products);
+      const freshDetail = createInitialRows(10, products);
+      const freshReturn = createInitialRows(10, products);
       setQuickRows(freshQuick);
       setDetailRows(freshDetail);
+      setReturnRows(freshReturn);
 
       if (onRefresh) onRefresh();
 
@@ -573,9 +655,9 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       handleClose();
 
       // Phát thông báo Toast toàn cục (Global Toast)
-      const totalSaved = validQuick.length + validDetail.length;
+      const totalSaved = validQuick.length + validDetail.length + validReturn.length;
       showGlobalToast(
-        `Đã lưu thành công ${totalSaved} đơn nợ mới với tổng tiền ${formatCurrency(totalBatchAmount)}.`,
+        `Đã lưu thành công ${totalSaved} đơn mới.`,
         'success'
       );
     } catch (err) {
@@ -611,7 +693,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
               }}
             >
               <Text style={[styles.segTabBtnText, activeTab === 'quick' && styles.segTabBtnTextActive]}>
-                ⚡ Nợ nhanh (Tổng tiền)
+                ⚡ Nợ nhanh
               </Text>
             </TouchableOpacity>
 
@@ -626,7 +708,22 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
               }}
             >
               <Text style={[styles.segTabBtnText, activeTab === 'detail' && styles.segTabBtnTextActive]}>
-                🥩 Nợ chi tiết (Theo thịt)
+                🥩 Nợ chi tiết
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.segTabBtn, activeTab === 'return' && styles.segTabBtnActive]}
+              onPress={() => {
+                setActiveTab('return');
+                setError('');
+                setTimeout(() => {
+                  scrollToBottom(true);
+                }, 80);
+              }}
+            >
+              <Text style={[styles.segTabBtnText, activeTab === 'return' && styles.segTabBtnTextActive]}>
+                ↩️ Trả hàng
               </Text>
             </TouchableOpacity>
           </View>
@@ -745,7 +842,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
               })}
             </View>
           ) : (
-            /* ──────────────── TAB 2: NỢ CHI TIẾT ──────────────── */
+            /* ──────────────── TAB 2 & 3: NỢ CHI TIẾT & TRẢ HÀNG ──────────────── */
             <View style={styles.detailListContainer}>
               {rows.map((row, index) => {
                 const selectedCust = customers.find((c) => c.id === row.selectedCustomerId);
@@ -753,13 +850,20 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                 const cardZIndex = (rows.length - index) * 10;
 
                 return (
-                  <View key={row.tempId} style={[styles.detailCustCard, { zIndex: cardZIndex, elevation: cardZIndex }]}>
+                  <View
+                    key={row.tempId}
+                    style={[
+                      styles.detailCustCard,
+                      activeTab === 'return' && styles.returnCustCard,
+                      { zIndex: cardZIndex, elevation: cardZIndex }
+                    ]}
+                  >
                     {/* Header Card Khách Hàng - Đặt zIndex cao = 100 để dropdown khách hàng đè lên bảng thịt ở dưới */}
                     <View style={styles.custCardHeader}>
                       <View style={{ flex: 1, marginRight: 8 }}>
                         <CustomSelect
                           value={selectedCust}
-                          placeholder="Chọn khách hàng nợ..."
+                          placeholder={activeTab === 'return' ? 'Chọn khách trả hàng...' : 'Chọn khách hàng nợ...'}
                           options={customers}
                           onSelect={(c) => {
                             handleUpdateRow(row.tempId, { selectedCustomerId: c.id });
@@ -940,7 +1044,9 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                         style={styles.addMeatBtn}
                         onPress={() => handleAddItemToRow(row.tempId)}
                       >
-                        <Text style={styles.addMeatBtnText}>🥩 + Thêm loại thịt</Text>
+                        <Text style={styles.addMeatBtnText}>
+                          {activeTab === 'return' ? '↩️ + Thêm loại thịt trả' : '🥩 + Thêm loại thịt'}
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -953,19 +1059,22 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
           <View ref={bottomAnchorRef} style={{ height: 1 }} />
         </ScrollView>
 
-        {/* Nút Thêm Khách Nợ Mới - GIỮ CỐ ĐỊNH PHÍA TRÊN FOOTER */}
+        {/* Nút Thêm Khách Nợ / Khách Trả Hàng Mới - GIỮ CỐ ĐỊNH PHÍA TRÊN FOOTER */}
         <TouchableOpacity style={styles.addCustomerBtnSticky} onPress={handleAddRow} activeOpacity={0.85}>
-          <Text style={styles.addCustomerBtnText}>➕ THÊM DÒNG KHÁCH NỢ MỚI</Text>
+          <Text style={styles.addCustomerBtnText}>
+            {activeTab === 'return' ? '➕ THÊM DÒNG KHÁCH TRẢ HÀNG MỚI' : '➕ THÊM DÒNG KHÁCH NỢ MỚI'}
+          </Text>
         </TouchableOpacity>
 
-        {/* ── FOOTER DÀNH CHO BÁN NỢ HÀNG LOẠT ── */}
+        {/* ── FOOTER DÀNH CHO BÁN NỢ HÀNG LOẠT & TRẢ HÀNG ── */}
         <View style={styles.modalFooter}>
           <View style={styles.footerSummaryBox}>
             <Text style={styles.summaryCountText}>
-              Đã ghi: <Text style={styles.summaryCountBold}>{validRowsCount}</Text> khách
+              {activeTab === 'return' ? 'Đã chọn: ' : 'Đã ghi: '}
+              <Text style={styles.summaryCountBold}>{displayCount}</Text> khách
             </Text>
-            <Text style={styles.summaryTotalText}>{formatCurrency(totalBatchAmount)}</Text>
-            {totalBatchProfit > 0 && (
+            <Text style={styles.summaryTotalText}>{formatCurrency(displayTotalAmount)}</Text>
+            {activeTab !== 'return' && totalBatchProfit > 0 && (
               <Text style={{ fontSize: 11, color: '#0369A1', fontWeight: 'bold', marginTop: 2 }}>
                 💰 Lãi dự tính: +{formatCurrency(totalBatchProfit)}
               </Text>
@@ -1235,6 +1344,9 @@ const styles = StyleSheet.create({
     padding: 6,
     position: 'relative',
     ...SHADOWS.small,
+  },
+  returnCustCard: {
+    borderColor: '#F97316', // Viền màu Cam cho card trả hàng
   },
   custCardHeader: {
     flexDirection: 'row',

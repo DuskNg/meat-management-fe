@@ -17,7 +17,7 @@ const ConfirmExportModal = forwardRef(({}, ref) => {
   const [confirmCallback, setConfirmCallback] = useState(null);
   const [cancelCallback, setCancelCallback] = useState(null);
 
-  // Cung cấp các hành động ra bên ngoài thông qua useImperativeHandler và forwardRef
+  // Cung cấp các hành động ra bên ngoài thông qua useImperativeHandle và forwardRef
   useImperativeHandle(ref, () => ({
     open: (daysList, monthStr, onConfirm, onCancel) => {
       setDays(daysList);
