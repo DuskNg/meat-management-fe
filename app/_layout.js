@@ -2,12 +2,44 @@ import { useEffect, useRef } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useAuthStore } from '../src/store/authStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Platform } from 'react-native';
 import WorkspacePendingBanner from '../src/components/WorkspacePendingBanner';
 import AdminOwnerDetailModal from '../src/components/AdminOwnerDetailModal';
 import { api } from '../src/api/client';
 import { recordUserActivity } from '../src/hooks/useResourceLock';
 import GlobalToast from '../src/components/GlobalToast';
+
+// Lọc bỏ lỗi rác và cảnh báo từ Chrome Extension (như React DevTools, disconnected port) trên Web
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  const isExtensionPortError = (msg) =>
+    typeof msg === 'string' &&
+    (msg.includes('Accessing element.ref was removed in React 19') ||
+     msg.includes('disconnected port') ||
+     msg.includes('Attempting to use a disconnected port object'));
+
+  const originalConsoleError = console.error;
+  console.error = (...args) => {
+    if (args.length > 0 && isExtensionPortError(args[0])) {
+      return;
+    }
+    originalConsoleError(...args);
+  };
+
+  // Ngăn chặn lỗi disconnected port của Extension làm ngắt quãng sự kiện click của ứng dụng
+  window.addEventListener('error', (event) => {
+    if (isExtensionPortError(event.message)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    if (event.reason && isExtensionPortError(event.reason.message)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  });
+}
 
 // Tạo Client cho React Query để quản lý cache dữ liệu từ API
 const queryClient = new QueryClient({

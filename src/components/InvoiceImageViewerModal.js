@@ -37,6 +37,11 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   const [rotation, setRotation] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
 
+  // State quản lý trạng thái tải ảnh và bắt lỗi
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
   const containerRef = useRef(null);
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
 
@@ -48,10 +53,12 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     setIsDragging(false);
   };
 
-  // Tự động đặt lại zoom khi chuyển ảnh hoặc mở modal
+  // Tự động đặt lại zoom và trạng thái tải khi chuyển ảnh hoặc mở modal
   useEffect(() => {
     resetZoom();
-  }, [currentIndex, visible]);
+    setImageLoading(true);
+    setImageError(false);
+  }, [currentIndex, visible, reloadKey]);
 
   // Phơi bày hàm điều khiển ra ngoài ref
   useImperativeHandle(ref, () => ({
@@ -75,6 +82,8 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
       setSubtitle(modalSubtitle);
       setOnDeleteCallback(() => onDelete);
       resetZoom();
+      setImageLoading(true);
+      setImageError(false);
       setVisible(true);
     },
     close: () => {
@@ -108,10 +117,35 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:image/')) {
       return path;
     }
-    return `${API_HOST}${path.startsWith('/') ? '' : '/'}${path}`;
+    const host = API_HOST || '';
+    return `${host}${path.startsWith('/') ? '' : '/'}${path}`;
   };
 
   const currentUrl = currentItem ? getFullImageUrl(currentItem.imageUrl) : '';
+
+  // Mở ảnh trong tab mới
+  const handleOpenInNewTab = () => {
+    if (typeof window !== 'undefined' && currentUrl) {
+      window.open(currentUrl, '_blank');
+    }
+  };
+
+  // Tải ảnh về máy
+  const handleDownload = () => {
+    if (!currentUrl) return;
+    try {
+      if (typeof window !== 'undefined') {
+        const link = document.createElement('a');
+        link.href = currentUrl;
+        link.download = `hoa_don_${currentIndex + 1}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (e) {
+      console.error('Lỗi khi tải ảnh:', e);
+    }
+  };
 
   // Phóng to ảnh
   const handleZoomIn = () => {
@@ -239,7 +273,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={handleClose} centered={true}>
+    <SmoothModal visible={visible} onClose={handleClose} centered={true} zIndex={100000}>
       <View style={styles.container}>
         {/* Thanh Header */}
         <View style={styles.headerRow}>
@@ -251,6 +285,26 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
           </View>
 
           <View style={styles.headerActions}>
+            {Platform.OS === 'web' && currentUrl ? (
+              <>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={handleOpenInNewTab}
+                  title="Mở ảnh trong tab mới"
+                >
+                  <Text style={styles.actionBtnText}>🔗 Mở tab</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={handleDownload}
+                  title="Tải ảnh về máy"
+                >
+                  <Text style={styles.actionBtnText}>⬇️ Lưu ảnh</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+
             {onDeleteCallback && (
               <TouchableOpacity
                 style={[styles.actionBtn, styles.deleteBtn]}
@@ -279,7 +333,44 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
           onTouchEnd={handleTouchEnd}
           onDoubleClick={handleDoubleClick}
         >
-          {currentUrl ? (
+          {/* Trạng thái đang tải ảnh */}
+          {imageLoading && !imageError && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#10B981" />
+              <Text style={styles.loadingText}>Đang tải ảnh hóa đơn...</Text>
+            </View>
+          )}
+
+          {/* Trạng thái ảnh bị lỗi không tải được */}
+          {imageError && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorIcon}>⚠️</Text>
+              <Text style={styles.errorTitle}>Không thể tải được hình ảnh hóa đơn</Text>
+              <Text style={styles.errorDesc}>
+                Đường truyền mạng bị gián đoạn hoặc định dạng ảnh không tương thích.
+              </Text>
+              <View style={styles.errorBtnRow}>
+                <TouchableOpacity
+                  style={styles.retryBtn}
+                  onPress={() => {
+                    setImageError(false);
+                    setImageLoading(true);
+                    setReloadKey((k) => k + 1);
+                  }}
+                >
+                  <Text style={styles.retryBtnText}>🔄 Thử lại</Text>
+                </TouchableOpacity>
+
+                {Platform.OS === 'web' && currentUrl ? (
+                  <TouchableOpacity style={styles.openTabBtn} onPress={handleOpenInNewTab}>
+                    <Text style={styles.openTabBtnText}>🔗 Mở tab mới</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          )}
+
+          {currentUrl && !imageError ? (
             <View
               style={[
                 styles.imageTransformWrapper,
@@ -291,20 +382,53 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
                     { rotate: `${rotation}deg` },
                   ],
                   cursor: isDragging ? 'grabbing' : (scale > 1 ? 'grab' : 'default'),
+                  display: imageLoading ? 'none' : 'flex',
                 },
               ]}
             >
-              <Image
-                source={{ uri: currentUrl }}
-                style={styles.mainImage}
-                resizeMode="contain"
-              />
+              {Platform.OS === 'web' ? (
+                <img
+                  key={`${currentUrl}_${reloadKey}`}
+                  src={currentUrl}
+                  alt={title || 'Hóa đơn'}
+                  draggable={false}
+                  onLoad={() => {
+                    setImageLoading(false);
+                    setImageError(false);
+                  }}
+                  onError={(e) => {
+                    console.error('Lỗi khi tải ảnh hóa đơn trên Web:', currentUrl, e);
+                    setImageLoading(false);
+                    setImageError(true);
+                  }}
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'contain',
+                    userSelect: 'none',
+                    pointerEvents: 'none',
+                  }}
+                />
+              ) : (
+                <Image
+                  key={`${currentUrl}_${reloadKey}`}
+                  source={{ uri: currentUrl }}
+                  style={styles.mainImage}
+                  resizeMode="contain"
+                  onLoadStart={() => setImageLoading(true)}
+                  onLoadEnd={() => setImageLoading(false)}
+                  onError={() => {
+                    setImageLoading(false);
+                    setImageError(true);
+                  }}
+                />
+              )}
             </View>
-          ) : (
+          ) : !currentUrl ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>Không thể hiển thị hình ảnh này.</Text>
             </View>
-          )}
+          ) : null}
 
           {/* Nút sang trái / sang phải khi có nhiều ảnh */}
           {images.length > 1 && (
@@ -378,6 +502,8 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     display: 'flex',
     flexDirection: 'column',
+    zIndex: 100000,
+    elevation: 100000,
     ...Platform.select({
       web: { userSelect: 'none' },
     }),
@@ -565,6 +691,81 @@ const styles = StyleSheet.create({
   emptyText: {
     color: '#94A3B8',
     fontSize: 14,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#020617',
+    zIndex: 15,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  errorContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: '#020617',
+    zIndex: 16,
+  },
+  errorIcon: {
+    fontSize: 40,
+    marginBottom: 10,
+  },
+  errorTitle: {
+    color: '#F87171',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  errorDesc: {
+    color: '#94A3B8',
+    fontSize: 13,
+    textAlign: 'center',
+    maxWidth: 400,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  errorBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  retryBtn: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  openTabBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  openTabBtnText: {
+    color: '#F8FAFC',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 

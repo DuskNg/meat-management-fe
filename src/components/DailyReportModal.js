@@ -1720,7 +1720,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <View style={styles.modalHeaderRow}>
           <Text style={styles.modalTitle}>
@@ -2183,12 +2184,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           </TouchableOpacity>
         </View>
       </View>
-      {/* Popup xác nhận xóa */}
-      <PopupModal ref={popupModalRef} />
+    </SmoothModal>
       {/* Modal xuất báo cáo ngày dạng bảng hóa đơn */}
       <ExportDailyReportModal ref={exportDailyReportModalRef} />
-      {/* Modal xem ảnh hóa đơn phóng to */}
-      <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
       {/* Modal tải ảnh hóa đơn */}
       <InvoiceImageUploadModal
         ref={invoiceImageUploadModalRef}
@@ -2197,7 +2195,11 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           if (onRefresh) onRefresh();
         }}
       />
-    </SmoothModal>
+      {/* Modal xem ảnh hóa đơn phóng to */}
+      <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
+      {/* Popup xác nhận xóa - render sau cùng để luôn ở trên cùng */}
+      <PopupModal ref={popupModalRef} />
+    </>
   );
 });
 

@@ -34,6 +34,7 @@ import PaymentModal from '../src/components/PaymentModal';
 import TransactionDetailModal from '../src/components/TransactionDetailModal';
 import EditDebtModal from '../src/components/EditDebtModal';
 import EditPaymentModal from '../src/components/EditPaymentModal';
+import EditReturnGoodsModal from '../src/components/EditReturnGoodsModal';
 import CustomerDebtHistoryModal from '../src/components/CustomerDebtHistoryModal';
 import DailyReportModal from '../src/components/DailyReportModal';
 import EmployeeDailyDebtModal from '../src/components/EmployeeDailyDebtModal';
@@ -131,6 +132,7 @@ export default function DashboardScreen() {
   const detailModalRef = useRef(null);
   const editDebtModalRef = useRef(null);
   const editPaymentModalRef = useRef(null);
+  const editReturnGoodsModalRef = useRef(null);
   const dailyReportModalRef = useRef(null);
   const addBadDebtModalRef = useRef(null); // Modal thêm bản ghi nợ xấu mới
   const addSupplierModalRef = useRef(null);
@@ -404,6 +406,28 @@ export default function DashboardScreen() {
     customerDebtHistoryModalRef.current?.refresh();
     // Làm mới danh sách ghi nợ trong ngày của nhân viên nếu đang hiển thị
     employeeDailyDebtModalRef.current?.refresh();
+  };
+
+  // Kiểm tra xem khoản thanh toán có phải là đơn trả lại hàng hay không
+  const isReturnPaymentRecord = (item) => {
+    const note = (item?.note || '').trim();
+    return (
+      note.includes('[Trả lại hàng]') ||
+      note.includes('[Trả hàng nhanh]') ||
+      note.includes('Trả hàng') ||
+      note.includes('Trả lại')
+    );
+  };
+
+  // Điều hướng sửa lượt thu tiền hoặc sửa đơn trả lại hàng chi tiết
+  const handleEditPayment = (payment) => {
+    if (!payment) return;
+    setSelectedCustomerId(payment.customerId);
+    if (isReturnPaymentRecord(payment)) {
+      editReturnGoodsModalRef.current?.open(payment);
+    } else {
+      editPaymentModalRef.current?.open(payment);
+    }
   };
 
   const handleExportDebtFromReport = (customerId, month) => {
@@ -2168,10 +2192,10 @@ export default function DashboardScreen() {
           customerId={selectedCustomerId}
           onRefresh={handleRefreshBadAll}
           onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
-          onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
+          onEditPayment={handleEditPayment}
         />
         <EditDebtModal ref={editDebtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshBadAll} />
-        <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshBadAll} />
+        <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshBadAll} editReturnGoodsModalRef={editReturnGoodsModalRef} />
 
         {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
         {auth.user?.isWorkspaceOwner && (
@@ -3188,16 +3212,6 @@ export default function DashboardScreen() {
 
       </View>
 
-      {/* MODAL TẢI ẢNH HÓA ĐƠN HÀNG LOẠT (Ẩn) */}
-      <InvoiceImageUploadModal
-        ref={invoiceImageUploadModalRef}
-        onRefresh={handleRefreshAll}
-        popupModalRef={popupModalRef}
-      />
-
-      {/* MODAL XEM PHÓNG TO ẢNH HÓA ĐƠN (Ẩn) */}
-      <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
-
       {/* MODAL THÊM KHÁCH MỚI (Ẩn) */}
       <AddCustomerModal ref={modalRef} onRefresh={handleRefreshAll} />
 
@@ -3240,7 +3254,7 @@ export default function DashboardScreen() {
         customerId={selectedCustomerId}
         onRefresh={handleRefreshAll}
         onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
-        onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
+        onEditPayment={handleEditPayment}
         invoiceImageViewerModalRef={invoiceImageViewerModalRef}
         invoiceImageUploadModalRef={invoiceImageUploadModalRef}
       />
@@ -3261,10 +3275,7 @@ export default function DashboardScreen() {
           setSelectedCustomerId(transaction.customerId);
           editDebtModalRef.current?.open(transaction);
         }}
-        onEditPayment={(payment) => {
-          setSelectedCustomerId(payment.customerId);
-          editPaymentModalRef.current?.open(payment);
-        }}
+        onEditPayment={handleEditPayment}
       />
       <EditDebtModal
         ref={editDebtModalRef}
@@ -3276,6 +3287,14 @@ export default function DashboardScreen() {
       />
       <EditPaymentModal
         ref={editPaymentModalRef}
+        editReturnGoodsModalRef={editReturnGoodsModalRef}
+        onRefresh={() => {
+          handleRefreshAll();
+          dailyReportModalRef.current?.refetch();
+        }}
+      />
+      <EditReturnGoodsModal
+        ref={editReturnGoodsModalRef}
         onRefresh={() => {
           handleRefreshAll();
           dailyReportModalRef.current?.refetch();
@@ -3308,6 +3327,17 @@ export default function DashboardScreen() {
       />
       {/* MODAL QUẢN LÝ LINK GHIM ZALO CHO KHÁCH & NHÀ CUNG CẤP */}
       <PortalManagementModal ref={portalManagementModalRef} />
+
+      {/* MODAL TẢI ẢNH HÓA ĐƠN HÀNG LOẠT (Ẩn) - Đặt ở cuối để luôn hiển thị đè lên TransactionDetailModal & CustomerDebtHistoryModal */}
+      <InvoiceImageUploadModal
+        ref={invoiceImageUploadModalRef}
+        onRefresh={handleRefreshAll}
+        popupModalRef={popupModalRef}
+      />
+
+      {/* MODAL XEM PHÓNG TO ẢNH HÓA ĐƠN (Ẩn) - Đặt sau modal tải ảnh để có thể hiển thị đè lên trên */}
+      <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
+
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />
 

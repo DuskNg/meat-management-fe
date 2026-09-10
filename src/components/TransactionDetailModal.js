@@ -154,7 +154,7 @@ const TransactionDetailModal = forwardRef(({
           try {
             const response = await api.delete(`/transactions/${transactionId}`);
             if (response.data.success) {
-              Alert.alert('Thành công', 'Đã xóa đơn ghi nợ thịt.');
+              showGlobalToast('Đã xóa đơn ghi nợ thịt.', 'success');
               // Cập nhật ngay React Query Cache để màn hình cha và drawer tháng đổi số tức thì
               queryClient.setQueryData(['transactions', customerId], (oldData) => {
                 if (!oldData || !oldData.data) return oldData;
@@ -182,12 +182,12 @@ const TransactionDetailModal = forwardRef(({
               });
               if (onRefresh) onRefresh();
             } else {
-              Alert.alert('Lỗi', response.data.message || 'Lỗi xóa đơn nợ.');
+              showGlobalToast(response.data.message || 'Lỗi xóa đơn nợ.', 'error');
               setError(response.data.message || 'Lỗi xóa đơn nợ. Vui lòng thử lại.');
             }
           } catch (err) {
             const errMsg = err.response?.data?.message || err.message || 'Lỗi kết nối mạng';
-            Alert.alert('Lỗi', errMsg);
+            showGlobalToast(errMsg, 'error');
             setError(errMsg);
           } finally {
             setLoading(false);
@@ -215,7 +215,7 @@ const TransactionDetailModal = forwardRef(({
           try {
             const response = await api.delete(`/payments/${paymentId}`);
             if (response.data.success) {
-              Alert.alert('Thành công', 'Đã xóa lượt thu tiền.');
+              showGlobalToast('Đã xóa lượt thu tiền.', 'success');
               // Cập nhật ngay React Query Cache để màn hình cha và drawer tháng đổi số tức thì
               queryClient.setQueryData(['payments', customerId], (oldData) => {
                 if (!oldData || !oldData.data) return oldData;
@@ -243,12 +243,12 @@ const TransactionDetailModal = forwardRef(({
               });
               if (onRefresh) onRefresh();
             } else {
-              Alert.alert('Lỗi', response.data.message || 'Lỗi xóa lượt thu tiền.');
+              showGlobalToast(response.data.message || 'Lỗi xóa lượt thu tiền.', 'error');
               setError(response.data.message || 'Lỗi xóa lượt thu tiền. Vui lòng thử lại.');
             }
           } catch (err) {
             const errMsg = err.response?.data?.message || err.message || 'Lỗi kết nối mạng';
-            Alert.alert('Lỗi', errMsg);
+            showGlobalToast(errMsg, 'error');
             setError(errMsg);
           } finally {
             setLoading(false);
@@ -294,7 +294,7 @@ const TransactionDetailModal = forwardRef(({
 
   const handleMarkAsPaid = async () => {
     if (loading || isSubmittingRef.current || !dayGroup || !customerId) {
-      Alert.alert('Thông báo', `Bị chặn gửi: loading=${loading}, isSubmitting=${isSubmittingRef.current}, hasDayGroup=${!!dayGroup}, customerId=${customerId}`);
+      showGlobalToast(`Bị chặn gửi: loading=${loading}, isSubmitting=${isSubmittingRef.current}, hasDayGroup=${!!dayGroup}, customerId=${customerId}`, 'warning');
       return;
     }
     setLoading(true);
@@ -311,7 +311,7 @@ const TransactionDetailModal = forwardRef(({
       });
 
       if (response.data.success) {
-        Alert.alert('Thành công', 'Đã thanh toán nợ ngày hôm nay.');
+        showGlobalToast('Đã thanh toán nợ ngày hôm nay.', 'success');
         const newPayment = response.data.data;
         // Cập nhật ngay React Query Cache để màn hình cha và drawer tháng đổi số tức thì
         queryClient.setQueryData(['payments', customerId], (oldData) => {
@@ -337,12 +337,12 @@ const TransactionDetailModal = forwardRef(({
         });
         if (onRefresh) onRefresh();
       } else {
-        Alert.alert('Thất bại', response.data.message || 'Lỗi thanh toán.');
+        showGlobalToast(response.data.message || 'Lỗi thanh toán.', 'error');
         setError(response.data.message || 'Lỗi thanh toán. Vui lòng thử lại.');
       }
     } catch (err) {
       const errMsg = err.response?.data?.message || err.message || 'Lỗi kết nối mạng';
-      Alert.alert('Lỗi mạng/máy chủ', errMsg);
+      showGlobalToast(errMsg, 'error');
       setError(errMsg);
     } finally {
       setLoading(false);
@@ -447,7 +447,7 @@ const TransactionDetailModal = forwardRef(({
       }
       showGlobalToast(`Đã sao chép tin nhắn công nợ ngày ${dateKey}!`, 'success');
     } catch (err) {
-      Alert.alert('Tin nhắn công nợ', msg);
+      showGlobalToast('Không thể sao chép tin nhắn công nợ.', 'error');
     }
   };
 
@@ -495,7 +495,8 @@ const TransactionDetailModal = forwardRef(({
   }
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         {/* Thanh kéo (drag indicator) */}
         <View style={styles.dragBar} />
@@ -592,14 +593,15 @@ const TransactionDetailModal = forwardRef(({
                         <Text style={styles.addInvoiceBtnText}>+ 📷 Ảnh HĐ</Text>
                       </TouchableOpacity>
 
-                      {/* Huy hiệu xem ảnh hóa đơn */}
+                      {/* Nút xem ảnh hóa đơn của từng công nợ (chỉ hiện khi đơn có ảnh hóa đơn) */}
                       {t.invoices && t.invoices.length > 0 && (
                         <TouchableOpacity
-                          style={styles.invoiceBadgeBtn}
+                          style={styles.viewInvoiceBtn}
                           onPress={() => handleViewInvoices(t, 0)}
-                          title="Xem ảnh hóa đơn"
+                          title="Xem ảnh hóa đơn của công nợ này"
+                          activeOpacity={0.7}
                         >
-                          <Text style={styles.invoiceBadgeText}>🧾 {t.invoices.length} ảnh</Text>
+                          <Text style={styles.viewInvoiceBtnText}>👁️ Xem ảnh ({t.invoices.length})</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -828,21 +830,22 @@ const TransactionDetailModal = forwardRef(({
           </TouchableOpacity>
         </View>
       </View>
+    </SmoothModal>
       {/* Modal nhập PIN khi phiên hết hạn */}
       <PinInputModal ref={pinInputRef} />
       {/* Modal tạo PIN lần đầu */}
       <PinSetupModal ref={pinSetupRef} />
-      {/* Popup thông báo dùng chung */}
-      <PopupModal ref={popupModalRef} />
-      {/* Modal xem ảnh hóa đơn phóng to fallback */}
-      <InvoiceImageViewerModal ref={internalViewerRef} />
       {/* Modal tải ảnh hóa đơn fallback */}
       <InvoiceImageUploadModal
         ref={internalUploadRef}
         onRefresh={onRefresh}
         popupModalRef={popupModalRef}
       />
-    </SmoothModal>
+      {/* Modal xem ảnh hóa đơn phóng to fallback */}
+      <InvoiceImageViewerModal ref={internalViewerRef} />
+      {/* Popup thông báo dùng chung - render sau cùng để luôn ở trên cùng */}
+      <PopupModal ref={popupModalRef} />
+    </>
   );
 });
 
@@ -1181,6 +1184,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#1D4ED8',
+  },
+  viewInvoiceBtn: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  viewInvoiceBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
   },
   invoiceBadgeBtn: {
     backgroundColor: '#FEF3C7',

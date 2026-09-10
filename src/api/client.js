@@ -2,8 +2,20 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
-// Cấu hình URL máy chủ Backend (Ưu tiên đọc từ biến môi trường của Vercel/Expo, mặc định localhost)
-export const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3000';
+// Cấu hình URL máy chủ Backend (Ưu tiên biến môi trường, tự động nhận diện hostname khi chạy Web)
+export const getApiHost = () => {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const protocol = window.location.protocol || 'http:';
+    const hostname = window.location.hostname || 'localhost';
+    return `${protocol}//${hostname}:3000`;
+  }
+  return 'http://127.0.0.1:3000';
+};
+
+export const API_HOST = getApiHost();
 
 export const api = axios.create({
   baseURL: `${API_HOST}/api/v1`,

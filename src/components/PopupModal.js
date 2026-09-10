@@ -163,7 +163,7 @@ const PopupModal = forwardRef((props, ref) => {
   return (
     <>
       {/* SmoothModal cho dạng Toast (success/error) - isToast=true cố định, portal không bao giờ remount */}
-      <SmoothModal visible={visible && isToast} onClose={handleCancel} isToast={true}>
+      <SmoothModal visible={visible && isToast} onClose={handleCancel} isToast={true} zIndex={200000}>
         <View style={styles.toastWrapper}>
           <View style={[styles.toastContent, { backgroundColor: toastBgColor }]}>
             <Text style={styles.toastIcon}>{icon}</Text>
@@ -179,7 +179,7 @@ const PopupModal = forwardRef((props, ref) => {
 
       {/* SmoothModal cho dạng Dialog (confirm/warning/info/error) - isToast=false cố định,
           portal Modal fade backdrop luôn ở trong React tree, không bao giờ unmount/remount */}
-      <SmoothModal visible={visible && !isToast} onClose={handleCancel} isToast={false}>
+      <SmoothModal visible={visible && !isToast} onClose={handleCancel} isToast={false} zIndex={200000}>
         <View style={styles.modalWrapper}>
           <View style={styles.modalContent}>
             {/* Vùng hiển thị Icon lớn, trực quan */}

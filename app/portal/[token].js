@@ -25,8 +25,7 @@ import { showGlobalToast } from '../../src/store/toastStore';
 import { COLORS } from '../../src/theme';
 import { matchSearch } from '../../src/utils/searchHelper';
 
-// Cấu hình URL backend (đọc từ biến môi trường hoặc mặc định localhost)
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3000';
+import { API_HOST } from '../../src/api/client';
 
 const formatCurrency = (val) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
@@ -1654,51 +1653,68 @@ export default function PortalScreen() {
                                   {isDayTotal ? (
                                     <View style={[styles.tdName, styles.tdTotalCellWrap]}>
                                       <Text style={styles.tdTotalTitleText}>TỔNG</Text>
-                                      <TouchableOpacity
-                                        style={[
-                                          styles.dayTotalInvoiceBtn,
-                                          day.invoices && day.invoices.length > 0
-                                            ? styles.dayTotalInvoiceBtnActive
-                                            : styles.dayTotalInvoiceBtnEmpty,
-                                        ]}
-                                        onPress={() => handleOpenInvoiceModal(day)}
-                                        activeOpacity={0.7}
-                                      >
-                                        <Text
+                                      {day.invoices && day.invoices.length > 0 && (
+                                        <TouchableOpacity
                                           style={[
-                                            styles.dayTotalInvoiceBtnText,
-                                            day.invoices && day.invoices.length > 0
-                                              ? styles.dayTotalInvoiceBtnTextActive
-                                              : styles.dayTotalInvoiceBtnTextEmpty,
+                                            styles.dayTotalInvoiceBtn,
+                                            styles.dayTotalInvoiceBtnActive,
                                           ]}
+                                          onPress={() => handleOpenInvoiceModal(day)}
+                                          activeOpacity={0.7}
                                         >
-                                          {day.invoices && day.invoices.length > 0
-                                            ? `🧾 Xem ảnh hóa đơn (${day.invoices.length})`
-                                            : '🧾 Xem ảnh hóa đơn'}
-                                        </Text>
-                                      </TouchableOpacity>
+                                          <Text
+                                            style={[
+                                              styles.dayTotalInvoiceBtnText,
+                                              styles.dayTotalInvoiceBtnTextActive,
+                                            ]}
+                                          >
+                                            🧾 Xem ảnh ({day.invoices.length})
+                                          </Text>
+                                        </TouchableOpacity>
+                                      )}
                                     </View>
                                   ) : (
-                                    <Text
-                                      style={[
-                                        styles.tdCell,
-                                        styles.tdName,
-                                        isReturn && styles.textRed,
-                                        isPayment && styles.textGreen,
-                                      ]}
-                                      numberOfLines={3}
-                                    >
-                                      {isPayment ? (
-                                        'THANH TOÁN'
-                                      ) : entry.customerName ? (
-                                        <>
-                                          <Text style={styles.branchPrefixText}>{`[${entry.customerName}] `}</Text>
-                                          <Text>{entry.name}</Text>
-                                        </>
-                                      ) : (
-                                        entry.name
+                                    <View style={[styles.tdCell, styles.tdName, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 4 }]}>
+                                      <Text
+                                        style={[
+                                          { flex: 1 },
+                                          isReturn && styles.textRed,
+                                          isPayment && styles.textGreen,
+                                        ]}
+                                        numberOfLines={3}
+                                      >
+                                        {isPayment ? (
+                                          'THANH TOÁN'
+                                        ) : entry.customerName ? (
+                                          <>
+                                            <Text style={styles.branchPrefixText}>{`[${entry.customerName}] `}</Text>
+                                            <Text>{entry.name}</Text>
+                                          </>
+                                        ) : (
+                                          entry.name
+                                        )}
+                                      </Text>
+                                      {/* Nếu ngày không có dòng TỔNG nhưng có ảnh hóa đơn và đây là món đầu tiên thì hiển thị nút xem ảnh */}
+                                      {day.invoices && day.invoices.length > 0 && !day.entries.some(e => e.type === 'DAY_TOTAL') && idx === 0 && (
+                                        <TouchableOpacity
+                                          style={[
+                                            styles.dayTotalInvoiceBtn,
+                                            styles.dayTotalInvoiceBtnActive,
+                                          ]}
+                                          onPress={() => handleOpenInvoiceModal(day)}
+                                          activeOpacity={0.7}
+                                        >
+                                          <Text
+                                            style={[
+                                              styles.dayTotalInvoiceBtnText,
+                                              styles.dayTotalInvoiceBtnTextActive,
+                                            ]}
+                                          >
+                                            🧾 Xem ảnh ({day.invoices.length})
+                                          </Text>
+                                        </TouchableOpacity>
                                       )}
-                                    </Text>
+                                    </View>
                                   )}
                                   <Text
                                     style={[

@@ -405,7 +405,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
 
   return (
     <>
-      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)} zIndex={90000}>
         <View style={styles.modalCard}>
           {/* Header Modal Full Màn Hình */}
           <View style={styles.header}>
@@ -723,6 +723,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     display: 'flex',
     flexDirection: 'column',
+    zIndex: 90000,
+    elevation: 90000,
   },
   header: {
     flexDirection: 'row',

@@ -19,12 +19,45 @@ import {
  *   và xử lý đẩy bàn phím (KeyboardAvoidingView) mà không làm lệch kích thước.
  * - Toast (isToast=true): Trượt vào từ góc trên bên phải màn hình.
  */
-const SmoothModal = ({ visible, onClose, children, isToast, centered, animationType }) => {
+const SmoothModal = ({ visible, onClose, children, isToast, centered, animationType, zIndex }) => {
   // Animation trượt từ phải vào / ra cho Toast (translateX: 400 → 0 → 400)
   const slideX = useRef(new Animated.Value(400)).current;
 
   // State nội bộ để giữ Modal hiển thị trong suốt exit animation
   const [toastInternalVisible, setToastInternalVisible] = useState(false);
+
+  const backdropNodeRef = useRef(null);
+  const contentNodeRef = useRef(null);
+
+  // Đồng bộ tầng hiển thị zIndex cho Modal trên Web (không di chuyển DOM, giữ nguyên luồng native)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+
+    const isVisible = isToast ? toastInternalVisible : visible;
+    if (!isVisible) return;
+
+    const applyZ = (node, zVal) => {
+      if (!node) return;
+      let el = node;
+      while (el && el.parentElement && el.parentElement !== document.body) {
+        el = el.parentElement;
+      }
+      if (el && el.parentElement === document.body) {
+        el.style.zIndex = String(zVal);
+        if (el.firstElementChild) {
+          el.firstElementChild.style.zIndex = String(zVal);
+        }
+      }
+    };
+
+    const targetZ = zIndex || 9999;
+    const timer = setTimeout(() => {
+      applyZ(backdropNodeRef.current, targetZ - 1);
+      applyZ(contentNodeRef.current, targetZ);
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [visible, isToast, toastInternalVisible, zIndex]);
 
   useEffect(() => {
     if (!isToast) return;
@@ -64,7 +97,7 @@ const SmoothModal = ({ visible, onClose, children, isToast, centered, animationT
           onRequestClose={onClose}
         >
           <TouchableWithoutFeedback onPress={onClose}>
-            <View style={styles.backdropFill} />
+            <View ref={backdropNodeRef} style={styles.backdropFill} />
           </TouchableWithoutFeedback>
         </Modal>
       )}
@@ -97,11 +130,20 @@ const SmoothModal = ({ visible, onClose, children, isToast, centered, animationT
 
           {/* Toast: bọc trong Animated.View trượt từ phải vào và ra phải */}
           {isToast ? (
-            <Animated.View style={{ transform: [{ translateX: slideX }] }}>
+            <Animated.View ref={contentNodeRef} style={{ transform: [{ translateX: slideX }] }}>
               {children}
             </Animated.View>
           ) : (
-            children
+            <View
+              ref={contentNodeRef}
+              style={[
+                styles.contentWrapper,
+                centered && styles.contentWrapperCenter,
+              ]}
+              pointerEvents="box-none"
+            >
+              {children}
+            </View>
           )}
         </KeyboardAvoidingView>
       </Modal>
@@ -118,6 +160,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'transparent', // Nền trong suốt để không trượt theo popup
+  },
+  contentWrapper: {
+    width: '100%',
+    flex: 1,
+    justifyContent: 'flex-end',
+    pointerEvents: 'box-none',
+  },
+  contentWrapperCenter: {
+    flex: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   // Hỗ trợ căn giữa màn hình theo cả 2 trục
   centeredViewCenter: {

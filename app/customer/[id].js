@@ -31,9 +31,12 @@ import PaymentModal from '../../src/components/PaymentModal';
 import TransactionDetailModal from '../../src/components/TransactionDetailModal';
 import EditDebtModal from '../../src/components/EditDebtModal';
 import EditPaymentModal from '../../src/components/EditPaymentModal';
+import EditReturnGoodsModal from '../../src/components/EditReturnGoodsModal';
 import EditCustomerModal from '../../src/components/EditCustomerModal';
 import MonthDetailDrawer from '../../src/components/MonthDetailDrawer';
 import ScanTicketModal from '../../src/components/ScanTicketModal';
+import InvoiceImageUploadModal from '../../src/components/InvoiceImageUploadModal';
+import InvoiceImageViewerModal from '../../src/components/InvoiceImageViewerModal';
 import PopupModal from '../../src/components/PopupModal';
 import { startNativeRecording, stopNativeRecording } from '../../src/utils/mediaActions';
 import { useResourceLock } from '../../src/hooks/useResourceLock';
@@ -57,10 +60,13 @@ export default function CustomerDetailScreen() {
   const detailModalRef = useRef(null);
   const editDebtModalRef = useRef(null);
   const editPaymentModalRef = useRef(null);
+  const editReturnGoodsModalRef = useRef(null);
   const editCustomerModalRef = useRef(null);
   const monthDrawerRef = useRef(null); // Ref điều khiển Sidebar chi tiết tháng
   const scrollViewRef = useRef(null); // Ref để điều khiển cuộn của ScrollView
   const scanTicketModalRef = useRef(null); // Ref điều khiển Modal kết quả quét tích kê
+  const invoiceImageUploadModalRef = useRef(null); // Ref điều khiển Modal tải ảnh hóa đơn
+  const invoiceImageViewerModalRef = useRef(null); // Ref điều khiển Modal xem ảnh hóa đơn
   const popupModalRef = useRef(null); // Ref điều khiển Popup thông báo dùng chung
 
   const [scanning, setScanning] = useState(false);
@@ -781,8 +787,13 @@ export default function CustomerDetailScreen() {
         remainingAmount: remainingAmt,
         note: t.note,
         items: t.items || [],
+        invoices: t.invoices || [], // Danh sách ảnh hóa đơn đính kèm đơn nợ
         allocations: transAllocations[t.id] || [], // Truyền thông tin phân bổ thanh toán
       });
+      if (t.invoices && t.invoices.length > 0) {
+        g.invoices = g.invoices || [];
+        g.invoices.push(...t.invoices);
+      }
       g.totalDebt += originalAmt;
       g.remainingDebt += remainingAmt;
 
@@ -1206,10 +1217,26 @@ export default function CustomerDetailScreen() {
         monthGroups={monthGroups}
         onRefresh={handleRefreshAll}
         onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
-        onEditPayment={(payment) => editPaymentModalRef.current?.open(payment)}
+        onEditPayment={(payment) => {
+          const trimNote = (payment?.note || '').trim();
+          const isReturn = (
+            trimNote.includes('[Trả lại hàng]') ||
+            trimNote.includes('[Trả hàng nhanh]') ||
+            trimNote.includes('Trả hàng') ||
+            trimNote.includes('Trả lại')
+          );
+          if (isReturn) {
+            editReturnGoodsModalRef.current?.open(payment, customer);
+          } else {
+            editPaymentModalRef.current?.open(payment);
+          }
+        }}
+        invoiceImageViewerModalRef={invoiceImageViewerModalRef}
+        invoiceImageUploadModalRef={invoiceImageUploadModalRef}
       />
       <EditDebtModal ref={editDebtModalRef} customerId={id} onRefresh={handleRefreshAll} />
-      <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} />
+      <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshAll} editReturnGoodsModalRef={editReturnGoodsModalRef} />
+      <EditReturnGoodsModal ref={editReturnGoodsModalRef} onRefresh={handleRefreshAll} />
       <EditCustomerModal ref={editCustomerModalRef} onRefresh={handleRefreshAll} />
       <MonthDetailDrawer
         ref={monthDrawerRef}
@@ -1222,6 +1249,14 @@ export default function CustomerDetailScreen() {
         detailModalRef={detailModalRef}
         debtModalRef={debtModalRef}
       />
+      {/* MODAL TẢI ẢNH HÓA ĐƠN HÀNG LOẠT (Ẩn) */}
+      <InvoiceImageUploadModal
+        ref={invoiceImageUploadModalRef}
+        onRefresh={handleRefreshAll}
+        popupModalRef={popupModalRef}
+      />
+      {/* MODAL XEM PHÓNG TO ẢNH HÓA ĐƠN (Ẩn) */}
+      <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
       <PopupModal ref={popupModalRef} />
     </SafeAreaView>
   );

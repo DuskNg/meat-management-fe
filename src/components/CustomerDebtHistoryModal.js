@@ -256,8 +256,13 @@ const CustomerDebtHistoryModal = forwardRef(({
           remainingAmount: remainingAmt,
           note: t.note,
           items: t.items || [],
+          invoices: t.invoices || [], // Danh sách ảnh hóa đơn đính kèm đơn nợ
           allocations: transAllocations[t.id] || [], // Truyền thông tin phân bổ thanh toán
         });
+        if (t.invoices && t.invoices.length > 0) {
+          g.invoices = g.invoices || [];
+          g.invoices.push(...t.invoices);
+        }
         g.totalDebt += originalAmt;
         g.remainingDebt += remainingAmt;
       });
