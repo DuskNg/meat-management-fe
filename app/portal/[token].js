@@ -2677,7 +2677,7 @@ const styles = StyleSheet.create({
     borderRightColor: '#CBD5E1',
   },
   thQty: {
-    width: 34,
+    width: 44,
     textAlign: 'right',
     paddingRight: 4,
     borderRightWidth: 1,
@@ -2791,7 +2791,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   tdQty: {
-    width: 34,
+    width: 44,
     textAlign: 'right',
     paddingRight: 4,
     borderRightWidth: 1,
