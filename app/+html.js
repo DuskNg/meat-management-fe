@@ -10,19 +10,20 @@ export default function Root({ children }) {
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <title>Quản lý công nợ</title>
-        <link rel="icon" type="image/png" href="/favicon.png" />
-        <link rel="shortcut icon" href="/favicon.png" />
-        
+        <meta name="title" content="Quản lý công nợ" />
+        <meta property="og:title" content="Quản lý công nợ" />
+
         {/* Ngăn chặn tự động thu phóng (auto-zoom) khi bấm vào ô nhập liệu trên điện thoại */}
-        <meta 
-          name="viewport" 
-          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" 
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
         />
-        
+
         <ScrollViewStyleReset />
-        
+
         {/* CSS toàn cục để ép kiểu font chữ của các ô nhập liệu tối thiểu là 16px trên Web, chống zoom của iOS Safari */}
-        <style dangerouslySetInnerHTML={{ __html: `
+        <style dangerouslySetInnerHTML={{
+          __html: `
           input, textarea, select {
             font-size: 16px !important;
           }
