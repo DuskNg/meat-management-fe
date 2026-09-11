@@ -20,6 +20,7 @@ import DatePickerInput from './DatePickerInput';
 import ImagePreviewModal from './ImagePreviewModal';
 import { showGlobalToast } from '../store/toastStore';
 import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../utils/debtMessageHelper';
+import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
 
 // Helper: lấy ngày hôm nay dạng DD/MM/YYYY
 const getTodayFormatted = () => {
@@ -1418,36 +1419,11 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Chuyển đổi chuỗi base64 thành Blob để hỗ trợ tải ảnh trên trình duyệt di động (Android/Samsung)
-  const base64ToBlob = (base64Data, contentType = 'image/png') => {
-    const sliceSize = 512;
-    const byteCharacters = atob(base64Data.split(',')[1]);
-    const byteArrays = [];
-
-    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-      const slice = byteCharacters.slice(offset, offset + sliceSize);
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
-    }
-
-    return new Blob(byteArrays, { type: contentType });
-  };
-
-  // Xử lý hành động tương ứng theo 3 trường hợp người dùng yêu cầu:
-  // 1. Web PC -> Tải file ảnh trực tiếp về máy tính
-  // 2. Web Mobile + Khách có SĐT -> Chuyển tiếp ảnh vào Zalo
-  // 3. Web Mobile + Khách không có SĐT -> Phóng to full ảnh vừa vặn chiều ngang và hướng dẫn chụp ảnh màn hình
+  // Xử lý tải ảnh hoặc chuyển tiếp Zalo:
+  // - Trên PC: Luôn tải file ảnh trực tiếp về máy tính.
+  // - Trên Mobile: Luôn chuyển tiếp ảnh vào Zalo (qua Web Share hoặc mở Zalo chat).
   const handleDownloadImage = async () => {
-    if (!imageUri || Platform.OS !== 'web') return;
-
-    const isMobileDevice = typeof navigator !== 'undefined' && 
-      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-    const cleanPhone = (customer?.phone || '').replace(/[^0-9]/g, '');
-    const hasPhone = cleanPhone && cleanPhone.length >= 9;
+    if (!imageUri) return;
 
     const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
     const safeRange = (fromDate && toDate)
@@ -1455,66 +1431,14 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       : selectedMonth.replace('/', '-');
     const fileName = `CongNo_${safeName}_${safeRange}.png`;
 
-    // ── TRƯỜNG HỢP 1: WEB PC -> CHỈ CẦN TẢI ẢNH VỀ MÁY ──
-    if (!isMobileDevice) {
-      try {
-        const blob = base64ToBlob(imageUri, 'image/png');
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
-        showGlobalToast('Đã tải ảnh công nợ về máy thành công!', 'success');
-      } catch (err) {
-        console.error('Lỗi khi tải ảnh trên PC:', err);
-        showGlobalToast('Đã xảy ra lỗi khi tải ảnh.', 'error');
-      }
-      return;
-    }
-
-    // ── TRƯỜNG HỢP 2: WEB MOBILE + KHÁCH CÓ SĐT -> CHUYỂN TIẾP ẢNH VÀO ZALO ──
-    if (hasPhone) {
-      try {
-        const blob = base64ToBlob(imageUri, 'image/png');
-        if (typeof navigator !== 'undefined' && navigator.share && typeof File !== 'undefined') {
-          const file = new File([blob], fileName, { type: 'image/png' });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try {
-              await navigator.share({
-                files: [file],
-                title: `Công nợ ${customer?.name || ''}`,
-                text: `Bảng kê công nợ khách hàng ${customer?.name || ''}`,
-              });
-              return; // Mở bảng chia sẻ thành công (người dùng chọn Zalo)
-            } catch (shareErr) {
-              if (shareErr.name === 'AbortError') {
-                return; // Người dùng bấm Hủy
-              }
-              console.warn('[WebShare] Mở thẳng Zalo do lỗi chia sẻ file:', shareErr);
-            }
-          }
-        }
-
-        // Nếu Web Share không khả dụng hoặc muốn mở trực tiếp đoạn chat Zalo
-        const zaloUrl = `https://zalo.me/${cleanPhone}`;
-        if (typeof window !== 'undefined') {
-          window.open(zaloUrl, '_blank');
-        } else {
-          Linking.openURL(zaloUrl).catch(() => {});
-        }
-        showGlobalToast(`Đang chuyển tiếp tới Zalo của ${customer?.name}...`, 'info');
-      } catch (err) {
-        console.error('Lỗi khi chuyển tiếp ảnh vào Zalo:', err);
-        showGlobalToast('Không thể mở chuyển tiếp Zalo.', 'error');
-      }
-      return;
-    }
-
-    // ── TRƯỜNG HỢP 3: WEB MOBILE + KHÁCH KHÔNG CÓ SĐT -> ZOOM FULL ĐỂ CHỤP MÀN HÌNH ──
-    imagePreviewModalRef.current?.open(imageUri, { autoFitWidth: true, isCaptureMode: true });
+    await downloadOrShareImage({
+      imageUri,
+      fileName,
+      title: `Công nợ ${customer?.name || ''}`,
+      text: `Bảng kê công nợ khách hàng ${customer?.name || ''} (${safeRange})`,
+      phone: customer?.phone,
+      customerName: customer?.name,
+    });
   };
 
   // Xử lý áp dụng các mốc thời gian chọn nhanh (Tháng này, Tháng trước, 1-15, 16-hết, 7 ngày, Toàn bộ)
@@ -1580,9 +1504,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Xác định môi trường thiết bị (Mobile vs PC) và kiểm tra số điện thoại khách hàng
-  const isMobileDevice = typeof navigator !== 'undefined' && 
-    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  // Kiểm tra số điện thoại khách hàng
   const cleanPhone = (customer?.phone || '').replace(/[^0-9]/g, '');
   const hasPhone = Boolean(cleanPhone && cleanPhone.length >= 9);
 
@@ -1887,7 +1809,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                         <View style={styles.inlineButtonsGroup}>
                           <TouchableOpacity
                             style={styles.previewZoomButtonInline}
-                            onPress={() => imagePreviewModalRef.current?.open(imageUri, { autoFitWidth: isMobileDevice })}
+                            onPress={() => imagePreviewModalRef.current?.open(imageUri, { autoFitWidth: isMobileDevice() })}
                             activeOpacity={0.8}
                           >
                             <Text style={styles.previewZoomButtonText}>
@@ -1898,17 +1820,13 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                           <TouchableOpacity
                             style={[
                               styles.downloadButtonInline,
-                              isMobileDevice
-                                ? (hasPhone ? styles.zaloActiveColor : styles.captureActiveColor)
-                                : styles.normalActiveColor
+                              isMobileDevice() ? styles.zaloActiveColor : styles.normalActiveColor
                             ]}
                             onPress={handleDownloadImage}
                             activeOpacity={0.8}
                           >
                             <Text style={styles.downloadButtonInlineText}>
-                              {isMobileDevice
-                                ? (hasPhone ? '💬 CHUYỂN TIẾP ZALO' : '📸 CHỤP MÀN HÌNH')
-                                : '💾 TẢI ẢNH VỀ MÁY'}
+                              {isMobileDevice() ? '💬 CHUYỂN TIẾP ZALO' : '💾 TẢI ẢNH VỀ MÁY'}
                             </Text>
                           </TouchableOpacity>
                         </View>
@@ -1917,7 +1835,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                       <TouchableOpacity
                         style={styles.imageShadowFrame}
                         activeOpacity={0.9}
-                        onPress={() => imagePreviewModalRef.current?.open(imageUri, { autoFitWidth: isMobileDevice })}
+                        onPress={() => imagePreviewModalRef.current?.open(imageUri, { autoFitWidth: isMobileDevice() })}
                       >
                         <Image
                           source={{ uri: imageUri }}
@@ -1932,10 +1850,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                       </TouchableOpacity>
 
                       <Text style={styles.helperText}>
-                        {isMobileDevice
-                          ? (hasPhone
-                              ? '💡 Khách có SĐT: Bấm "💬 CHUYỂN TIẾP ZALO" để gửi ảnh bảng kê trực tiếp vào Zalo khách hàng.'
-                              : '💡 Khách chưa có SĐT: Bấm "📸 CHỤP MÀN HÌNH" để phóng to full ảnh sắc nét và chụp ảnh màn hình lưu vào Thư viện ảnh.')
+                        {isMobileDevice()
+                          ? '💡 Trên điện thoại: Bấm "💬 CHUYỂN TIẾP ZALO" để gửi ảnh bảng kê trực tiếp vào Zalo.'
                           : '💡 Trên máy tính: Bấm "💾 TẢI ẢNH VỀ MÁY" để tải file ảnh bảng kê PNG về máy.'}
                       </Text>
                     </View>

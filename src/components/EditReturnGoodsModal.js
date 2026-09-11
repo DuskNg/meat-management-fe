@@ -159,6 +159,57 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
     }
 
     if (itemMatches.length === 0) {
+      // Thử phân tích dạng: "tên_thịt số_lượng * đơn_giá" (ví dụ: "chín 4.1*145" hoặc "4.1*145 chín")
+      const starMatch = cleanStr.match(/^([a-zA-ZÀ-ỹ\s]+?)\s+([\d.,]+)\s*(?:kg)?\s*[*xX]\s*([\d.,]+)(?:k)?(?:\s*đ)?(?:\s*-\s*(.*))?$/i) ||
+                        cleanStr.match(/^([\d.,]+)\s*(?:kg)?\s*[*xX]\s*([\d.,]+)(?:k)?\s+([a-zA-ZÀ-ỹ\s]+?)(?:\s*-\s*(.*))?$/i);
+      if (starMatch) {
+        let prodName = '';
+        let qty = 1;
+        let price = 0;
+        let customExtra = '';
+
+        if (isNaN(parseFloat(starMatch[1].replace(',', '.')))) {
+          // Format 1: [tên thịt] [số lượng] * [đơn giá]
+          prodName = starMatch[1].trim();
+          qty = parseFloat(starMatch[2].replace(',', '.')) || 1;
+          price = parseFloat(starMatch[3].replace(/[,.]/g, '')) || 0;
+          if (price < 1000) price *= 1000;
+          customExtra = starMatch[4] ? starMatch[4].trim() : '';
+        } else {
+          // Format 2: [số lượng] * [đơn giá] [tên thịt]
+          qty = parseFloat(starMatch[1].replace(',', '.')) || 1;
+          price = parseFloat(starMatch[2].replace(/[,.]/g, '')) || 0;
+          if (price < 1000) price *= 1000;
+          prodName = starMatch[3].trim();
+          customExtra = starMatch[4] ? starMatch[4].trim() : '';
+        }
+
+        const matchedProd = (availableProducts || []).find(
+          (p) => p.name.trim().toLowerCase() === prodName.toLowerCase()
+        );
+        const product = matchedProd || {
+          id: `custom_star_${Date.now()}`,
+          name: prodName,
+          unit: 'kg',
+          defaultPrice: price,
+        };
+
+        const amt = Math.round(qty * price);
+        return {
+          items: [{
+            tempId: Math.random(),
+            product,
+            quantity: qty,
+            price,
+            displayQuantity: String(qty),
+            displayPrice: formatNumberString(price.toString()),
+            amount: amt,
+          }],
+          extraNote: customExtra,
+          isQuick: false,
+        };
+      }
+
       // Đơn trả hàng nhanh hoặc không có định dạng món chi tiết
       return {
         items: [],
@@ -478,7 +529,7 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   const displayCustomer = customer || customerData;
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <SmoothModal zIndex={25000} visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         {/* Header Modal */}
         <View style={styles.modalHeader}>

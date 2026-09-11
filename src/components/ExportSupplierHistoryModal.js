@@ -1,4 +1,3 @@
-// meat-management-fe/src/components/ExportSupplierHistoryModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
 import {
   StyleSheet,
@@ -8,32 +7,13 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
-  Alert,
   Image,
-  Linking,
 } from 'react-native';
 import { COLORS, FONTS } from '../theme';
 import SmoothModal from './SmoothModal';
 import CustomSelect from './CustomSelect';
-
-// Helper chuyển đổi Base64 sang Blob
-const base64ToBlob = (base64Data, contentType = 'image/png') => {
-  const sliceSize = 512;
-  const byteCharacters = atob(base64Data.split(',')[1]);
-  const byteArrays = [];
-
-  for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-    const slice = byteCharacters.slice(offset, offset + sliceSize);
-    const byteNumbers = new Array(slice.length);
-    for (let i = 0; i < slice.length; i++) {
-      byteNumbers[i] = slice.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    byteArrays.push(byteArray);
-  }
-
-  return new Blob(byteArrays, { type: contentType });
-};
+import { showGlobalToast } from '../store/toastStore';
+import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
 
 // Modal xuất dữ liệu nhập hàng & trả tiền của nhà cung cấp dạng ảnh
 const ExportSupplierHistoryModal = forwardRef((props, ref) => {
@@ -132,7 +112,7 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
   // Hàm tạo ảnh bảng kê nhập hàng & thanh toán bằng Canvas
   const generateImage = (sup, month, historyList) => {
     if (Platform.OS !== 'web') {
-      Alert.alert('Thông báo', 'Tính năng xuất ảnh hiện hỗ trợ tốt nhất trên nền tảng Web.');
+      showGlobalToast('Tính năng xuất ảnh hiện hỗ trợ tốt nhất trên nền tảng Web.', 'info');
       return;
     }
 
@@ -438,7 +418,7 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
       setImageUri(dataUrl);
     } catch (err) {
       console.error('[GENERATE IMAGE ERROR]', err);
-      Alert.alert('Lỗi', 'Không thể tạo hình ảnh báo cáo.');
+      showGlobalToast('Không thể tạo hình ảnh báo cáo.', 'error');
     } finally {
       setGenerating(false);
     }
@@ -451,56 +431,27 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
     generateImage(supplier, m, rawHistory);
   };
 
-  // Tải ảnh về máy
-  const handleDownloadImage = async () => {
+  // Tải ảnh về máy (PC) hoặc chuyển tiếp Zalo (Mobile)
+  const handleDownloadImage = () => {
     if (!imageUri) return;
     const safeSupplier = supplier?.name?.replace(/\s+/g, '_') || 'NhaCungCap';
     const safeMonth = selectedMonth.replace('/', '-');
     const fileName = `BangKe_NCC_${safeSupplier}_Thang_${safeMonth}.png`;
-
-    if (Platform.OS === 'web') {
-      try {
-        const blob = base64ToBlob(imageUri, 'image/png');
-
-        // Nếu trình duyệt hỗ trợ chia sẻ tệp qua Web Share API (di động)
-        if (navigator.canShare) {
-          const imageFile = new File([blob], fileName, { type: 'image/png' });
-          if (navigator.canShare({ files: [imageFile] })) {
-            await navigator.share({
-              files: [imageFile],
-              title: `Bảng kê NCC ${supplier?.name} tháng ${selectedMonth}`,
-            });
-            return;
-          }
-        }
-
-        // Tải thông qua thẻ <a>
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 200);
-      } catch (err) {
-        if (err?.name !== 'AbortError') {
-          console.error('Lỗi khi tải ảnh:', err);
-          Alert.alert('Lỗi', 'Không thể lưu hình ảnh về máy.');
-        }
-      }
-    } else {
-      Alert.alert('Thông báo', 'Tính năng tải ảnh trực tiếp được tối ưu cho phiên bản Web.');
-    }
+    downloadOrShareImage({
+      imageUri,
+      fileName,
+      title: `Bảng kê NCC ${supplier?.name} tháng ${selectedMonth}`,
+      phone: supplier?.phone || '',
+      customerName: supplier?.name || '',
+    });
   };
 
-  // Mở Zalo để gửi cho nhà cung cấp
+  // Mở Zalo chat theo số điện thoại nhà cung cấp (chỉ hiện trên PC)
   const handleSendZalo = () => {
     if (!supplier?.phone) {
-      Alert.alert('Thiếu số điện thoại', 'Nhà cung cấp này chưa có số điện thoại liên hệ.');
+      showGlobalToast('Nhà cung cấp này chưa có số điện thoại liên hệ.', 'warning');
       return;
     }
-
     const cleanPhone = supplier.phone.replace(/[^0-9]/g, '');
     let webPhone = cleanPhone;
     if (webPhone.startsWith('84')) {
@@ -508,12 +459,11 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
     } else if (!webPhone.startsWith('0')) {
       webPhone = '0' + webPhone;
     }
-
     const zaloUrl = `https://zalo.me/${webPhone}`;
-    Linking.openURL(zaloUrl).catch((err) => {
-      console.error('Không thể mở Zalo:', err);
-      Alert.alert('Lỗi', 'Không thể mở ứng dụng Zalo.');
-    });
+    if (typeof window !== 'undefined') {
+      window.open(zaloUrl, '_blank');
+    }
+    showGlobalToast(`Đang mở Zalo của ${supplier?.name}...`, 'info');
   };
 
   const monthOptions = availableMonths.map((m) => ({ id: m, name: `Tháng ${m}` }));
@@ -571,10 +521,13 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
             disabled={!imageUri || generating}
             activeOpacity={0.7}
           >
-            <Text style={styles.downloadBtnText}>📥 TẢI ẢNH VỀ MÁY</Text>
+            <Text style={styles.downloadBtnText}>
+              {isMobileDevice() ? '📲 GỬI ZALO' : '📻 TẢI ẢNH VỀ MÁY'}
+            </Text>
           </TouchableOpacity>
 
-          {supplier?.phone ? (
+          {/* Chỉ hiện nút Zalo riêng biệt trên PC khi có số điện thoại */}
+          {!isMobileDevice() && supplier?.phone ? (
             <TouchableOpacity
               style={styles.zaloBtn}
               onPress={handleSendZalo}

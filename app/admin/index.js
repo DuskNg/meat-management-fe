@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingVertical: 8,
   },
   headerContentWrapper: {
     maxWidth: 1200,

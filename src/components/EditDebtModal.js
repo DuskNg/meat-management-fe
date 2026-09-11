@@ -135,10 +135,24 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
       setTransactionId(transaction.id);
       setCustomerId(transaction.customerId || ownerCustomerId); // Ưu tiên ID trong giao dịch, fallback sang khách hàng đang xem
 
+      // Kiểm tra xem đơn có các mặt hàng thịt thật sự hay không
+      const hasRealMeat = (transaction.items || []).some(
+        (it) => it.product?.name && it.product.name !== 'Tiền hàng' && !it.product.name.toLowerCase().startsWith('tiền')
+      );
+
+      // Thử phân tích cú pháp dấu nhân từ ghi chú (ví dụ: "chín 4.1*145" hoặc "4.1*145 chín")
+      const noteStr = (transaction.note || '').trim();
+      const starMatch = !hasRealMeat ? (
+        noteStr.match(/^([a-zA-ZÀ-ỹ\s]+?)\s+([\d.,]+)\s*(?:kg)?\s*[*xX]\s*([\d.,]+)(?:k)?(?:\s*đ)?(?:\s*-\s*(.*))?$/i) ||
+        noteStr.match(/^([\d.,]+)\s*(?:kg)?\s*[*xX]\s*([\d.,]+)(?:k)?\s+([a-zA-ZÀ-ỹ\s]+?)(?:\s*-\s*(.*))?$/i)
+      ) : null;
+
       // Phân loại đơn là Ghi nợ nhanh hay Ghi nợ chi tiết
-      const isQuick = (transaction.items || []).some(
-        (it) => it.product?.name === 'Tiền hàng' || (it.product?.name && it.product.name.toLowerCase().startsWith('tiền'))
-      ) || transaction.note === 'Ghi nợ nhanh';
+      const isQuick = !hasRealMeat && !starMatch && (
+        (transaction.items || []).some(
+          (it) => it.product?.name === 'Tiền hàng' || (it.product?.name && it.product.name.toLowerCase().startsWith('tiền'))
+        ) || transaction.note === 'Ghi nợ nhanh'
+      );
 
       if (isQuick) {
         setActiveTab('quick');
@@ -149,6 +163,10 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
         setQuickProductId(firstItem?.productId || firstItem?.product?.id || null);
         setQuickProfitPercent(transaction.profitPercent ? String(transaction.profitPercent) : '');
         setCartItems([]);
+        setCurrentProduct(null);
+        setCurrentQuantity('');
+        setCurrentPrice('');
+        setEditingItemId(null);
       } else {
         setActiveTab('manual');
         setQuickAmountVND(0);
@@ -157,51 +175,101 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
 
         // Nhóm và cộng dồn các mặt hàng cùng loại thịt từ lịch sử
         const mergedMap = {};
-        (transaction.items || []).forEach((it) => {
-          // Tìm sản phẩm tương ứng trong danh mục để lấy thông tin đầy đủ
-          const prod = products.find((p) => p.id === it.productId) || {
-            id: it.productId,
-            name: it.product?.name || 'Sản phẩm đã bị xóa',
-            unit: it.product?.unit || 'kg',
-            defaultPrice: parseFloat(it.price),
-            costPrice: parseFloat(it.costPrice || 0),
-          };
-          const key = prod.id;
-          const qty = parseFloat(it.quantity);
-          const priceVal = parseFloat(it.price);
-          const costVal = it.costPrice !== undefined ? parseFloat(it.costPrice) : (prod.costPrice || 0);
 
-          if (mergedMap[key]) {
-            // Nếu đã tồn tại loại thịt này, cộng dồn số lượng và cập nhật đơn giá mới nhất
-            mergedMap[key].quantity += qty;
-            mergedMap[key].amount = mergedMap[key].quantity * priceVal;
-            mergedMap[key].displayQuantity = mergedMap[key].quantity.toString();
-            mergedMap[key].price = priceVal;
-            mergedMap[key].costPrice = costVal;
-            mergedMap[key].displayPrice = formatNumberString(priceVal.toString());
+        if (starMatch) {
+          // Trích xuất từ ghi chú "chín 4.1*145"
+          let prodName = '';
+          let qty = 1;
+          let price = 0;
+          if (isNaN(parseFloat(starMatch[1].replace(',', '.')))) {
+            prodName = starMatch[1].trim();
+            qty = parseFloat(starMatch[2].replace(',', '.')) || 1;
+            price = parseFloat(starMatch[3].replace(/[,.]/g, '')) || 0;
+            if (price < 1000) price *= 1000;
           } else {
-            // Nếu chưa tồn tại, khởi tạo phần tử mới
-            mergedMap[key] = {
-              tempId: it.id || Math.random(),
-              product: prod,
-              quantity: qty,
-              price: priceVal,
-              costPrice: costVal,
-              displayQuantity: it.quantity.toString(),
-              displayPrice: formatNumberString(priceVal.toString()),
-              amount: qty * priceVal,
-            };
+            qty = parseFloat(starMatch[1].replace(',', '.')) || 1;
+            price = parseFloat(starMatch[2].replace(/[,.]/g, '')) || 0;
+            if (price < 1000) price *= 1000;
+            prodName = starMatch[3].trim();
           }
-        });
+          const matchedProd = (products || []).find(
+            (p) => p.name.trim().toLowerCase() === prodName.toLowerCase()
+          ) || {
+            id: `custom_parsed_${Date.now()}`,
+            name: prodName,
+            unit: 'kg',
+            defaultPrice: price,
+            costPrice: 0,
+          };
+
+          mergedMap[matchedProd.id] = {
+            tempId: Math.random(),
+            product: matchedProd,
+            quantity: qty,
+            price,
+            costPrice: 0,
+            displayQuantity: String(qty),
+            displayPrice: formatNumberString(price.toString()),
+            amount: Math.round(qty * price),
+          };
+        } else {
+          (transaction.items || []).forEach((it) => {
+            // Tìm sản phẩm tương ứng trong danh mục để lấy thông tin đầy đủ
+            const prod = products.find((p) => p.id === it.productId) || {
+              id: it.productId || `prod_${Math.random()}`,
+              name: it.product?.name || 'Sản phẩm đã bị xóa',
+              unit: it.product?.unit || 'kg',
+              defaultPrice: parseFloat(it.price || 0),
+              costPrice: parseFloat(it.costPrice || 0),
+            };
+            const key = prod.id;
+            const qty = parseFloat(it.quantity || 0);
+            const priceVal = parseFloat(it.price || 0);
+            const costVal = it.costPrice !== undefined ? parseFloat(it.costPrice) : (prod.costPrice || 0);
+
+            if (mergedMap[key]) {
+              // Nếu đã tồn tại loại thịt này, cộng dồn số lượng và cập nhật đơn giá mới nhất
+              mergedMap[key].quantity += qty;
+              mergedMap[key].amount = mergedMap[key].quantity * priceVal;
+              mergedMap[key].displayQuantity = mergedMap[key].quantity.toString();
+              mergedMap[key].price = priceVal;
+              mergedMap[key].costPrice = costVal;
+              mergedMap[key].displayPrice = formatNumberString(priceVal.toString());
+            } else {
+              // Nếu chưa tồn tại, khởi tạo phần tử mới
+              mergedMap[key] = {
+                tempId: it.id || Math.random(),
+                product: prod,
+                quantity: qty,
+                price: priceVal,
+                costPrice: costVal,
+                displayQuantity: it.quantity ? it.quantity.toString() : '1',
+                displayPrice: formatNumberString(priceVal.toString()),
+                amount: Math.round(qty * priceVal),
+              };
+            }
+          });
+        }
+
         const initialCart = Object.values(mergedMap);
         setCartItems(initialCart);
+
+        // Tự động nạp ngay mặt hàng vào ô nhập liệu khi đơn chỉ có 1 mặt hàng (tiện sửa ngay như chín 4.1*145)
+        if (initialCart.length === 1) {
+          const onlyItem = initialCart[0];
+          setCurrentProduct(onlyItem.product);
+          setCurrentQuantity(onlyItem.displayQuantity);
+          setCurrentPrice(onlyItem.displayPrice);
+          setEditingItemId(onlyItem.tempId);
+        } else {
+          setCurrentProduct(null);
+          setCurrentQuantity('');
+          setCurrentPrice('');
+          setEditingItemId(null);
+        }
       }
 
-      setCurrentProduct(null);
-      setCurrentQuantity('');
-      setCurrentPrice('');
       setProductSearch('');
-      setEditingItemId(null);
       setDateStr(formatDateToDisplay(transaction.date));
       setNote(transaction.note || '');
       setError('');
@@ -415,7 +483,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   const displayCurrentSubtotal = isNaN(currentSubtotal) ? 0 : currentSubtotal;
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <SmoothModal zIndex={25000} visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>✏️ CẬP NHẬT ĐƠN GHI NỢ</Text>

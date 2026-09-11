@@ -13,27 +13,10 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import ImagePreviewModal from './ImagePreviewModal';
 import { showGlobalToast } from '../store/toastStore';
-
-// Helper chuyển đổi Base64 sang Blob
-const base64ToBlob = (base64Data, contentType = 'image/png') => {
-  const sliceSize = 512;
-  const byteCharacters = atob(base64Data.split(',')[1]);
-  const byteArrays = [];
-
-  for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-    const slice = byteCharacters.slice(offset, offset + sliceSize);
-    const byteNumbers = new Array(slice.length);
-    for (let i = 0; i < slice.length; i++) {
-      byteNumbers[i] = slice.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    byteArrays.push(byteArray);
-  }
-
-  return new Blob(byteArrays, { type: contentType });
-};
+import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
 
 // Helper chuyển đổi chuỗi ngày ISO sang dạng khóa "DD/MM/YYYY" để so sánh
+
 const toDateKey = (dateStr) => {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -149,17 +132,37 @@ const ExportDailyReportModal = forwardRef((props, ref) => {
 
   const imagePreviewModalRef = useRef(null);
 
+  const [modalTitle, setModalTitle] = useState('📸 XUẤT BÁO CÁO CÔNG NỢ NGÀY');
+  const [customStatsState, setCustomStatsState] = useState(null);
+  const [customFileNameState, setCustomFileNameState] = useState(null);
+
   // Expose các phương thức open, close, submit qua ref
   useImperativeHandle(ref, () => ({
-    open: ({ selectedDate: date, rawTransactions = [], rawPayments = [] }) => {
+    open: ({
+      selectedDate: date,
+      rawTransactions = [],
+      rawPayments = [],
+      customImageUri = null,
+      customTitle = null,
+      customStats = null,
+      customFileName = null,
+    }) => {
       setSelectedDate(date);
       setVisible(true);
-      setImageUri(null);
+      setModalTitle(customTitle || '📸 XUẤT BÁO CÁO CÔNG NỢ NGÀY');
+      setCustomStatsState(customStats || null);
+      setCustomFileNameState(customFileName || null);
 
-      // Tự động tạo ảnh báo cáo ngay khi mở modal
-      setTimeout(() => {
-        generateDailyReportImage(date, rawTransactions, rawPayments);
-      }, 100);
+      if (customImageUri) {
+        setImageUri(customImageUri);
+        setGenerating(false);
+      } else {
+        setImageUri(null);
+        // Tự động tạo ảnh báo cáo ngay khi mở modal
+        setTimeout(() => {
+          generateDailyReportImage(date, rawTransactions, rawPayments);
+        }, 100);
+      }
     },
     close: () => {
       setVisible(false);
@@ -715,49 +718,16 @@ const ExportDailyReportModal = forwardRef((props, ref) => {
     }
   };
 
-  // Tải ảnh hoặc chia sẻ qua Zalo/Photos trên điện thoại
-  const handleDownloadImage = async () => {
-    if (Platform.OS === 'web' && imageUri) {
-      const fileName = `BaoCaoCongNo_Ngay_${(selectedDate || '').replace(/\//g, '-')}.png`;
-
-      try {
-        const blob = base64ToBlob(imageUri, 'image/png');
-
-        const isMobileDevice = typeof navigator !== 'undefined' &&
-          /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-
-        if (isMobileDevice && typeof navigator !== 'undefined' && navigator.share && typeof File !== 'undefined') {
-          const file = new File([blob], fileName, { type: 'image/png' });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try {
-              await navigator.share({
-                files: [file],
-                title: `Báo cáo công nợ ngày ${selectedDate}`,
-                text: `Bảng kê công nợ ngày ${selectedDate}`,
-              });
-              return;
-            } catch (shareErr) {
-              if (shareErr.name === 'AbortError') return;
-              console.warn('[WebShare] Chuyển sang tải file trực tiếp:', shareErr);
-            }
-          }
-        }
-
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
-        showGlobalToast('Đã tải ảnh báo cáo về máy thành công!', 'success');
-      } catch (err) {
-        console.error('Lỗi khi tải ảnh báo cáo:', err);
-        showGlobalToast('Đã xảy ra lỗi khi tải ảnh báo cáo.', 'error');
-      }
-    }
+  // Tải ảnh hoặc chuyển tiếp Zalo tùy theo thiết bị
+  const handleDownloadImage = () => {
+    if (!imageUri) return;
+    const fileName = customFileNameState || `BaoCaoCongNo_Ngay_${(selectedDate || '').replace(/\//g, '-')}.png`;
+    downloadOrShareImage({
+      imageUri,
+      fileName,
+      title: modalTitle || `Báo cáo công nợ ngày ${selectedDate}`,
+      text: `Bảng kê công nợ ngày ${selectedDate}`,
+    });
   };
 
   return (
@@ -766,7 +736,7 @@ const ExportDailyReportModal = forwardRef((props, ref) => {
         <View style={styles.modalView}>
           {/* Header modal có tiêu đề và nút đóng */}
           <View style={styles.modalHeaderRow}>
-            <Text style={styles.modalTitle}>📸 XUẤT BÁO CÁO CÔNG NỢ NGÀY</Text>
+            <Text style={styles.modalTitle}>{modalTitle}</Text>
             <TouchableOpacity
               style={styles.modalCloseIconBtn}
               onPress={() => setVisible(false)}
@@ -781,20 +751,37 @@ const ExportDailyReportModal = forwardRef((props, ref) => {
             <View style={styles.summaryDateBadge}>
               <Text style={styles.summaryDateText}>📅 Báo cáo ngày: {selectedDate}</Text>
             </View>
-            <View style={styles.summaryStatsRow}>
-              <View style={[styles.microStatPill, styles.statPillDebt]}>
-                <Text style={styles.statPillLabel}>🔴 Nợ phát sinh:</Text>
-                <Text style={styles.statPillValue}>{formatCurrency(statTotals.meatAmount)}</Text>
+            {customStatsState && customStatsState.type === 'duplicate' ? (
+              <View style={styles.summaryStatsRow}>
+                <View style={[styles.microStatPill, styles.statPillDebt]}>
+                  <Text style={styles.statPillLabel}>⚠️ Tiền đơn trùng:</Text>
+                  <Text style={styles.statPillValue}>{formatCurrency(customStatsState.totalDupAmount)}</Text>
+                </View>
+                <View style={[styles.microStatPill, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+                  <Text style={[styles.statPillLabel, { color: '#1E40AF' }]}>👥 Khách bị trùng:</Text>
+                  <Text style={[styles.statPillValue, { color: '#1D4ED8' }]}>{customStatsState.duplicateCustomerCount} khách</Text>
+                </View>
+                <View style={[styles.microStatPill, { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' }]}>
+                  <Text style={[styles.statPillLabel, { color: '#475569' }]}>📋 Số đơn trùng:</Text>
+                  <Text style={[styles.statPillValue, { color: '#334155' }]}>{customStatsState.duplicateCount} đơn</Text>
+                </View>
               </View>
-              <View style={[styles.microStatPill, styles.statPillPaid]}>
-                <Text style={styles.statPillLabel}>🟢 Đã thu:</Text>
-                <Text style={styles.statPillValue}>{formatCurrency(statTotals.paymentAmount)}</Text>
+            ) : (
+              <View style={styles.summaryStatsRow}>
+                <View style={[styles.microStatPill, styles.statPillDebt]}>
+                  <Text style={styles.statPillLabel}>🔴 Nợ phát sinh:</Text>
+                  <Text style={styles.statPillValue}>{formatCurrency(statTotals.meatAmount)}</Text>
+                </View>
+                <View style={[styles.microStatPill, styles.statPillPaid]}>
+                  <Text style={styles.statPillLabel}>🟢 Đã thu:</Text>
+                  <Text style={styles.statPillValue}>{formatCurrency(statTotals.paymentAmount)}</Text>
+                </View>
+                <View style={[styles.microStatPill, styles.statPillRemaining]}>
+                  <Text style={styles.statPillLabel}>🔵 Còn lại:</Text>
+                  <Text style={styles.statPillValue}>{formatCurrency(statTotals.finalRemaining)}</Text>
+                </View>
               </View>
-              <View style={[styles.microStatPill, styles.statPillRemaining]}>
-                <Text style={styles.statPillLabel}>🔵 Còn lại:</Text>
-                <Text style={styles.statPillValue}>{formatCurrency(statTotals.finalRemaining)}</Text>
-              </View>
-            </View>
+            )}
           </View>
 
           {/* Vùng xem trước và tải ảnh */}
@@ -828,9 +815,7 @@ const ExportDailyReportModal = forwardRef((props, ref) => {
                     activeOpacity={0.8}
                   >
                     <Text style={styles.downloadButtonInlineText}>
-                      {typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-                        ? '📲 LƯU / GỬI ẢNH'
-                        : '💾 TẢI ẢNH VỀ MÁY'}
+                      {isMobileDevice() ? '📲 GỬI ZALO' : '💾 TẢI ẢNH VỀ MÁY'}
                     </Text>
                   </TouchableOpacity>
                 </View>

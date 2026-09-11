@@ -250,6 +250,10 @@ const CustomerDebtHistoryModal = forwardRef(({
 
         g.transactions.push({
           id: t.id,
+          customerId: t.customerId || customerId,
+          totalAmount: t.totalAmount || originalAmt,
+          profitPercent: t.profitPercent,
+          source: t.source,
           type: 'debt',
           date: t.date,
           amount: originalAmt,

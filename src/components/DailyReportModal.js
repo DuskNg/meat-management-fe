@@ -20,6 +20,7 @@ import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import InvoiceImageUploadModal from './InvoiceImageUploadModal';
 import { showGlobalToast } from '../store/toastStore';
 import { matchSearch } from '../utils/searchHelper';
+import { downloadOrShareImage } from '../utils/imageShareHelper';
 
 // Bảng màu đa dạng, tương phản cao, dễ phân biệt cho các nhóm khách hàng trùng đơn
 // Mỗi khách hàng 1 màu riêng biệt, màu sắc phân bố đều trên vòng tròn màu sắc để tránh bị na ná nhau
@@ -967,7 +968,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   // Xử lý xuất công nợ dạng ảnh bằng Canvas HTML5 (Cứ 15 giao dịch chia làm 1 cột, tự động tăng chiều rộng)
   const handleExportImage = () => {
     if (Platform.OS !== 'web') {
-      alert('Chức năng xuất ảnh hiện hỗ trợ trên giao diện Web.');
+      showGlobalToast('Chức năng xuất ảnh hiện hỗ trợ trên giao diện Web.', 'warning');
       return;
     }
 
@@ -1172,22 +1173,24 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ctx.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, footerY + 15);
       ctx.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, footerY + 32);
 
-      // 6. Thực hiện download ảnh
+      // 6. Thực hiện download ảnh / gửi Zalo
       const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = `${reportFilename}.png`;
-      link.href = dataUrl;
-      link.click();
+      downloadOrShareImage({
+        imageUri: dataUrl,
+        fileName: `${reportFilename}.png`,
+        title: csvReportTitle || 'Báo cáo công nợ',
+        text: csvReportSubTitle || '',
+      });
     } catch (err) {
       console.error('[EXPORT IMAGE ERROR]', err);
-      alert('Đã xảy ra lỗi khi xuất ảnh công nợ.');
+      showGlobalToast('Đã xảy ra lỗi khi xuất ảnh công nợ.', 'error');
     }
   };
 
   // Xử lý xuất báo cáo công nợ ra file Excel dạng CSV hỗ trợ tiếng Việt có dấu
   const handleExportExcel = () => {
     if (Platform.OS !== 'web') {
-      alert('Chức năng xuất Excel hiện hỗ trợ trên giao diện Web.');
+      showGlobalToast('Chức năng xuất Excel hiện hỗ trợ trên giao diện Web.', 'warning');
       return;
     }
 
@@ -1261,14 +1264,14 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       setTimeout(() => URL.revokeObjectURL(url), 200);
     } catch (err) {
       console.error('[EXPORT EXCEL ERROR]', err);
-      alert('Đã xảy ra lỗi khi xuất file Excel.');
+      showGlobalToast('Đã xảy ra lỗi khi xuất file Excel.', 'error');
     }
   };
 
   // Xuất ảnh theo bộ lọc (giữ nguyên giao diện canvas báo cáo theo nhóm/bộ lọc đang chọn)
   const handleExportFilteredDailyReportImage = () => {
     if (Platform.OS !== 'web') {
-      alert('Chức năng xuất ảnh hiện hỗ trợ trên giao diện Web.');
+      showGlobalToast('Chức năng xuất ảnh hiện hỗ trợ trên giao diện Web.', 'warning');
       return;
     }
 
@@ -1674,25 +1677,38 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ctx.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, footerY1 + 22);
       ctx.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, footerY1 + 40);
 
-      // Tải file ảnh về máy
+      // Mở modal xuất báo cáo xem trước và tải/gửi Zalo theo đúng chuẩn rules
       const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
       const filterFileSuffixMap = {
         all: '',
         duplicate: '_DonTrung',
         debt: '_DonNoMoi',
         payment: '_ThuNo',
         return: '_TraHang',
-        edited: '_DaSua'
+        edited: '_DaSua',
       };
       const fSuffix = filterFileSuffixMap[activeFilter] || (activeFilter ? `_${activeFilter}` : '');
       const sSuffix = searchText && searchText.trim() ? `_Tim_${searchText.trim().replace(/\s+/g, '_')}` : '';
-      link.download = `BaoCao_CongNo_Ngay_${selectedDate.replace(/\//g, '_')}${fSuffix}${sSuffix}.png`;
-      link.href = dataUrl;
-      link.click();
+      const fileName = `BaoCao_CongNo_Ngay_${selectedDate.replace(/\//g, '_')}${fSuffix}${sSuffix}.png`;
+
+      const isDup = activeFilter === 'duplicate';
+      const totalDupAmount = isDup ? allDailyTx.reduce((sum, it) => sum + parseFloat(it.amount || 0), 0) : 0;
+
+      exportDailyReportModalRef.current?.open({
+        selectedDate,
+        customImageUri: dataUrl,
+        customTitle: isDup ? '📸 XUẤT BÁO CÁO ĐƠN NỢ TRÙNG' : `📸 XUẤT ${reportHeaderTitle.toUpperCase()}`,
+        customFileName: fileName,
+        customStats: isDup ? {
+          type: 'duplicate',
+          totalDupAmount,
+          duplicateCustomerCount,
+          duplicateCount: allDailyTx.length,
+        } : null,
+      });
     } catch (err) {
       console.error('[EXPORT IMAGE ERROR]', err);
-      alert('Đã xảy ra lỗi khi xuất ảnh báo cáo.');
+      showGlobalToast('Đã xảy ra lỗi khi tạo ảnh báo cáo.', 'error');
     }
   };
 

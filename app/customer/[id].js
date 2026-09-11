@@ -1282,16 +1282,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
     backgroundColor: COLORS.card,
     borderBottomWidth: 1,
     borderColor: '#F1F5F9', // Viền siêu mỏng nhạt màu
     ...SHADOWS.card,
   },
   backButtonNew: {
-    width: 90,
-    height: 32,
-    borderRadius: 16,
+    width: 84,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1299,7 +1299,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   backTextNew: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
   },
@@ -1308,34 +1308,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avatarContainerRight: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    marginRight: 10,
+    marginRight: 8,
   },
   avatarTextRight: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   customerDetailsRight: {
     alignItems: 'flex-start',
   },
   customerGreetingRight: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: COLORS.textSecondary,
-    marginBottom: 2,
+    marginBottom: 0,
   },
   customerNameRight: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
     color: COLORS.text,
     maxWidth: 150, // Giới hạn chiều rộng tên khách hàng tránh tràn
   },
   headerPlaceholder: {
-    width: 90,
+    width: 84,
   },
   // Style cho nhóm nút hành động quản lý khách hàng phía dưới
   customerAdminActions: {

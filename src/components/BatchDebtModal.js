@@ -286,17 +286,17 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
         }
 
         if (Array.isArray(draft.detailRows) && draft.detailRows.length > 0) {
-          // Sanitize: gán lại ID mới để tránh duplicate key và bổ sung tối thiểu 10 hàng
-          setDetailRows(padRowsToMin(sanitizeRows(draft.detailRows), 10, prodData));
+          // Sanitize: gán lại ID mới để tránh duplicate key và bổ sung tối thiểu 3 hàng
+          setDetailRows(padRowsToMin(sanitizeRows(draft.detailRows), 3, prodData));
         } else {
-          setDetailRows(createInitialRows(10, prodData));
+          setDetailRows(createInitialRows(3, prodData));
         }
 
         if (Array.isArray(draft.returnRows) && draft.returnRows.length > 0) {
-          // Sanitize: gán lại ID mới để tránh duplicate key và bổ sung tối thiểu 10 hàng
-          setReturnRows(padRowsToMin(sanitizeRows(draft.returnRows), 10, prodData));
+          // Sanitize: gán lại ID mới để tránh duplicate key và bổ sung tối thiểu 3 hàng
+          setReturnRows(padRowsToMin(sanitizeRows(draft.returnRows), 3, prodData));
         } else {
-          setReturnRows(createInitialRows(10, prodData));
+          setReturnRows(createInitialRows(3, prodData));
         }
 
         if (draft.activeTab) setActiveTab(draft.activeTab);
@@ -306,10 +306,10 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
         return;
       }
 
-      // Khởi tạo sẵn 10 dòng trống ban đầu cho cả 3 tab nếu không có nháp
+      // Khởi tạo sẵn hàng trống ban đầu: Nợ nhanh 10, Nợ chi tiết 3, Trả hàng 3
       const initialQuick = createInitialRows(10, prodData);
-      const initialDetail = createInitialRows(10, prodData);
-      const initialReturn = createInitialRows(10, prodData);
+      const initialDetail = createInitialRows(3, prodData);
+      const initialReturn = createInitialRows(3, prodData);
       setQuickRows(initialQuick);
       setDetailRows(initialDetail);
       setReturnRows(initialReturn);
@@ -322,12 +322,12 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Reset xóa toàn bộ nháp cho cả 3 tab và đặt ngày về hôm nay (mặc định 10 hàng)
+  // Reset xóa toàn bộ nháp cho cả 3 tab và đặt ngày về hôm nay
   const handleClearDraft = async () => {
     await clearDraftCache();
     const freshQuick = createInitialRows(10, products);
-    const freshDetail = createInitialRows(10, products);
-    const freshReturn = createInitialRows(10, products);
+    const freshDetail = createInitialRows(3, products);
+    const freshReturn = createInitialRows(3, products);
     setQuickRows(freshQuick);
     setDetailRows(freshDetail);
     setReturnRows(freshReturn);
@@ -686,19 +686,28 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
         <View style={styles.topControlRow}>
           <View style={styles.segmentedTabContainer}>
             <TouchableOpacity
-              style={[styles.segTabBtn, activeTab === 'quick' && styles.segTabBtnActive]}
+              style={[
+                styles.segTabBtn,
+                activeTab === 'quick' && styles.segTabBtnActiveQuick,
+              ]}
               onPress={() => {
                 setActiveTab('quick');
                 setError('');
               }}
             >
-              <Text style={[styles.segTabBtnText, activeTab === 'quick' && styles.segTabBtnTextActive]}>
+              <Text style={[
+                styles.segTabBtnText,
+                activeTab === 'quick' && styles.segTabBtnTextActiveQuick,
+              ]}>
                 ⚡ Nợ nhanh
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.segTabBtn, activeTab === 'detail' && styles.segTabBtnActive]}
+              style={[
+                styles.segTabBtn,
+                activeTab === 'detail' && styles.segTabBtnActiveDetail,
+              ]}
               onPress={() => {
                 setActiveTab('detail');
                 setError('');
@@ -707,13 +716,19 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                 }, 80);
               }}
             >
-              <Text style={[styles.segTabBtnText, activeTab === 'detail' && styles.segTabBtnTextActive]}>
+              <Text style={[
+                styles.segTabBtnText,
+                activeTab === 'detail' && styles.segTabBtnTextActiveDetail,
+              ]}>
                 🥩 Nợ chi tiết
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.segTabBtn, activeTab === 'return' && styles.segTabBtnActive]}
+              style={[
+                styles.segTabBtn,
+                activeTab === 'return' && styles.segTabBtnActiveReturn,
+              ]}
               onPress={() => {
                 setActiveTab('return');
                 setError('');
@@ -722,7 +737,10 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                 }, 80);
               }}
             >
-              <Text style={[styles.segTabBtnText, activeTab === 'return' && styles.segTabBtnTextActive]}>
+              <Text style={[
+                styles.segTabBtnText,
+                activeTab === 'return' && styles.segTabBtnTextActiveReturn,
+              ]}>
                 ↩️ Trả hàng
               </Text>
             </TouchableOpacity>
@@ -880,8 +898,10 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                         />
                       </View>
 
-                      <View style={styles.custTotalBadge}>
-                        <Text style={styles.custTotalText}>{formatCurrency(rowTotal)}</Text>
+                      <View style={[styles.custTotalBadge, activeTab === 'return' && styles.returnTotalBadge]}>
+                        <Text style={[styles.custTotalText, activeTab === 'return' && styles.returnTotalText]}>
+                          {activeTab === 'return' && rowTotal > 0 ? `-${formatCurrency(rowTotal)}` : formatCurrency(rowTotal)}
+                        </Text>
                       </View>
 
                       <TouchableOpacity
@@ -893,12 +913,12 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                     </View>
 
                     {/* Bảng Mặt Hàng Thịt - Đặt zIndex thấp hơn header = 1 */}
-                    <View style={styles.meatSubTable}>
-                      <View style={styles.meatTableHeader}>
-                        <Text style={[styles.meatTh, { flex: 2 }]}>Loại thịt</Text>
-                        <Text style={[styles.meatTh, { flex: 1, textAlign: 'center' }]}>SL (kg)</Text>
-                        <Text style={[styles.meatTh, { flex: 1.4, textAlign: 'center' }]}>Đơn giá (đ)</Text>
-                        <Text style={[styles.meatTh, { flex: 1.4, textAlign: 'right' }]}>Thành tiền</Text>
+                    <View style={[styles.meatSubTable, activeTab === 'return' && styles.returnMeatSubTable]}>
+                      <View style={[styles.meatTableHeader, activeTab === 'return' && styles.returnMeatTableHeader]}>
+                        <Text style={[styles.meatTh, activeTab === 'return' && styles.returnMeatTh, { flex: 2 }]}>Loại thịt</Text>
+                        <Text style={[styles.meatTh, activeTab === 'return' && styles.returnMeatTh, { flex: 1, textAlign: 'center' }]}>SL (kg)</Text>
+                        <Text style={[styles.meatTh, activeTab === 'return' && styles.returnMeatTh, { flex: 1.4, textAlign: 'center' }]}>Đơn giá (đ)</Text>
+                        <Text style={[styles.meatTh, activeTab === 'return' && styles.returnMeatTh, { flex: 1.4, textAlign: 'right' }]}>Thành tiền</Text>
                         <View style={{ width: 24 }} />
                       </View>
 
@@ -1004,7 +1024,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                               <View style={{ flex: 1.4, marginRight: 4 }}>
                                 <MoneyInput
                                   style={styles.subtableMoneyInputContainer}
-                                  inputStyle={[styles.subtableMoneyInputText, { color: '#DC2626', fontWeight: '600' }]}
+                                  inputStyle={[styles.subtableMoneyInputText, { color: activeTab === 'return' ? '#EA580C' : '#DC2626', fontWeight: '600' }]}
                                   value={item.amount !== undefined && item.amount !== null ? item.amount : itemSubtotal}
                                   onChangeValue={(amtVal) => {
                                     const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
@@ -1190,22 +1210,44 @@ const styles = StyleSheet.create({
   },
   segTabBtn: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 7,
     alignItems: 'center',
     borderRadius: 6,
   },
-  segTabBtnActive: {
+  segTabBtnActiveQuick: {
     backgroundColor: '#FFFFFF',
+    borderColor: '#CBD5E1',
+    borderWidth: 1,
     ...SHADOWS.small,
+  },
+  segTabBtnTextActiveQuick: {
+    color: '#0F172A',
+    fontWeight: 'bold',
+  },
+  segTabBtnActiveDetail: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#F87171',
+    borderWidth: 1.5,
+    ...SHADOWS.small,
+  },
+  segTabBtnTextActiveDetail: {
+    color: '#DC2626',
+    fontWeight: 'bold',
+  },
+  segTabBtnActiveReturn: {
+    backgroundColor: '#FFEDD5',
+    borderColor: '#FB923C',
+    borderWidth: 1.5,
+    ...SHADOWS.small,
+  },
+  segTabBtnTextActiveReturn: {
+    color: '#C2410C',
+    fontWeight: 'bold',
   },
   segTabBtnText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#64748B',
-  },
-  segTabBtnTextActive: {
-    color: '#991B1B',
-    fontWeight: 'bold',
   },
   datePickerSection: {
     marginTop: 4,
@@ -1340,13 +1382,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1.5,
-    borderColor: '#6366F1', // Viền màu Tím Xanh Indigo nổi bật
+    borderColor: '#DC2626', // Viền đỏ đặc trưng cho Nợ chi tiết
     padding: 6,
     position: 'relative',
     ...SHADOWS.small,
   },
   returnCustCard: {
-    borderColor: '#F97316', // Viền màu Cam cho card trả hàng
+    backgroundColor: '#FFFDF9',
+    borderColor: '#EA580C', // Viền cam đậm đặc trưng cho Trả hàng
+    borderWidth: 1.5,
   },
   custCardHeader: {
     flexDirection: 'row',
@@ -1368,15 +1412,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#DC2626',
   },
+  returnTotalBadge: {
+    backgroundColor: '#FFEDD5',
+  },
+  returnTotalText: {
+    color: '#C2410C',
+  },
   meatSubTable: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFF8F8',
     borderRadius: 6,
     padding: 5,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#FECDD3',
     position: 'relative',
     zIndex: 1, // Đặt zIndex thấp hơn header
     elevation: 1,
+  },
+  returnMeatSubTable: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
   },
   meatTableHeader: {
     flexDirection: 'row',
@@ -1384,13 +1438,19 @@ const styles = StyleSheet.create({
     paddingBottom: 3,
     marginBottom: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#FEE2E2',
+  },
+  returnMeatTableHeader: {
+    borderBottomColor: '#FFEDD5',
   },
   meatTh: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#991B1B',
     textTransform: 'uppercase',
+  },
+  returnMeatTh: {
+    color: '#9A3412',
   },
   meatTableRow: {
     flexDirection: 'row',
@@ -1430,6 +1490,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#DC2626',
   },
+  returnItemSubtotalText: {
+    color: '#EA580C',
+  },
   deleteItemBtnMini: {
     width: 18,
     height: 18,
@@ -1448,14 +1511,20 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingVertical: 3,
     paddingHorizontal: 8,
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#FEE2E2',
     borderRadius: 5,
     marginTop: 2,
   },
   addMeatBtnText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#0284C7',
+    color: '#DC2626',
+  },
+  returnAddMeatBtn: {
+    backgroundColor: '#FFEDD5',
+  },
+  returnAddMeatBtnText: {
+    color: '#C2410C',
   },
 
   /* NÚT THÊM KHÁCH MỚI CỐ ĐỊNH */

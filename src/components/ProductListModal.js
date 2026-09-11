@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   FlatList,
-  Alert,
   Platform,
   ScrollView,
 } from 'react-native';
@@ -20,6 +19,9 @@ import PopupModal from './PopupModal';
 import { matchItemSearch } from '../utils/searchHelper';
 import MoneyInput from './MoneyInput';
 import { showGlobalToast } from '../store/toastStore';
+import CustomSelect from './CustomSelect';
+import { useCustomerGroups } from '../hooks/useCustomerGroups';
+import { useAuthStore } from '../store/authStore';
 
 const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
@@ -39,6 +41,43 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const [batchItems, setBatchItems] = useState([]);
   const [batchSearch, setBatchSearch] = useState('');
   const [savingBatch, setSavingBatch] = useState(false);
+
+  // ── STATE PHỤC VỤ TAB CHỈNH GIÁ RIÊNG TỪNG CỬA HÀNG & NHÓM ──
+  const user = useAuthStore((state) => state.user);
+  const { groups, saveGroup, deleteGroup: deleteGroupHook, refreshGroups } = useCustomerGroups(user?.id);
+
+  // Tab đang kích hoạt: 'general' (Giá thịt chung) hoặc 'custom' (Giá riêng cửa hàng & nhóm)
+  const [activeTab, setActiveTab] = useState('general');
+
+  // Mục tiêu chỉnh giá riêng: 'customer' (Từng cửa hàng) hoặc 'group' (Nhóm cửa hàng)
+  const [customTargetType, setCustomTargetType] = useState('customer');
+  const [customers, setCustomers] = useState([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [customProductItems, setCustomProductItems] = useState([]);
+  const [loadingCustomPrices, setLoadingCustomPrices] = useState(false);
+  const [savingCustomPrices, setSavingCustomPrices] = useState(false);
+  const [customSearchQuery, setCustomSearchQuery] = useState('');
+  const [selectZIndex, setSelectZIndex] = useState(10);
+
+  // Trạng thái dialog tạo nhóm mới trong tab giá riêng
+  const [showAddGroupDialog, setShowAddGroupDialog] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [selectedCustomersForGroup, setSelectedCustomersForGroup] = useState([]);
+
+  // Tải danh sách khách hàng để chọn trong tab giá riêng
+  const fetchCustomers = async () => {
+    setLoadingCustomers(true);
+    try {
+      const res = await api.get('/customers?isBadDebt=false');
+      setCustomers(res.data?.data || []);
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách khách hàng:', err);
+    } finally {
+      setLoadingCustomers(false);
+    }
+  };
 
   // 1. Tải danh mục thịt từ Backend bằng React Query
   const { data: productsResponse, refetch, isLoading } = useQuery({
@@ -72,6 +111,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       setError('');
       setEditingProduct(null);
       setBatchModalVisible(false);
+      fetchCustomers();
     },
     close: () => {
       setVisible(false);
@@ -281,7 +321,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
     );
 
     if (changedItems.length === 0) {
-      Alert.alert('Thông báo', 'Bạn chưa thay đổi đơn giá của loại thịt nào.');
+      showGlobalToast('Bạn chưa thay đổi đơn giá của loại thịt nào.', 'info');
       return;
     }
 
@@ -302,13 +342,221 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
         if (onRefresh) onRefresh();
         setBatchModalVisible(false);
       } else {
-        Alert.alert('Lỗi', res.data?.message || 'Không thể lưu giá đồng loạt.');
+        showGlobalToast(res.data?.message || 'Không thể lưu giá đồng loạt.', 'error');
       }
     } catch (err) {
       console.error(err);
-      Alert.alert('Lỗi', err.response?.data?.message || 'Lỗi kết nối khi lưu bảng giá.');
+      showGlobalToast(err.response?.data?.message || 'Lỗi kết nối khi lưu bảng giá.', 'error');
     } finally {
       setSavingBatch(false);
+    }
+  };
+
+  // ── CÁC HÀM XỬ LÝ CHO TAB CHỈNH GIÁ RIÊNG CỬA HÀNG & NHÓM ──
+  // Khi chọn một cửa hàng cụ thể
+  const handleSelectCustomer = async (cust) => {
+    setSelectedCustomer(cust);
+    if (!cust) {
+      setCustomProductItems([]);
+      return;
+    }
+    setLoadingCustomPrices(true);
+    try {
+      const res = await api.get(`/products?customerId=${cust.id}`);
+      const list = (res.data?.data || []).filter(
+        (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+      );
+      setCustomProductItems(
+        list.map((p) => {
+          const hasCustom = Boolean(p.hasCustomPrice);
+          const currentPrice = hasCustom
+            ? (p.customPrice ?? p.defaultPrice ?? 0)
+            : (p.baseDefaultPrice ?? p.defaultPrice ?? 0);
+          return {
+            id: p.id,
+            name: p.name,
+            unit: p.unit,
+            baseDefaultPrice: p.baseDefaultPrice ?? p.defaultPrice ?? 0,
+            costPrice: p.costPrice || 0,
+            customPrice: currentPrice,
+            originalCustomPrice: hasCustom ? currentPrice : null,
+            hasCustomPrice: hasCustom,
+            resetToDefault: false,
+            isEdited: false,
+          };
+        })
+      );
+    } catch (err) {
+      console.error('Lỗi khi tải giá riêng của cửa hàng:', err);
+      showGlobalToast('Không thể tải giá riêng của cửa hàng.', 'error');
+    } finally {
+      setLoadingCustomPrices(false);
+    }
+  };
+
+  // Khi chọn một nhóm cửa hàng — gọi API phân tích giá phổ biến nhất
+  const handleSelectGroup = async (grp) => {
+    setSelectedGroup(grp);
+    if (!grp) {
+      setCustomProductItems([]);
+      return;
+    }
+
+    const memberIds = grp.customerIds || [];
+    if (memberIds.length === 0) {
+      showGlobalToast('Nhóm này chưa có thành viên. Vui lòng thêm thành viên trước.', 'warning');
+      setCustomProductItems([]);
+      return;
+    }
+
+    setLoadingCustomPrices(true);
+    try {
+      const res = await api.post('/products/group-price-analysis', { customerIds: memberIds });
+      const productList = res.data?.data?.products || [];
+
+      setCustomProductItems(
+        productList.map((p) => ({
+          id: p.id,
+          name: p.name,
+          unit: p.unit,
+          baseDefaultPrice: p.baseDefaultPrice,
+          costPrice: p.costPrice,
+          // Giá hiển thị ban đầu = giá phổ biến nhất của nhóm (mode)
+          customPrice: p.majorityPrice,
+          originalCustomPrice: p.majorityPrice,
+          majorityPrice: p.majorityPrice,
+          majorityCount: p.majorityCount,
+          totalCount: p.totalCount,
+          // Danh sách cửa hàng đang có giá khác số đông
+          outliers: p.outliers || [],
+          outlierCount: p.outlierCount || 0,
+          hasCustomPrice: false,
+          resetToDefault: false,
+          isEdited: false,
+        }))
+      );
+    } catch (err) {
+      console.error('Lỗi khi phân tích giá nhóm:', err);
+      showGlobalToast('Không thể tải dữ liệu giá của nhóm cửa hàng.', 'error');
+      setCustomProductItems([]);
+    } finally {
+      setLoadingCustomPrices(false);
+    }
+  };
+
+  // Thay đổi giá riêng của một mặt hàng
+  const handleCustomPriceChange = (productId, newPrice) => {
+    setCustomProductItems((prev) =>
+      prev.map((item) => {
+        if (item.id === productId) {
+          const num = typeof newPrice === 'number' ? newPrice : parseNumberString(newPrice);
+          return {
+            ...item,
+            customPrice: num,
+            resetToDefault: false,
+            isEdited: true,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Đưa giá riêng về lại giá bán chung mặc định (bỏ giá riêng)
+  const handleResetProductToDefault = (productId) => {
+    setCustomProductItems((prev) =>
+      prev.map((item) => {
+        if (item.id === productId) {
+          return {
+            ...item,
+            customPrice: item.baseDefaultPrice,
+            resetToDefault: true,
+            isEdited: true,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Lọc danh sách thịt trong tab giá riêng theo từ khóa tìm kiếm
+  const filteredCustomProductItems = useMemo(() => {
+    if (!customSearchQuery.trim()) return customProductItems;
+    return customProductItems.filter((i) =>
+      matchItemSearch(i, customSearchQuery, ['name', 'unit'])
+    );
+  }, [customProductItems, customSearchQuery]);
+
+  // Đếm số lượng sản phẩm có sự thay đổi giá riêng
+  const changedCustomCount = useMemo(() => {
+    return customProductItems.filter((i) => i.isEdited || i.resetToDefault).length;
+  }, [customProductItems]);
+
+  // Lưu bảng giá riêng cho cửa hàng hoặc nhóm cửa hàng
+  const handleSaveCustomPrices = async () => {
+    let targetCustomerIds = [];
+    let targetName = '';
+
+    if (customTargetType === 'customer') {
+      if (!selectedCustomer) {
+        showGlobalToast('Vui lòng chọn cửa hàng cần cài đặt giá riêng.', 'warning');
+        return;
+      }
+      targetCustomerIds = [selectedCustomer.id];
+      targetName = selectedCustomer.name;
+    } else {
+      if (!selectedGroup) {
+        showGlobalToast('Vui lòng chọn nhóm cửa hàng cần cài đặt giá riêng.', 'warning');
+        return;
+      }
+      targetCustomerIds = selectedGroup.customerIds || [];
+      if (targetCustomerIds.length === 0) {
+        showGlobalToast('Nhóm này chưa có cửa hàng thành viên nào.', 'warning');
+        return;
+      }
+      targetName = selectedGroup.name;
+    }
+
+    const changedItems = customProductItems.filter((i) => i.isEdited || i.resetToDefault);
+
+    if (changedItems.length === 0) {
+      showGlobalToast('Bạn chưa điều chỉnh đơn giá của mặt hàng nào.', 'info');
+      return;
+    }
+
+    setSavingCustomPrices(true);
+    try {
+      const payload = {
+        customerIds: targetCustomerIds,
+        items: changedItems.map((i) => ({
+          productId: i.id,
+          price: i.resetToDefault ? null : i.customPrice,
+          resetToDefault: i.resetToDefault,
+        })),
+      };
+
+      const res = await api.post('/products/batch-customer-prices', payload);
+      if (res.data && res.data.success) {
+        showGlobalToast(
+          `Đã lưu giá riêng thành công cho ${targetCustomerIds.length} cửa hàng!`,
+          'success'
+        );
+        // Tải lại nếu đang chọn từng khách hàng để cập nhật trạng thái mới nhất
+        if (customTargetType === 'customer' && selectedCustomer) {
+          await handleSelectCustomer(selectedCustomer);
+        } else {
+          setCustomProductItems((prev) =>
+            prev.map((i) => ({ ...i, isEdited: false }))
+          );
+        }
+      } else {
+        showGlobalToast(res.data?.message || 'Không thể lưu giá riêng.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showGlobalToast(err.response?.data?.message || 'Lỗi kết nối khi lưu bảng giá riêng.', 'error');
+    } finally {
+      setSavingCustomPrices(false);
     }
   };
 
@@ -323,6 +571,36 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
             </TouchableOpacity>
           </View>
 
+          {/* ── THANH CHUYỂN TAB: GIÁ THỊT CHUNG VS GIÁ RIÊNG CỬA HÀNG & NHÓM ── */}
+          <View style={styles.tabBar}>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'general' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('general')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.tabButtonText, activeTab === 'general' && styles.tabButtonTextActive]}>
+                🥩 Giá thịt chung
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'custom' && styles.tabButtonActive]}
+              onPress={() => {
+                setActiveTab('custom');
+                if (customers.length === 0) fetchCustomers();
+              }}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[styles.tabButtonText, activeTab === 'custom' && styles.tabButtonTextActive]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                🏪 Giá riêng theo Cửa hàng
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           {error ? (
             <View style={[styles.alertBox, error.startsWith('✅') ? styles.alertSuccess : styles.alertError]}>
               <Text style={error.startsWith('✅') ? styles.alertTextSuccess : styles.alertTextError}>
@@ -331,199 +609,541 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
             </View>
           ) : null}
 
-          {/* ── FORM THÊM / CẬP NHẬT THỊT - TỐI ƯU CHIỀU CAO SIÊU GỌN ── */}
-          <View style={styles.compactFormBox}>
-            {/* Header form + Nút Cập nhật giá đồng loạt */}
-            <View style={styles.compactHeaderRow}>
-              <Text style={styles.compactTitle}>
-                {editingProduct ? '✏️ CẬP NHẬT THỊT' : '➕ THÊM THỊT MỚI'}
-              </Text>
+          {/* ── TAB 1: QUẢN LÝ & GIÁ THỊT CHUNG ── */}
+          {activeTab === 'general' && (
+            <>
+              {/* FORM THÊM / CẬP NHẬT THỊT - TỐI ƯU CHIỀU CAO SIÊU GỌN */}
+              <View style={styles.compactFormBox}>
+                <View style={styles.compactHeaderRow}>
+                  <Text style={styles.compactTitle}>
+                    {editingProduct ? '✏️ CẬP NHẬT THỊT' : '➕ THÊM THỊT MỚI'}
+                  </Text>
 
-              <TouchableOpacity
-                style={styles.batchOpenButton}
-                onPress={handleOpenBatchModal}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.batchOpenButtonText}>⚡ CẬP NHẬT GIÁ ĐỒNG LOẠT</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Hàng 1: Ô nhập tên thịt + 3 nút đơn vị tính (kg, lạng, cái) */}
-            <View style={styles.compactRow1}>
-              <TextInput
-                style={styles.compactInputName}
-                placeholder="Tên thịt (Bắp bò, Ba chỉ...)"
-                placeholderTextColor={COLORS.textLight}
-                value={name}
-                onChangeText={setName}
-              />
-              <View style={styles.compactUnitGroup}>
-                {['kg', 'lạng', 'cái'].map((u) => {
-                  const isSelected = unit === u;
-                  return (
-                    <TouchableOpacity
-                      key={u}
-                      style={[styles.compactUnitBadge, isSelected && styles.compactUnitBadgeSelected]}
-                      onPress={() => setUnit(u)}
-                    >
-                      <Text style={[styles.compactUnitText, isSelected && styles.compactUnitTextSelected]}>
-                        {u}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Hàng 2: Giá bán + Giá nhập + Nút Thêm / Lưu */}
-            <View style={styles.compactRow2}>
-              <View style={{ flex: 1 }}>
-                <MoneyInput
-                  style={styles.compactMoneyContainer}
-                  inputStyle={styles.compactMoneyField}
-                  value={price}
-                  onChangeValue={(val) => {
-                    setPrice(val);
-                    setError('');
-                  }}
-                  placeholder="Giá bán..."
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <MoneyInput
-                  style={styles.compactMoneyContainer}
-                  inputStyle={styles.compactMoneyField}
-                  value={costPrice}
-                  onChangeValue={(val) => {
-                    setCostPrice(val);
-                    setError('');
-                  }}
-                  placeholder="Giá nhập..."
-                />
-              </View>
-
-              {editingProduct ? (
-                <View style={{ flexDirection: 'row', gap: 5 }}>
                   <TouchableOpacity
-                    style={styles.compactSaveButton}
-                    onPress={handleUpdateProduct}
-                    disabled={loading}
+                    style={styles.batchOpenButton}
+                    onPress={handleOpenBatchModal}
+                    activeOpacity={0.8}
                   >
-                    {loading ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <Text style={styles.compactSaveButtonText}>LƯU 💾</Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.compactCancelButton}
-                    onPress={handleCancelEdit}
-                  >
-                    <Text style={styles.compactCancelButtonText}>HỦY</Text>
+                    <Text style={styles.batchOpenButtonText}>⚡ CẬP NHẬT GIÁ ĐỒNG LOẠT</Text>
                   </TouchableOpacity>
                 </View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.compactAddButton}
-                  onPress={handleAddProduct}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Text style={styles.compactAddButtonText}>THÊM 💾</Text>
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
 
-          {/* Thanh tìm kiếm tên thịt */}
-          <View style={styles.searchContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="🔍 Tìm kiếm tên loại thịt, đơn vị tính..."
-              placeholderTextColor={COLORS.textLight}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoCorrect={false}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity
-                style={styles.searchClearBtn}
-                onPress={() => setSearchQuery('')}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.searchClearText}>✕</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+                {/* Hàng 1: Ô nhập tên thịt + 3 nút đơn vị tính (kg, lạng, cái) */}
+                <View style={styles.compactRow1}>
+                  <TextInput
+                    style={styles.compactInputName}
+                    placeholder="Tên thịt (Bắp bò, Ba chỉ...)"
+                    placeholderTextColor={COLORS.textLight}
+                    value={name}
+                    onChangeText={setName}
+                  />
+                  <View style={styles.compactUnitGroup}>
+                    {['kg', 'lạng', 'cái'].map((u) => {
+                      const isSelected = unit === u;
+                      return (
+                        <TouchableOpacity
+                          key={u}
+                          style={[styles.compactUnitBadge, isSelected && styles.compactUnitBadgeSelected]}
+                          onPress={() => setUnit(u)}
+                        >
+                          <Text style={[styles.compactUnitText, isSelected && styles.compactUnitTextSelected]}>
+                            {u}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
 
-          {/* Danh sách thịt hiện có */}
-          <Text style={styles.sectionTitle}>
-            📋 DANH SÁCH THỊT ĐANG BÁN ({filteredProducts.length}{searchQuery.trim() ? `/${products.length}` : ''})
-          </Text>
-          {isLoading ? (
-            <ActivityIndicator color={COLORS.primary} style={{ margin: 20 }} />
-          ) : (
-            <FlatList
-              data={filteredProducts}
-              keyExtractor={(item) => item.id}
-              style={{ flex: 1 }}
-              contentContainerStyle={styles.listContent}
-              renderItem={({ item }) => {
-                const sellPrice = parseFloat(item.defaultPrice || 0);
-                const importPrice = parseFloat(item.costPrice || 0);
-                const profitPerUnit = sellPrice - importPrice;
-                const marginPercent = sellPrice > 0 ? Math.round((profitPerUnit / sellPrice) * 100) : 0;
+                {/* Hàng 2: Giá bán + Giá nhập + Nút Thêm / Lưu */}
+                <View style={styles.compactRow2}>
+                  <View style={{ flex: 1 }}>
+                    <MoneyInput
+                      style={styles.compactMoneyContainer}
+                      inputStyle={styles.compactMoneyField}
+                      value={price}
+                      onChangeValue={(val) => {
+                        setPrice(val);
+                        setError('');
+                      }}
+                      placeholder="Giá bán..."
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <MoneyInput
+                      style={styles.compactMoneyContainer}
+                      inputStyle={styles.compactMoneyField}
+                      value={costPrice}
+                      onChangeValue={(val) => {
+                        setCostPrice(val);
+                        setError('');
+                      }}
+                      placeholder="Giá nhập..."
+                    />
+                  </View>
 
-                return (
-                  <View style={styles.productItem}>
-                    <View style={styles.productDetails}>
-                      <Text style={styles.productNameText}>{item.name}</Text>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2, alignItems: 'center' }}>
-                        <Text style={styles.productPriceText}>
-                          Bán: <Text style={{ color: COLORS.dangerDark, fontWeight: 'bold' }}>{formatCurrency(sellPrice)}</Text>/{item.unit}
-                        </Text>
-                        <Text style={[styles.productPriceText, { color: COLORS.textSecondary }]}>
-                          Nhập: <Text style={{ color: '#0369A1', fontWeight: 'bold' }}>{formatCurrency(importPrice)}</Text>/{item.unit}
-                        </Text>
-                        {importPrice > 0 && (
-                          <View style={{ backgroundColor: '#F0F9FF', borderColor: '#BAE6FD', borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                            <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#0369A1' }}>
-                              Lãi: +{formatCurrency(profitPerUnit)} ({marginPercent}%)
-                            </Text>
-                          </View>
+                  {editingProduct ? (
+                    <View style={{ flexDirection: 'row', gap: 5 }}>
+                      <TouchableOpacity
+                        style={styles.compactSaveButton}
+                        onPress={handleUpdateProduct}
+                        disabled={loading}
+                      >
+                        {loading ? (
+                          <ActivityIndicator color="#FFFFFF" size="small" />
+                        ) : (
+                          <Text style={styles.compactSaveButtonText}>LƯU 💾</Text>
                         )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.compactCancelButton}
+                        onPress={handleCancelEdit}
+                      >
+                        <Text style={styles.compactCancelButtonText}>HỦY</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.compactAddButton}
+                      onPress={handleAddProduct}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <Text style={styles.compactAddButtonText}>THÊM 💾</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Thanh tìm kiếm tên thịt */}
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="🔍 Tìm kiếm tên loại thịt, đơn vị tính..."
+                  placeholderTextColor={COLORS.textLight}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCorrect={false}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity
+                    style={styles.searchClearBtn}
+                    onPress={() => setSearchQuery('')}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.searchClearText}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Danh sách thịt hiện có */}
+              <Text style={styles.sectionTitle}>
+                📋 DANH SÁCH THỊT ĐANG BÁN ({filteredProducts.length}{searchQuery.trim() ? `/${products.length}` : ''})
+              </Text>
+              {isLoading ? (
+                <ActivityIndicator color={COLORS.primary} style={{ margin: 20 }} />
+              ) : (
+                <FlatList
+                  data={filteredProducts}
+                  keyExtractor={(item) => item.id}
+                  style={{ flex: 1 }}
+                  contentContainerStyle={styles.listContent}
+                  renderItem={({ item }) => {
+                    const sellPrice = parseFloat(item.defaultPrice || 0);
+                    const importPrice = parseFloat(item.costPrice || 0);
+                    const profitPerUnit = sellPrice - importPrice;
+                    const marginPercent = sellPrice > 0 ? Math.round((profitPerUnit / sellPrice) * 100) : 0;
+
+                    return (
+                      <View style={styles.productItem}>
+                        <View style={styles.productDetails}>
+                          <Text style={styles.productNameText}>{item.name}</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2, alignItems: 'center' }}>
+                            <Text style={styles.productPriceText}>
+                              Bán: <Text style={{ color: COLORS.dangerDark, fontWeight: 'bold' }}>{formatCurrency(sellPrice)}</Text>/{item.unit}
+                            </Text>
+                            <Text style={[styles.productPriceText, { color: COLORS.textSecondary }]}>
+                              Nhập: <Text style={{ color: '#0369A1', fontWeight: 'bold' }}>{formatCurrency(importPrice)}</Text>/{item.unit}
+                            </Text>
+                            {importPrice > 0 && (
+                              <View style={{ backgroundColor: '#F0F9FF', borderColor: '#BAE6FD', borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#0369A1' }}>
+                                  Lãi: +{formatCurrency(profitPerUnit)} ({marginPercent}%)
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          <TouchableOpacity
+                            style={styles.editButton}
+                            onPress={() => handleStartEdit(item)}
+                          >
+                            <Text style={styles.editButtonText}>✏️ Sửa</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={() => handleDeleteProduct(item.id, item.name)}
+                          >
+                            <Text style={styles.deleteButtonText}>🗑️ Xóa</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
+                    );
+                  }}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyText}>
+                      {searchQuery.trim()
+                        ? `Không tìm thấy loại thịt nào khớp với "${searchQuery}".`
+                        : 'Chưa có loại thịt nào. Hãy thêm ở form trên!'}
+                    </Text>
+                  }
+                />
+              )}
+            </>
+          )}
+
+          {/* ── TAB 2: CHỈNH GIÁ RIÊNG THEO CỬA HÀNG & NHÓM ── */}
+          {activeTab === 'custom' && (
+            <View style={{ flex: 1 }}>
+              {/* Phân loại mục tiêu: Từng cửa hàng vs Nhóm cửa hàng */}
+              {/* Thanh phân loại mục tiêu + Nút thêm nhóm mới */}
+              <View style={styles.targetHeaderRow}>
+                <View style={[styles.targetTypeSegment, { flex: 1, marginBottom: 0 }]}>
+                  <TouchableOpacity
+                    style={[styles.targetTypeBtn, customTargetType === 'customer' && styles.targetTypeBtnActive]}
+                    onPress={() => {
+                      setCustomTargetType('customer');
+                      setSelectedGroup(null);
+                      setCustomProductItems([]);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.targetTypeBtnText, customTargetType === 'customer' && styles.targetTypeBtnTextActive]}>
+                      🏪 Cửa hàng ({customers.length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.targetTypeBtn, customTargetType === 'group' && styles.targetTypeBtnActive]}
+                    onPress={() => {
+                      setCustomTargetType('group');
+                      setSelectedCustomer(null);
+                      setCustomProductItems([]);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.targetTypeBtnText, customTargetType === 'group' && styles.targetTypeBtnTextActive]}>
+                      📁 Nhóm ({groups.length})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Nút thêm nhóm mới (chỉ hiện ở tab Nhóm) */}
+                {customTargetType === 'group' && (
+                  <TouchableOpacity
+                    style={styles.addGroupBtn}
+                    onPress={() => {
+                      setNewGroupName('');
+                      setShowAddGroupDialog(prev => !prev);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.addGroupBtnText}>
+                      {showAddGroupDialog ? '✕ Đóng' : '➕ Thêm nhóm'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Dialog nhanh tạo nhóm mới từ danh sách khách hàng đã chọn */}
+              {showAddGroupDialog && customTargetType === 'group' && (
+                <View style={styles.addGroupCard}>
+                  <Text style={styles.addGroupLabel}>Đặt tên nhóm mới:</Text>
+                  <View style={styles.addGroupInputRow}>
+                    <TextInput
+                      style={styles.addGroupInput}
+                      placeholder="Ví dụ: Nhóm Bếp, Nhóm Trường Hoàng..."
+                      placeholderTextColor={COLORS.textLight}
+                      value={newGroupName}
+                      onChangeText={setNewGroupName}
+                      autoFocus
+                    />
+                    <TouchableOpacity
+                      style={[styles.addGroupSubmitBtn, !newGroupName.trim() && { opacity: 0.45 }]}
+                      disabled={!newGroupName.trim()}
+                      onPress={async () => {
+                        const name = newGroupName.trim();
+                        if (!name) return;
+                        // Lưu nhóm với danh sách khách hàng đang chọn (rỗng nếu chưa chọn)
+                        const ids = selectedCustomer ? [selectedCustomer.id] : [];
+                        await saveGroup(name, ids);
+                        setNewGroupName('');
+                        setShowAddGroupDialog(false);
+                        showGlobalToast(`Đã tạo nhóm "${name}" thành công!`, 'success');
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.addGroupSubmitBtnText}>LƯU</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={{ fontSize: 11, color: '#64748B', marginTop: 4 }}>
+                    Nhóm sẽ được tạo trống. Bạn có thể thêm thành viên từ tính năng Xuất công nợ hàng loạt.
+                  </Text>
+                </View>
+              )}
+
+              {/* Ô chọn CustomSelect (Cửa hàng hoặc Nhóm) */}
+              <View style={{ zIndex: selectZIndex, elevation: selectZIndex, marginBottom: 10 }}>
+                {customTargetType === 'customer' ? (
+                  <CustomSelect
+                    value={selectedCustomer}
+                    options={customers}
+                    onSelect={(cust) => handleSelectCustomer(cust)}
+                    renderSelected={(c) => (c ? `${c.name}${c.phone ? ` (${c.phone})` : ''}` : 'Chọn cửa hàng để chỉnh giá riêng...')}
+                    getOptionLabel={(c) => (c ? `${c.name}${c.phone ? ` (${c.phone})` : ''}` : '')}
+                    placeholder="Chọn cửa hàng để chỉnh giá riêng..."
+                    onOpenChange={(isOpen) => setSelectZIndex(isOpen ? 999999 : 10)}
+                  />
+                ) : (
+                  <CustomSelect
+                    value={selectedGroup}
+                    options={groups}
+                    onSelect={(grp) => handleSelectGroup(grp)}
+                    renderSelected={(g) => (g ? `${g.name} (${g.count || (g.customerIds || []).length} cửa hàng)` : 'Chọn nhóm cửa hàng để chỉnh giá riêng...')}
+                    getOptionLabel={(g) => (g ? `${g.name} (${g.count || (g.customerIds || []).length} cửa hàng)` : '')}
+                    placeholder="Chọn nhóm cửa hàng để chỉnh giá riêng..."
+                    onOpenChange={(isOpen) => setSelectZIndex(isOpen ? 999999 : 10)}
+                  />
+                )}
+              </View>
+
+              {/* Trạng thái chưa chọn cửa hàng/nhóm */}
+              {!selectedCustomer && !selectedGroup ? (
+                <View style={styles.emptyCustomSelectBox}>
+                  <Text style={{ fontSize: 32, marginBottom: 8 }}>🏪</Text>
+                  <Text style={styles.emptyCustomSelectTitle}>
+                    {customTargetType === 'customer'
+                      ? 'Vui lòng chọn cửa hàng để xem & đặt giá riêng'
+                      : 'Vui lòng chọn nhóm để áp dụng giá riêng cho nhiều cửa hàng'}
+                  </Text>
+                  <Text style={styles.emptyCustomSelectDesc}>
+                    {customTargetType === 'customer'
+                      ? 'Giá riêng sẽ được tự động áp dụng khi tạo đơn hàng hoặc xuất báo cáo cho cửa hàng này.'
+                      : 'Khi lưu, đơn giá riêng này sẽ được cập nhật đồng loạt cho tất cả các cửa hàng thuộc nhóm đã chọn.'}
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {/* Thanh thông tin đối tượng đang chọn + Ô tìm kiếm loại thịt */}
+                  <View style={styles.customFilterRow}>
+                    <View style={styles.customTargetBadge}>
+                      <Text style={styles.customTargetBadgeText} numberOfLines={1}>
+                        🎯 Đang sửa: <Text style={{ fontWeight: 'bold' }}>{customTargetType === 'customer' ? selectedCustomer?.name : `${selectedGroup?.name} (${selectedGroup?.customerIds?.length || 0} CH)`}</Text>
+                      </Text>
                     </View>
 
-                    {/* Cụm nút hành động bên cạnh mặt hàng: Sửa và Ẩn */}
-                    <View style={{ flexDirection: 'row', gap: 6 }}>
-                      <TouchableOpacity
-                        style={styles.editButton}
-                        onPress={() => handleStartEdit(item)}
-                      >
-                        <Text style={styles.editButtonText}>✏️ Sửa</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.deleteButton}
-                        onPress={() => handleDeleteProduct(item.id, item.name)}
-                      >
-                        <Text style={styles.deleteButtonText}>🗑️ Xóa</Text>
-                      </TouchableOpacity>
+                    <View style={styles.customSearchBox}>
+                      <TextInput
+                        style={styles.customSearchInput}
+                        placeholder="🔍 Tìm loại thịt..."
+                        placeholderTextColor={COLORS.textLight}
+                        value={customSearchQuery}
+                        onChangeText={setCustomSearchQuery}
+                      />
+                      {customSearchQuery ? (
+                        <TouchableOpacity
+                          onPress={() => setCustomSearchQuery('')}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Text style={{ fontSize: 13, color: COLORS.textSecondary }}>✕</Text>
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
                   </View>
-                );
-              }}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>
-                  {searchQuery.trim()
-                    ? `Không tìm thấy loại thịt nào khớp với "${searchQuery}".`
-                    : 'Chưa có loại thịt nào. Hãy thêm ở form trên!'}
-                </Text>
-              }
-            />
+
+                  {/* Tiêu đề bảng giá riêng - nội dung thay đổi theo chế độ */}
+                  <View style={styles.customTableHead}>
+                    <Text style={[styles.customHeadCol, { flex: 1.4 }]}>Mặt hàng thịt</Text>
+                    <Text style={[styles.customHeadCol, { width: 95, textAlign: 'center' }]}>
+                      {customTargetType === 'group' ? 'Số đông nhóm' : 'Giá mặc định'}
+                    </Text>
+                    <Text style={[styles.customHeadCol, { width: 110, textAlign: 'center' }]}>
+                      {customTargetType === 'group' ? 'Giá đặt cho nhóm (đ)' : 'Giá riêng hiện tại (đ)'}
+                    </Text>
+                    <Text style={[styles.customHeadCol, { width: 65, textAlign: 'center' }]}>Gốc</Text>
+                  </View>
+
+                  {/* Danh sách thịt cho chỉnh giá */}
+                  {loadingCustomPrices ? (
+                    <View style={{ padding: 30, alignItems: 'center' }}>
+                      <ActivityIndicator color={COLORS.primary} size="large" />
+                      <Text style={{ marginTop: 10, color: COLORS.textSecondary, fontSize: 13 }}>
+                        Đang tải bảng giá riêng của cửa hàng...
+                      </Text>
+                    </View>
+                  ) : (
+                    <FlatList
+                      data={filteredCustomProductItems}
+                      keyExtractor={(item) => item.id}
+                      style={{ flex: 1 }}
+                      contentContainerStyle={{ paddingBottom: 16 }}
+                      renderItem={({ item }) => {
+                        const isModified = item.isEdited || item.resetToDefault;
+                        // Chế độ cửa hàng: tag hiện thị trạng thái giá riêng
+                        const hasCustom = item.hasCustomPrice && !item.resetToDefault;
+                        // Chế độ nhóm: có cửa hàng nào lệch giá không?
+                        const hasOutliers = customTargetType === 'group' && (item.outlierCount || 0) > 0 && !isModified;
+
+                        return (
+                          <View style={[
+                            styles.customRowItem,
+                            isModified && styles.customRowItemModified,
+                            hasOutliers && styles.customRowItemOutlier,
+                          ]}>
+                            {/* Tên thịt & ĐVT & Tag trạng thái */}
+                            <View style={{ flex: 1.4, paddingRight: 6 }}>
+                              <Text style={styles.customRowName} numberOfLines={1}>
+                                {item.name}
+                              </Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                                <Text style={styles.customRowUnit}>ĐVT: {item.unit}</Text>
+
+                                {/* Tag chế độ cửa hàng: đang có giá riêng */}
+                                {customTargetType === 'customer' && hasCustom && (
+                                  <View style={styles.customTagHasPrice}>
+                                    <Text style={styles.customTagHasPriceText}>✅ Giá riêng</Text>
+                                  </View>
+                                )}
+                                {customTargetType === 'customer' && !hasCustom && !isModified && (
+                                  <View style={[styles.customTagHasPrice, { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }]}>
+                                    <Text style={[styles.customTagHasPriceText, { color: '#64748B' }]}>Giá chung</Text>
+                                  </View>
+                                )}
+
+                                {/* Tag chế độ nhóm: có outliers */}
+                                {hasOutliers && (
+                                  <View style={styles.customTagOutlier}>
+                                    <Text style={styles.customTagOutlierText}>
+                                      ⚠️ {item.outlierCount} CH lệch giá
+                                    </Text>
+                                  </View>
+                                )}
+                                {customTargetType === 'group' && !hasOutliers && !isModified && (item.majorityCount || 0) > 0 && (
+                                  <View style={[styles.customTagHasPrice, { backgroundColor: '#ECFDF5', borderColor: '#6EE7B7' }]}>
+                                    <Text style={[styles.customTagHasPriceText, { color: '#065F46' }]}>
+                                      ✔ {item.majorityCount}/{item.totalCount} cùng giá
+                                    </Text>
+                                  </View>
+                                )}
+                                {item.resetToDefault && (
+                                  <View style={styles.customTagReset}>
+                                    <Text style={styles.customTagResetText}>Về gốc</Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {/* Hiện danh sách cửa hàng lệch giá (chế độ nhóm) */}
+                              {hasOutliers && (
+                                <View style={{ marginTop: 4 }}>
+                                  {(item.outliers || []).slice(0, 3).map((o) => (
+                                    <Text key={o.customerId} style={styles.customOutlierLabel}>
+                                      • {o.customerName}: {formatCurrency(o.currentPrice)}
+                                    </Text>
+                                  ))}
+                                  {(item.outliers || []).length > 3 && (
+                                    <Text style={styles.customOutlierLabel}>
+                                      ...và {item.outliers.length - 3} cửa hàng khác
+                                    </Text>
+                                  )}
+                                </View>
+                              )}
+                            </View>
+
+                            {/* Cột giá mạc định (cửa hàng) / số đông (nhóm) */}
+                            <View style={{ width: 95, alignItems: 'center', justifyContent: 'center' }}>
+                              {customTargetType === 'group' ? (
+                                <Text style={[
+                                  styles.customRowBasePrice,
+                                  hasOutliers && { color: '#F59E0B', fontWeight: 'bold' },
+                                ]}>
+                                  {formatCurrency(item.majorityPrice ?? item.baseDefaultPrice)}
+                                </Text>
+                              ) : (
+                                <Text style={styles.customRowBasePrice}>
+                                  {formatCurrency(item.baseDefaultPrice)}
+                                </Text>
+                              )}
+                            </View>
+
+                            {/* Ô nhập giá mới */}
+                            <View style={{ width: 110, paddingHorizontal: 4 }}>
+                              <MoneyInput
+                                style={[
+                                  styles.customRowMoneyBox,
+                                  isModified && styles.customRowMoneyBoxModified,
+                                  hasCustom && !isModified && styles.customRowMoneyBoxHasCustom,
+                                ]}
+                                inputStyle={styles.customRowMoneyInput}
+                                value={item.customPrice}
+                                onChangeValue={(val) => handleCustomPriceChange(item.id, val)}
+                                placeholder="Nhập giá..."
+                              />
+                            </View>
+
+                            {/* Nút reset về giá gốc */}
+                            <View style={{ width: 65, alignItems: 'center', justifyContent: 'center' }}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.customRowResetBtn,
+                                  (item.customPrice === item.baseDefaultPrice && !item.hasCustomPrice && !hasOutliers) && styles.customRowResetBtnDisabled,
+                                ]}
+                                onPress={() => handleResetProductToDefault(item.id)}
+                                disabled={item.customPrice === item.baseDefaultPrice && !item.hasCustomPrice && !hasOutliers}
+                              >
+                                <Text style={styles.customRowResetBtnText}>🔄 Gốc</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      }}
+                      ListEmptyComponent={
+                        <Text style={styles.emptyText}>
+                          {customSearchQuery.trim()
+                            ? `Không tìm thấy loại thịt nào khớp với "${customSearchQuery}".`
+                            : 'Không có mặt hàng thịt nào trong danh mục.'}
+                        </Text>
+                      }
+                    />
+                  )}
+
+                  {/* Footer của Tab Giá riêng: Nút lưu */}
+                  <View style={styles.customFooterRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.customSaveBtn,
+                        (changedCustomCount === 0 || savingCustomPrices) && styles.customSaveBtnDisabled,
+                      ]}
+                      onPress={handleSaveCustomPrices}
+                      disabled={changedCustomCount === 0 || savingCustomPrices}
+                      activeOpacity={0.8}
+                    >
+                      {savingCustomPrices ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <Text style={styles.customSaveBtnText}>
+                          💾 LƯU BẢNG GIÁ RIÊNG {changedCustomCount > 0 ? `(${changedCustomCount} MẶT HÀNG)` : ''}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
           )}
 
           {/* Nút đóng chân modal */}
@@ -1138,6 +1758,367 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
   batchSaveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+
+  // ── Styles Tab Bar & Tab Giá riêng theo Cửa hàng / Nhóm ──
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 12,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  tabButtonActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  tabButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  tabButtonTextActive: {
+    color: COLORS.primaryDark,
+    fontWeight: 'bold',
+  },
+  targetTypeSegment: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 4,
+  },
+  targetTypeBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  targetTypeBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
+  targetTypeBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  targetTypeBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  // Hàng chứa segment chọn loại + nút thêm nhóm mới
+  targetHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  // Nút thêm nhóm mới
+  addGroupBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexShrink: 0,
+  },
+  addGroupBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#1D4ED8',
+  },
+  // Card dialog nhập tên nhóm mới
+  addGroupCard: {
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  addGroupLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0369A1',
+    marginBottom: 6,
+  },
+  addGroupInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  addGroupInput: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    borderRadius: 6,
+    height: 36,
+    paddingHorizontal: 10,
+    fontSize: 13,
+    color: COLORS.text,
+    outlineWidth: 0,
+  },
+  addGroupSubmitBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 6,
+    height: 36,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addGroupSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  emptyCustomSelectBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 40,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginVertical: 10,
+  },
+  emptyCustomSelectTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#334155',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  emptyCustomSelectDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  customFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  customTargetBadge: {
+    flex: 1,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    justifyContent: 'center',
+  },
+  customTargetBadgeText: {
+    fontSize: 12,
+    color: '#1E40AF',
+  },
+  customSearchBox: {
+    width: 140,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    height: 34,
+  },
+  customSearchInput: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.text,
+    padding: 0,
+    outlineWidth: 0,
+    outlineStyle: 'none',
+  },
+  customTableHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  customHeadCol: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#475569',
+  },
+  customRowItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    marginBottom: 4,
+  },
+  customRowItemModified: {
+    backgroundColor: '#FEF3C7',
+    borderLeftWidth: 3,
+    borderLeftColor: '#F59E0B',
+  },
+  customRowName: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#1E293B',
+  },
+  customRowUnit: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  customTagHasPrice: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  customTagHasPriceText: {
+    fontSize: 10,
+    color: '#166534',
+    fontWeight: 'bold',
+  },
+  customTagReset: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  customTagResetText: {
+    fontSize: 10,
+    color: '#991B1B',
+    fontWeight: 'bold',
+  },
+  customRowBasePrice: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  customRowMoneyBox: {
+    backgroundColor: '#FAF8F6',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 6,
+    height: 32,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  customRowMoneyBoxModified: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#FFFFFF',
+  },
+  // MoneyBox khi cửa hàng đang có giá riêng trong DB (chế độ từng cửa hàng)
+  customRowMoneyBoxHasCustom: {
+    borderColor: '#34D399',
+    backgroundColor: '#ECFDF5',
+  },
+  // Row bị highlight khi có outliers trong chế độ nhóm
+  customRowItemOutlier: {
+    backgroundColor: '#FFFBEB',
+    borderLeftWidth: 3,
+    borderLeftColor: '#F59E0B',
+  },
+  // Tag cảnh báo outlier
+  customTagOutlier: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  customTagOutlierText: {
+    fontSize: 10,
+    color: '#92400E',
+    fontWeight: 'bold',
+  },
+  // Label hiển thị từng cửa hàng lệch giá trong chế độ nhóm
+  customOutlierLabel: {
+    fontSize: 10,
+    color: '#B45309',
+    marginTop: 1,
+  },
+  customRowMoneyInput: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.primaryDark,
+    textAlign: 'center',
+  },
+  customRowResetBtn: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customRowResetBtnDisabled: {
+    opacity: 0.35,
+  },
+  customRowResetBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  customFooterRow: {
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    marginTop: 4,
+  },
+  customSaveBtn: {
+    backgroundColor: COLORS.primary,
+    height: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  customSaveBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  customSaveBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',

@@ -53,8 +53,12 @@ import RecurringDebtModal from '../src/components/RecurringDebtModal';
 import RegularCustomersModal from '../src/components/RegularCustomersModal';
 import DailyPriceManagementModal from '../src/components/DailyPriceManagementModal';
 import PortalManagementModal from '../src/components/PortalManagementModal';
+import PortalFeedbackAdminModal from '../src/components/PortalFeedbackAdminModal';
 import InvoiceImageUploadModal from '../src/components/InvoiceImageUploadModal';
 import InvoiceImageViewerModal from '../src/components/InvoiceImageViewerModal';
+import BatchExportDebtModal from '../src/components/BatchExportDebtModal';
+import QuickNoteModal from '../src/components/QuickNoteModal';
+import { isMobileDevice } from '../src/utils/imageShareHelper';
 import AnimatedPressable from '../src/components/AnimatedPressable';
 import { useLockStore } from '../src/store/lockStore';
 import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
@@ -153,6 +157,21 @@ export default function DashboardScreen() {
   const recurringDebtModalRef = useRef(null); // Modal đơn nợ cố định hàng ngày (00:30 mỗi ngày)
   const regularCustomersModalRef = useRef(null); // Modal quản lý khách quen và đối chiếu công nợ tránh sót đơn
   const portalManagementModalRef = useRef(null); // Modal quản lý Link Ghim Zalo cho nhóm khách và NCC
+  const batchExportDebtModalRef = useRef(null); // Modal xuất công nợ hàng loạt (tải ảnh PC / chuyển tiếp Zalo)
+  const portalFeedbackAdminModalRef = useRef(null); // Modal quản lý phản hồi, thắc mắc công nợ từ khách hàng qua Zalo Portal
+  const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
+
+  // Lấy số lượng phản hồi đang chờ xử lý từ khách hàng Zalo Portal (cập nhật mỗi 30s)
+  const { data: pendingFeedbacksRes } = useQuery({
+    queryKey: ['portalPendingFeedbacks'],
+    queryFn: async () => {
+      const res = await api.get('/portal/manage/feedbacks', { params: { status: 'pending' } });
+      return res.data;
+    },
+    refetchInterval: 30000,
+    enabled: !!auth.user && !auth.user?.workspaceMember,
+  });
+  const pendingFeedbackCount = pendingFeedbacksRes?.data?.length || 0;
 
   const [showFloatingLogs, setShowFloatingLogs] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -1829,21 +1848,42 @@ export default function DashboardScreen() {
               <Text style={styles.logoutTextMini}>Thoát 🚪</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.merchantProfileCardRight}
-              onPress={() => profileModalRef.current?.open()}
-              activeOpacity={0.7}
-            >
-              <View style={styles.avatarContainerRight}>
-                <Text style={styles.avatarTextRight}>
-                  {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <View style={styles.merchantDetailsRight}>
-                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
-                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
-              </View>
-            </TouchableOpacity>
+            <View style={styles.headerRightRow}>
+              {/* Nút thông báo phản hồi Portal từ khách hàng */}
+              {!auth.user?.workspaceMember && (
+                <TouchableOpacity
+                  style={styles.portalNotifyBtn}
+                  onPress={() => portalFeedbackAdminModalRef.current?.open('pending')}
+                  activeOpacity={0.7}
+                  title="Kiểm tra phản hồi & khiếu nại từ khách hàng qua Zalo Portal"
+                >
+                  <Text style={styles.portalNotifyIcon}>🔔</Text>
+                  {pendingFeedbackCount > 0 && (
+                    <View style={styles.portalNotifyBadge}>
+                      <Text style={styles.portalNotifyBadgeText}>
+                        {pendingFeedbackCount > 9 ? '9+' : pendingFeedbackCount}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={styles.merchantProfileCardRight}
+                onPress={() => profileModalRef.current?.open()}
+                activeOpacity={0.7}
+              >
+                <View style={styles.avatarContainerRight}>
+                  <Text style={styles.avatarTextRight}>
+                    {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.merchantDetailsRight}>
+                  <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
+                  <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Tiêu đề cố định ở đầu */}
@@ -2769,21 +2809,42 @@ export default function DashboardScreen() {
             <Text style={styles.backTextNew}>← Quay lại</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.merchantProfileCardRight}
-            onPress={() => profileModalRef.current?.open()}
-            activeOpacity={0.7}
-          >
-            <View style={styles.avatarContainerRight}>
-              <Text style={styles.avatarTextRight}>
-                {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.merchantDetailsRight}>
-              <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
-              <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
-            </View>
-          </TouchableOpacity>
+          <View style={styles.headerRightRow}>
+            {/* Nút thông báo phản hồi Portal từ khách hàng */}
+            {!auth.user?.workspaceMember && (
+              <TouchableOpacity
+                style={styles.portalNotifyBtn}
+                onPress={() => portalFeedbackAdminModalRef.current?.open('pending')}
+                activeOpacity={0.7}
+                title="Kiểm tra phản hồi & khiếu nại từ khách hàng qua Zalo Portal"
+              >
+                <Text style={styles.portalNotifyIcon}>🔔</Text>
+                {pendingFeedbackCount > 0 && (
+                  <View style={styles.portalNotifyBadge}>
+                    <Text style={styles.portalNotifyBadgeText}>
+                      {pendingFeedbackCount > 9 ? '9+' : pendingFeedbackCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.merchantProfileCardRight}
+              onPress={() => profileModalRef.current?.open()}
+              activeOpacity={0.7}
+            >
+              <View style={styles.avatarContainerRight}>
+                <Text style={styles.avatarTextRight}>
+                  {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.merchantDetailsRight}>
+                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
+                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* TỔNG TIỀN NỢ & KINH DOANH: Chỉ hiện với chủ tài khoản, ẩn với tài khoản thành viên */}
@@ -3005,8 +3066,26 @@ export default function DashboardScreen() {
                 >
                   <Text style={styles.smartDebtMenuIcon}>🧾</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.smartDebtMenuTitle}>Lưu ảnh hóa đơn</Text>
-                    <Text style={styles.smartDebtMenuSub}>Tải nhiều ảnh, dán Ctrl+V, đính kèm đơn nợ</Text>
+                    <Text style={styles.smartDebtMenuTitle}>Lưu ảnh & video hóa đơn</Text>
+                    <Text style={styles.smartDebtMenuSub}>Lưu ảnh/video (Cloudinary), dán Ctrl+V, quản lý tệp</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    batchExportDebtModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>📊</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Xuất công nợ hàng loạt</Text>
+                    <Text style={styles.smartDebtMenuSub}>
+                      {isMobileDevice() ? 'Chuyển tiếp Zalo nhiều khách theo nhóm' : 'Tải bảng kê nhiều khách theo nhóm'}
+                    </Text>
                   </View>
                 </TouchableOpacity>
 
@@ -3121,6 +3200,22 @@ export default function DashboardScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.smartDebtMenuTitle}>Đơn nợ cố định hàng ngày</Text>
                     <Text style={styles.smartDebtMenuSub}>Tự động lên đơn lúc 0:30 mỗi ngày</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    quickNoteModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>📝</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Ghi chú cần nhớ</Text>
+                    <Text style={styles.smartDebtMenuSub}>Lưu ghi chú, mẹo công việc, giá riêng từng quán</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -3328,6 +3423,9 @@ export default function DashboardScreen() {
       {/* MODAL QUẢN LÝ LINK GHIM ZALO CHO KHÁCH & NHÀ CUNG CẤP */}
       <PortalManagementModal ref={portalManagementModalRef} />
 
+      {/* MODAL QUẢN LÝ PHẢN HỒI & KHIẾU NẠI TỪ ZALO PORTAL */}
+      <PortalFeedbackAdminModal ref={portalFeedbackAdminModalRef} />
+
       {/* MODAL TẢI ẢNH HÓA ĐƠN HÀNG LOẠT (Ẩn) - Đặt ở cuối để luôn hiển thị đè lên TransactionDetailModal & CustomerDebtHistoryModal */}
       <InvoiceImageUploadModal
         ref={invoiceImageUploadModalRef}
@@ -3337,6 +3435,16 @@ export default function DashboardScreen() {
 
       {/* MODAL XEM PHÓNG TO ẢNH HÓA ĐƠN (Ẩn) - Đặt sau modal tải ảnh để có thể hiển thị đè lên trên */}
       <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
+
+      {/* MODAL XUẤT CÔNG NỢ HÀNG LOẠT (Ẩn) - Tải về máy tính hoặc chuyển tiếp Zalo */}
+      <BatchExportDebtModal
+        ref={batchExportDebtModalRef}
+        popupModalRef={popupModalRef}
+        currentUserId={auth.user?.id}
+      />
+
+      {/* MODAL GHI CHÚ NHANH CẦN NHỚ */}
+      <QuickNoteModal ref={quickNoteModalRef} />
 
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />
@@ -3420,9 +3528,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
     backgroundColor: COLORS.card,
     borderBottomWidth: 1,
     borderColor: '#F1F5F9', // Viền siêu mỏng nhạt màu
@@ -3434,18 +3542,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatarContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: '#ECFDF5', // Màu xanh bạc hà nhạt
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 10,
     borderWidth: 1,
     borderColor: '#A7F3D0',
   },
   avatarText: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#047857', // Xanh lá đậm sang trọng
   },
@@ -3453,12 +3561,12 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   merchantGreeting: {
-    fontSize: 12,
+    fontSize: 11,
     color: COLORS.textSecondary,
-    marginBottom: 2,
+    marginBottom: 0,
   },
   merchantName: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: 'bold',
     color: COLORS.text,
   },
@@ -3466,14 +3574,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF1F1', // Nền đỏ hồng pastel siêu nhạt
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#FEE2E2',
   },
   logoutTextNew: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#EF4444',
   },
@@ -3858,9 +3966,9 @@ const styles = StyleSheet.create({
   },
   // Nút ghi nợ mới trực tiếp từ trang chủ
   addDebtBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 9,
+    borderRadius: 7,
     backgroundColor: '#FFF1F1', // Nền đỏ pastel nhạt
     borderWidth: 1,
     borderColor: '#FECACA', // Viền đỏ nhạt
@@ -3869,14 +3977,14 @@ const styles = StyleSheet.create({
     ...SHADOWS.card,
   },
   addDebtBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     color: COLORS.danger, // Màu đỏ ghi nợ thương hiệu
   },
   payBadDebtBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 9,
+    borderRadius: 7,
     backgroundColor: '#ECFDF5', // Nền xanh lá pastel nhạt
     borderWidth: 1,
     borderColor: '#A7F3D0', // Viền xanh lá nhạt
@@ -3890,7 +3998,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   payBadDebtBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#059669', // Xanh lá đậm thương hiệu thu nợ
   },
@@ -3900,26 +4008,26 @@ const styles = StyleSheet.create({
   // Thẻ khách hàng chứa cả thông tin nhấp và nút xóa bên trong
   customerCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 12,
-    marginBottom: 8,
+    borderRadius: 10,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     ...SHADOWS.card,
   },
   customerCardDebtStripe: {
-    borderLeftWidth: 5,
+    borderLeftWidth: 4,
     borderLeftColor: COLORS.danger,
   },
   customerCardNoDebtStripe: {
-    borderLeftWidth: 5,
+    borderLeftWidth: 4,
     borderLeftColor: COLORS.primary,
   },
-  // Vùng thông tin khách hàng có thể click
+  // Vùng thông tin khách hàng có thể click (giảm padding để thu gọn chiều cao thẻ)
   customerCardClickable: {
     flexDirection: 'column',
     alignItems: 'stretch',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
   cardHeaderTouchable: {
     width: '100%',
@@ -3930,15 +4038,15 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   customerAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   customerAvatarText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   cardInfo: {
@@ -3947,14 +4055,14 @@ const styles = StyleSheet.create({
   },
   // Tên khách hàng (giảm cỡ chữ và margin bottom)
   customerName: {
-    fontSize: 16,
+    fontSize: 14.5,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   // SĐT khách hàng (giảm cỡ chữ xuống caption)
   customerPhone: {
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.textSecondary,
   },
   cardDebtStatusSection: {
@@ -3965,7 +4073,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   debtValueAmount: {
-    fontSize: 16,
+    fontSize: 14.5,
     fontWeight: 'bold',
     color: COLORS.dangerDark,
   },
@@ -3977,21 +4085,21 @@ const styles = StyleSheet.create({
   },
   noDebtBadge: {
     backgroundColor: '#ECFDF5',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#A7F3D0',
   },
   noDebtBadgeText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
     color: '#047857',
   },
   cardDivider: {
     height: 1,
     backgroundColor: '#F1F5F9',
-    marginVertical: 10,
+    marginVertical: 4,
     width: '100%',
   },
   cardDebtContainer: {
@@ -4013,13 +4121,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
-    gap: 8,
+    gap: 6,
   },
   // Nút xem chi tiết nợ của khách hàng
   viewDebtBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 9,
+    borderRadius: 7,
     backgroundColor: '#EFF6FF', // Nền xanh da trời nhẹ
     borderWidth: 1,
     borderColor: '#BFDBFE',
@@ -4028,15 +4136,15 @@ const styles = StyleSheet.create({
     ...SHADOWS.card,
   },
   viewDebtBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#0068FF', // Màu xanh Zalo
   },
   // Nút Xuất công nợ đặt trực tiếp trên thẻ khách hàng
   exportDebtBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 9,
+    borderRadius: 7,
     backgroundColor: '#FFFFFF', // Màu trắng nổi bật trên nền thẻ pastel
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -4045,15 +4153,15 @@ const styles = StyleSheet.create({
     ...SHADOWS.card, // Tạo độ nổi khối nhẹ
   },
   exportDebtBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     color: COLORS.primaryDark, // Màu xanh lá cây đậm thương hiệu
   },
   // Nút Trả hàng cho khách hàng
   returnGoodsBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 7,
     backgroundColor: '#FFFBEB', // Nền hổ phách nhạt
     borderWidth: 1,
     borderColor: '#FDE68A',     // Viền hổ phách
@@ -4062,7 +4170,7 @@ const styles = StyleSheet.create({
     ...SHADOWS.card,
   },
   returnGoodsBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#D97706', // Chữ màu hổ phách/cam
   },
@@ -4071,15 +4179,15 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   threeDotsBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
   threeDotsText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
     lineHeight: 18,
@@ -4472,23 +4580,62 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text,
   },
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  portalNotifyBtn: {
+    position: 'relative',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...SHADOWS.card,
+  },
+  portalNotifyIcon: {
+    fontSize: 18,
+  },
+  portalNotifyBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: '#EF4444',
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  portalNotifyBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   merchantProfileCardRight: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   avatarContainerRight: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#ECFDF5',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#A7F3D0',
-    marginRight: 10,
+    marginRight: 8,
   },
   avatarTextRight: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#047857',
   },
@@ -4496,19 +4643,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   merchantGreetingRight: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: COLORS.textSecondary,
-    marginBottom: 2,
+    marginBottom: 0,
   },
   merchantNameRight: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
     color: COLORS.text,
   },
   logoutButtonMini: {
-    width: 90,
-    height: 32,
-    borderRadius: 16,
+    width: 84,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#FFF1F1',
     justifyContent: 'center',
     alignItems: 'center',
@@ -4516,14 +4663,14 @@ const styles = StyleSheet.create({
     borderColor: '#FEE2E2',
   },
   logoutTextMini: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
     color: '#EF4444',
   },
   workspaceButtonMini: {
-    width: 98,
-    height: 32,
-    borderRadius: 16,
+    width: 90,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#F5F3FF', // Tông màu tím nhạt
     justifyContent: 'center',
     alignItems: 'center',
@@ -4531,14 +4678,14 @@ const styles = StyleSheet.create({
     borderColor: '#DDD6FE',
   },
   workspaceTextMini: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
     color: '#7C3AED', // Màu chữ tím đậm
   },
   backButtonNew: {
-    width: 90,
-    height: 32,
-    borderRadius: 16,
+    width: 84,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
@@ -4546,7 +4693,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   backTextNew: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
     color: COLORS.textSecondary,
   },

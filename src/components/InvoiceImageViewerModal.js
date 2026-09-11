@@ -12,8 +12,17 @@ import {
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { API_HOST } from '../api/client';
+import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Kiểm tra URL có phải là định dạng Video hay không
+const checkIsVideoUrl = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  if (url.startsWith('data:video/')) return true;
+  if (url.includes('/video/upload/')) return true;
+  return /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(url);
+};
 
 /**
  * Modal xem ảnh hóa đơn phóng to:
@@ -130,21 +139,15 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     }
   };
 
-  // Tải ảnh về máy
-  const handleDownload = () => {
+  // Tải ảnh (PC) hoặc chuyển tiếp Zalo (Mobile)
+  const handleDownload = async () => {
     if (!currentUrl) return;
-    try {
-      if (typeof window !== 'undefined') {
-        const link = document.createElement('a');
-        link.href = currentUrl;
-        link.download = `hoa_don_${currentIndex + 1}.jpg`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-    } catch (e) {
-      console.error('Lỗi khi tải ảnh:', e);
-    }
+    await downloadOrShareImage({
+      imageUri: currentUrl,
+      fileName: `hoa_don_${currentIndex + 1}.jpg`,
+      title: title || 'Ảnh hóa đơn',
+      text: subtitle || '',
+    });
   };
 
   // Phóng to ảnh
@@ -272,6 +275,8 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     }
   };
 
+  const isVideo = checkIsVideoUrl(currentUrl);
+
   return (
     <SmoothModal visible={visible} onClose={handleClose} centered={true} zIndex={100000}>
       <View style={styles.container}>
@@ -279,7 +284,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.titleText} numberOfLines={1}>
-              🧾 {title} {images.length > 1 ? `(${currentIndex + 1}/${images.length})` : ''}
+              {isVideo ? '🎬' : '🧾'} {title} {images.length > 1 ? `(${currentIndex + 1}/${images.length})` : ''}
             </Text>
             {subtitle ? <Text style={styles.subText}>{subtitle}</Text> : null}
           </View>
@@ -290,7 +295,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
                 <TouchableOpacity
                   style={styles.actionBtn}
                   onPress={handleOpenInNewTab}
-                  title="Mở ảnh trong tab mới"
+                  title="Mở trong tab mới"
                 >
                   <Text style={styles.actionBtnText}>🔗 Mở tab</Text>
                 </TouchableOpacity>
@@ -298,9 +303,11 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
                 <TouchableOpacity
                   style={styles.actionBtn}
                   onPress={handleDownload}
-                  title="Tải ảnh về máy"
+                  title={isMobileDevice() ? 'Gửi Zalo' : (isVideo ? 'Tải video về máy' : 'Tải ảnh về máy')}
                 >
-                  <Text style={styles.actionBtnText}>⬇️ Lưu ảnh</Text>
+                  <Text style={styles.actionBtnText}>
+                    {isMobileDevice() ? '📲 Gửi Zalo' : (isVideo ? '⬇️ Tải video' : '⬇️ Lưu ảnh')}
+                  </Text>
                 </TouchableOpacity>
               </>
             ) : null}
@@ -320,34 +327,38 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
           </View>
         </View>
 
-        {/* Khung hiển thị hình ảnh có hỗ trợ Zoom & Kéo */}
+        {/* Khung hiển thị hình ảnh / video có hỗ trợ Zoom & Kéo */}
         <View
           ref={containerRef}
           style={styles.imageViewerBox}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onDoubleClick={handleDoubleClick}
+          onMouseDown={!isVideo ? handleMouseDown : undefined}
+          onMouseMove={!isVideo ? handleMouseMove : undefined}
+          onMouseUp={!isVideo ? handleMouseUp : undefined}
+          onMouseLeave={!isVideo ? handleMouseUp : undefined}
+          onTouchStart={!isVideo ? handleTouchStart : undefined}
+          onTouchMove={!isVideo ? handleTouchMove : undefined}
+          onTouchEnd={!isVideo ? handleTouchEnd : undefined}
+          onDoubleClick={!isVideo ? handleDoubleClick : undefined}
         >
-          {/* Trạng thái đang tải ảnh */}
+          {/* Trạng thái đang tải */}
           {imageLoading && !imageError && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color="#10B981" />
-              <Text style={styles.loadingText}>Đang tải ảnh hóa đơn...</Text>
+              <Text style={styles.loadingText}>
+                {isVideo ? 'Đang tải video hóa đơn...' : 'Đang tải ảnh hóa đơn...'}
+              </Text>
             </View>
           )}
 
-          {/* Trạng thái ảnh bị lỗi không tải được */}
+          {/* Trạng thái bị lỗi không tải được */}
           {imageError && (
             <View style={styles.errorContainer}>
               <Text style={styles.errorIcon}>⚠️</Text>
-              <Text style={styles.errorTitle}>Không thể tải được hình ảnh hóa đơn</Text>
+              <Text style={styles.errorTitle}>
+                {isVideo ? 'Không thể phát video hóa đơn' : 'Không thể tải được hình ảnh hóa đơn'}
+              </Text>
               <Text style={styles.errorDesc}>
-                Đường truyền mạng bị gián đoạn hoặc định dạng ảnh không tương thích.
+                Đường truyền mạng bị gián đoạn hoặc định dạng tệp không tương thích.
               </Text>
               <View style={styles.errorBtnRow}>
                 <TouchableOpacity
@@ -371,59 +382,95 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
           )}
 
           {currentUrl && !imageError ? (
-            <View
-              style={[
-                styles.imageTransformWrapper,
-                {
-                  transform: [
-                    { translateX: position.x },
-                    { translateY: position.y },
-                    { scale: scale },
-                    { rotate: `${rotation}deg` },
-                  ],
-                  cursor: isDragging ? 'grabbing' : (scale > 1 ? 'grab' : 'default'),
-                  display: imageLoading ? 'none' : 'flex',
-                },
-              ]}
-            >
-              {Platform.OS === 'web' ? (
-                <img
+            isVideo ? (
+              Platform.OS === 'web' ? (
+                <video
                   key={`${currentUrl}_${reloadKey}`}
                   src={currentUrl}
-                  alt={title || 'Hóa đơn'}
-                  draggable={false}
-                  onLoad={() => {
+                  controls
+                  autoPlay
+                  playsInline
+                  onLoadedData={() => {
                     setImageLoading(false);
                     setImageError(false);
                   }}
                   onError={(e) => {
-                    console.error('Lỗi khi tải ảnh hóa đơn trên Web:', currentUrl, e);
+                    console.error('Lỗi khi tải video hóa đơn trên Web:', currentUrl, e);
                     setImageLoading(false);
                     setImageError(true);
                   }}
                   style={{
-                    maxWidth: '100%',
-                    maxHeight: '100%',
+                    maxWidth: '92vw',
+                    maxHeight: '80vh',
                     objectFit: 'contain',
-                    userSelect: 'none',
-                    pointerEvents: 'none',
+                    borderRadius: 8,
+                    boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+                    backgroundColor: '#000000',
                   }}
                 />
               ) : (
-                <Image
-                  key={`${currentUrl}_${reloadKey}`}
-                  source={{ uri: currentUrl }}
-                  style={styles.mainImage}
-                  resizeMode="contain"
-                  onLoadStart={() => setImageLoading(true)}
-                  onLoadEnd={() => setImageLoading(false)}
-                  onError={() => {
-                    setImageLoading(false);
-                    setImageError(true);
-                  }}
-                />
-              )}
-            </View>
+                <View style={{ alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 16, marginBottom: 12 }}>🎬 Video hóa đơn</Text>
+                  <TouchableOpacity style={styles.openTabBtn} onPress={handleOpenInNewTab}>
+                    <Text style={styles.openTabBtnText}>▶️ Mở xem video</Text>
+                  </TouchableOpacity>
+                </View>
+              )
+            ) : (
+              <View
+                style={[
+                  styles.imageTransformWrapper,
+                  {
+                    transform: [
+                      { translateX: position.x },
+                      { translateY: position.y },
+                      { scale: scale },
+                      { rotate: `${rotation}deg` },
+                    ],
+                    cursor: isDragging ? 'grabbing' : (scale > 1 ? 'grab' : 'default'),
+                    display: imageLoading ? 'none' : 'flex',
+                  },
+                ]}
+              >
+                {Platform.OS === 'web' ? (
+                  <img
+                    key={`${currentUrl}_${reloadKey}`}
+                    src={currentUrl}
+                    alt={title || 'Hóa đơn'}
+                    draggable={false}
+                    onLoad={() => {
+                      setImageLoading(false);
+                      setImageError(false);
+                    }}
+                    onError={(e) => {
+                      console.error('Lỗi khi tải ảnh hóa đơn trên Web:', currentUrl, e);
+                      setImageLoading(false);
+                      setImageError(true);
+                    }}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      userSelect: 'none',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                ) : (
+                  <Image
+                    key={`${currentUrl}_${reloadKey}`}
+                    source={{ uri: currentUrl }}
+                    style={styles.mainImage}
+                    resizeMode="contain"
+                    onLoadStart={() => setImageLoading(true)}
+                    onLoadEnd={() => setImageLoading(false)}
+                    onError={() => {
+                      setImageLoading(false);
+                      setImageError(true);
+                    }}
+                  />
+                )}
+              </View>
+            )
           ) : !currentUrl ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>Không thể hiển thị hình ảnh này.</Text>

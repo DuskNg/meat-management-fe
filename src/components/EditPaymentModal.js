@@ -168,7 +168,7 @@ const EditPaymentModal = forwardRef(({ onRefresh, editReturnGoodsModalRef }, ref
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <SmoothModal zIndex={25000} visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <Text style={styles.modalTitle}>✏️ SỬA LƯỢT THU TIỀN</Text>
 

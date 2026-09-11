@@ -12,6 +12,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { showGlobalToast } from '../store/toastStore';
+import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
 
 /**
  * Component hiển thị ảnh phóng to toàn màn hình với các chức năng:
@@ -216,56 +217,16 @@ const ImagePreviewModal = forwardRef((props, ref) => {
     setIsDragging(false);
   };
 
-  // Tải hoặc chia sẻ ảnh qua Web Share API
+  // Tải hoặc chuyển tiếp Zalo qua Web Share API
   const handleDownloadOrShare = async () => {
     if (!imageUrl) return;
-    try {
-      const sliceSize = 512;
-      const base64Part = imageUrl.includes(',') ? imageUrl.split(',')[1] : imageUrl;
-      const byteCharacters = atob(base64Part);
-      const byteArrays = [];
-      for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-        const slice = byteCharacters.slice(offset, offset + sliceSize);
-        const byteNumbers = new Array(slice.length);
-        for (let i = 0; i < slice.length; i++) {
-          byteNumbers[i] = slice.charCodeAt(i);
-        }
-        byteArrays.push(new Uint8Array(byteNumbers));
-      }
-      const blob = new Blob(byteArrays, { type: 'image/png' });
-      const fileName = `HoaDon_${Date.now()}.png`;
-
-      const isMobileDevice = typeof navigator !== 'undefined' &&
-        /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-
-      if (isMobileDevice && typeof navigator !== 'undefined' && navigator.share && typeof File !== 'undefined') {
-        const file = new File([blob], fileName, { type: 'image/png' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: 'Ảnh hóa đơn',
-            });
-            return;
-          } catch (e) {
-            if (e.name === 'AbortError') return;
-          }
-        }
-      }
-
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
-      showGlobalToast('Đã tải ảnh về máy thành công!', 'success');
-    } catch (err) {
-      console.error('Lỗi khi tải/chia sẻ ảnh:', err);
-      showGlobalToast('Đã xảy ra lỗi khi tải ảnh.', 'error');
-    }
+    const fileName = `HoaDon_${Date.now()}.png`;
+    await downloadOrShareImage({
+      imageUri: imageUrl,
+      fileName,
+      title: 'Ảnh hóa đơn',
+      text: 'Ảnh hóa đơn',
+    });
   };
 
   if (!imageUrl) return null;
@@ -354,9 +315,7 @@ const ImagePreviewModal = forwardRef((props, ref) => {
               activeOpacity={0.8}
             >
               <Text style={styles.shareButtonText}>
-                {typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-                  ? '📲 Lưu / Gửi'
-                  : '💾 Tải ảnh'}
+                {isMobileDevice() ? '📲 Lưu / Gửi Zalo' : '💾 Tải ảnh'}
               </Text>
             </TouchableOpacity>
 
