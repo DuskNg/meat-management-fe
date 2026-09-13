@@ -1959,35 +1959,7 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
-            {/* Chức năng: Hóa đơn nhân viên (AI) */}
-            {auth.hasPermission('canManageDebt') && (
-              <TouchableOpacity
-                style={[styles.menuCard, { borderColor: '#C4B5FD', backgroundColor: '#FAF5FF' }]}
-                onPress={() => {
-                  staffSubmissionReviewModalRef.current?.open();
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.menuCardIconBg, { backgroundColor: '#EDE9FE' }]}>
-                  <Text style={styles.menuCardIcon}>🤖</Text>
-                </View>
-                <View style={styles.menuCardContent}>
-                  <View style={styles.menuTitleRow}>
-                    <Text style={[styles.menuCardTitle, { color: '#6D28D9' }]}>Hóa đơn nhân viên (AI)</Text>
-                    {pendingStaffSubmissionCount > 0 && (
-                      <View style={{ backgroundColor: '#7C3AED', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2 }}>
-                        <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>
-                          {pendingStaffSubmissionCount} chờ duyệt
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={[styles.menuCardDesc, { color: '#7C3AED' }]}>
-                    Tạo link Zalo cho nhân viên gửi ảnh hóa đơn & video cân thịt. AI tự phân tích để chủ buôn kiểm tra và duyệt nhanh.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            )}
+
 
             {/* Chức năng 1: Quản lý khách hàng */}
             {auth.hasPermission('canManageCustomers') && (
@@ -3115,30 +3087,7 @@ export default function DashboardScreen() {
                   nestedScrollEnabled={true}
                 >
 
-                <TouchableOpacity
-                  style={styles.smartDebtMenuItem}
-                  onPress={() => {
-                    setShowDebtToolsMenu(false);
-                    staffSubmissionReviewModalRef.current?.open();
-                  }}
-                >
-                  <Text style={styles.smartDebtMenuIcon}>🤖</Text>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={styles.smartDebtMenuTitle}>Hóa đơn nhân viên (AI)</Text>
-                      {pendingStaffSubmissionCount > 0 && (
-                        <View style={{ backgroundColor: '#7C3AED', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 }}>
-                          <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: 'bold' }}>
-                            {pendingStaffSubmissionCount} mới
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.smartDebtMenuSub}>AI bóc tách ảnh/video cân thịt từ link Zalo nhân viên</Text>
-                  </View>
-                </TouchableOpacity>
 
-                <View style={styles.smartDebtMenuDivider} />
 
                 <TouchableOpacity
                   style={styles.smartDebtMenuItem}
