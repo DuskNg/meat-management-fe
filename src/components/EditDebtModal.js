@@ -278,10 +278,13 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
     close: () => setVisible(false),
   }));
 
-  // ─── Chọn loại thịt (điền giá mặc định) ──────────────────────────────
+  // ─── Chọn loại thịt (ưu tiên điền giá riêng của khách hàng) ──────────
   const handleSelectProduct = (product) => {
     setCurrentProduct(product);
-    setCurrentPrice(formatNumberString(product.defaultPrice.toString()));
+    const effectivePrice = product.customPrice !== undefined && product.customPrice !== null
+      ? product.customPrice
+      : (product.defaultPrice || 0);
+    setCurrentPrice(formatNumberString(effectivePrice.toString()));
     setEditingItemId(null);
     setError('');
   };

@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/InvoiceImageUploadModal.js
-import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import {
   StyleSheet,
   Text,
@@ -115,17 +115,24 @@ const parseDateString = (str) => {
  * - Hỗ trợ công cụ áp dụng nhanh cùng ngày / cùng khách cho toàn bộ danh sách.
  * - Tự động đính kèm ảnh vào đơn nợ ngày hôm đó của khách sau khi lưu.
  */
-const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) => {
+const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRef, customers: propCustomers = [] }, ref) => {
   const { width: windowWidth } = useWindowDimensions();
   const isMobile = windowWidth < 768;
 
   const [visible, setVisible] = useState(false);
-  const [customers, setCustomers] = useState([]);
+  const [customers, setCustomers] = useState(propCustomers || []);
   const [imageList, setImageList] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [processingFiles, setProcessingFiles] = useState(false);
   const [processProgress, setProcessProgress] = useState('');
+
+  // Tự động đồng bộ propCustomers vào state khi danh sách ngoài đã sẵn sàng
+  useEffect(() => {
+    if (Array.isArray(propCustomers) && propCustomers.length > 0 && customers.length === 0) {
+      setCustomers(propCustomers);
+    }
+  }, [propCustomers]);
 
   // Tab hiện tại: 'upload' (đăng tải ảnh mới) hoặc 'manage' (quản lý ảnh đã lưu)
   const [activeTab, setActiveTab] = useState('upload');
@@ -134,6 +141,32 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
   const [batchCustomer, setBatchCustomer] = useState(null);
   const [batchDateStr, setBatchDateStr] = useState(getTodayFormatted());
   const [activeOpenRowId, setActiveOpenRowId] = useState(null);
+
+  // Lấy tên khách hàng một cách an toàn và đầy đủ nhất: từ item -> từ customers -> từ batch
+  const getCustomerNameById = useCallback(
+    (cId) => {
+      if (!cId) return '';
+      // 1. Tìm trực tiếp từ imageList (ưu tiên cao nhất vì mỗi ảnh đã lưu thông tin khi người dùng chọn)
+      const itemWithCust = imageList.find(
+        (item) =>
+          (item.customerId === cId || item.selectedCustomer?.id === cId) &&
+          (item.selectedCustomer?.name || item.customerName)
+      );
+      if (itemWithCust?.selectedCustomer?.name) return itemWithCust.selectedCustomer.name;
+      if (itemWithCust?.customerName) return itemWithCust.customerName;
+
+      // 2. Tìm từ danh sách customers hiện có (state hoặc prop)
+      const list = (customers && customers.length > 0) ? customers : propCustomers;
+      const fromList = (list || []).find((c) => c.id === cId || String(c.id) === String(cId));
+      if (fromList?.name) return fromList.name;
+
+      // 3. Tìm từ batchCustomer nếu đang chọn
+      if (batchCustomer?.id === cId && batchCustomer?.name) return batchCustomer.name;
+
+      return cId;
+    },
+    [imageList, customers, propCustomers, batchCustomer]
+  );
 
   // State cho Tab Quản lý ảnh đã lưu
   const [savedInvoices, setSavedInvoices] = useState([]);
@@ -161,6 +194,19 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
   // State phục vụ tính năng thu phóng (Scale/Zoom) ảnh tập trung vào giữa
   const [batchScale, setBatchScale] = useState(1.4); // Mức scale mặc định 140%
   const isItemDraggingRef = useRef(false);
+
+  // Bảng đếm tệp theo khách hàng để nhận diện và cảnh báo các tệp bị trùng khách trong danh sách
+  const duplicateCustomerMap = useMemo(() => {
+    const map = {};
+    imageList.forEach((item, index) => {
+      if (!item.customerId) return;
+      if (!map[item.customerId]) {
+        map[item.customerId] = [];
+      }
+      map[item.customerId].push(index + 1);
+    });
+    return map;
+  }, [imageList]);
 
   // Tải danh sách ảnh hóa đơn đã lưu từ máy chủ theo bộ lọc
   const fetchSavedInvoices = async (overrideParams = {}) => {
@@ -211,16 +257,22 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
       isLoadedDraftRef.current = false;
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-      let customerList = customers;
+      let customerList = (customers && customers.length > 0) ? customers : (propCustomers || []);
 
-      // Tải danh sách khách hàng hoạt động
+      // Tải danh sách khách hàng hoạt động (chạy đồng bộ nếu chưa có dữ liệu, hoặc chạy nền nếu đã có)
       try {
-        setLoadingCustomers(true);
+        if (customerList.length === 0) {
+          setLoadingCustomers(true);
+        }
         const res = await api.get('/customers?isBadDebt=false');
-        customerList = res.data?.data || [];
-        setCustomers(customerList);
+        if (res.data?.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
+          customerList = res.data.data;
+          setCustomers(customerList);
+        }
       } catch (err) {
-        showGlobalToast('Không thể tải danh sách khách hàng.', 'error');
+        if (customerList.length === 0) {
+          showGlobalToast('Không thể tải danh sách khách hàng.', 'error');
+        }
       } finally {
         setLoadingCustomers(false);
       }
@@ -465,6 +517,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
             mediaType: isVid ? 'video' : 'image',
             selectedCustomer: batchCustomer || null,
             customerId: batchCustomer?.id || null,
+            customerName: batchCustomer?.name || '',
             dateStr: batchDateStr || getTodayFormatted(),
             note: '',
             scale: isVid ? 1.0 : (batchScale || 1.4), // Mặc định tự động phóng to 140% tập trung vào giữa hóa đơn để bỏ rìa thừa
@@ -640,6 +693,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
         ...item,
         selectedCustomer: batchCustomer,
         customerId: batchCustomer.id,
+        customerName: batchCustomer.name,
       }))
     );
     showGlobalToast(`Đã áp dụng khách "${batchCustomer.name}" cho toàn bộ ${imageList.length} ảnh!`, 'success');
@@ -755,8 +809,6 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
   // Lăn con lăn chuột để zoom mượt mà trên khung ảnh
   const handleWheelZoom = (e, itemId) => {
     if (Platform.OS !== 'web') return;
-    e.preventDefault();
-    e.stopPropagation();
     const delta = e.deltaY < 0 ? 0.15 : -0.15;
     setImageList((prev) =>
       prev.map((item) => {
@@ -930,7 +982,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
       return;
     }
 
-    // Kiểm tra từng ảnh đã có khách hàng chưa
+    // 1. Kiểm tra từng ảnh đã có khách hàng chưa
     const missingCustomerIdx = imageList.findIndex((item) => !item.customerId);
     if (missingCustomerIdx !== -1) {
       showGlobalToast(
@@ -940,90 +992,216 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
       return;
     }
 
-    // ── ĐỐI CHIẾU CÔNG NỢ: kiểm tra từng khách + ngày có trong đơn nợ không ──
+    // 2. CHECK TRÙNG KHÁCH TRONG ĐỢT TẢI LÊN HIỆN TẠI
+    const customerBatchMap = {};
+    imageList.forEach((item, index) => {
+      if (!item.customerId) return;
+      if (!customerBatchMap[item.customerId]) {
+        customerBatchMap[item.customerId] = [];
+      }
+      customerBatchMap[item.customerId].push(index + 1);
+    });
+
+    const duplicatesInBatch = Object.entries(customerBatchMap)
+      .filter(([_, indices]) => indices.length > 1)
+      .map(([cId, indices]) => {
+        const cName = getCustomerNameById(cId);
+        return {
+          customerId: cId,
+          customerName: cName,
+          count: indices.length,
+          fileNumbers: indices.map((num) => `#${num}`),
+        };
+      });
+
+    // 3. ĐỐI CHIẾU CÔNG NỢ & CHECK TRÙNG VỚI ẢNH ĐÃ LƯU TRÊN HỆ THỐNG
+    let checkResult = {
+      missingDebt: [],
+      alreadySavedDuplicates: [],
+    };
+
     try {
       // Tổng hợp danh sách duy nhất: { customerId, dateStr, customerName }
       const uniquePairs = [];
       const seen = new Set();
       for (const item of imageList) {
-        const key = `${item.customerId}_${item.dateStr}`;
+        const dStr = item.dateStr || getTodayFormatted();
+        const key = `${item.customerId}_${dStr}`;
         if (!seen.has(key)) {
           seen.add(key);
           uniquePairs.push({
             customerId: item.customerId,
-            dateStr: item.dateStr || getTodayFormatted(),
-            customerName: item.customerName || customers.find(c => c.id === item.customerId)?.name || item.customerId,
+            dateStr: dStr,
+            customerName: getCustomerNameById(item.customerId),
           });
         }
       }
 
-      // Gọi API kiểm tra từng cặp khách + ngày
+      // Gọi API kiểm tra từng cặp khách + ngày (gửi cả dateStr để backend xử lý chuẩn múi giờ VN)
       const checkRes = await api.post('/transactions/check-debt-existence', {
-        pairs: uniquePairs.map(p => ({
+        pairs: uniquePairs.map((p) => ({
           customerId: p.customerId,
+          dateStr: p.dateStr,
           date: parseDateString(p.dateStr),
         })),
       });
 
-      const existenceMap = checkRes.data?.data || {}; // { "customerId_dateISO": true/false }
+      const existenceMap = checkRes.data?.data || {}; // { "customerId_dateStr": boolean, "customerId_dateISO": boolean }
+      const invoiceCounts = checkRes.data?.invoiceCounts || {}; // { "customerId_dateStr": number, "customerId_dateISO": number }
 
-      // Tìm những cặp KHÔNG có công nợ trong ngày
-      const missing = uniquePairs.filter(p => {
-        const isoDate = parseDateString(p.dateStr).split('T')[0];
-        const key = `${p.customerId}_${isoDate}`;
-        return existenceMap[key] === false;
-      });
-
-      if (missing.length > 0) {
-        // Hiển thị cảnh báo qua PopupModal yêu cầu xác nhận
-        const missingNames = missing.map(m =>
-          `• ${m.customerName} (${m.dateStr})`
-        ).join('\n');
-
-        await new Promise((resolve) => {
-          popupModalRef?.current?.show({
-            type: 'confirm',
-            title: '⚠️ Có khách chưa có công nợ trong ngày!',
-            message: `Các khách sau có ảnh/video nhưng CHƯA có đơn công nợ trong ngày tương ứng:\n\n${missingNames}\n\nBạn có muốn lưu ảnh trước và bổ sung công nợ sau không?`,
-            confirmText: 'Lưu ảnh trước',
-            cancelText: 'Hủy để bổ sung',
-            onConfirm: () => resolve('proceed'),
-            onCancel: () => resolve('cancel'),
-          });
-        }).then(async (decision) => {
-          if (decision === 'cancel') return;
-          await doSaveInvoices();
+      // Tìm những khách đã có ảnh/video hóa đơn lưu trước đó trong ngày trên hệ thống
+      checkResult.alreadySavedDuplicates = uniquePairs
+        .filter((p) => {
+          const isoDate = parseDateString(p.dateStr).split('T')[0];
+          const keyDateStr = `${p.customerId}_${p.dateStr}`;
+          const keyISO = `${p.customerId}_${isoDate}`;
+          const savedCount = invoiceCounts[keyDateStr] ?? invoiceCounts[keyISO] ?? 0;
+          return savedCount > 0;
+        })
+        .map((p) => {
+          const isoDate = parseDateString(p.dateStr).split('T')[0];
+          const keyDateStr = `${p.customerId}_${p.dateStr}`;
+          const keyISO = `${p.customerId}_${isoDate}`;
+          return {
+            ...p,
+            savedCount: invoiceCounts[keyDateStr] ?? invoiceCounts[keyISO] ?? 0,
+          };
         });
-        return;
-      }
+
+      // Tìm những khách CÓ ảnh lưu nhưng CHƯA CÓ đơn công nợ trong ngày tương ứng
+      checkResult.missingDebt = uniquePairs.filter((p) => {
+        const isoDate = parseDateString(p.dateStr).split('T')[0];
+        const keyDateStr = `${p.customerId}_${p.dateStr}`;
+        const keyISO = `${p.customerId}_${isoDate}`;
+        const hasDebt = existenceMap[keyDateStr] ?? existenceMap[keyISO];
+        return hasDebt === false;
+      });
     } catch (checkErr) {
-      // Nếu lỗi kiểm tra (network...) thì bỏ qua và tiếp tục lưu bình thường
-      console.warn('[DEBT CHECK WARNING]', checkErr?.message);
+      console.warn('[CHECK EXISTENCE WARNING]', checkErr?.message);
     }
 
-    // Không có cảnh báo → lưu trực tiếp
+    // ── XỬ LÝ CẢNH BÁO TRƯỚC KHI LƯU (GỘP CHUNG VÀO 1 HỘP THOẠI XÁC NHẬN RÕ RÀNG) ──
+    const hasDuplicatesInBatch = duplicatesInBatch.length > 0;
+    const hasAlreadySaved = checkResult.alreadySavedDuplicates.length > 0;
+    const hasMissingDebt = checkResult.missingDebt.length > 0;
+
+    if (hasDuplicatesInBatch || hasAlreadySaved || hasMissingDebt) {
+      const warningSections = [];
+
+      // 1. Cảnh báo trùng khách trong danh sách ảnh/video đang tải lên
+      if (hasDuplicatesInBatch) {
+        warningSections.push(
+          '⚠️ Khách bị chọn trùng trong danh sách tệp tải lên:\n' +
+          duplicatesInBatch
+            .map((d) => `• ${d.customerName}: có ${d.count} tệp (${d.fileNumbers.join(', ')})`)
+            .join('\n')
+        );
+      }
+
+      // 2. Cảnh báo khách đã có ảnh/video lưu trước đó trong ngày trên hệ thống
+      if (hasAlreadySaved) {
+        warningSections.push(
+          '💾 Khách đã có ảnh/video lưu trước đó trong ngày trên hệ thống:\n' +
+          checkResult.alreadySavedDuplicates
+            .map((d) => `• ${d.customerName} (ngày ${d.dateStr}): đã có ${d.savedCount} tệp đã lưu`)
+            .join('\n')
+        );
+      }
+
+      // 3. Cảnh báo khách chưa có đơn nợ trong ngày
+      if (hasMissingDebt) {
+        warningSections.push(
+          '📝 Khách CHƯA CÓ đơn công nợ trong ngày tương ứng:\n' +
+          checkResult.missingDebt
+            .map((m) => `• ${m.customerName} (ngày ${m.dateStr}): chưa có đơn nợ`)
+            .join('\n')
+        );
+      }
+
+      const confirmProceed = await new Promise((resolve) => {
+        popupModalRef?.current?.show({
+          type: 'confirm',
+          icon: '⚠️',
+          title: 'Cảnh báo trước khi lưu hóa đơn',
+          maxWidth: 560,
+          message: `${warningSections.join('\n\n')}\n\nBạn có muốn tiếp tục lưu các tệp này không?`,
+          confirmText: 'Tiếp tục lưu',
+          cancelText: 'Kiểm tra lại',
+          onConfirm: () => resolve('proceed'),
+          onCancel: () => resolve('cancel'),
+        });
+      });
+
+      if (confirmProceed === 'cancel') {
+        return;
+      }
+    }
+
+    // Tất cả xác nhận xong → tiến hành lưu
     await doSaveInvoices();
   };
 
-  // Hàm thực thi lưu ảnh/video lên server sau khi đã xác nhận
+  // Hàm thực thi lưu ảnh/video lên server theo từng đợt (chunk) để không bị pending quá 60s
   const doSaveInvoices = async () => {
+    const totalFiles = imageList.length;
+    if (totalFiles === 0) return;
+
     try {
       setSubmitting(true);
+      setProcessProgress(`Đang chuẩn bị lưu ${totalFiles} tệp...`);
 
-      const payload = {
-        items: imageList.map((item) => ({
-          customerId: item.customerId,
-          date: parseDateString(item.dateStr),
-          imageBase64: item.imageBase64,
-          mediaType: item.mediaType || (checkIsVideo(item.imageBase64) ? 'video' : 'image'),
-          note: null,
-        })),
-      };
+      // Chia nhỏ danh sách ảnh/video thành từng đợt 3 tệp
+      // Giúp mỗi request gửi payload nhẹ, backend xử lý song song 2-3s xong, không bao giờ bị timeout 60s
+      const CHUNK_SIZE = 3;
+      const chunks = [];
+      for (let i = 0; i < totalFiles; i += CHUNK_SIZE) {
+        chunks.push(imageList.slice(i, i + CHUNK_SIZE));
+      }
 
-      const res = await api.post('/transactions/invoices/batch', payload);
+      let savedCount = 0;
+      let remainingList = [...imageList];
 
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        const currentChunk = chunks[chunkIndex];
+        const currentBatchStart = savedCount + 1;
+        const currentBatchEnd = savedCount + currentChunk.length;
+        const percent = Math.round((currentBatchEnd / totalFiles) * 100);
+
+        setProcessProgress(`Đang lưu ${currentBatchStart}-${currentBatchEnd}/${totalFiles} (${percent}%)...`);
+
+        const payload = {
+          items: currentChunk.map((item) => ({
+            customerId: item.customerId,
+            date: parseDateString(item.dateStr),
+            imageBase64: item.imageBase64,
+            mediaType: item.mediaType || (checkIsVideo(item.imageBase64) ? 'video' : 'image'),
+            note: null,
+          })),
+        };
+
+        // Gửi đợt ảnh lên backend với timeout rộng 120s
+        await api.post('/transactions/invoices/batch', payload, { timeout: 120000 });
+
+        savedCount += currentChunk.length;
+
+        // Cập nhật danh sách tệp còn lại trên giao diện và IndexedDB sau mỗi đợt thành công
+        const savedIds = new Set(currentChunk.map((c) => c.id));
+        remainingList = remainingList.filter((item) => !savedIds.has(item.id));
+        setImageList(remainingList);
+
+        if (remainingList.length > 0) {
+          saveInvoiceDraft({
+            imageList: remainingList,
+            batchCustomer,
+            batchDateStr,
+            savedAt: Date.now(),
+          }).catch(() => {});
+        }
+      }
+
+      // Đã lưu thành công toàn bộ
       showGlobalToast(
-        res.data?.message || `Đã lưu thành công ${imageList.length} tệp hóa đơn và đính kèm đơn nợ!`,
+        `Đã lưu thành công toàn bộ ${totalFiles} tệp hóa đơn và đính kèm đơn nợ!`,
         'success'
       );
 
@@ -1034,11 +1212,18 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
       setImageList([]);
       setVisible(false);
       if (onRefresh) onRefresh();
+      if (onSuccess) onSuccess();
     } catch (err) {
-      const msg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu tệp hóa đơn. Vui lòng thử lại!';
+      console.error('[DO_SAVE_INVOICES_ERROR]', err);
+      const msg =
+        err.response?.data?.message ||
+        (err.code === 'ECONNABORTED'
+          ? 'Thời gian chờ kết nối quá lâu. Vui lòng kiểm tra lại mạng và bấm lưu tiếp phần còn lại!'
+          : 'Có lỗi xảy ra khi lưu tệp hóa đơn. Vui lòng kiểm tra và thử lại!');
       showGlobalToast(msg, 'error');
     } finally {
       setSubmitting(false);
+      setProcessProgress('');
     }
   };
 
@@ -1199,7 +1384,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
                         <View style={{ flex: 1, minWidth: 200 }}>
                           <CustomSelect
                             value={batchCustomer}
-                            options={customers}
+                            options={customers.length > 0 ? customers : propCustomers}
                             placeholder="Chọn khách áp dụng chung..."
                             renderSelected={(c) => c?.name || ''}
                             getOptionLabel={(c) => c?.name || ''}
@@ -1327,6 +1512,11 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
                     {imageList.map((item, index) => {
                       const isRowActive = activeOpenRowId === item.id;
                       const isItemVid = item.mediaType === 'video' || checkIsVideo(item.imageBase64);
+                      const itemDuplicates = item.customerId ? duplicateCustomerMap[item.customerId] : null;
+                      const isDuplicateInBatch = itemDuplicates && itemDuplicates.length > 1;
+                      const otherItemNumbers = isDuplicateInBatch
+                        ? itemDuplicates.filter((num) => num !== index + 1)
+                        : [];
 
                       return (
                         <View
@@ -1334,6 +1524,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
                           style={[
                             styles.imageCardGrid,
                             !item.customerId && styles.imageCardWarning,
+                            isDuplicateInBatch && styles.imageCardDuplicate,
                             isRowActive && { zIndex: 999999, elevation: 999999 },
                           ]}
                         >
@@ -1344,6 +1535,13 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
                                 {isItemVid ? '🎬 Video' : '📷 Ảnh'} #{index + 1}
                               </Text>
                             </View>
+                            {isDuplicateInBatch && (
+                              <View style={styles.badgeDuplicate}>
+                                <Text style={styles.badgeDuplicateText}>
+                                  ⚠️ Trùng #{otherItemNumbers.join(', #')}
+                                </Text>
+                              </View>
+                            )}
                             {item.size ? (
                               <Text style={styles.fileSizeText}>{item.size}</Text>
                             ) : null}
@@ -1490,13 +1688,14 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
                               </Text>
                               <CustomSelect
                                 value={item.selectedCustomer}
-                                options={customers}
+                                options={customers.length > 0 ? customers : propCustomers}
                                 placeholder="-- Chọn khách mua nợ --"
                                 renderSelected={(c) => c?.name || ''}
                                 getOptionLabel={(c) => c?.name || ''}
                                 onSelect={(c) =>
                                   updateRow(item.id, {
-                                    customerId: c.id,
+                                    customerId: c?.id,
+                                    customerName: c?.name,
                                     selectedCustomer: c,
                                   })
                                 }
@@ -1507,6 +1706,11 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
                                 compact={true}
                                 hasError={!item.customerId}
                               />
+                              {isDuplicateInBatch && (
+                                <Text style={styles.duplicateWarningSubText}>
+                                  ⚠️ Khách này chọn ở {itemDuplicates.length} tệp (#{itemDuplicates.join(', #')})
+                                </Text>
+                              )}
                             </View>
 
                             {/* Chọn ngày */}
@@ -1557,7 +1761,12 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, popupModalRef }, ref) =
                     disabled={imageList.length === 0 || submitting}
                   >
                     {submitting ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <Text style={[styles.submitBtnText, isMobile && { fontSize: 12 }]}>
+                          {processProgress || 'Đang lưu...'}
+                        </Text>
+                      </View>
                     ) : (
                       <Text style={[styles.submitBtnText, isMobile && { fontSize: 12 }]}>
                         💾 Lưu tất cả ({imageList.length})
@@ -2247,6 +2456,30 @@ const styles = StyleSheet.create({
   imageCardWarning: {
     borderColor: '#F87171',
     backgroundColor: '#FEF2F2',
+  },
+  imageCardDuplicate: {
+    borderColor: '#F59E0B',
+    borderWidth: 1.5,
+    backgroundColor: '#FFFDF5',
+  },
+  badgeDuplicate: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  badgeDuplicateText: {
+    color: '#B45309',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  duplicateWarningSubText: {
+    color: '#D97706',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
   },
   cardHeaderRow: {
     flexDirection: 'row',

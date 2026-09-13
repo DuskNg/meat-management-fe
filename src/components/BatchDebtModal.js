@@ -164,18 +164,65 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   // Counter tăng dần đảm bảo tempId/tempItemId luôn unique dù gọi liên tiếp trong cùng 1ms
   const rowIdCounterRef = useRef(1);
 
-  // Tải danh mục thịt kèm giá riêng cho 1 khách hàng
+  // Tải danh mục thịt kèm giá riêng cho 1 khách hàng và tự động cập nhật lại giá các mặt hàng đã chọn
   const fetchProductsForCustomer = async (customerId) => {
-    if (!customerId || custProductsMap[customerId]) return;
+    if (!customerId) return [];
+    if (custProductsMap[customerId]) {
+      // Đã có trong bộ nhớ tạm, đồng bộ ngay lập tức cho các dòng thuộc khách hàng này
+      syncPricesForCustomer(customerId, custProductsMap[customerId]);
+      return custProductsMap[customerId];
+    }
     try {
       const res = await api.get(`/products?customerId=${customerId}`);
       const custProds = (res.data?.data || []).filter(
         (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
       );
       setCustProductsMap((prev) => ({ ...prev, [customerId]: custProds }));
+      // Tự động đồng bộ ngay lại đơn giá của các mặt hàng đã có trên các dòng thuộc khách hàng này
+      syncPricesForCustomer(customerId, custProds);
+      return custProds;
     } catch (e) {
       console.error('[FETCH CUST PRODUCTS ERROR]', e);
+      return [];
     }
+  };
+
+  // Helper tự động đồng bộ lại giá riêng cho các mặt hàng đã chọn khi khách hàng được chọn/thay đổi
+  const syncPricesForCustomer = (customerId, custProds) => {
+    if (!Array.isArray(custProds) || custProds.length === 0) return;
+    const prodMap = new Map(custProds.map((p) => [p.id, p]));
+
+    const updateRowsWithCustomPrice = (prevRows) => {
+      return prevRows.map((r) => {
+        if (r.selectedCustomerId !== customerId || !Array.isArray(r.items)) return r;
+        let hasChanges = false;
+        const newItems = r.items.map((it) => {
+          if (!it.productId || !prodMap.has(it.productId)) return it;
+          const pData = prodMap.get(it.productId);
+          const effectivePrice = pData.customPrice !== undefined && pData.customPrice !== null
+            ? pData.customPrice
+            : (pData.defaultPrice || 0);
+          const currentItemPrice = parseNumberString(it.price);
+          const qVal = parseFloat((it.quantity || '0').replace(',', '.')) || 0;
+
+          // Nếu đơn giá hiện tại khác giá riêng vừa lấy về, tự động cập nhật ngay!
+          if (currentItemPrice !== effectivePrice) {
+            hasChanges = true;
+            return {
+              ...it,
+              price: formatNumberString(effectivePrice),
+              costPrice: formatNumberString(pData.costPrice || 0),
+              amount: Math.round(qVal * effectivePrice),
+            };
+          }
+          return it;
+        });
+        return hasChanges ? { ...r, items: newItems } : r;
+      });
+    };
+
+    setDetailRows(updateRowsWithCustomPrice);
+    setReturnRows(updateRowsWithCustomPrice);
   };
 
   const handleClose = () => {
@@ -941,7 +988,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                   autoFocus={!!item.autoFocus}
                                   onSelect={(prod) => {
                                     const qVal = parseFloat((item.quantity || '0').replace(',', '.')) || 0;
-                                    const pVal = prod.defaultPrice || 0;
+                                    const pVal = prod.customPrice !== undefined && prod.customPrice !== null ? prod.customPrice : (prod.defaultPrice || 0);
                                     const cVal = prod.costPrice || 0;
                                     handleUpdateRowItem(row.tempId, item.tempItemId, {
                                       productId: prod.id,
@@ -953,12 +1000,17 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                                     });
                                   }}
                                   renderSelected={(prod) => prod.name}
-                                  renderOption={(prod) => (
-                                    <View style={styles.custOptionRow}>
-                                      <Text style={styles.custOptionName}>{prod.name}</Text>
-                                      <Text style={styles.custOptionPhone}>{formatCurrency(prod.defaultPrice)}/{prod.unit}</Text>
-                                    </View>
-                                  )}
+                                  renderOption={(prod) => {
+                                    const effectiveP = prod.customPrice !== undefined && prod.customPrice !== null ? prod.customPrice : prod.defaultPrice;
+                                    return (
+                                      <View style={styles.custOptionRow}>
+                                        <Text style={styles.custOptionName}>{prod.name}</Text>
+                                        <Text style={[styles.custOptionPhone, prod.hasCustomPrice && { color: '#7C3AED', fontWeight: 'bold' }]}>
+                                          {formatCurrency(effectiveP)}/{prod.unit}{prod.hasCustomPrice ? ' (Giá riêng)' : ''}
+                                        </Text>
+                                      </View>
+                                    );
+                                  }}
                                   compact={true}
                                 />
                               </View>

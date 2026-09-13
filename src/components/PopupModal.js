@@ -6,6 +6,7 @@ import {
   View,
   Dimensions,
   TextInput,
+  ScrollView,
   Platform,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
@@ -115,22 +116,33 @@ const PopupModal = forwardRef((props, ref) => {
   let icon = 'ℹ️';
   let primaryColor = COLORS.primary;
 
+  const isWarningTitle =
+    options.title &&
+    (options.title.includes('⚠️') ||
+      options.title.toLowerCase().includes('cảnh báo') ||
+      options.title.toLowerCase().includes('lưu ý'));
+
   switch (options.type) {
     case 'success':
       icon = '✅';
-      primaryColor = COLORS.primary;
+      primaryColor = '#10B981';
       break;
     case 'error':
       icon = '❌';
-      primaryColor = COLORS.danger;
+      primaryColor = '#EF4444';
       break;
     case 'warning':
       icon = '⚠️';
-      primaryColor = COLORS.warning;
+      primaryColor = '#F59E0B';
       break;
     case 'confirm':
-      icon = '❓';
-      primaryColor = '#3B82F6'; // Màu xanh dương chuyên nghiệp cho hộp thoại xác nhận
+      if (isWarningTitle) {
+        icon = '⚠️';
+        primaryColor = '#F59E0B'; // Nếu là xác nhận cảnh báo thì dùng tone vàng cam cảnh báo chuyên nghiệp
+      } else {
+        icon = '❓';
+        primaryColor = '#3B82F6'; // Màu xanh dương chuyên nghiệp cho câu hỏi xác nhận thông thường
+      }
       break;
     default:
       icon = 'ℹ️';
@@ -156,9 +168,94 @@ const PopupModal = forwardRef((props, ref) => {
     });
   };
 
+  // Hiển thị nội dung thông báo có nhiều đoạn / danh sách một cách ngăn nắp, thanh lịch
+  const renderStructuredMessage = (msg) => {
+    if (!msg) return null;
+    if (typeof msg !== 'string') return renderMessage(msg);
+
+    const parts = msg.split('\n\n');
+    let footerQuestion = null;
+    let bodyParts = parts;
+
+    // Nếu đoạn cuối là câu hỏi xác nhận thì tách riêng để hiển thị nổi bật phía dưới card
+    if (
+      parts.length > 1 &&
+      (parts[parts.length - 1].toLowerCase().includes('bạn có muốn') ||
+        parts[parts.length - 1].toLowerCase().includes('bạn có chắc') ||
+        parts[parts.length - 1].trim().endsWith('?'))
+    ) {
+      footerQuestion = parts[parts.length - 1];
+      bodyParts = parts.slice(0, parts.length - 1);
+    }
+
+    return (
+      <View style={styles.structuredMessageWrap}>
+        <ScrollView
+          style={styles.structuredScroll}
+          contentContainerStyle={styles.structuredScrollContent}
+          nestedScrollEnabled={true}
+          showsVerticalScrollIndicator={true}
+        >
+          {bodyParts.map((section, sIdx) => {
+            const lines = section.split('\n');
+            return (
+              <View key={sIdx} style={[styles.sectionBlock, sIdx > 0 && styles.sectionBlockMargin]}>
+                {lines.map((line, lIdx) => {
+                  const trimmed = line.trim();
+                  if (!trimmed) return null;
+
+                  const isHeader =
+                    trimmed.startsWith('⚠️') ||
+                    trimmed.startsWith('💾') ||
+                    trimmed.startsWith('📝') ||
+                    trimmed.startsWith('📌') ||
+                    trimmed.endsWith(':');
+
+                  const isBullet = trimmed.startsWith('•') || trimmed.startsWith('-');
+
+                  if (isHeader) {
+                    return (
+                      <Text key={lIdx} style={styles.sectionHeaderLine}>
+                        {trimmed}
+                      </Text>
+                    );
+                  }
+
+                  if (isBullet) {
+                    return (
+                      <View key={lIdx} style={styles.bulletRow}>
+                        <Text style={styles.bulletDot}>•</Text>
+                        <Text style={styles.bulletText}>
+                          {renderMessage(trimmed.replace(/^[•\-]\s*/, ''))}
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <Text key={lIdx} style={styles.normalLine}>
+                      {renderMessage(line)}
+                    </Text>
+                  );
+                })}
+              </View>
+            );
+          })}
+        </ScrollView>
+
+        {footerQuestion ? (
+          <Text style={styles.footerQuestionText}>{footerQuestion}</Text>
+        ) : null}
+      </View>
+    );
+  };
+
   const isConfirm = options.type === 'confirm';
   const isToast = options.type === 'success' || options.type === 'error';
   const toastBgColor = options.type === 'success' ? '#10B981' : '#EF4444';
+  const hasBulletsOrMultiLine =
+    typeof options.message === 'string' &&
+    (options.message.includes('\n') || options.message.includes('•'));
 
   return (
     <>
@@ -181,9 +278,17 @@ const PopupModal = forwardRef((props, ref) => {
           portal Modal fade backdrop luôn ở trong React tree, không bao giờ unmount/remount */}
       <SmoothModal visible={visible && !isToast} onClose={handleCancel} isToast={false} zIndex={200000}>
         <View style={styles.modalWrapper}>
-          <View style={styles.modalContent}>
-            {/* Vùng hiển thị Icon lớn, trực quan */}
-            <View style={[styles.iconContainer, { backgroundColor: primaryColor + '15' }]}>
+          <View style={[styles.modalContent, options.maxWidth ? { maxWidth: options.maxWidth } : null]}>
+            {/* Vùng hiển thị Icon trang nhã, hiện đại */}
+            <View
+              style={[
+                styles.iconContainer,
+                {
+                  backgroundColor: primaryColor + '14',
+                  borderColor: primaryColor + '35',
+                },
+              ]}
+            >
               <Text style={styles.iconText}>{icon}</Text>
             </View>
 
@@ -191,7 +296,11 @@ const PopupModal = forwardRef((props, ref) => {
             <View style={styles.textContainer}>
               <Text style={styles.titleText}>{options.title}</Text>
               {options.message ? (
-                <Text style={styles.messageText}>{renderMessage(options.message)}</Text>
+                hasBulletsOrMultiLine ? (
+                  renderStructuredMessage(options.message)
+                ) : (
+                  <Text style={styles.messageText}>{renderMessage(options.message)}</Text>
+                )
               ) : null}
               {options.showTextInput && (
                 <TextInput
@@ -239,47 +348,119 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     marginBottom: 'auto',
     marginTop: 'auto',
   },
   modalContent: {
     width: '100%',
-    maxWidth: 420, // Giới hạn chiều rộng trên màn hình rộng như Web
-    backgroundColor: COLORS.card,
-    borderRadius: 24,
-    padding: 24,
+    maxWidth: 560, // Tăng không gian hiển thị rộng rãi, thoáng mắt
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     ...SHADOWS.card,
   },
   iconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
+    borderWidth: 1.5,
   },
   iconText: {
-    fontSize: 36,
+    fontSize: 24,
   },
   textContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 14,
     width: '100%',
   },
   titleText: {
-    fontSize: FONTS.title,
-    fontWeight: FONTS.weightBold,
-    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
     textAlign: 'center',
     marginBottom: 8,
+    letterSpacing: -0.2,
   },
   messageText: {
-    fontSize: FONTS.body,
-    color: COLORS.textSecondary,
+    fontSize: 14.5,
+    color: '#334155',
     textAlign: 'center',
     lineHeight: 22,
+  },
+  // Khung hiển thị danh sách cảnh báo nhiều dòng chuyên nghiệp
+  structuredMessageWrap: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  structuredScroll: {
+    width: '100%',
+    maxHeight: 360, // Mở rộng chiều cao hiển thị để thấy trọn vẹn danh sách, hạn chế thanh cuộn
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  structuredScrollContent: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  sectionBlock: {
+    width: '100%',
+  },
+  sectionBlockMargin: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F6',
+  },
+  sectionHeaderLine: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 5,
+    paddingLeft: 2,
+  },
+  bulletDot: {
+    fontSize: 15,
+    color: '#475569',
+    marginRight: 6,
+    lineHeight: 22,
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: 14, // Tăng font nội dung to rõ ràng, dễ đọc
+    color: '#1E293B',
+    lineHeight: 22,
+    textAlign: 'left',
+  },
+  normalLine: {
+    fontSize: 14,
+    color: '#334155',
+    lineHeight: 22,
+    textAlign: 'left',
+    marginBottom: 3,
+  },
+  footerQuestionText: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 4,
   },
   textInput: {
     width: '100%',
@@ -292,7 +473,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: FONTS.body,
     color: COLORS.text,
-    marginTop: 16,
+    marginTop: 14,
     textAlignVertical: 'top', // Dành cho Android multiline
   },
   buttonContainer: {
@@ -309,24 +490,24 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
-    height: 48,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelButton: {
-    backgroundColor: COLORS.inputBg,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#CBD5E1',
   },
   cancelButtonText: {
-    fontSize: FONTS.subtitle,
-    fontWeight: FONTS.weightMedium,
-    color: COLORS.textSecondary,
+    fontSize: 14.5,
+    fontWeight: '600',
+    color: '#475569',
   },
   confirmButtonText: {
-    fontSize: FONTS.subtitle,
-    fontWeight: FONTS.weightBold,
+    fontSize: 14.5,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   // Các styles dành riêng cho Toast

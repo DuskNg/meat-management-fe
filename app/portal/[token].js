@@ -133,7 +133,9 @@ const parseReturnItems = (note, defaultAmount) => {
   if (!note) return [{ type: 'RETURN', name: 'TRẢ HÀNG', quantity: null, price: null, amount: defaultAmount }];
 
   // Xóa các tag hệ thống
-  const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+  let clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+  // Nếu là đơn trả hàng nhanh, loại bỏ cụm từ 'Trả hàng nhanh' để không bị lặp chữ
+  clean = clean.replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '').trim();
 
   // Khớp từng món: <số lượng><đơn vị> <tên thịt> (<thành tiền>)
   const itemRegex = /(\d+(?:[.,]\d+)?)\s*([a-zA-ZÀ-ỹ]*)\s+(.+?)\s*\(\s*([\d.,]+)[\s\u00a0]*[đ₫VND]?\s*\)(?:\s*,|\s*-|$)/gi;
@@ -143,7 +145,7 @@ const parseReturnItems = (note, defaultAmount) => {
     const qtyStr = match[1].replace(',', '.');
     const qty = parseFloat(qtyStr);
     let prodName = match[3].trim().toUpperCase();
-    prodName = prodName.replace(/^(TRẢ HÀNG|TRẢ LẠI|TRẢ)\s*:?\s*/gi, '').trim();
+    prodName = prodName.replace(/^(TRẢ HÀNG NHANH|TRẢ LẠI HÀNG|TRẢ HÀNG|TRẢ LẠI|TRẢ)\s*:?\s*/gi, '').trim();
     const amtStr = match[4].replace(/\./g, '').replace(/,/g, '');
     const amt = parseFloat(amtStr) || 0;
     const price = (qty && qty > 0 && amt > 0) ? Math.round(amt / qty) : null;
@@ -157,7 +159,7 @@ const parseReturnItems = (note, defaultAmount) => {
   }
 
   if (items.length === 0) {
-    let cleanName = clean.toUpperCase().replace(/^(TRẢ HÀNG|TRẢ LẠI|TRẢ)\s*:?\s*/gi, '').trim();
+    let cleanName = clean.toUpperCase().replace(/^(TRẢ HÀNG NHANH|TRẢ LẠI HÀNG|TRẢ HÀNG|TRẢ LẠI|TRẢ)\s*[:-]?\s*/gi, '').trim();
     const displayName = cleanName ? `TRẢ: ${cleanName}` : 'TRẢ HÀNG';
     return [{
       type: 'RETURN',
@@ -460,34 +462,32 @@ const buildInvoiceRows = (
     return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
   });
 
-  // Thêm dòng TỔNG tiền thịt cho các ngày có từ 2 loại thịt trở lên
+  // Chuẩn hóa thứ tự các món trong ngày: MEAT/DELIVERY -> RETURN -> TỔNG (đã trừ trả hàng) -> PAYMENT
   sortedDays.forEach((day) => {
     const meatEntries = (day.entries || []).filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY');
-    if (meatEntries.length > 1) {
+    const returnEntries = (day.entries || []).filter((e) => e.type === 'RETURN');
+    const paymentEntries = (day.entries || []).filter((e) => e.type === 'PAYMENT');
+    const others = (day.entries || []).filter((e) => e.type !== 'MEAT' && e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'PAYMENT' && e.type !== 'DAY_TOTAL');
+
+    const newEntries = [...meatEntries, ...returnEntries];
+
+    // Hiển thị dòng TỔNG nếu có từ 2 món thịt trở lên hoặc có cả thịt và trả hàng
+    if (meatEntries.length > 1 || (meatEntries.length >= 1 && returnEntries.length > 0)) {
       const dayMeatTotal = meatEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      const dayReturnTotal = returnEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      // Phần tổng trừ đi cả phần trả hàng nếu có
+      const dayFinalTotal = dayMeatTotal - dayReturnTotal;
 
-      let lastMeatIdx = -1;
-      for (let i = day.entries.length - 1; i >= 0; i--) {
-        if (day.entries[i].type === 'MEAT' || day.entries[i].type === 'DELIVERY') {
-          lastMeatIdx = i;
-          break;
-        }
-      }
-
-      const totalEntry = {
+      newEntries.push({
         type: 'DAY_TOTAL',
         name: 'TỔNG',
         quantity: null,
         price: null,
-        amount: dayMeatTotal,
-      };
-
-      if (lastMeatIdx >= 0) {
-        day.entries.splice(lastMeatIdx + 1, 0, totalEntry);
-      } else {
-        day.entries.push(totalEntry);
-      }
+        amount: dayFinalTotal,
+      });
     }
+
+    day.entries = [...newEntries, ...paymentEntries, ...others];
   });
 
   const finalDebt = Math.max(0, totalMeatAmount - totalReturnAmount - totalPaymentAmount);
@@ -1194,33 +1194,30 @@ export default function PortalScreen() {
           }
         });
 
-        const dayEntries = [...matchedEntries];
-        if (meatEntries.length > 1) {
-          const dayMeatTotal = meatEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-          let lastMeatIdx = -1;
-          for (let i = dayEntries.length - 1; i >= 0; i--) {
-            if (dayEntries[i].type === 'MEAT' || dayEntries[i].type === 'DELIVERY') {
-              lastMeatIdx = i;
-              break;
-            }
-          }
-          const totalEntry = {
+        const deliveries = matchedEntries.filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY');
+        const returns = matchedEntries.filter((e) => e.type === 'RETURN');
+        const payments = matchedEntries.filter((e) => e.type === 'PAYMENT');
+        const others = matchedEntries.filter((e) => e.type !== 'MEAT' && e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'PAYMENT' && e.type !== 'DAY_TOTAL');
+
+        const newEntries = [...deliveries, ...returns];
+
+        if (deliveries.length > 1 || (deliveries.length >= 1 && returns.length > 0)) {
+          const dayMeatTotal = deliveries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+          const dayReturnTotal = returns.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+          const dayFinalTotal = dayMeatTotal - dayReturnTotal;
+
+          newEntries.push({
             type: 'DAY_TOTAL',
             name: 'TỔNG',
             quantity: null,
             price: null,
-            amount: dayMeatTotal,
-          };
-          if (lastMeatIdx >= 0) {
-            dayEntries.splice(lastMeatIdx + 1, 0, totalEntry);
-          } else {
-            dayEntries.push(totalEntry);
-          }
+            amount: dayFinalTotal,
+          });
         }
 
         filteredDays.push({
           ...day,
-          entries: dayEntries,
+          entries: [...newEntries, ...payments, ...others],
         });
       }
     });

@@ -41,7 +41,9 @@ const isReturnPayment = (p) => {
 // Helper phân tích danh sách các món thịt trả lại từ ghi chú
 const parseReturnItems = (note, defaultAmount) => {
   if (!note) return [{ type: 'RETURN', name: '[TRẢ HÀNG]', quantity: null, price: null, amount: defaultAmount }];
-  const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]/gi, '').trim();
+  let clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+  // Nếu là đơn trả hàng nhanh, loại bỏ cụm từ 'Trả hàng nhanh' để không bị lặp chữ
+  clean = clean.replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '').trim();
 
   // Khớp từng món: <số lượng><đơn vị> <tên thịt> (<thành tiền>)
   const itemRegex = /(\d+(?:[.,]\d+)?)\s*([a-zA-ZÀ-ỹ]*)\s+(.+?)\s*\(\s*([\d.,]+)[\s\u00a0]*[đ₫VND]?\s*\)(?:\s*,|\s*-|$)/gi;

@@ -414,7 +414,8 @@ const TransactionDetailModal = forwardRef(({
       const amt = parseFloat(p.amount || 0);
       if (isReturnGoodsItem(p)) {
         totalR += amt;
-        const cleanNote = p.note ? p.note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]/g, '').trim() : '';
+        let cleanNote = p.note ? p.note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/g, '').trim() : '';
+        cleanNote = cleanNote.replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '').trim();
         if (cleanNote) {
           lines.push(`- Trả lại hàng: ${cleanNote} (-${new Intl.NumberFormat('vi-VN').format(amt)} đ)`);
         } else {

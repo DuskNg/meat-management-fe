@@ -24,6 +24,16 @@ import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper'
  * - Nút ↺ Đặt lại: Đưa ảnh về lại chính giữa khung hình với tỷ lệ 100% ban đầu.
  * - Hỗ trợ tải ảnh / chia sẻ ảnh.
  */
+// Helper: Lấy phần tử DOM thực tế từ ref hoặc component
+const getDomElement = (target) => {
+  if (!target) return null;
+  if (typeof target.nodeType === 'number') return target;
+  if (target._reactInternals?.stateNode && typeof target._reactInternals.stateNode.nodeType === 'number') {
+    return target._reactInternals.stateNode;
+  }
+  return null;
+};
+
 const ImagePreviewModal = forwardRef((props, ref) => {
   const [visible, setVisible] = useState(false);
   const [imageUrl, setImageUrl] = useState('');
@@ -75,6 +85,42 @@ const ImagePreviewModal = forwardRef((props, ref) => {
     if (!visible) {
       resetZoom();
     }
+  }, [visible]);
+
+  const modalRootRef = useRef(null);
+
+  // Đảm bảo Modal luôn nằm ở tầng zIndex cao nhất trên Web (tránh bị các SmoothModal khác đè lên)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    if (!visible) return;
+
+    const applyPortalZ = () => {
+      const elNode = getDomElement(modalRootRef.current);
+      if (!elNode) return;
+      elNode.style.zIndex = '999999';
+      let el = elNode;
+      // Đi ngược lên cho đến khi gặp phần tử con trực tiếp của document.body (chính là portal container của modal)
+      while (el && el.parentElement && el.parentElement !== document.body) {
+        el = el.parentElement;
+      }
+      if (el && el.parentElement === document.body) {
+        el.style.zIndex = '999999';
+        if (el.firstElementChild) {
+          el.firstElementChild.style.zIndex = '999999';
+        }
+      }
+    };
+
+    applyPortalZ();
+    const t1 = setTimeout(applyPortalZ, 0);
+    const t2 = setTimeout(applyPortalZ, 30);
+    const t3 = setTimeout(applyPortalZ, 100);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
   }, [visible]);
 
   // Phơi bày hàm điều khiển ra ngoài ref
@@ -240,7 +286,7 @@ const ImagePreviewModal = forwardRef((props, ref) => {
     >
       <StatusBar hidden={visible} backgroundColor="#000000" barStyle="light-content" />
 
-      <View style={styles.container}>
+      <View ref={modalRootRef} style={styles.container}>
         {/* THANH CÔNG CỤ ĐIỀU KHIỂN TRÊN CÙNG */}
         <View style={styles.topBar}>
           <ScrollView
@@ -384,7 +430,16 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'column',
     ...Platform.select({
-      web: { userSelect: 'none' },
+      web: {
+        userSelect: 'none',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100vh',
+      },
     }),
   },
   topBar: {

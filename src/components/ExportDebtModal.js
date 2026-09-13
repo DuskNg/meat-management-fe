@@ -172,7 +172,9 @@ const isReturnPayment = (p) => {
 // Helper phân tích danh sách các món thịt trả lại từ ghi chú
 const parseReturnItems = (note, defaultAmount) => {
   if (!note) return [{ type: 'RETURN', name: '[TRẢ HÀNG]', quantity: null, price: null, amount: defaultAmount }];
-  const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]/gi, '').trim();
+  let clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+  // Nếu là đơn trả hàng nhanh, loại bỏ cụm từ 'Trả hàng nhanh' để không bị lặp chữ
+  clean = clean.replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '').trim();
 
   // Khớp từng món: <số lượng><đơn vị> <tên thịt> (<thành tiền>)
   const itemRegex = /(\d+(?:[.,]\d+)?)\s*([a-zA-ZÀ-ỹ]*)\s+(.+?)\s*\(\s*([\d.,]+)[\s\u00a0]*[đ₫VND]?\s*\)(?:\s*,|\s*-|$)/gi;
@@ -280,7 +282,8 @@ const buildDailyMessage = (dateKey, transList, payList, cust) => {
     const amt = parseFloat(p.amount || 0);
     if (isReturnPayment(p)) {
       totalReturn += amt;
-      const cleanNote = p.note ? p.note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]/g, '').trim() : '';
+      let cleanNote = p.note ? p.note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/g, '').trim() : '';
+      cleanNote = cleanNote.replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '').trim();
       if (cleanNote) {
         lines.push(`- Trả lại hàng: ${cleanNote} (-${new Intl.NumberFormat('vi-VN').format(amt)} đ)`);
       } else {
@@ -676,34 +679,32 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       // Sắp xếp theo ngày tăng dần (từ đầu tháng đến cuối tháng)
       const sortedDays = activeDays.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-      // Thêm dòng TỔNG tiền thịt cho các ngày có từ 2 loại thịt trở lên
+      // Chuẩn hóa thứ tự các món trong ngày: DELIVERY -> RETURN -> TỔNG (đã trừ trả hàng) -> PAYMENT
       sortedDays.forEach((day) => {
-        const deliveryEntries = (day.entries || []).filter((e) => e.type === 'DELIVERY');
-        if (deliveryEntries.length > 1) {
-          const dayMeatTotal = deliveryEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+        const deliveries = (day.entries || []).filter((e) => e.type === 'DELIVERY');
+        const returns = (day.entries || []).filter((e) => e.type === 'RETURN');
+        const payments = (day.entries || []).filter((e) => e.type === 'PAYMENT');
+        const others = (day.entries || []).filter((e) => e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'PAYMENT' && e.type !== 'DAY_TOTAL');
 
-          let lastDeliveryIdx = -1;
-          for (let i = day.entries.length - 1; i >= 0; i--) {
-            if (day.entries[i].type === 'DELIVERY') {
-              lastDeliveryIdx = i;
-              break;
-            }
-          }
+        const newEntries = [...deliveries, ...returns];
 
-          const totalEntry = {
+        // Hiển thị dòng TỔNG nếu có từ 2 món thịt trở lên hoặc có cả thịt và trả hàng
+        if (deliveries.length > 1 || (deliveries.length >= 1 && returns.length > 0)) {
+          const dayMeatTotal = deliveries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+          const dayReturnTotal = returns.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+          // Phần tổng trừ đi cả phần trả hàng nếu có
+          const dayFinalTotal = dayMeatTotal - dayReturnTotal;
+
+          newEntries.push({
             type: 'DAY_TOTAL',
             name: 'TỔNG',
             quantity: null,
             price: null,
-            amount: dayMeatTotal,
-          };
-
-          if (lastDeliveryIdx >= 0) {
-            day.entries.splice(lastDeliveryIdx + 1, 0, totalEntry);
-          } else {
-            day.entries.push(totalEntry);
-          }
+            amount: dayFinalTotal,
+          });
         }
+
+        day.entries = [...newEntries, ...payments, ...others];
       });
 
       // Tính danh sách các ngày không phát sinh công nợ trong khoảng ngày đã chọn

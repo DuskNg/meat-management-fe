@@ -58,6 +58,8 @@ import InvoiceImageUploadModal from '../src/components/InvoiceImageUploadModal';
 import InvoiceImageViewerModal from '../src/components/InvoiceImageViewerModal';
 import BatchExportDebtModal from '../src/components/BatchExportDebtModal';
 import QuickNoteModal from '../src/components/QuickNoteModal';
+import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewModal';
+import { showGlobalToast } from '../src/store/toastStore';
 import { isMobileDevice } from '../src/utils/imageShareHelper';
 import AnimatedPressable from '../src/components/AnimatedPressable';
 import { useLockStore } from '../src/store/lockStore';
@@ -160,6 +162,7 @@ export default function DashboardScreen() {
   const batchExportDebtModalRef = useRef(null); // Modal xuất công nợ hàng loạt (tải ảnh PC / chuyển tiếp Zalo)
   const portalFeedbackAdminModalRef = useRef(null); // Modal quản lý phản hồi, thắc mắc công nợ từ khách hàng qua Zalo Portal
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
+  const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
 
   // Lấy số lượng phản hồi đang chờ xử lý từ khách hàng Zalo Portal (cập nhật mỗi 30s)
   const { data: pendingFeedbacksRes } = useQuery({
@@ -172,6 +175,18 @@ export default function DashboardScreen() {
     enabled: !!auth.user && !auth.user?.workspaceMember,
   });
   const pendingFeedbackCount = pendingFeedbacksRes?.data?.length || 0;
+
+  // Lấy số lượng hóa đơn nhân viên nộp chờ duyệt (cập nhật mỗi 20s)
+  const { data: pendingStaffSubmissionsRes, refetch: refetchStaffSubmissions } = useQuery({
+    queryKey: ['staffPendingSubmissions'],
+    queryFn: async () => {
+      const res = await api.get('/staff-submissions', { params: { status: 'READY_FOR_REVIEW' } });
+      return res.data;
+    },
+    refetchInterval: 20000,
+    enabled: !!auth.user && !auth.user?.workspaceMember,
+  });
+  const pendingStaffSubmissionCount = pendingStaffSubmissionsRes?.data?.length || 0;
 
   const [showFloatingLogs, setShowFloatingLogs] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -502,14 +517,21 @@ export default function DashboardScreen() {
         }
       };
 
+      const handleStaffSubmissionReady = (data) => {
+        refetchStaffSubmissions();
+        showGlobalToast(`Hóa đơn mới từ ${data?.submitterName || 'nhân viên'} đã được AI phân tích xong!`, 'info');
+      };
+
       socket.on('CUSTOMER_UPDATED', handleCustomerUpdate);
       socket.on('RESOURCE_LOCKS_SYNC', handleLocksSync);
       socket.on('RESOURCE_LOCK_CHANGED', handleLockChanged);
+      socket.on('STAFF_SUBMISSION_READY', handleStaffSubmissionReady);
 
       return () => {
         socket.off('CUSTOMER_UPDATED', handleCustomerUpdate);
         socket.off('RESOURCE_LOCKS_SYNC', handleLocksSync);
         socket.off('RESOURCE_LOCK_CHANGED', handleLockChanged);
+        socket.off('STAFF_SUBMISSION_READY', handleStaffSubmissionReady);
       };
     }
   }, [auth.user?.id, auth.user?.workspaceMember?.workspace?.ownerId]);
@@ -1849,6 +1871,25 @@ export default function DashboardScreen() {
             </TouchableOpacity>
 
             <View style={styles.headerRightRow}>
+              {/* Nút duyệt hóa đơn nhân viên gửi qua Zalo (AI bóc tách) */}
+              {!auth.user?.workspaceMember && (
+                <TouchableOpacity
+                  style={[styles.portalNotifyBtn, { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }]}
+                  onPress={() => staffSubmissionReviewModalRef.current?.open()}
+                  activeOpacity={0.7}
+                  title="Duyệt hóa đơn nhân viên gửi qua Zalo (AI tự phân tích)"
+                >
+                  <Text style={styles.portalNotifyIcon}>🤖</Text>
+                  {pendingStaffSubmissionCount > 0 && (
+                    <View style={[styles.portalNotifyBadge, { backgroundColor: '#7C3AED' }]}>
+                      <Text style={styles.portalNotifyBadgeText}>
+                        {pendingStaffSubmissionCount > 9 ? '9+' : pendingStaffSubmissionCount}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+
               {/* Nút thông báo phản hồi Portal từ khách hàng */}
               {!auth.user?.workspaceMember && (
                 <TouchableOpacity
@@ -1914,6 +1955,36 @@ export default function DashboardScreen() {
                 <View style={styles.menuCardContent}>
                   <Text style={[styles.menuCardTitle, { color: '#C084FC' }]}>Quản lý Workspace</Text>
                   <Text style={styles.menuCardDesc}>Thiết lập mã mời QR, tuyển dụng nhân viên và phân quyền chấm công.</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* Chức năng: Hóa đơn nhân viên (AI) */}
+            {auth.hasPermission('canManageDebt') && (
+              <TouchableOpacity
+                style={[styles.menuCard, { borderColor: '#C4B5FD', backgroundColor: '#FAF5FF' }]}
+                onPress={() => {
+                  staffSubmissionReviewModalRef.current?.open();
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.menuCardIconBg, { backgroundColor: '#EDE9FE' }]}>
+                  <Text style={styles.menuCardIcon}>🤖</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <View style={styles.menuTitleRow}>
+                    <Text style={[styles.menuCardTitle, { color: '#6D28D9' }]}>Hóa đơn nhân viên (AI)</Text>
+                    {pendingStaffSubmissionCount > 0 && (
+                      <View style={{ backgroundColor: '#7C3AED', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2 }}>
+                        <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' }}>
+                          {pendingStaffSubmissionCount} chờ duyệt
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.menuCardDesc, { color: '#7C3AED' }]}>
+                    Tạo link Zalo cho nhân viên gửi ảnh hóa đơn & video cân thịt. AI tự phân tích để chủ buôn kiểm tra và duyệt nhanh.
+                  </Text>
                 </View>
               </TouchableOpacity>
             )}
@@ -2810,6 +2881,25 @@ export default function DashboardScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerRightRow}>
+            {/* Nút duyệt hóa đơn nhân viên gửi qua Zalo (AI bóc tách) */}
+            {!auth.user?.workspaceMember && (
+              <TouchableOpacity
+                style={[styles.portalNotifyBtn, { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }]}
+                onPress={() => staffSubmissionReviewModalRef.current?.open()}
+                activeOpacity={0.7}
+                title="Duyệt hóa đơn nhân viên gửi qua Zalo (AI tự phân tích)"
+              >
+                <Text style={styles.portalNotifyIcon}>🤖</Text>
+                {pendingStaffSubmissionCount > 0 && (
+                  <View style={[styles.portalNotifyBadge, { backgroundColor: '#7C3AED' }]}>
+                    <Text style={styles.portalNotifyBadgeText}>
+                      {pendingStaffSubmissionCount > 9 ? '9+' : pendingStaffSubmissionCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
+
             {/* Nút thông báo phản hồi Portal từ khách hàng */}
             {!auth.user?.workspaceMember && (
               <TouchableOpacity
@@ -3024,6 +3114,31 @@ export default function DashboardScreen() {
                   showsVerticalScrollIndicator={true}
                   nestedScrollEnabled={true}
                 >
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    staffSubmissionReviewModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🤖</Text>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.smartDebtMenuTitle}>Hóa đơn nhân viên (AI)</Text>
+                      {pendingStaffSubmissionCount > 0 && (
+                        <View style={{ backgroundColor: '#7C3AED', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 }}>
+                          <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: 'bold' }}>
+                            {pendingStaffSubmissionCount} mới
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.smartDebtMenuSub}>AI bóc tách ảnh/video cân thịt từ link Zalo nhân viên</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
 
                 <TouchableOpacity
                   style={styles.smartDebtMenuItem}
@@ -3426,11 +3541,18 @@ export default function DashboardScreen() {
       {/* MODAL QUẢN LÝ PHẢN HỒI & KHIẾU NẠI TỪ ZALO PORTAL */}
       <PortalFeedbackAdminModal ref={portalFeedbackAdminModalRef} />
 
+      {/* MODAL DUYỆT HÓA ĐƠN & TÍCH KÊ TỪ ZALO NHÂN VIÊN */}
+      <StaffSubmissionReviewModal
+        ref={staffSubmissionReviewModalRef}
+        onRefresh={handleRefreshAll}
+      />
+
       {/* MODAL TẢI ẢNH HÓA ĐƠN HÀNG LOẠT (Ẩn) - Đặt ở cuối để luôn hiển thị đè lên TransactionDetailModal & CustomerDebtHistoryModal */}
       <InvoiceImageUploadModal
         ref={invoiceImageUploadModalRef}
         onRefresh={handleRefreshAll}
         popupModalRef={popupModalRef}
+        customers={customers}
       />
 
       {/* MODAL XEM PHÓNG TO ẢNH HÓA ĐƠN (Ẩn) - Đặt sau modal tải ảnh để có thể hiển thị đè lên trên */}

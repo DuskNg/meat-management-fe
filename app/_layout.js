@@ -15,7 +15,8 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
     typeof msg === 'string' &&
     (msg.includes('Accessing element.ref was removed in React 19') ||
      msg.includes('disconnected port') ||
-     msg.includes('Attempting to use a disconnected port object'));
+     msg.includes('Attempting to use a disconnected port object') ||
+     msg.includes('Unable to preventDefault inside passive event listener invocation'));
 
   const originalConsoleError = console.error;
   console.error = (...args) => {
@@ -73,15 +74,16 @@ function RootLayoutNav() {
     const inAdminGroup = segments[0] === 'admin';
     const inPendingScreen = segments[0] === 'workspace-pending';
     const inPortalGroup = segments[0] === 'portal';
+    const inSubmitGroup = segments[0] === 'submit';
 
     if (!isAuthenticated) {
-      if (!inAuthGroup && !inPortalGroup) {
+      if (!inAuthGroup && !inPortalGroup && !inSubmitGroup) {
         // Chưa đăng nhập -> Chuyển ngay về trang Đăng nhập
         router.replace('/login');
       }
     } else {
-      // Nếu đang mở link Portal ghim Zalo thì cho phép xem trực tiếp
-      if (inPortalGroup) return;
+      // Nếu đang mở link Portal ghim Zalo hoặc Link nhân viên gửi hóa đơn thì cho phép xem trực tiếp
+      if (inPortalGroup || inSubmitGroup) return;
 
       // Đã đăng nhập
       if (currentUser?.isAdmin) {
