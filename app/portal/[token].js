@@ -308,7 +308,8 @@ const buildInvoiceRows = (
   fromDateStr = '',
   toDateStr = '',
   sortOrder = 'desc',
-  branchList = []
+  branchList = [],
+  currentCustomerTotalDebt = null
 ) => {
   const fromD = parseDDMMYYYY(fromDateStr, false);
   const toD = parseDDMMYYYY(toDateStr, true);
@@ -396,31 +397,31 @@ const buildInvoiceRows = (
     }
   });
 
-  // 2. Gom các khoản thanh toán / trả hàng
+  // 2. Gom các khoản trả hàng và tính tổng thanh toán
   filteredPays.forEach((pm) => {
-    const { effectiveDate, displayName } = getEffectivePaymentInfo(pm);
-    const dd = String(effectiveDate.getDate()).padStart(2, '0');
-    const mm = String(effectiveDate.getMonth() + 1).padStart(2, '0');
-    const yyyy = effectiveDate.getFullYear();
-    const dateKey = `${dd}/${mm}/${yyyy}`;
-    const displayDate = `${dd}/${mm}`;
-
-    if (!dayMap[dateKey]) {
-      dayMap[dateKey] = {
-        date: effectiveDate.toISOString(),
-        dateKey,
-        displayDate,
-        entries: [],
-        invoices: [],
-      };
-    }
-
     const amt = Number(pm.amount) || 0;
     const isRet = isReturnPayment(pm);
-    const payCustomerName = pm.customerName || pm.customer?.name || null;
 
     if (isRet) {
+      const { effectiveDate } = getEffectivePaymentInfo(pm);
+      const dd = String(effectiveDate.getDate()).padStart(2, '0');
+      const mm = String(effectiveDate.getMonth() + 1).padStart(2, '0');
+      const yyyy = effectiveDate.getFullYear();
+      const dateKey = `${dd}/${mm}/${yyyy}`;
+      const displayDate = `${dd}/${mm}`;
+
+      if (!dayMap[dateKey]) {
+        dayMap[dateKey] = {
+          date: effectiveDate.toISOString(),
+          dateKey,
+          displayDate,
+          entries: [],
+          invoices: [],
+        };
+      }
+
       totalReturnAmount += amt;
+      const payCustomerName = pm.customerName || pm.customer?.name || null;
       const returnItems = parseReturnItems(pm.note, amt);
       returnItems.forEach((rItem) => {
         dayMap[dateKey].entries.push({
@@ -429,15 +430,9 @@ const buildInvoiceRows = (
         });
       });
     } else {
+      // Khoản thanh toán tiền: cộng dồn vào tổng tiền thanh toán để tính công nợ
+      // Tuyệt đối KHÔNG hiển thị dòng "THANH TOÁN" trong danh sách các món của ngày
       totalPaymentAmount += amt;
-      dayMap[dateKey].entries.push({
-        type: 'PAYMENT',
-        name: displayName,
-        quantity: null,
-        price: null,
-        amount: amt,
-        customerName: payCustomerName,
-      });
     }
   });
 
@@ -455,8 +450,8 @@ const buildInvoiceRows = (
         const cmp = nameA.localeCompare(nameB, 'vi');
         if (cmp !== 0) return cmp;
       }
-      // Trong cùng 1 nhà hàng: thịt trước, trả hàng sau, thanh toán cuối
-      const typeOrder = { MEAT: 1, DELIVERY: 2, RETURN: 3, PAYMENT: 4 };
+      // Trong cùng 1 nhà hàng: thịt trước, trả hàng sau
+      const typeOrder = { MEAT: 1, DELIVERY: 2, RETURN: 3 };
       return (typeOrder[a.type] || 5) - (typeOrder[b.type] || 5);
     });
   });
@@ -468,11 +463,10 @@ const buildInvoiceRows = (
     return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
   });
 
-  // Chuẩn hóa thứ tự các món trong ngày: MEAT/DELIVERY -> RETURN -> TỔNG (đã trừ trả hàng) -> PAYMENT
+  // Chuẩn hóa thứ tự các món trong ngày: MEAT/DELIVERY -> RETURN -> TỔNG (đã trừ trả hàng)
   sortedDays.forEach((day) => {
     const meatEntries = (day.entries || []).filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY');
     const returnEntries = (day.entries || []).filter((e) => e.type === 'RETURN');
-    const paymentEntries = (day.entries || []).filter((e) => e.type === 'PAYMENT');
     const others = (day.entries || []).filter((e) => e.type !== 'MEAT' && e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'PAYMENT' && e.type !== 'DAY_TOTAL');
 
     const newEntries = [...meatEntries, ...returnEntries];
@@ -493,7 +487,39 @@ const buildInvoiceRows = (
       });
     }
 
-    day.entries = [...newEntries, ...paymentEntries, ...others];
+    day.entries = [...newEntries, ...others];
+  });
+
+  // 4. Xác định trạng thái thanh toán của từng ngày (Đã thanh toán / Còn nợ theo nguyên tắc FIFO)
+  let unpaidDebt = currentCustomerTotalDebt !== null && currentCustomerTotalDebt !== undefined
+    ? Math.max(0, Number(currentCustomerTotalDebt))
+    : Math.max(0, totalMeatAmount - totalReturnAmount - totalPaymentAmount);
+
+  // Sắp xếp các ngày từ mới nhất đến cũ nhất: ngày cũ được thanh toán trước, ngày mới nhất sẽ gánh phần nợ còn lại
+  const daysNewestToOldest = [...sortedDays].sort((a, b) => {
+    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  });
+
+  daysNewestToOldest.forEach((day) => {
+    const meatSum = (day.entries || [])
+      .filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY')
+      .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+    const returnSum = (day.entries || [])
+      .filter((e) => e.type === 'RETURN')
+      .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+    const dayNetTotal = Math.max(0, meatSum - returnSum);
+
+    if (dayNetTotal <= 0) {
+      day.isPaid = true;
+      day.remainingDebt = 0;
+    } else if (unpaidDebt <= 0) {
+      day.isPaid = true;
+      day.remainingDebt = 0;
+    } else {
+      day.isPaid = false;
+      day.remainingDebt = Math.min(dayNetTotal, unpaidDebt);
+      unpaidDebt = Math.max(0, unpaidDebt - dayNetTotal);
+    }
   });
 
   const finalDebt = Math.max(0, totalMeatAmount - totalReturnAmount - totalPaymentAmount);
@@ -513,7 +539,7 @@ const buildInvoiceRows = (
 const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', toDateStr = '', timePresetLabel = '', branchList = []) => {
   if (typeof document === 'undefined') return null;
   const startX = 36;
-  const colWidths = [60, 200, 65, 100, 135]; // Tổng chiều rộng 1 panel: 560px
+  const colWidths = [65, 195, 65, 100, 135]; // Tổng chiều rộng 1 panel: 560px
   const panelWidth = colWidths.reduce((a, b) => a + b, 0);
   const isSplit = sortedDays.length > 10;
   const panelGap = 16;
@@ -650,16 +676,14 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         const itemY = dayStartY + idx * rowHeight;
         const midY = itemY + rowHeight / 2;
 
-        // Màu nền nhạt phân biệt từng nhà hàng
+        // Màu nền: ngày đã thanh toán nền xanh nhẹ, ngày chưa thanh toán nền trắng
         const isDayTotal = entry.type === 'DAY_TOTAL';
-        let rowBg = '#FFFFFF';
+        let rowBg = day.isPaid ? '#F0FDF4' : '#FFFFFF';
         if (isDayTotal) {
-          rowBg = '#F8FAFC';
+          rowBg = day.isPaid ? '#DCFCE7' : '#F8FAFC';
         } else if (entry.type === 'RETURN') {
           rowBg = '#FFF7ED';
-        } else if (entry.type === 'PAYMENT') {
-          rowBg = '#F0FDF4';
-        } else if (entry.customerName) {
+        } else if (entry.customerName && !day.isPaid) {
           rowBg = getRestaurantColor(entry.customerName, branchList);
         }
 
@@ -683,11 +707,6 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
           ctx.fillText(entry.name, pColX[1] + 8, midY);
         } else if (entry.type === 'RETURN') {
           ctx.fillStyle = '#DC2626';
-          ctx.font = '13.5px Arial, sans-serif';
-          const displayName = entry.customerName ? `[${entry.customerName}] ${entry.name}` : entry.name;
-          ctx.fillText(displayName, pColX[1] + 8, midY);
-        } else if (entry.type === 'PAYMENT') {
-          ctx.fillStyle = '#059669';
           ctx.font = '13.5px Arial, sans-serif';
           const displayName = entry.customerName ? `[${entry.customerName}] ${entry.name}` : entry.name;
           ctx.fillText(displayName, pColX[1] + 8, midY);
@@ -716,7 +735,7 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         if (isDayTotal) {
           ctx.fillStyle = '#0F172A';
           ctx.fillText(amtText, pColX[4] + colWidths[4] - 8, midY);
-        } else if (entry.type === 'RETURN' || entry.type === 'PAYMENT') {
+        } else if (entry.type === 'RETURN') {
           ctx.fillText(`-${amtText}`, pColX[4] + colWidths[4] - 8, midY);
         } else {
           ctx.fillText(amtText, pColX[4] + colWidths[4] - 8, midY);
@@ -755,15 +774,26 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
       }
 
       // Ô ngày gộp chung
-      ctx.fillStyle = '#F8FAFC';
+      ctx.fillStyle = day.isPaid ? '#F0FDF4' : '#FFFFFF';
       ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
-      ctx.strokeStyle = '#CBD5E1';
+      ctx.strokeStyle = day.isPaid ? '#BBF7D0' : '#CBD5E1';
       ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
-      ctx.fillStyle = '#334155';
-      ctx.font = '13.5px Arial, sans-serif';
+      const dayMidY = dayStartY + dayHeight / 2;
       ctx.textAlign = 'center';
-      ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2);
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = day.isPaid ? '#047857' : '#334155';
+      ctx.font = 'bold 12.5px Arial, sans-serif';
+      ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
+
+      ctx.font = 'bold 9px Arial, sans-serif';
+      if (day.isPaid) {
+        ctx.fillStyle = '#059669';
+        ctx.fillText('Đã thanh toán', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+      } else {
+        ctx.fillStyle = '#DC2626';
+        ctx.fillText('Còn nợ', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+      }
 
       // Kẻ ngang phân cách ngày (ĐẬM NHẤT)
       ctx.strokeStyle = '#0F172A';
@@ -1151,15 +1181,17 @@ export default function PortalScreen() {
   // Chuẩn hóa dữ liệu bảng kê theo ngày giống hệt giao diện xuất ảnh
   const branchList = portalData?.branches || portalInfo?.customers || [];
   const invoiceData = useMemo(() => {
+    const custDebt = portalData?.summary?.totalDebt ?? portalData?.summary?.debt ?? null;
     return buildInvoiceRows(
       portalData?.transactions || [],
       portalData?.payments || [],
       fromDate,
       toDate,
       sortOrder,
-      branchList
+      branchList,
+      custDebt
     );
-  }, [portalData?.transactions, portalData?.payments, fromDate, toDate, sortOrder, branchList]);
+  }, [portalData?.transactions, portalData?.payments, portalData?.summary, fromDate, toDate, sortOrder, branchList]);
 
   // Dữ liệu bảng kê sau khi áp dụng thanh tìm kiếm nhanh
   const displayInvoiceData = useMemo(() => {
@@ -1181,10 +1213,9 @@ export default function PortalScreen() {
         const matchesName = matchSearch(entry.name, q);
         const matchesCustomer = matchSearch(entry.customerName, q);
         const matchesDate = matchSearch(day.displayDate, q) || matchSearch(day.dateKey, q);
-        const matchesPayment = entry.type === 'PAYMENT' && matchSearch('thanh toan', q);
         const matchesReturn = entry.type === 'RETURN' && matchSearch('tra hang', q);
 
-        return Boolean(matchesName || matchesCustomer || matchesDate || matchesPayment || matchesReturn);
+        return Boolean(matchesName || matchesCustomer || matchesDate || matchesReturn);
       });
 
       if (matchedEntries.length > 0) {
@@ -1193,8 +1224,6 @@ export default function PortalScreen() {
           const amt = Number(entry.amount) || 0;
           if (entry.type === 'RETURN') {
             filteredTotalReturn += amt;
-          } else if (entry.type === 'PAYMENT') {
-            filteredTotalPaid += amt;
           } else {
             filteredTotalMeat += amt;
             meatEntries.push(entry);
@@ -1203,8 +1232,7 @@ export default function PortalScreen() {
 
         const deliveries = matchedEntries.filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY');
         const returns = matchedEntries.filter((e) => e.type === 'RETURN');
-        const payments = matchedEntries.filter((e) => e.type === 'PAYMENT');
-        const others = matchedEntries.filter((e) => e.type !== 'MEAT' && e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'PAYMENT' && e.type !== 'DAY_TOTAL');
+        const others = matchedEntries.filter((e) => e.type !== 'MEAT' && e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'DAY_TOTAL');
 
         const newEntries = [...deliveries, ...returns];
 
@@ -1224,7 +1252,9 @@ export default function PortalScreen() {
 
         filteredDays.push({
           ...day,
-          entries: [...newEntries, ...payments, ...others],
+          isPaid: day.isPaid,
+          remainingDebt: day.remainingDebt,
+          entries: [...newEntries, ...others],
         });
       }
     });
@@ -1617,8 +1647,24 @@ export default function PortalScreen() {
                       {displayInvoiceData.sortedDays.map((day) => (
                         <View key={day.dateKey} style={styles.tableDayRowGroup}>
                           {/* Cột Ngày bên trái (gộp chung cho toàn bộ các món trong ngày) */}
-                          <View style={styles.tdDateCol}>
-                            <Text style={styles.tdDateText}>{day.displayDate}</Text>
+                          <View
+                            style={[
+                              styles.tdDateCol,
+                              day.isPaid ? styles.tdDateColPaid : styles.tdDateColUnpaid,
+                            ]}
+                          >
+                            <Text style={[styles.tdDateText, day.isPaid && styles.tdDateTextPaid]}>
+                              {day.displayDate}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.tdDateStatusText,
+                                day.isPaid ? styles.tdDateStatusPaid : styles.tdDateStatusUnpaid,
+                              ]}
+                              numberOfLines={2}
+                            >
+                              {day.isPaid ? 'Đã thanh toán' : 'Còn nợ'}
+                            </Text>
                           </View>
 
                           {/* Danh sách các dòng món hàng bên phải */}
@@ -1633,25 +1679,23 @@ export default function PortalScreen() {
 
                               const isDayTotal = entry.type === 'DAY_TOTAL';
                               const isReturn = entry.type === 'RETURN';
-                              const isPayment = entry.type === 'PAYMENT';
 
-                              // Màu nền nhạt để phân biệt từng nhà hàng (dòng tổng ngày dùng nền xám nhẹ)
-                              const restaurantBg = isDayTotal
-                                ? '#F8FAFC'
-                                : entry.customerName
-                                  ? getRestaurantColor(entry.customerName, branchList)
-                                  : '#FFFFFF';
+                              // Màu nền: ngày đã thanh toán nền xanh nhẹ, ngày chưa thanh toán nền trắng
+                              const rowBg = isDayTotal
+                                ? (day.isPaid ? '#DCFCE7' : '#F8FAFC')
+                                : (day.isPaid
+                                    ? '#F0FDF4'
+                                    : (entry.customerName ? getRestaurantColor(entry.customerName, branchList) : '#FFFFFF'));
 
                               return (
                                 <View
                                   key={idx}
                                   style={[
                                     styles.itemSubRow,
-                                    { backgroundColor: restaurantBg },
-                                    isDayTotal && { borderTopWidth: 1, borderTopColor: '#CBD5E1' },
-                                    !isLast && (isRestaurantBoundary ? styles.itemSubRowBoundary : styles.itemSubRowBorder),
+                                    { backgroundColor: rowBg },
+                                    isDayTotal && { borderTopWidth: 1, borderTopColor: day.isPaid ? '#BBF7D0' : '#CBD5E1' },
+                                    !isLast && (isRestaurantBoundary ? styles.itemSubRowBoundary : (day.isPaid ? styles.itemSubRowBorderPaid : styles.itemSubRowBorder)),
                                     isReturn && styles.itemSubRowReturn,
-                                    isPayment && styles.itemSubRowPayment,
                                   ]}
                                 >
                                   {isDayTotal ? (
@@ -1683,13 +1727,10 @@ export default function PortalScreen() {
                                         style={[
                                           { flex: 1 },
                                           isReturn && styles.textRed,
-                                          isPayment && styles.textGreen,
                                         ]}
                                         numberOfLines={3}
                                       >
-                                        {isPayment ? (
-                                          'THANH TOÁN'
-                                        ) : entry.customerName ? (
+                                        {entry.customerName ? (
                                           <>
                                             <Text style={styles.branchPrefixText}>{`[${entry.customerName}] `}</Text>
                                             <Text>{entry.name}</Text>
@@ -1743,10 +1784,9 @@ export default function PortalScreen() {
                                       styles.tdCell,
                                       styles.tdAmount,
                                       isReturn && styles.textRed,
-                                      isPayment && styles.textGreen,
                                     ]}
                                   >
-                                    {isReturn || isPayment
+                                    {isReturn
                                       ? `-${formatCurrency(entry.amount)}`
                                       : formatCurrency(entry.amount)}
                                   </Text>
@@ -2668,7 +2708,7 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   thDate: {
-    width: 42,
+    width: 62,
     textAlign: 'center',
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
@@ -2706,19 +2746,42 @@ const styles = StyleSheet.create({
     borderBottomColor: '#0F172A',
   },
   tdDateCol: {
-    width: 42,
-    backgroundColor: '#F8FAFC',
+    width: 62,
     alignItems: 'center',
     justifyContent: 'center',
     borderRightWidth: 1,
+    paddingVertical: 3,
+    paddingHorizontal: 1,
+  },
+  tdDateColPaid: {
+    backgroundColor: '#F0FDF4',
+    borderRightColor: '#BBF7D0',
+  },
+  tdDateColUnpaid: {
+    backgroundColor: '#FFFFFF',
     borderRightColor: '#CBD5E1',
-    paddingVertical: 2,
   },
   tdDateText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#334155',
     textAlign: 'center',
+  },
+  tdDateTextPaid: {
+    color: '#065F46',
+  },
+  tdDateStatusText: {
+    fontSize: 8.5,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 2,
+    lineHeight: 11,
+  },
+  tdDateStatusPaid: {
+    color: '#047857',
+  },
+  tdDateStatusUnpaid: {
+    color: '#DC2626',
   },
   tdItemsCol: {
     flex: 1,
@@ -2732,6 +2795,10 @@ const styles = StyleSheet.create({
   itemSubRowBorder: {
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
+  },
+  itemSubRowBorderPaid: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#DCFCE7',
   },
   itemSubRowBoundary: {
     borderBottomWidth: 1.5,
