@@ -676,14 +676,14 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         const itemY = dayStartY + idx * rowHeight;
         const midY = itemY + rowHeight / 2;
 
-        // Màu nền: ngày đã thanh toán nền xanh rất nhạt, ngày chưa thanh toán nền trắng
+        // Chỉ bôi màu ở cột Ngày, các dòng món hàng giữ màu chuẩn
         const isDayTotal = entry.type === 'DAY_TOTAL';
-        let rowBg = day.isPaid ? '#F6FCF8' : '#FFFFFF';
+        let rowBg = '#FFFFFF';
         if (isDayTotal) {
-          rowBg = day.isPaid ? '#E8F8EE' : '#F8FAFC';
+          rowBg = '#F8FAFC';
         } else if (entry.type === 'RETURN') {
           rowBg = '#FFF7ED';
-        } else if (entry.customerName && !day.isPaid) {
+        } else if (entry.customerName) {
           rowBg = getRestaurantColor(entry.customerName, branchList);
         }
 
@@ -773,16 +773,16 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         ctx.stroke();
       }
 
-      // Ô ngày gộp chung
-      ctx.fillStyle = day.isPaid ? '#F6FCF8' : '#FFFFFF';
+      // Ô ngày gộp chung: bôi xanh (đã thanh toán) và đỏ (còn nợ)
+      ctx.fillStyle = day.isPaid ? '#F0FDF4' : '#FEF2F2';
       ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
-      ctx.strokeStyle = day.isPaid ? '#D1FAE5' : '#CBD5E1';
+      ctx.strokeStyle = day.isPaid ? '#BBF7D0' : '#FECACA';
       ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
       const dayMidY = dayStartY + dayHeight / 2;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = day.isPaid ? '#047857' : '#334155';
+      ctx.fillStyle = day.isPaid ? '#047857' : '#B91C1C';
       ctx.font = 'bold 12.5px Arial, sans-serif';
       ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
 
@@ -1653,7 +1653,7 @@ export default function PortalScreen() {
                               day.isPaid ? styles.tdDateColPaid : styles.tdDateColUnpaid,
                             ]}
                           >
-                            <Text style={[styles.tdDateText, day.isPaid && styles.tdDateTextPaid]}>
+                            <Text style={[styles.tdDateText, day.isPaid ? styles.tdDateTextPaid : styles.tdDateTextUnpaid]}>
                               {day.displayDate}
                             </Text>
                             <Text
@@ -1679,12 +1679,10 @@ export default function PortalScreen() {
                               const isDayTotal = entry.type === 'DAY_TOTAL';
                               const isReturn = entry.type === 'RETURN';
 
-                              // Màu nền: ngày đã thanh toán nền xanh rất nhạt, ngày chưa thanh toán nền trắng
+                              // Chỉ bôi màu đỏ/xanh ở cột Ngày, các dòng dữ liệu giữ màu chuẩn
                               const rowBg = isDayTotal
-                                ? (day.isPaid ? '#E8F8EE' : '#F8FAFC')
-                                : (day.isPaid
-                                    ? '#F6FCF8'
-                                    : (entry.customerName ? getRestaurantColor(entry.customerName, branchList) : '#FFFFFF'));
+                                ? '#F8FAFC'
+                                : (entry.customerName ? getRestaurantColor(entry.customerName, branchList) : '#FFFFFF');
 
                               return (
                                 <View
@@ -1692,8 +1690,8 @@ export default function PortalScreen() {
                                   style={[
                                     styles.itemSubRow,
                                     { backgroundColor: rowBg },
-                                    isDayTotal && { borderTopWidth: 1, borderTopColor: day.isPaid ? '#D1FAE5' : '#CBD5E1' },
-                                    !isLast && (isRestaurantBoundary ? styles.itemSubRowBoundary : (day.isPaid ? styles.itemSubRowBorderPaid : styles.itemSubRowBorder)),
+                                    isDayTotal && { borderTopWidth: 1, borderTopColor: '#CBD5E1' },
+                                    !isLast && (isRestaurantBoundary ? styles.itemSubRowBoundary : styles.itemSubRowBorder),
                                     isReturn && styles.itemSubRowReturn,
                                   ]}
                                 >
@@ -2753,21 +2751,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 1,
   },
   tdDateColPaid: {
-    backgroundColor: '#F6FCF8',
-    borderRightColor: '#D1FAE5',
+    backgroundColor: '#F0FDF4',
+    borderRightColor: '#BBF7D0',
   },
   tdDateColUnpaid: {
-    backgroundColor: '#FFFFFF',
-    borderRightColor: '#CBD5E1',
+    backgroundColor: '#FEF2F2',
+    borderRightColor: '#FECACA',
   },
   tdDateText: {
     fontSize: 10.5,
     fontWeight: '700',
-    color: '#334155',
     textAlign: 'center',
   },
   tdDateTextPaid: {
     color: '#047857',
+  },
+  tdDateTextUnpaid: {
+    color: '#B91C1C',
   },
   tdDateStatusText: {
     fontSize: 8,
