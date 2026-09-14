@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   centeredViewCenter: {
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
+    padding: Platform.OS === 'web' ? 8 : 12,
   },
   // Toast ở góc trên bên phải
   centeredViewToast: {

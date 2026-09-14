@@ -282,11 +282,11 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
       <View style={styles.container}>
         {/* Thanh Header */}
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
+          <View style={styles.headerTitleContainer}>
             <Text style={styles.titleText} numberOfLines={1}>
-              {isVideo ? '🎬' : '🧾'} {title} {images.length > 1 ? `(${currentIndex + 1}/${images.length})` : ''}
+              {isVideo ? '🎬 ' : ''}{title} {images.length > 1 ? `(${currentIndex + 1}/${images.length})` : ''}
             </Text>
-            {subtitle ? <Text style={styles.subText}>{subtitle}</Text> : null}
+            {subtitle ? <Text style={styles.subText} numberOfLines={1}>{subtitle}</Text> : null}
           </View>
 
           <View style={styles.headerActions}>
@@ -400,8 +400,8 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
                     setImageError(true);
                   }}
                   style={{
-                    maxWidth: '92vw',
-                    maxHeight: '80vh',
+                    maxWidth: '100%',
+                    maxHeight: '100%',
                     objectFit: 'contain',
                     borderRadius: 8,
                     boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
@@ -528,8 +528,8 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
 
         {/* Thanh ghi chú và mẹo tương tác dưới đáy */}
         <View style={styles.viewerFooter}>
-          <Text style={styles.interactionHintText}>
-            💡 Mẹo: Nhấp đúp để phóng to • Cuộn chuột để zoom • Nhấn giữ chuột kéo để di chuyển ảnh
+          <Text style={styles.interactionHintText} numberOfLines={1}>
+            💡 Mẹo: Nhấp đúp phóng to • Cuộn chuột để zoom • Nhấn giữ chuột kéo ảnh
           </Text>
         </View>
       </View>
@@ -539,8 +539,9 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
 
 const styles = StyleSheet.create({
   container: {
-    width: Platform.OS === 'web' ? Math.min(SCREEN_WIDTH * 0.95, 1200) : '96%',
-    maxHeight: Platform.OS === 'web' ? Math.min(SCREEN_HEIGHT * 0.94, 900) : '94%',
+    width: Platform.OS === 'web' ? 'min(96vw, 1100px)' : '96%',
+    height: Platform.OS === 'web' ? 'min(90vh, 850px)' : '90%',
+    maxHeight: Platform.OS === 'web' ? '90vh' : '90%',
     backgroundColor: '#0F172A',
     borderRadius: 16,
     overflow: 'hidden',
@@ -559,31 +560,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
     backgroundColor: '#1E293B',
+    flexShrink: 0,
+    zIndex: 10,
+  },
+  headerTitleContainer: {
+    flex: 1,
+    marginRight: 8,
+    minWidth: 0,
   },
   titleText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#F8FAFC',
   },
   subText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
-    marginTop: 2,
+    marginTop: 1,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 0,
   },
   actionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
     backgroundColor: '#334155',
   },
   actionBtnText: {
@@ -605,10 +614,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 4,
+    flexShrink: 0,
   },
   closeBtnText: {
     color: '#F8FAFC',
@@ -618,7 +628,8 @@ const styles = StyleSheet.create({
   imageViewerBox: {
     position: 'relative',
     width: '100%',
-    height: Platform.OS === 'web' ? Math.min(SCREEN_HEIGHT * 0.78, 720) : 480,
+    flex: 1,
+    minHeight: 0,
     backgroundColor: '#020617',
     alignItems: 'center',
     justifyContent: 'center',
@@ -718,15 +729,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   viewerFooter: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     backgroundColor: '#1E293B',
     borderTopWidth: 1,
     borderTopColor: '#334155',
     alignItems: 'center',
+    flexShrink: 0,
   },
   interactionHintText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
     textAlign: 'center',
   },
