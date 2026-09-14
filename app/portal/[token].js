@@ -47,6 +47,17 @@ const formatDate = (isoStr) => {
   return `${dd}/${mm}/${yyyy}`;
 };
 
+const formatDateTime = (isoStr) => {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${min} ${dd}/${mm}/${yyyy}`;
+};
+
 // Helper chuyển chuỗi DD/MM/YYYY thành Date object
 const parseDDMMYYYY = (str, isEndOfDay = false) => {
   if (!str) return null;
@@ -1040,10 +1051,15 @@ export default function PortalScreen() {
       const headers = {};
       const tokenToUse = sToken || sessionToken;
       if (tokenToUse) {
+        headers['x-portal-session'] = tokenToUse;
+      }
+      if (typeof window !== 'undefined' && localStorage.getItem('token')) {
+        headers['Authorization'] = `Bearer ${localStorage.getItem('token')}`;
+      } else if (tokenToUse) {
         headers['Authorization'] = `Bearer ${tokenToUse}`;
       }
 
-      // Đánh dấu môi trường: localhost cập nhật tức thì, production tự động gọi API ngầm
+      // Đánh dấu môi trường: localhost cập nhật tức thì, production xem theo mốc công bố
       const isDev = typeof window !== 'undefined' && (
         window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1'
@@ -1067,45 +1083,32 @@ export default function PortalScreen() {
     }
   };
 
-  // 4. Lập lịch tự động gọi API ngầm cập nhật số liệu vào đúng các mốc 12h, 16h, 19h, 22h hàng ngày
+  const [publishing, setPublishing] = useState(false);
+
+  // Chủ buôn bấm công bố số liệu mới nhất cho khách hàng xem
+  const handlePublishData = async () => {
+    try {
+      setPublishing(true);
+      const headers = {};
+      const tokenToUse = sessionToken;
+      if (tokenToUse) headers['x-portal-session'] = tokenToUse;
+      if (typeof window !== 'undefined' && localStorage.getItem('token')) {
+        headers['Authorization'] = `Bearer ${localStorage.getItem('token')}`;
+      }
+      const res = await axios.post(`${API_HOST}/api/v1/portal/publish/${token}`, {}, { headers });
+      showGlobalToast(res.data?.message || 'Đã công bố số liệu mới nhất cho khách hàng xem thành công!', 'success');
+      fetchPortalData(selectedCustomerId, sessionToken);
+    } catch (err) {
+      showGlobalToast(err.response?.data?.message || 'Không thể công bố số liệu.', 'error');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  // 4. Tự động gọi API cập nhật khi người dùng quay lại tab trình duyệt
   useEffect(() => {
     if (!token || pinRequired) return;
 
-    let lastTriggeredHourKey = '';
-
-    const checkScheduledSync = () => {
-      const now = new Date();
-      // Chuyển sang giờ Việt Nam (UTC+7)
-      const vnFormatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Asia/Ho_Chi_Minh',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
-      const parts = vnFormatter.formatToParts(now);
-      const p = {};
-      parts.forEach(({ type, value }) => { p[type] = value; });
-      const hour = parseInt(p.hour, 10);
-      const minute = parseInt(p.minute, 10);
-
-      // Đúng các mốc 12h, 16h, 19h, 22h (trong 2 phút đầu :00 - :01)
-      const syncHours = [12, 16, 19, 22];
-      const hourKey = `${p.year}-${p.month}-${p.day}_${hour}`;
-
-      if (syncHours.includes(hour) && minute <= 1 && lastTriggeredHourKey !== hourKey) {
-        lastTriggeredHourKey = hourKey;
-        // Tự động gọi API ngầm làm mới dữ liệu mà không làm giật màn hình
-        fetchPortalData(selectedCustomerId, sessionToken, true);
-      }
-    };
-
-    // Kiểm tra định kỳ mỗi 30 giây
-    const timer = setInterval(checkScheduledSync, 30 * 1000);
-
-    // Tự động gọi API ngầm cập nhật ngay khi người dùng quay lại tab trình duyệt
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchPortalData(selectedCustomerId, sessionToken, true);
@@ -1117,7 +1120,6 @@ export default function PortalScreen() {
     }
 
     return () => {
-      clearInterval(timer);
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
@@ -1570,17 +1572,62 @@ export default function PortalScreen() {
                 </View>
               </View>
 
-              {/* DÒNG THÔNG TIN ĐỒNG BỘ THEO LỊCH 12H - 16H - 19H - 22H */}
-              {portalData?.syncSchedule && (
-                <View style={styles.syncScheduleRow}>
-                  <Text style={styles.syncScheduleIcon}>
-                    {portalData.syncSchedule.isLocalhost ? '⚡' : '🕒'}
-                  </Text>
-                  <Text style={styles.syncScheduleText}>
-                    {portalData.syncSchedule.isLocalhost
-                      ? 'Dev Mode: Cập nhật tức thì (localhost)'
-                      : `Tự động gọi API ngầm cập nhật: 12h, 16h, 19h, 22h hàng ngày (Lần tới: ${portalData.syncSchedule.nextUpdateLabel || '...' })`}
-                  </Text>
+              {/* KHỐI CÔNG BỐ SỐ LIỆU CHO KHÁCH XEM (CHỦ BUÔN REALTIME / KHÁCH XEM BẢN CÔNG BỐ) */}
+              {portalData?.publishInfo && (
+                <View style={styles.publishBox}>
+                  {portalData.publishInfo.isOwner ? (
+                    // DÀNH CHO CHỦ BUÔN: Hiển thị trạng thái realtime & nút bấm công bố số liệu
+                    <View style={styles.ownerPublishRow}>
+                      <View style={{ flex: 1 }}>
+                        <View style={styles.ownerStatusLine}>
+                          <Text style={styles.ownerLiveTag}>⚡ CHỦ BUÔN (REALTIME)</Text>
+                          <Text style={styles.ownerPublishedTime}>
+                            Đã công bố: {portalData.publishInfo.lastPublishedAt ? formatDateTime(portalData.publishInfo.lastPublishedAt) : 'Chưa công bố'}
+                          </Text>
+                        </View>
+                        {portalData.publishInfo.unpublishedCount > 0 ? (
+                          <Text style={styles.unpublishedAlertText}>
+                            ⚠️ Có {portalData.publishInfo.unpublishedCount} đơn nợ mới chưa hiển thị cho khách
+                          </Text>
+                        ) : (
+                          <Text style={styles.publishedAllGoodText}>
+                            ✓ Khách đang xem số liệu mới nhất
+                          </Text>
+                        )}
+                      </View>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.publishNowBtn,
+                          portalData.publishInfo.unpublishedCount > 0 && styles.publishNowBtnHighlight,
+                        ]}
+                        onPress={handlePublishData}
+                        disabled={publishing}
+                        activeOpacity={0.8}
+                      >
+                        {publishing ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.publishNowBtnText}>
+                            📢 {portalData.publishInfo.unpublishedCount > 0 ? `Công bố mới (${portalData.publishInfo.unpublishedCount})` : 'Công bố số liệu'}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    // DÀNH CHO KHÁCH HÀNG: Chỉ hiển thị mốc công bố minh bạch
+                    <View style={styles.clientPublishRow}>
+                      <Text style={styles.clientPublishIcon}>🕒</Text>
+                      <Text style={styles.clientPublishText}>
+                        Số liệu chốt công bố lúc:{' '}
+                        <Text style={{ fontWeight: '700', color: '#0F172A' }}>
+                          {portalData.publishInfo.lastPublishedAt
+                            ? formatDateTime(portalData.publishInfo.lastPublishedAt)
+                            : 'Chưa có mốc công bố'}
+                        </Text>
+                      </Text>
+                    </View>
+                  )}
                 </View>
               )}
             </View>
@@ -2274,23 +2321,92 @@ const styles = StyleSheet.create({
     color: '#DC2626',
     lineHeight: 14,
   },
-  syncScheduleRow: {
+  publishBox: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  ownerPublishRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-    paddingTop: 3,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  syncScheduleIcon: {
-    fontSize: 10,
-    lineHeight: 12,
+  ownerStatusLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
   },
-  syncScheduleText: {
+  ownerLiveTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#059669',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 0.5,
+    borderColor: '#A7F3D0',
+  },
+  ownerPublishedTime: {
     fontSize: 9.5,
     color: '#64748B',
     fontWeight: '500',
+  },
+  unpublishedAlertText: {
+    fontSize: 10,
+    color: '#DC2626',
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  publishedAllGoodText: {
+    fontSize: 9.5,
+    color: '#059669',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  publishNowBtn: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  publishNowBtnHighlight: {
+    backgroundColor: '#2563EB',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  publishNowBtnText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  clientPublishRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 2,
+  },
+  clientPublishIcon: {
+    fontSize: 11,
+    lineHeight: 13,
+  },
+  clientPublishText: {
+    fontSize: 10,
+    color: '#64748B',
   },
   reloadIconBtn: {
     padding: 2,

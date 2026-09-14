@@ -16,8 +16,18 @@ import CustomSelect from './CustomSelect';
 import PopupModal from './PopupModal';
 import { api } from '../api/client';
 import { COLORS, SHADOWS } from '../theme';
-import { showGlobalToast } from '../store/toastStore';
 import PortalFeedbackAdminModal from './PortalFeedbackAdminModal';
+
+const formatDateTime = (isoStr) => {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${min} ${dd}/${mm}/${yyyy}`;
+};
 
 const PortalManagementModal = forwardRef((props, ref) => {
   const [visible, setVisible] = useState(false);
@@ -253,9 +263,58 @@ const PortalManagementModal = forwardRef((props, ref) => {
     });
   };
 
+  const [publishing, setPublishing] = useState(false);
+
+  // Công bố số liệu mới cho TẤT CẢ các link nhóm Zalo
+  const handlePublishAll = () => {
+    popupRef.current?.show({
+      title: 'Công Bố Số Liệu Mới Toàn Bộ',
+      message: 'Hệ thống sẽ công bố số liệu đơn hàng & công nợ mới nhất hiện tại cho TẤT CẢ các nhóm Zalo. Khách hàng trên toàn hệ thống sẽ xem được ngay số liệu mới. Bạn có chắc muốn tiếp tục?',
+      type: 'confirm',
+      confirmText: 'Công bố ngay',
+      cancelText: 'Hủy',
+      onConfirm: async () => {
+        try {
+          setPublishing(true);
+          const res = await api.post('/portal/manage/links/publish-all');
+          showGlobalToast(res.data?.message || 'Đã công bố số liệu mới cho toàn bộ các nhóm Zalo!', 'success');
+          fetchLinks();
+        } catch (err) {
+          showGlobalToast(err.response?.data?.message || 'Không thể công bố số liệu.', 'error');
+        } finally {
+          setPublishing(false);
+        }
+      },
+    });
+  };
+
+  // Công bố số liệu mới cho 1 link cụ thể
+  const handlePublishSingle = async (link) => {
+    try {
+      const res = await api.post(`/portal/manage/links/${link.id}/publish`);
+      showGlobalToast(`Đã công bố số liệu mới cho nhóm "${link.name}"! Khách hàng có thể xem ngay.`, 'success');
+      const publishedAt = res.data?.data?.lastPublishedAt || new Date().toISOString();
+      setLinks((prev) =>
+        prev.map((l) =>
+          l.id === link.id
+            ? { ...l, lastPublishedAt: publishedAt, unpublishedCount: 0 }
+            : l
+        )
+      );
+    } catch (err) {
+      showGlobalToast(err.response?.data?.message || 'Không thể công bố số liệu.', 'error');
+    }
+  };
+
   // Tổng số phản hồi đang chờ xử lý
   const totalPendingFeedbacks = links.reduce(
     (sum, l) => sum + (l.pendingFeedbacksCount || 0),
+    0
+  );
+
+  // Tổng số đơn nợ mới chưa công bố trên toàn hệ thống
+  const totalUnpublishedTxs = links.reduce(
+    (sum, l) => sum + (l.unpublishedCount || 0),
     0
   );
 
@@ -289,9 +348,25 @@ const PortalManagementModal = forwardRef((props, ref) => {
           <View style={styles.topActionsRow}>
             {!isEditing ? (
               <>
-                <TouchableOpacity style={styles.createBtn} onPress={handleOpenCreateForm}>
-                  <Text style={styles.createBtnText}>➕ Tạo Link Nhóm Mới</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <TouchableOpacity style={styles.createBtn} onPress={handleOpenCreateForm}>
+                    <Text style={styles.createBtnText}>➕ Tạo Link Nhóm Mới</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.publishAllBtn, totalUnpublishedTxs > 0 && styles.publishAllBtnActive]}
+                    onPress={handlePublishAll}
+                    disabled={publishing}
+                  >
+                    {publishing ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={[styles.publishAllBtnText, totalUnpublishedTxs > 0 && styles.publishAllBtnTextActive]}>
+                        📢 Công Bố Tất Cả Link {totalUnpublishedTxs > 0 ? `(${totalUnpublishedTxs} đơn mới)` : ''}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
 
                 <TouchableOpacity
                   style={styles.feedbackListBtn}
@@ -590,13 +665,44 @@ const PortalManagementModal = forwardRef((props, ref) => {
                         )}
                       </View>
 
+                      {/* TRẠNG THÁI CÔNG BỐ SỐ LIỆU CHO KHÁCH */}
+                      <View style={styles.publishStatusRow}>
+                        <Text style={styles.publishTimeText}>
+                          🕒 Đã công bố: <Text style={{ fontWeight: '600', color: link.lastPublishedAt ? '#059669' : '#94A3B8' }}>
+                            {link.lastPublishedAt ? formatDateTime(link.lastPublishedAt) : 'Chưa công bố'}
+                          </Text>
+                        </Text>
+                        {link.unpublishedCount > 0 ? (
+                          <View style={styles.unpublishedBadge}>
+                            <Text style={styles.unpublishedBadgeText}>
+                              ⚠️ {link.unpublishedCount} đơn mới chưa công bố
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.publishedUpToDateText}>✓ Khách đã xem bản mới nhất</Text>
+                        )}
+                      </View>
+
                       {/* FOOTER ACTIONS */}
                       <View style={styles.cardActionsRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.publishBtn,
+                            link.unpublishedCount > 0 && styles.publishBtnActive
+                          ]}
+                          onPress={() => handlePublishSingle(link)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.publishBtnText, link.unpublishedCount > 0 && styles.publishBtnTextActive]}>
+                            📢 {link.unpublishedCount > 0 ? `Công bố số liệu (${link.unpublishedCount})` : 'Công bố số liệu'}
+                          </Text>
+                        </TouchableOpacity>
+
                         <TouchableOpacity
                           style={styles.copyBtn}
                           onPress={() => handleCopyLink(link)}
                         >
-                          <Text style={styles.copyBtnText}>📋 Copy Link Ghim Zalo</Text>
+                          <Text style={styles.copyBtnText}>📋 Copy Link</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -918,6 +1024,84 @@ const styles = StyleSheet.create({
   },
   deleteBtnText: {
     fontSize: 12,
+  },
+  publishAllBtn: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  publishAllBtnActive: {
+    backgroundColor: '#2563EB',
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
+  },
+  publishAllBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: 'bold',
+  },
+  publishAllBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  publishStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  publishTimeText: {
+    fontSize: 11.5,
+    color: '#475569',
+  },
+  unpublishedBadge: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 99,
+  },
+  unpublishedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  publishedUpToDateText: {
+    fontSize: 11,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  publishBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  publishBtnActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#1D4ED8',
+  },
+  publishBtnText: {
+    fontSize: 12,
+    color: '#1D4ED8',
+    fontWeight: 'bold',
+  },
+  publishBtnTextActive: {
+    color: '#FFFFFF',
   },
 
   // ─── FORM STYLES ───
