@@ -471,14 +471,7 @@ export default function StaffSubmitScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <View style={styles.innerWrapper}>
-        {/* ─── HEADER ĐƠN GIẢN, TRANG NHÃ ─── */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Gửi hóa đơn & video cân thịt</Text>
-          <Text style={styles.headerOwner}>
-            Chủ buôn: <Text style={{ fontWeight: 'bold', color: '#059669' }}>{linkInfo.ownerName}</Text>
-            {linkInfo.name ? ` • ${linkInfo.name}` : ''}
-          </Text>
-        </View>
+
 
         {/* ─── 1. PHẦN CHỌN NGÀY ─── */}
         <View style={styles.card}>
