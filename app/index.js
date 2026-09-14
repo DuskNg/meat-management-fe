@@ -194,15 +194,6 @@ export default function DashboardScreen() {
 
   const [currentView, setCurrentView] = useState(params.view || 'menu'); // 'menu' hoặc 'customers' để điều hướng
 
-  // Tự động mở popup giới thiệu tính năng Tính Lợi Nhuận khi người dùng truy cập Quản lý khách hàng
-  useEffect(() => {
-    if (currentView === 'customers' && !auth.user?.workspaceMember) {
-      const timer = setTimeout(() => {
-        profitFeatureIntroModalRef.current?.open();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [currentView, auth.user?.workspaceMember]);
   const [search, setSearch] = useState('');
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);

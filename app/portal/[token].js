@@ -1085,28 +1085,6 @@ export default function PortalScreen() {
     }
   };
 
-  const [publishing, setPublishing] = useState(false);
-
-  // Chủ buôn bấm công bố số liệu mới nhất cho khách hàng xem
-  const handlePublishData = async () => {
-    try {
-      setPublishing(true);
-      const headers = {};
-      const tokenToUse = sessionToken;
-      if (tokenToUse) headers['x-portal-session'] = tokenToUse;
-      const ownerToken = typeof window !== 'undefined' ? localStorage.getItem('meat_manager_access_token') : null;
-      if (ownerToken) {
-        headers['Authorization'] = `Bearer ${ownerToken}`;
-      }
-      const res = await axios.post(`${API_HOST}/api/v1/portal/publish/${token}`, {}, { headers });
-      showGlobalToast(res.data?.message || 'Đã công bố số liệu mới nhất cho khách hàng xem thành công!', 'success');
-      fetchPortalData(selectedCustomerId, sessionToken);
-    } catch (err) {
-      showGlobalToast(err.response?.data?.message || 'Không thể công bố số liệu.', 'error');
-    } finally {
-      setPublishing(false);
-    }
-  };
 
   // 4. Tự động gọi API cập nhật khi người dùng quay lại tab trình duyệt
   useEffect(() => {
@@ -1575,64 +1553,6 @@ export default function PortalScreen() {
                 </View>
               </View>
 
-              {/* KHỐI CÔNG BỐ SỐ LIỆU CHO KHÁCH XEM (CHỦ BUÔN REALTIME / KHÁCH XEM BẢN CÔNG BỐ) */}
-              {portalData?.publishInfo && (
-                <View style={styles.publishBox}>
-                  {portalData.publishInfo.isOwner ? (
-                    // DÀNH CHO CHỦ BUÔN: Hiển thị trạng thái realtime & nút bấm công bố số liệu
-                    <View style={styles.ownerPublishRow}>
-                      <View style={{ flex: 1 }}>
-                        <View style={styles.ownerStatusLine}>
-                          <Text style={styles.ownerLiveTag}>⚡ CHỦ BUÔN (REALTIME)</Text>
-                          <Text style={styles.ownerPublishedTime}>
-                            Đã công bố: {portalData.publishInfo.lastPublishedAt ? formatDateTime(portalData.publishInfo.lastPublishedAt) : 'Chưa công bố'}
-                          </Text>
-                        </View>
-                        {portalData.publishInfo.unpublishedCount > 0 ? (
-                          <Text style={styles.unpublishedAlertText}>
-                            ⚠️ Có {portalData.publishInfo.unpublishedCount} đơn nợ mới chưa hiển thị cho khách
-                          </Text>
-                        ) : (
-                          <Text style={styles.publishedAllGoodText}>
-                            ✓ Khách đang xem số liệu mới nhất
-                          </Text>
-                        )}
-                      </View>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.publishNowBtn,
-                          portalData.publishInfo.unpublishedCount > 0 && styles.publishNowBtnHighlight,
-                        ]}
-                        onPress={handlePublishData}
-                        disabled={publishing}
-                        activeOpacity={0.8}
-                      >
-                        {publishing ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <Text style={styles.publishNowBtnText}>
-                            📢 {portalData.publishInfo.unpublishedCount > 0 ? `Công bố mới (${portalData.publishInfo.unpublishedCount})` : 'Công bố số liệu'}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    // DÀNH CHO KHÁCH HÀNG: Chỉ hiển thị mốc công bố minh bạch
-                    <View style={styles.clientPublishRow}>
-                      <Text style={styles.clientPublishIcon}>🕒</Text>
-                      <Text style={styles.clientPublishText}>
-                        Số liệu chốt công bố lúc:{' '}
-                        <Text style={{ fontWeight: '700', color: '#0F172A' }}>
-                          {portalData.publishInfo.lastPublishedAt
-                            ? formatDateTime(portalData.publishInfo.lastPublishedAt)
-                            : 'Chưa có mốc công bố'}
-                        </Text>
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
             </View>
 
             {/* BẢNG KÊ ĐƠN HÀNG CHI TIẾT (DẠNG BẢNG KÊ TIỀN HÀNG) */}
@@ -2323,93 +2243,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#DC2626',
     lineHeight: 14,
-  },
-  publishBox: {
-    marginTop: 6,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-  },
-  ownerPublishRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  ownerStatusLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  ownerLiveTag: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#059669',
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 4,
-    borderWidth: 0.5,
-    borderColor: '#A7F3D0',
-  },
-  ownerPublishedTime: {
-    fontSize: 9.5,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  unpublishedAlertText: {
-    fontSize: 10,
-    color: '#DC2626',
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  publishedAllGoodText: {
-    fontSize: 9.5,
-    color: '#059669',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  publishNowBtn: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 6,
-    paddingHorizontal: 9,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  publishNowBtnHighlight: {
-    backgroundColor: '#2563EB',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  publishNowBtnText: {
-    color: '#FFFFFF',
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  clientPublishRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 2,
-  },
-  clientPublishIcon: {
-    fontSize: 11,
-    lineHeight: 13,
-  },
-  clientPublishText: {
-    fontSize: 10,
-    color: '#64748B',
   },
   reloadIconBtn: {
     padding: 2,

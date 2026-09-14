@@ -349,33 +349,35 @@ const PortalManagementModal = forwardRef((props, ref) => {
           <View style={styles.topActionsRow}>
             {!isEditing ? (
               <>
-                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <TouchableOpacity style={styles.createBtn} onPress={handleOpenCreateForm}>
-                    <Text style={styles.createBtnText}>➕ Tạo Link Nhóm Mới</Text>
-                  </TouchableOpacity>
+                <TouchableOpacity style={styles.createBtn} onPress={handleOpenCreateForm} activeOpacity={0.8}>
+                  <Text style={styles.createBtnText}>➕ Tạo Link Nhóm Mới</Text>
+                </TouchableOpacity>
 
+                {totalUnpublishedTxs > 0 && (
                   <TouchableOpacity
-                    style={[styles.publishAllBtn, totalUnpublishedTxs > 0 && styles.publishAllBtnActive]}
+                    style={[styles.publishAllBtn, styles.publishAllBtnActive]}
                     onPress={handlePublishAll}
                     disabled={publishing}
+                    activeOpacity={0.8}
                   >
                     {publishing ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                      <Text style={[styles.publishAllBtnText, totalUnpublishedTxs > 0 && styles.publishAllBtnTextActive]}>
-                        📢 Công Bố Tất Cả Link {totalUnpublishedTxs > 0 ? `(${totalUnpublishedTxs} đơn mới)` : ''}
+                      <Text style={styles.publishAllBtnText}>
+                        📢 Công Bố Tất Cả ({totalUnpublishedTxs} đơn mới)
                       </Text>
                     )}
                   </TouchableOpacity>
-                </View>
+                )}
 
                 <TouchableOpacity
                   style={styles.feedbackListBtn}
                   onPress={() => feedbackModalRef.current?.open('pending')}
+                  activeOpacity={0.7}
                 >
                   <Text style={styles.feedbackListBtnText}>
-                    💬 Khiếu Nại / Báo Lệch
-                    {totalPendingFeedbacks > 0 ? ` (${totalPendingFeedbacks} mới)` : ''}
+                    💬 Khiếu Nại
+                    {totalPendingFeedbacks > 0 ? ` (${totalPendingFeedbacks})` : ''}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -667,66 +669,70 @@ const PortalManagementModal = forwardRef((props, ref) => {
                       </View>
 
                       {/* TRẠNG THÁI CÔNG BỐ SỐ LIỆU CHO KHÁCH */}
-                      <View style={styles.publishStatusRow}>
-                        <Text style={styles.publishTimeText}>
-                          🕒 Đã công bố: <Text style={{ fontWeight: '600', color: link.lastPublishedAt ? '#059669' : '#94A3B8' }}>
-                            {link.lastPublishedAt ? formatDateTime(link.lastPublishedAt) : 'Chưa công bố'}
-                          </Text>
-                        </Text>
-                        {link.unpublishedCount > 0 ? (
-                          <View style={styles.unpublishedBadge}>
-                            <Text style={styles.unpublishedBadgeText}>
-                              ⚠️ {link.unpublishedCount} đơn mới chưa công bố
+                      {link.unpublishedCount > 0 ? (
+                        <View style={styles.unpublishedAlertBox}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.unpublishedAlertTitle}>
+                              ⚠️ Có {link.unpublishedCount} đơn mới chưa công bố
+                            </Text>
+                            <Text style={styles.unpublishedAlertSub}>
+                              Khách đang xem mốc: {link.lastPublishedAt ? formatDateTime(link.lastPublishedAt) : 'Chưa công bố'}
                             </Text>
                           </View>
-                        ) : (
-                          <Text style={styles.publishedUpToDateText}>✓ Khách đã xem bản mới nhất</Text>
-                        )}
-                      </View>
+                          <TouchableOpacity
+                            style={styles.publishNowCardBtn}
+                            onPress={() => handlePublishSingle(link)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.publishNowCardBtnText}>📢 Công bố ngay</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <View style={styles.publishedGoodLine}>
+                          <Text style={styles.publishedGoodText}>
+                            🕒 Đã công bố: {link.lastPublishedAt ? formatDateTime(link.lastPublishedAt) : 'Chưa công bố'} • <Text style={{ color: '#059669', fontWeight: '600' }}>✓ Mới nhất</Text>
+                          </Text>
+                        </View>
+                      )}
 
                       {/* FOOTER ACTIONS */}
-                      <View style={styles.cardActionsRow}>
+                      <View style={styles.cardActionsCol}>
+                        {/* NÚT COPY LINK: TO RÕ RÀNG, NẰM ĐỘC LẬP KHÔNG BAO GIỜ BỊ BÓ HẸP */}
                         <TouchableOpacity
-                          style={[
-                            styles.publishBtn,
-                            link.unpublishedCount > 0 && styles.publishBtnActive
-                          ]}
-                          onPress={() => handlePublishSingle(link)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.publishBtnText, link.unpublishedCount > 0 && styles.publishBtnTextActive]}>
-                            📢 {link.unpublishedCount > 0 ? `Công bố số liệu (${link.unpublishedCount})` : 'Công bố số liệu'}
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.copyBtn}
+                          style={styles.copyBtnFull}
                           onPress={() => handleCopyLink(link)}
+                          activeOpacity={0.8}
                         >
-                          <Text style={styles.copyBtnText}>📋 Copy Link</Text>
+                          <Text style={styles.copyBtnFullText}>📋 Copy Link Ghim Zalo</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity
-                          style={styles.editBtn}
-                          onPress={() => handleOpenEditForm(link)}
-                        >
-                          <Text style={styles.editBtnText}>✏️ Sửa</Text>
-                        </TouchableOpacity>
+                        {/* CÁC THAO TÁC PHỤ: SỬA, ĐỔI MÃ LINK, XÓA */}
+                        <View style={styles.cardSecondaryActionsRow}>
+                          <TouchableOpacity
+                            style={styles.editBtn}
+                            onPress={() => handleOpenEditForm(link)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.editBtnText}>✏️ Sửa</Text>
+                          </TouchableOpacity>
 
-                        <TouchableOpacity
-                          style={styles.regenerateBtn}
-                          onPress={() => handleRegenerateToken(link)}
-                          title="Đổi mã link mới (Thu hồi link cũ)"
-                        >
-                          <Text style={styles.regenerateBtnText}>🔄 Đổi link</Text>
-                        </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.regenerateBtn}
+                            onPress={() => handleRegenerateToken(link)}
+                            title="Đổi mã link mới (Thu hồi link cũ)"
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.regenerateBtnText}>🔄 Đổi link</Text>
+                          </TouchableOpacity>
 
-                        <TouchableOpacity
-                          style={styles.deleteBtn}
-                          onPress={() => handleDeleteLink(link)}
-                        >
-                          <Text style={styles.deleteBtnText}>🗑️</Text>
-                        </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.deleteBtn}
+                            onPress={() => handleDeleteLink(link)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.deleteBtnText}>🗑️ Xóa</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </View>
                   );
@@ -973,44 +979,97 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#4B5563',
   },
-  cardActionsRow: {
+  // ─── CARD FOOTER & ACTIONS ───
+  unpublishedAlertBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 8,
+    gap: 8,
+  },
+  unpublishedAlertTitle: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  unpublishedAlertSub: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  publishNowCardBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  publishNowCardBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: 'bold',
+  },
+  publishedGoodLine: {
+    marginBottom: 6,
+    paddingHorizontal: 2,
+  },
+  publishedGoodText: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  cardActionsCol: {
+    gap: 7,
+    marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 8,
+  },
+  copyBtnFull: {
+    backgroundColor: '#059669',
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyBtnFullText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  cardSecondaryActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    paddingTop: 8,
-  },
-  copyBtn: {
-    backgroundColor: '#065F46',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    flex: 1,
-    alignItems: 'center',
-  },
-  copyBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   editBtn: {
-    backgroundColor: '#F3F4F6',
+    flex: 1,
+    backgroundColor: '#F1F5F9',
     paddingVertical: 7,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   editBtnText: {
     fontSize: 12,
-    color: '#374151',
+    color: '#334155',
     fontWeight: '600',
   },
   regenerateBtn: {
+    flex: 1,
     backgroundColor: '#FEF3C7',
     paddingVertical: 7,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   regenerateBtnText: {
     fontSize: 12,
@@ -1018,91 +1077,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   deleteBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    borderRadius: 6,
     backgroundColor: '#FEE2E2',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   deleteBtnText: {
     fontSize: 12,
+    color: '#DC2626',
+    fontWeight: '600',
   },
   publishAllBtn: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 9,
+    backgroundColor: '#2563EB',
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   publishAllBtnActive: {
-    backgroundColor: '#2563EB',
-    borderWidth: 1.5,
-    borderColor: '#93C5FD',
+    backgroundColor: '#1D4ED8',
   },
   publishAllBtnText: {
     color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: 'bold',
-  },
-  publishAllBtnTextActive: {
-    color: '#FFFFFF',
-  },
-  publishStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  publishTimeText: {
-    fontSize: 11.5,
-    color: '#475569',
-  },
-  unpublishedBadge: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FCA5A5',
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 99,
-  },
-  unpublishedBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  publishedUpToDateText: {
-    fontSize: 11,
-    color: '#059669',
-    fontWeight: '600',
-  },
-  publishBtn: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-  },
-  publishBtnActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#1D4ED8',
-  },
-  publishBtnText: {
     fontSize: 12,
-    color: '#1D4ED8',
     fontWeight: 'bold',
-  },
-  publishBtnTextActive: {
-    color: '#FFFFFF',
   },
 
   // ─── FORM STYLES ───
