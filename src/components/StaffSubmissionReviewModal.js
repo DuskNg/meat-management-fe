@@ -10,6 +10,7 @@ import {
   Image,
   ActivityIndicator,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import CustomSelect from './CustomSelect';
@@ -26,6 +27,9 @@ const formatCurrency = (amount) =>
   new Intl.NumberFormat('vi-VN').format(Math.round(amount || 0));
 
 const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submissions, setSubmissions] = useState([]);
@@ -109,6 +113,22 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
+  // Tải danh mục thịt kèm giá riêng cho khách hàng
+  const fetchCustomerPrices = async (customerId) => {
+    if (!customerId) return;
+    try {
+      const res = await api.get(`/products?customerId=${customerId}`);
+      if (res.data?.success) {
+        const custProds = (res.data.data || []).filter(
+          (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+        );
+        setProducts(custProds);
+      }
+    } catch (e) {
+      console.warn('Lỗi tải giá riêng khách:', e);
+    }
+  };
+
   // Nạp 1 hóa đơn vào form chỉnh sửa
   const loadSubmissionToEdit = (sub) => {
     setSelectedSub(sub);
@@ -120,13 +140,20 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     setEditNote(sub.note || '');
 
     // Khách hàng
+    let matchedCust = null;
     if (sub.matchedCustomer) {
+      matchedCust = sub.matchedCustomer;
       setEditCustomer(sub.matchedCustomer);
     } else if (sub.matchedCustomerId) {
       const found = customers.find((c) => c.id === sub.matchedCustomerId);
+      matchedCust = found || null;
       setEditCustomer(found || null);
     } else {
       setEditCustomer(null);
+    }
+
+    if (matchedCust?.id) {
+      fetchCustomerPrices(matchedCust.id);
     }
 
     // Danh sách món thịt
@@ -326,29 +353,35 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   return (
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)} centered={false}>
-        <View style={styles.modalView}>
+        <View style={[styles.modalView, isMobile && styles.modalViewMobile]}>
           {/* ─── HEADER ─── */}
-          <View style={styles.headerRow}>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.modalTitle}>🤖 DUYỆT HÓA ĐƠN NHÂN VIÊN GỬI VỀ</Text>
+          <View style={[styles.headerRow, isMobile && styles.headerRowMobile]}>
+            <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.modalTitle, isMobile && styles.modalTitleMobile]} numberOfLines={1}>
+                  {isMobile ? '🤖 Duyệt hóa đơn' : '🤖 DUYỆT HÓA ĐƠN NHÂN VIÊN GỬI VỀ'}
+                </Text>
                 <View style={styles.badgePending}>
-                  <Text style={styles.badgePendingText}>{submissions.length} hóa đơn</Text>
+                  <Text style={styles.badgePendingText}>{submissions.length} đơn</Text>
                 </View>
               </View>
-              <Text style={styles.modalSubtitle}>Đối chiếu ảnh/video gốc và xác nhận dữ liệu AI phân tích để lên đơn nợ</Text>
+              <Text style={[styles.modalSubtitle, isMobile && styles.modalSubtitleMobile]} numberOfLines={1}>
+                {isMobile ? 'Đối chiếu ảnh gốc và xác nhận lên đơn nợ' : 'Đối chiếu ảnh/video gốc và xác nhận dữ liệu AI phân tích để lên đơn nợ'}
+              </Text>
             </View>
 
             <View style={styles.headerActions}>
               <TouchableOpacity
-                style={styles.btnLinkManager}
+                style={[styles.btnLinkManager, isMobile && styles.btnLinkManagerMobile]}
                 onPress={() => {
                   setShowLinkManager(!showLinkManager);
                   if (!showLinkManager) fetchStaffLinks();
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.btnLinkManagerText}>🔗 Link gửi Zalo</Text>
+                <Text style={[styles.btnLinkManagerText, isMobile && styles.btnLinkManagerTextMobile]}>
+                  {isMobile ? '🔗 Link Zalo' : '🔗 Link gửi Zalo'}
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.btnClose} onPress={() => setVisible(false)}>
@@ -396,46 +429,82 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           )}
 
           {/* ─── THANH BỘ LỌC ─── */}
-          <View style={styles.filterBar}>
-            <View style={styles.statusTabs}>
+          <View style={[styles.filterBar, isMobile && styles.filterBarMobile]}>
+            <View style={[styles.statusTabs, isMobile && styles.statusTabsMobile]}>
               <TouchableOpacity
-                style={[styles.statusTab, filterStatus === 'READY_FOR_REVIEW' && styles.statusTabActive]}
+                style={[
+                  styles.statusTab,
+                  isMobile && styles.statusTabMobile,
+                  filterStatus === 'READY_FOR_REVIEW' && styles.statusTabActive,
+                ]}
                 onPress={() => setFilterStatus('READY_FOR_REVIEW')}
               >
-                <Text style={[styles.statusTabText, filterStatus === 'READY_FOR_REVIEW' && styles.statusTabTextActive]}>
+                <Text
+                  style={[
+                    styles.statusTabText,
+                    isMobile && styles.statusTabTextMobile,
+                    filterStatus === 'READY_FOR_REVIEW' && styles.statusTabTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
                   ⏳ Chờ duyệt ({submissions.filter((s) => s.status === 'READY_FOR_REVIEW' || s.status === 'PENDING' || s.status === 'ANALYZING').length})
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.statusTab, filterStatus === 'APPROVED' && styles.statusTabActive]}
+                style={[
+                  styles.statusTab,
+                  isMobile && styles.statusTabMobile,
+                  filterStatus === 'APPROVED' && styles.statusTabActive,
+                ]}
                 onPress={() => setFilterStatus('APPROVED')}
               >
-                <Text style={[styles.statusTabText, filterStatus === 'APPROVED' && styles.statusTabTextActive]}>
+                <Text
+                  style={[
+                    styles.statusTabText,
+                    isMobile && styles.statusTabTextMobile,
+                    filterStatus === 'APPROVED' && styles.statusTabTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
                   ✅ Đã lên đơn
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.statusTab, filterStatus === 'ALL' && styles.statusTabActive]}
+                style={[
+                  styles.statusTab,
+                  isMobile && styles.statusTabMobile,
+                  filterStatus === 'ALL' && styles.statusTabActive,
+                ]}
                 onPress={() => setFilterStatus('ALL')}
               >
-                <Text style={[styles.statusTabText, filterStatus === 'ALL' && styles.statusTabTextActive]}>
+                <Text
+                  style={[
+                    styles.statusTabText,
+                    isMobile && styles.statusTabTextMobile,
+                    filterStatus === 'ALL' && styles.statusTabTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
                   Tất cả
                 </Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.dateFilterWrap}>
+            <View style={[styles.dateFilterWrap, isMobile && styles.dateFilterWrapMobile]}>
+              {isMobile && (
+                <Text style={styles.mobileDateLabel}>📅 Ngày xem:</Text>
+              )}
               {filterDate ? (
                 <View style={styles.datePickerHolder}>
-                  <View style={{ width: 132 }}>
+                  <View style={{ width: isMobile ? 122 : 132 }}>
                     <DatePickerInput
                       value={filterDate}
                       onChange={setFilterDate}
                       compact={true}
                       showIcon={true}
-                      alignRight={true}
+                      alignRight={!isMobile}
                     />
                   </View>
                   <TouchableOpacity
@@ -449,7 +518,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={styles.btnPickDateAll}
+                  style={[styles.btnPickDateAll, isMobile && styles.btnPickDateAllMobile]}
                   onPress={() => {
                     const today = new Date();
                     const d = String(today.getDate()).padStart(2, '0');
@@ -459,28 +528,30 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   }}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.btnPickDateAllText}>📅 Tất cả ngày (Bấm lọc)</Text>
+                  <Text style={[styles.btnPickDateAllText, isMobile && { fontSize: 11.5 }]}>
+                    📅 Tất cả ngày (Bấm lọc)
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
           </View>
 
-          {/* ─── THÂN ĐỐI SOÁT (2 CỘT) ─── */}
+          {/* ─── THÂN ĐỐI SOÁT (2 CỘT HOẶC STACK DỌC TRÊN MOBILE) ─── */}
           {loading ? (
             <View style={styles.centerLoading}>
               <ActivityIndicator size="large" color="#10B981" />
               <Text style={{ color: '#64748B', marginTop: 10 }}>Đang tải danh sách hóa đơn...</Text>
             </View>
           ) : submissions.length === 0 ? (
-            <View style={styles.centerEmpty}>
-              <Text style={{ fontSize: 40, marginBottom: 10 }}>🎉</Text>
-              <Text style={styles.emptyTitle}>Không có hóa đơn nào cần duyệt</Text>
-              <Text style={styles.emptyDesc}>Toàn bộ hóa đơn do nhân viên gửi trong khoảng thời gian này đã được xử lý xong.</Text>
+            <View style={[styles.centerEmpty, isMobile && { padding: 16 }]}>
+              <Text style={{ fontSize: isMobile ? 32 : 40, marginBottom: 8 }}>🎉</Text>
+              <Text style={[styles.emptyTitle, isMobile && { fontSize: 15 }]}>Không có hóa đơn nào cần duyệt</Text>
+              <Text style={[styles.emptyDesc, isMobile && { fontSize: 12 }]}>Toàn bộ hóa đơn do nhân viên gửi trong khoảng thời gian này đã được xử lý xong.</Text>
             </View>
           ) : (
-            <View style={styles.reviewBodyContainer}>
+            <View style={[styles.reviewBodyContainer, isMobile && styles.reviewBodyContainerMobile]}>
               {/* CỘT TRÁI: DANH SÁCH HÓA ĐƠN & ẢNH GỐC */}
-              <View style={styles.leftCol}>
+              <View style={[styles.leftCol, isMobile && styles.leftColMobile]}>
                 {/* Thanh chọn nhanh các hóa đơn */}
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subListBar}>
                   {submissions.map((sub, idx) => {
@@ -505,7 +576,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                 {selectedSub && (
                   <View style={styles.mediaBox}>
                     <View style={styles.mediaHeader}>
-                      <Text style={styles.mediaInfoText}>
+                      <Text style={styles.mediaInfoText} numberOfLines={1}>
                         Người gửi: <Text style={{ fontWeight: 'bold' }}>{selectedSub.senderName || 'Nhân viên'}</Text>
                         {selectedSub.note ? ` • Ghi chú: ${selectedSub.note}` : ''}
                       </Text>
@@ -516,7 +587,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                           onPress={() => imagePreviewModalRef.current?.open(selectedSub.fileUrl)}
                           activeOpacity={0.8}
                         >
-                          <Text style={styles.btnZoomMediaText}>🔍 Phóng to ảnh</Text>
+                          <Text style={styles.btnZoomMediaText}>🔍 Phóng to</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -533,7 +604,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                               style={{
                                 width: '100%',
                                 height: '100%',
-                                maxHeight: 480,
+                                maxHeight: isMobile ? 180 : 480,
                                 backgroundColor: '#000000',
                                 borderRadius: 8,
                                 objectFit: 'contain',
@@ -577,7 +648,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               </View>
 
               {/* CỘT PHẢI: BẢNG DỮ LIỆU ĐỐI SOÁT & SỬA LỖI */}
-              <View style={styles.rightCol}>
+              <View style={[styles.rightCol, isMobile && styles.rightColMobile]}>
                 <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }}>
                   <Text style={styles.sectionHeaderTitle}>BẢNG DỮ LIỆU BÓC TÁCH (AI):</Text>
 
@@ -595,7 +666,12 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       value={editCustomer}
                       placeholder="Chọn khách hàng từ danh bạ..."
                       options={customers}
-                      onSelect={setEditCustomer}
+                      onSelect={(c) => {
+                        setEditCustomer(c);
+                        if (c?.id) {
+                          fetchCustomerPrices(c.id);
+                        }
+                      }}
                       renderSelected={(c) => c?.name || ''}
                       renderOption={(c) => (
                         <View style={styles.custOptionRow}>
@@ -638,99 +714,180 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                     </View>
 
                     {editItems.map((item, idx) => (
-                      <View key={item.id} style={styles.itemRow}>
-                        {/* Cột Tên thịt */}
-                        <View style={{ flex: 3 }}>
-                          <CustomSelect
-                            value={item.selectedProduct}
-                            placeholder="Tên thịt..."
-                            options={products}
-                            onSelect={(p) => {
-                              handleUpdateItem(idx, 'selectedProduct', p);
-                              handleUpdateItem(idx, 'matchedProductId', p.id);
-                              if (p.defaultPrice && !item.price) {
-                                handleUpdateItem(idx, 'price', String(Math.round(p.defaultPrice)));
-                              }
-                            }}
-                            onInputChange={(txt) => handleUpdateItem(idx, 'rawName', txt)}
-                            renderSelected={(p) => p?.name || item.rawName || ''}
-                            renderOption={(p) => (
-                              <View style={styles.productOptionRow}>
-                                <Text style={styles.productOptionName}>{p.name}</Text>
-                                <Text style={styles.productOptionPrice}>{formatCurrency(p.defaultPrice)}/{p.unit}</Text>
-                              </View>
-                            )}
-                          />
-                        </View>
+                      isMobile ? (
+                        /* Giao diện dạng thẻ 2 tầng trên Mobile */
+                        <View key={item.id} style={styles.itemCardMobile}>
+                          {/* Hàng 1: Tên món thịt + Nút xóa */}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                            <View style={{ flex: 1 }}>
+                              <CustomSelect
+                                value={item.selectedProduct}
+                                placeholder="Tên thịt..."
+                                options={products}
+                                onSelect={(p) => {
+                                  handleUpdateItem(idx, 'selectedProduct', p);
+                                  handleUpdateItem(idx, 'matchedProductId', p.id);
+                                  const effectiveP = p.customPrice !== undefined && p.customPrice !== null ? p.customPrice : p.defaultPrice;
+                                  if (effectiveP && !item.price) {
+                                    handleUpdateItem(idx, 'price', String(Math.round(effectiveP)));
+                                  }
+                                }}
+                                onInputChange={(txt) => handleUpdateItem(idx, 'rawName', txt)}
+                                renderSelected={(p) => p?.name || item.rawName || ''}
+                                renderOption={(p) => {
+                                  const effectiveP = p.customPrice !== undefined && p.customPrice !== null ? p.customPrice : p.defaultPrice;
+                                  return (
+                                    <View style={styles.productOptionRow}>
+                                      <Text style={styles.productOptionName}>{p.name}</Text>
+                                      <Text style={styles.productOptionPrice}>{formatCurrency(effectiveP)}/{p.unit}</Text>
+                                    </View>
+                                  );
+                                }}
+                              />
+                            </View>
+                            <TouchableOpacity
+                              style={styles.btnDeleteRow}
+                              onPress={() => handleRemoveItem(idx)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 16 }}>✕</Text>
+                            </TouchableOpacity>
+                          </View>
 
-                        {/* Cột Số kg */}
-                        <View style={{ flex: 1.6 }}>
-                          <TextInput
-                            style={styles.inputCell}
-                            value={item.quantity}
-                            onChangeText={(val) => handleUpdateItem(idx, 'quantity', val)}
-                            placeholder="Số kg"
-                            placeholderTextColor="#94A3B8"
-                            keyboardType="numeric"
-                          />
+                          {/* Hàng 2: Số kg - Đơn giá - Thành tiền */}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <View style={{ flex: 1 }}>
+                              <TextInput
+                                style={styles.inputCell}
+                                value={item.quantity}
+                                onChangeText={(val) => handleUpdateItem(idx, 'quantity', val)}
+                                placeholder="Số kg"
+                                placeholderTextColor="#94A3B8"
+                                keyboardType="numeric"
+                              />
+                            </View>
+                            <View style={{ flex: 1.2 }}>
+                              <TextInput
+                                style={styles.inputCell}
+                                value={item.price}
+                                onChangeText={(val) => handleUpdateItem(idx, 'price', val)}
+                                placeholder="Đơn giá"
+                                placeholderTextColor="#94A3B8"
+                                keyboardType="numeric"
+                              />
+                            </View>
+                            <View style={{ flex: 1.4 }}>
+                              <TextInput
+                                style={[styles.inputCell, { fontWeight: 'bold', color: '#10B981' }]}
+                                value={item.amount}
+                                onChangeText={(val) => handleUpdateItem(idx, 'amount', val)}
+                                placeholder="Thành tiền"
+                                placeholderTextColor="#94A3B8"
+                                keyboardType="numeric"
+                              />
+                            </View>
+                          </View>
                         </View>
+                      ) : (
+                        /* Giao diện 1 hàng ngang trên Desktop */
+                        <View key={item.id} style={styles.itemRow}>
+                          {/* Cột Tên thịt */}
+                          <View style={{ flex: 3 }}>
+                            <CustomSelect
+                              value={item.selectedProduct}
+                              placeholder="Tên thịt..."
+                              options={products}
+                              onSelect={(p) => {
+                                handleUpdateItem(idx, 'selectedProduct', p);
+                                handleUpdateItem(idx, 'matchedProductId', p.id);
+                                const effectiveP = p.customPrice !== undefined && p.customPrice !== null ? p.customPrice : p.defaultPrice;
+                                if (effectiveP && !item.price) {
+                                  handleUpdateItem(idx, 'price', String(Math.round(effectiveP)));
+                                }
+                              }}
+                              onInputChange={(txt) => handleUpdateItem(idx, 'rawName', txt)}
+                              renderSelected={(p) => p?.name || item.rawName || ''}
+                              renderOption={(p) => {
+                                const effectiveP = p.customPrice !== undefined && p.customPrice !== null ? p.customPrice : p.defaultPrice;
+                                return (
+                                  <View style={styles.productOptionRow}>
+                                    <Text style={styles.productOptionName}>{p.name}</Text>
+                                    <Text style={styles.productOptionPrice}>{formatCurrency(effectiveP)}/{p.unit}</Text>
+                                  </View>
+                                );
+                              }}
+                            />
+                          </View>
 
-                        {/* Cột Đơn giá */}
-                        <View style={{ flex: 2 }}>
-                          <TextInput
-                            style={styles.inputCell}
-                            value={item.price}
-                            onChangeText={(val) => handleUpdateItem(idx, 'price', val)}
-                            placeholder="Đơn giá"
-                            placeholderTextColor="#94A3B8"
-                            keyboardType="numeric"
-                          />
+                          {/* Cột Số kg */}
+                          <View style={{ flex: 1.6 }}>
+                            <TextInput
+                              style={styles.inputCell}
+                              value={item.quantity}
+                              onChangeText={(val) => handleUpdateItem(idx, 'quantity', val)}
+                              placeholder="Số kg"
+                              placeholderTextColor="#94A3B8"
+                              keyboardType="numeric"
+                            />
+                          </View>
+
+                          {/* Cột Đơn giá */}
+                          <View style={{ flex: 2 }}>
+                            <TextInput
+                              style={styles.inputCell}
+                              value={item.price}
+                              onChangeText={(val) => handleUpdateItem(idx, 'price', val)}
+                              placeholder="Đơn giá"
+                              placeholderTextColor="#94A3B8"
+                              keyboardType="numeric"
+                            />
+                          </View>
+
+                          {/* Cột Thành tiền */}
+                          <View style={{ flex: 2.2 }}>
+                            <TextInput
+                              style={[styles.inputCell, { fontWeight: 'bold', color: '#10B981' }]}
+                              value={item.amount}
+                              onChangeText={(val) => handleUpdateItem(idx, 'amount', val)}
+                              placeholder="Thành tiền"
+                              placeholderTextColor="#94A3B8"
+                              keyboardType="numeric"
+                            />
+                          </View>
+
+                          {/* Nút xóa */}
+                          <TouchableOpacity
+                            style={styles.btnDeleteRow}
+                            onPress={() => handleRemoveItem(idx)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={{ color: '#EF4444', fontWeight: 'bold' }}>✕</Text>
+                          </TouchableOpacity>
                         </View>
-
-                        {/* Cột Thành tiền */}
-                        <View style={{ flex: 2.2 }}>
-                          <TextInput
-                            style={[styles.inputCell, { fontWeight: 'bold', color: '#10B981' }]}
-                            value={item.amount}
-                            onChangeText={(val) => handleUpdateItem(idx, 'amount', val)}
-                            placeholder="Thành tiền"
-                            placeholderTextColor="#94A3B8"
-                            keyboardType="numeric"
-                          />
-                        </View>
-
-                        {/* Nút xóa */}
-                        <TouchableOpacity
-                          style={styles.btnDeleteRow}
-                          onPress={() => handleRemoveItem(idx)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={{ color: '#EF4444', fontWeight: 'bold' }}>✕</Text>
-                        </TouchableOpacity>
-                      </View>
+                      )
                     ))}
                   </View>
                 </ScrollView>
 
                 {/* Footer tổng tiền và các nút duyệt */}
-                <View style={styles.reviewFooter}>
+                <View style={[styles.reviewFooter, isMobile && styles.reviewFooterMobile]}>
                   <View style={styles.totalRow}>
-                    <Text style={styles.totalLabel}>TỔNG CỘNG ĐƠN HÀNG:</Text>
-                    <Text style={styles.totalValue}>{formatCurrency(totalAmount)} đ</Text>
+                    <Text style={[styles.totalLabel, isMobile && { fontSize: 13 }]}>TỔNG CỘNG ĐƠN HÀNG:</Text>
+                    <Text style={[styles.totalValue, isMobile && { fontSize: 17 }]}>{formatCurrency(totalAmount)} đ</Text>
                   </View>
 
                   <View style={styles.actionBtnRow}>
                     <TouchableOpacity
-                      style={styles.btnReject}
+                      style={[styles.btnReject, isMobile && { height: 40 }]}
                       onPress={handleReject}
                       disabled={submittingApprove}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.btnRejectText}>🗑️ Bác bỏ</Text>
+                      <Text style={[styles.btnRejectText, isMobile && { fontSize: 12.5 }]}>🗑️ Bác bỏ</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[styles.btnApprove, submittingApprove && { opacity: 0.7 }]}
+                      style={[styles.btnApprove, submittingApprove && { opacity: 0.7 }, isMobile && { height: 40 }]}
                       onPress={handleApprove}
                       disabled={submittingApprove}
                       activeOpacity={0.85}
@@ -738,7 +895,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       {submittingApprove ? (
                         <ActivityIndicator color="#FFFFFF" size="small" />
                       ) : (
-                        <Text style={styles.btnApproveText}>✅ XÁC NHẬN & LÊN ĐƠN NỢ</Text>
+                        <Text style={[styles.btnApproveText, isMobile && { fontSize: 12.5 }]}>
+                          {isMobile ? '✅ LÊN ĐƠN NỢ' : '✅ XÁC NHẬN & LÊN ĐƠN NỢ'}
+                        </Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -1266,5 +1425,98 @@ const styles = StyleSheet.create({
     color: '#10B981',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+
+  // ─── CÁC STYLE TỐI ƯU MOBILE ───
+  modalViewMobile: {
+    height: '96%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  headerRowMobile: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  modalTitleMobile: {
+    fontSize: 15,
+  },
+  modalSubtitleMobile: {
+    fontSize: 11.5,
+    marginTop: 1,
+  },
+  btnLinkManagerMobile: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  btnLinkManagerTextMobile: {
+    fontSize: 11.5,
+  },
+  filterBarMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  statusTabsMobile: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 6,
+  },
+  statusTabMobile: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
+  statusTabTextMobile: {
+    fontSize: 11.5,
+  },
+  dateFilterWrapMobile: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+  },
+  mobileDateLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  btnPickDateAllMobile: {
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+  reviewBodyContainerMobile: {
+    flexDirection: 'column',
+  },
+  leftColMobile: {
+    height: 220,
+    flex: 0,
+    flexGrow: 0,
+    flexShrink: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  rightColMobile: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  itemCardMobile: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 8,
+    marginBottom: 8,
+  },
+  reviewFooterMobile: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
 });
