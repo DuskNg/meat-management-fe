@@ -1053,8 +1053,10 @@ export default function PortalScreen() {
       if (tokenToUse) {
         headers['x-portal-session'] = tokenToUse;
       }
-      if (typeof window !== 'undefined' && localStorage.getItem('token')) {
-        headers['Authorization'] = `Bearer ${localStorage.getItem('token')}`;
+      // Đính kèm Access Token của chủ buôn (nếu đang đăng nhập) để server nhận diện quyền chủ
+      const ownerToken = typeof window !== 'undefined' ? localStorage.getItem('meat_manager_access_token') : null;
+      if (ownerToken) {
+        headers['Authorization'] = `Bearer ${ownerToken}`;
       } else if (tokenToUse) {
         headers['Authorization'] = `Bearer ${tokenToUse}`;
       }
@@ -1092,8 +1094,9 @@ export default function PortalScreen() {
       const headers = {};
       const tokenToUse = sessionToken;
       if (tokenToUse) headers['x-portal-session'] = tokenToUse;
-      if (typeof window !== 'undefined' && localStorage.getItem('token')) {
-        headers['Authorization'] = `Bearer ${localStorage.getItem('token')}`;
+      const ownerToken = typeof window !== 'undefined' ? localStorage.getItem('meat_manager_access_token') : null;
+      if (ownerToken) {
+        headers['Authorization'] = `Bearer ${ownerToken}`;
       }
       const res = await axios.post(`${API_HOST}/api/v1/portal/publish/${token}`, {}, { headers });
       showGlobalToast(res.data?.message || 'Đã công bố số liệu mới nhất cho khách hàng xem thành công!', 'success');
