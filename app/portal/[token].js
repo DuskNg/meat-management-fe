@@ -364,12 +364,16 @@ const buildInvoiceRows = (
       tx.items.forEach((item) => {
         const amt = Number(item.total) || (Number(item.quantity) * Number(item.price)) || 0;
         totalMeatAmount += amt;
+        const rawName = item.productName || 'THỊT';
+        const isQuick = rawName === 'Tiền hàng' || rawName.toLowerCase().startsWith('tiền') || tx.note === 'Ghi nợ nhanh' || (Number(item.quantity) === 1 && Number(item.price) === amt && rawName.toLowerCase().includes('tiền'));
+
         dayMap[dateKey].entries.push({
           type: 'MEAT',
-          name: (item.productName || 'THỊT').toUpperCase(),
-          quantity: item.quantity != null ? Number(item.quantity) : null,
+          isQuick,
+          name: isQuick ? 'TIỀN HÀNG' : rawName.toUpperCase(),
+          quantity: isQuick ? null : (item.quantity != null ? Number(item.quantity) : null),
           unit: item.unit || 'kg',
-          price: item.price != null ? Number(item.price) : null,
+          price: isQuick ? null : (item.price != null ? Number(item.price) : null),
           amount: amt,
           customerName: tx.customerName,
         });
@@ -378,9 +382,11 @@ const buildInvoiceRows = (
       const amt = Number(tx.totalAmount) || 0;
       totalMeatAmount += amt;
       const noteName = tx.note ? tx.note.toUpperCase() : 'GIAO HÀNG';
+      const isQuick = noteName === 'TIỀN HÀNG' || noteName.startsWith('TIỀN') || tx.note === 'Ghi nợ nhanh';
       dayMap[dateKey].entries.push({
         type: 'DELIVERY',
-        name: noteName,
+        isQuick,
+        name: isQuick ? 'TIỀN HÀNG' : noteName,
         quantity: null,
         unit: 'kg',
         price: null,
@@ -692,14 +698,15 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
           ctx.fillText(displayName, pColX[1] + 8, midY);
         }
 
-        // SL
+        // SL (Dạng Tiền hàng không hiển thị số cân)
         ctx.textAlign = 'right';
         ctx.fillStyle = entry.type === 'RETURN' ? '#DC2626' : '#0F172A';
-        const qtyText = isDayTotal ? '-' : (entry.quantity != null ? String(entry.quantity) : '-');
+        const isQuickEntry = entry.isQuick || entry.name === 'TIỀN HÀNG' || entry.name?.startsWith('TIỀN');
+        const qtyText = (isDayTotal || isQuickEntry) ? '-' : (entry.quantity != null ? String(entry.quantity) : '-');
         ctx.fillText(qtyText, pColX[2] + colWidths[2] - 8, midY);
 
-        // Đơn giá
-        const priceText = isDayTotal ? '-' : (entry.price != null ? new Intl.NumberFormat('vi-VN').format(entry.price) : '-');
+        // Đơn giá (Dạng Tiền hàng không hiển thị đơn giá)
+        const priceText = (isDayTotal || isQuickEntry) ? '-' : (entry.price != null ? new Intl.NumberFormat('vi-VN').format(entry.price) : '-');
         ctx.font = 'bold 14px Arial, sans-serif';
         ctx.fillText(priceText, pColX[3] + colWidths[3] - 8, midY);
 
@@ -1720,7 +1727,7 @@ export default function PortalScreen() {
                                       isReturn && styles.textRed,
                                     ]}
                                   >
-                                    {entry.quantity != null ? entry.quantity : '-'}
+                                    {(!entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.quantity != null) ? entry.quantity : '-'}
                                   </Text>
                                   <Text
                                     style={[
@@ -1729,7 +1736,7 @@ export default function PortalScreen() {
                                       isReturn && styles.textRed,
                                     ]}
                                   >
-                                    {entry.price != null ? formatShortPrice(entry.price) : '-'}
+                                    {(!entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.price != null) ? formatShortPrice(entry.price) : '-'}
                                   </Text>
                                   <Text
                                     style={[

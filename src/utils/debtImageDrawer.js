@@ -601,8 +601,9 @@ export const drawDebtImageCanvas = async ({
           ctx.font = '14px Arial, sans-serif';
           ctx.fillText('-', pColX[2] + colWidths[2] - 8, midY);
         } else {
+          const isQuickEntry = entry.name === 'TIỀN HÀNG' || entry.name?.startsWith('TIỀN') || entry.isQuick;
           const numQty = parseFloat(entry.quantity);
-          const qtyText = (entry.quantity !== null && entry.quantity !== undefined && !isNaN(numQty))
+          const qtyText = (!isQuickEntry && entry.quantity !== null && entry.quantity !== undefined && !isNaN(numQty))
             ? (Number.isInteger(numQty) ? String(numQty) : parseFloat(numQty.toFixed(2)).toString())
             : '-';
           ctx.fillStyle = entry.type === 'RETURN' ? '#DC2626' : '#0F172A';
@@ -616,8 +617,9 @@ export const drawDebtImageCanvas = async ({
           ctx.font = 'bold 14.5px Arial, sans-serif';
           ctx.fillText('-', pColX[3] + colWidths[3] - 8, midY);
         } else {
+          const isQuickEntry = entry.name === 'TIỀN HÀNG' || entry.name?.startsWith('TIỀN') || entry.isQuick;
           const numPrice = parseFloat(entry.price);
-          const priceText = (entry.price !== null && entry.price !== undefined && !isNaN(numPrice) && numPrice > 0)
+          const priceText = (!isQuickEntry && entry.price !== null && entry.price !== undefined && !isNaN(numPrice) && numPrice > 0)
             ? new Intl.NumberFormat('vi-VN').format(Math.round(numPrice))
             : '-';
           ctx.fillStyle = entry.type === 'RETURN' ? '#DC2626' : '#0F172A';
