@@ -507,18 +507,35 @@ const buildInvoiceRows = (
     const returnSum = (day.entries || [])
       .filter((e) => e.type === 'RETURN')
       .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-    const dayNetTotal = Math.max(0, meatSum - returnSum);
 
-    if (dayNetTotal <= 0) {
-      day.isPaid = true;
-      day.remainingDebt = 0;
-    } else if (unpaidDebt <= 0) {
-      day.isPaid = true;
-      day.remainingDebt = 0;
-    } else {
+    if (meatSum === 0 && returnSum > 0) {
+      // Ngày chỉ có trả hàng (không mua thịt): hiển thị là "Trả hàng", không tính là "Đã thanh toán"
+      day.isReturnOnly = true;
       day.isPaid = false;
-      day.remainingDebt = Math.min(dayNetTotal, unpaidDebt);
-      unpaidDebt = Math.max(0, unpaidDebt - dayNetTotal);
+      day.remainingDebt = 0;
+      unpaidDebt = Math.max(0, unpaidDebt - returnSum);
+    } else {
+      const dayNetTotal = Math.max(0, meatSum - returnSum);
+
+      if (dayNetTotal <= 0) {
+        // Ngày có mua thịt nhưng tiền trả hàng >= tiền mua: cấn trừ hết cho ngày này
+        day.isReturnOnly = true;
+        day.isPaid = false;
+        day.remainingDebt = 0;
+        const excessReturn = returnSum - meatSum;
+        unpaidDebt = Math.max(0, unpaidDebt - excessReturn);
+      } else if (unpaidDebt <= 0) {
+        // Đã thanh toán hết nợ
+        day.isReturnOnly = false;
+        day.isPaid = true;
+        day.remainingDebt = 0;
+      } else {
+        // Ngày còn nợ
+        day.isReturnOnly = false;
+        day.isPaid = false;
+        day.remainingDebt = Math.min(dayNetTotal, unpaidDebt);
+        unpaidDebt = Math.max(0, unpaidDebt - dayNetTotal);
+      }
     }
   });
 
@@ -773,26 +790,44 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         ctx.stroke();
       }
 
-      // Ô ngày gộp chung: bôi xanh (đã thanh toán) và đỏ (còn nợ)
-      ctx.fillStyle = day.isPaid ? '#F0FDF4' : '#FEF2F2';
-      ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
-      ctx.strokeStyle = day.isPaid ? '#BBF7D0' : '#FECACA';
-      ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
+      // Ô ngày gộp chung: bôi cam (trả hàng), xanh (đã thanh toán) và đỏ (còn nợ)
+      if (day.isReturnOnly) {
+        ctx.fillStyle = '#FFF7ED';
+        ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
+        ctx.strokeStyle = '#FED7AA';
+        ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
-      const dayMidY = dayStartY + dayHeight / 2;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = day.isPaid ? '#047857' : '#B91C1C';
-      ctx.font = 'bold 12.5px Arial, sans-serif';
-      ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
+        const dayMidY = dayStartY + dayHeight / 2;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#C2410C';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
 
-      ctx.font = 'bold 9px Arial, sans-serif';
-      if (day.isPaid) {
-        ctx.fillStyle = '#059669';
-        ctx.fillText('Đã thanh toán', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        ctx.font = 'bold 9px Arial, sans-serif';
+        ctx.fillStyle = '#EA580C';
+        ctx.fillText('Trả hàng', pColX[0] + colWidths[0] / 2, dayMidY + 8);
       } else {
-        ctx.fillStyle = '#DC2626';
-        ctx.fillText('Còn nợ', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        ctx.fillStyle = day.isPaid ? '#F0FDF4' : '#FEF2F2';
+        ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
+        ctx.strokeStyle = day.isPaid ? '#BBF7D0' : '#FECACA';
+        ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
+
+        const dayMidY = dayStartY + dayHeight / 2;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = day.isPaid ? '#047857' : '#B91C1C';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
+
+        ctx.font = 'bold 9px Arial, sans-serif';
+        if (day.isPaid) {
+          ctx.fillStyle = '#059669';
+          ctx.fillText('Đã thanh toán', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        } else {
+          ctx.fillStyle = '#DC2626';
+          ctx.fillText('Còn nợ', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        }
       }
 
       // Kẻ ngang phân cách ngày (ĐẬM NHẤT)
@@ -1253,6 +1288,7 @@ export default function PortalScreen() {
         filteredDays.push({
           ...day,
           isPaid: day.isPaid,
+          isReturnOnly: day.isReturnOnly,
           remainingDebt: day.remainingDebt,
           entries: [...newEntries, ...others],
         });
@@ -1650,19 +1686,32 @@ export default function PortalScreen() {
                           <View
                             style={[
                               styles.tdDateCol,
-                              day.isPaid ? styles.tdDateColPaid : styles.tdDateColUnpaid,
+                              day.isReturnOnly
+                                ? styles.tdDateColReturn
+                                : (day.isPaid ? styles.tdDateColPaid : styles.tdDateColUnpaid),
                             ]}
                           >
-                            <Text style={[styles.tdDateText, day.isPaid ? styles.tdDateTextPaid : styles.tdDateTextUnpaid]}>
+                            <Text
+                              style={[
+                                styles.tdDateText,
+                                day.isReturnOnly
+                                  ? styles.tdDateTextReturn
+                                  : (day.isPaid ? styles.tdDateTextPaid : styles.tdDateTextUnpaid),
+                              ]}
+                            >
                               {day.displayDate}
                             </Text>
                             <Text
                               style={[
                                 styles.tdDateStatusText,
-                                day.isPaid ? styles.tdDateStatusPaid : styles.tdDateStatusUnpaid,
+                                day.isReturnOnly
+                                  ? styles.tdDateStatusReturn
+                                  : (day.isPaid ? styles.tdDateStatusPaid : styles.tdDateStatusUnpaid),
                               ]}
                             >
-                              {day.isPaid ? 'Đã\nthanh\ntoán' : 'Còn\nnợ'}
+                              {day.isReturnOnly
+                                ? 'Trả\nhàng'
+                                : (day.isPaid ? 'Đã\nthanh\ntoán' : 'Còn\nnợ')}
                             </Text>
                           </View>
 
@@ -2758,6 +2807,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
     borderRightColor: '#FECACA',
   },
+  tdDateColReturn: {
+    backgroundColor: '#FFF7ED',
+    borderRightColor: '#FED7AA',
+  },
   tdDateText: {
     fontSize: 10.5,
     fontWeight: '700',
@@ -2768,6 +2821,9 @@ const styles = StyleSheet.create({
   },
   tdDateTextUnpaid: {
     color: '#B91C1C',
+  },
+  tdDateTextReturn: {
+    color: '#C2410C',
   },
   tdDateStatusText: {
     fontSize: 8,
@@ -2781,6 +2837,9 @@ const styles = StyleSheet.create({
   },
   tdDateStatusUnpaid: {
     color: '#DC2626',
+  },
+  tdDateStatusReturn: {
+    color: '#EA580C',
   },
   tdItemsCol: {
     flex: 1,
