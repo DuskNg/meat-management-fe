@@ -1080,6 +1080,13 @@ export default function PortalScreen() {
         headers['Authorization'] = `Bearer ${tokenToUse}`;
       }
 
+      // Đánh dấu môi trường: localhost cập nhật tức thì, production đồng bộ sau 16h, 19h, 22h
+      const isDev = typeof window !== 'undefined' && (
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1'
+      );
+      headers['x-portal-env'] = isDev ? 'development' : 'production';
+
       const res = await axios.get(`${API_HOST}/api/v1/portal/data/${token}`, {
         params: { customerId: custParam },
         headers,
@@ -1539,6 +1546,20 @@ export default function PortalScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+
+              {/* DÒNG THÔNG TIN ĐỒNG BỘ THEO LỊCH 16H - 19H - 22H */}
+              {portalData?.syncSchedule && (
+                <View style={styles.syncScheduleRow}>
+                  <Text style={styles.syncScheduleIcon}>
+                    {portalData.syncSchedule.isLocalhost ? '⚡' : '🕒'}
+                  </Text>
+                  <Text style={styles.syncScheduleText}>
+                    {portalData.syncSchedule.isLocalhost
+                      ? 'Dev Mode: Cập nhật tức thì (localhost)'
+                      : `Đồng bộ số liệu: ${portalData.syncSchedule.lastUpdateLabel || '16h, 19h, 22h'} (Lần tới: ${portalData.syncSchedule.nextUpdateLabel || '...' })`}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* BẢNG KÊ ĐƠN HÀNG CHI TIẾT (DẠNG BẢNG KÊ TIỀN HÀNG) */}
@@ -2237,6 +2258,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#DC2626',
     lineHeight: 14,
+  },
+  syncScheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    paddingTop: 3,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  syncScheduleIcon: {
+    fontSize: 10,
+    lineHeight: 12,
+  },
+  syncScheduleText: {
+    fontSize: 9.5,
+    color: '#64748B',
+    fontWeight: '500',
   },
   reloadIconBtn: {
     padding: 2,
