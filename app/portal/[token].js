@@ -1031,17 +1031,19 @@ export default function PortalScreen() {
     }
   };
 
-  // 3. Tải dữ liệu công nợ & giá thịt
-  const fetchPortalData = async (custParam, sToken) => {
+  // 3. Tải dữ liệu công nợ & giá thịt (hỗ trợ gọi ngầm isSilent để không gián đoạn giao diện)
+  const fetchPortalData = async (custParam, sToken, isSilent = false) => {
     try {
-      setDataLoading(true);
+      if (!isSilent) {
+        setDataLoading(true);
+      }
       const headers = {};
       const tokenToUse = sToken || sessionToken;
       if (tokenToUse) {
         headers['Authorization'] = `Bearer ${tokenToUse}`;
       }
 
-      // Đánh dấu môi trường: localhost cập nhật tức thì, production đồng bộ sau 16h, 19h, 22h
+      // Đánh dấu môi trường: localhost cập nhật tức thì, production tự động gọi API ngầm
       const isDev = typeof window !== 'undefined' && (
         window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1'
@@ -1059,9 +1061,68 @@ export default function PortalScreen() {
         setPinRequired(true);
       }
     } finally {
-      setDataLoading(false);
+      if (!isSilent) {
+        setDataLoading(false);
+      }
     }
   };
+
+  // 4. Lập lịch tự động gọi API ngầm cập nhật số liệu vào đúng các mốc 12h, 16h, 19h, 22h hàng ngày
+  useEffect(() => {
+    if (!token || pinRequired) return;
+
+    let lastTriggeredHourKey = '';
+
+    const checkScheduledSync = () => {
+      const now = new Date();
+      // Chuyển sang giờ Việt Nam (UTC+7)
+      const vnFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+      const parts = vnFormatter.formatToParts(now);
+      const p = {};
+      parts.forEach(({ type, value }) => { p[type] = value; });
+      const hour = parseInt(p.hour, 10);
+      const minute = parseInt(p.minute, 10);
+
+      // Đúng các mốc 12h, 16h, 19h, 22h (trong 2 phút đầu :00 - :01)
+      const syncHours = [12, 16, 19, 22];
+      const hourKey = `${p.year}-${p.month}-${p.day}_${hour}`;
+
+      if (syncHours.includes(hour) && minute <= 1 && lastTriggeredHourKey !== hourKey) {
+        lastTriggeredHourKey = hourKey;
+        // Tự động gọi API ngầm làm mới dữ liệu mà không làm giật màn hình
+        fetchPortalData(selectedCustomerId, sessionToken, true);
+      }
+    };
+
+    // Kiểm tra định kỳ mỗi 30 giây
+    const timer = setInterval(checkScheduledSync, 30 * 1000);
+
+    // Tự động gọi API ngầm cập nhật ngay khi người dùng quay lại tab trình duyệt
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchPortalData(selectedCustomerId, sessionToken, true);
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    return () => {
+      clearInterval(timer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+    };
+  }, [token, selectedCustomerId, sessionToken, pinRequired]);
 
   // Chuyển đổi chi nhánh xem (Toàn chuỗi hoặc từng quán)
   const handleSelectBranch = (cId) => {
@@ -1518,7 +1579,7 @@ export default function PortalScreen() {
                   <Text style={styles.syncScheduleText}>
                     {portalData.syncSchedule.isLocalhost
                       ? 'Dev Mode: Cập nhật tức thì (localhost)'
-                      : `Đồng bộ số liệu: ${portalData.syncSchedule.lastUpdateLabel || '12h, 16h, 19h, 22h'} (Lần tới: ${portalData.syncSchedule.nextUpdateLabel || '...' })`}
+                      : `Tự động gọi API ngầm cập nhật: 12h, 16h, 19h, 22h hàng ngày (Lần tới: ${portalData.syncSchedule.nextUpdateLabel || '...' })`}
                   </Text>
                 </View>
               )}
