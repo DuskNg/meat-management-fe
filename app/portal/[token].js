@@ -1716,7 +1716,7 @@ export default function PortalScreen() {
                                               styles.dayTotalInvoiceBtnTextActive,
                                             ]}
                                           >
-                                            🧾 Xem ảnh ({day.invoices.length})
+                                            Xem ảnh ({day.invoices.length})
                                           </Text>
                                         </TouchableOpacity>
                                       )}
@@ -1755,7 +1755,7 @@ export default function PortalScreen() {
                                               styles.dayTotalInvoiceBtnTextActive,
                                             ]}
                                           >
-                                            🧾 Xem ảnh ({day.invoices.length})
+                                            Xem ảnh ({day.invoices.length})
                                           </Text>
                                         </TouchableOpacity>
                                       )}
