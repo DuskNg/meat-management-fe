@@ -148,18 +148,46 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
       }
     }
 
-    // Tách từng món dựa trên cấu trúc kết thúc bằng dấu đóng ngoặc tròn (ví dụ: 4kg Sườn (712.000 đ))
+    // Tách từng món dựa trên cấu trúc kết thúc bằng dấu đóng ngoặc tròn chứa số tiền (ví dụ: 4kg Sườn (712.000 đ), 6.32kg Chín(vai + lạm) (916.400 đ))
+    // Chú ý: Tên sản phẩm có thể chứa dấu ngoặc đơn (như Chín(vai + lạm), Tái (bò)...), do đó ngoặc tiền phải chứa số!
     const itemMatches = [];
-    const itemRegex = /([^,()]+)\s*\(([^)]+)\)/g;
+    const itemRegex = /(?:(\d+(?:[.,]\d+)?)\s*([a-zA-ZÀ-ỹ]*)\s+)?(.+?)\s*\(\s*([\d.,]+)[\s\u00a0]*[đ₫VNDkK]?\s*\)(?:\s*,\s*|\s*$)/gi;
     let m;
     while ((m = itemRegex.exec(itemsPart)) !== null) {
-      const desc = m[1].trim();
-      const amtStr = m[2].trim();
-      itemMatches.push({ desc, amtStr });
+      const qtyStr = m[1] ? m[1].replace(',', '.') : '1';
+      const qty = parseFloat(qtyStr) || 1;
+      const unit = m[2] || 'kg';
+      const prodName = m[3] ? m[3].trim() : '';
+      const amtStr = m[4] ? m[4].replace(/\./g, '').replace(/,/g, '') : '0';
+      const amt = parseFloat(amtStr) || 0;
+      if (prodName) {
+        itemMatches.push({ qty, unit, prodName, amt });
+      }
     }
 
     if (itemMatches.length === 0) {
-      // Thử phân tích dạng: "tên_thịt số_lượng * đơn_giá" (ví dụ: "chín 4.1*145" hoặc "4.1*145 chín")
+      // Fallback 1: Thử phân tích dạng cũ "([^,()]+)\s*\(([^)]+)\)" nếu note không có ngoặc kép
+      const fallbackRegex = /([^,()]+)\s*\(([^)]+)\)/g;
+      let fm;
+      while ((fm = fallbackRegex.exec(itemsPart)) !== null) {
+        const desc = fm[1].trim();
+        const amtStr = fm[2].trim();
+        const amt = parseNumberString(amtStr);
+        const qtyMatch = desc.match(/^([\d.,]+)\s*([a-zA-ZÀ-ỹ]*)\s+(.+)$/);
+        let qty = 1;
+        let unit = 'kg';
+        let prodName = desc;
+        if (qtyMatch) {
+          qty = parseFloat(qtyMatch[1].replace(',', '.')) || 1;
+          unit = qtyMatch[2] || 'kg';
+          prodName = qtyMatch[3].trim();
+        }
+        itemMatches.push({ qty, unit, prodName, amt });
+      }
+    }
+
+    if (itemMatches.length === 0) {
+      // Fallback 2: Thử phân tích dạng: "tên_thịt số_lượng * đơn_giá" (ví dụ: "chín 4.1*145" hoặc "4.1*145 chín")
       const starMatch = cleanStr.match(/^([a-zA-ZÀ-ỹ\s]+?)\s+([\d.,]+)\s*(?:kg)?\s*[*xX]\s*([\d.,]+)(?:k)?(?:\s*đ)?(?:\s*-\s*(.*))?$/i) ||
                         cleanStr.match(/^([\d.,]+)\s*(?:kg)?\s*[*xX]\s*([\d.,]+)(?:k)?\s+([a-zA-ZÀ-ỹ\s]+?)(?:\s*-\s*(.*))?$/i);
       if (starMatch) {
@@ -184,8 +212,9 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
           customExtra = starMatch[4] ? starMatch[4].trim() : '';
         }
 
+        const cleanProdName = prodName.trim().toLowerCase();
         const matchedProd = (availableProducts || []).find(
-          (p) => p.name.trim().toLowerCase() === prodName.toLowerCase()
+          (p) => p.name.trim().toLowerCase() === cleanProdName
         );
         const product = matchedProd || {
           id: `custom_star_${Date.now()}`,
@@ -220,24 +249,16 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
 
     // Phân tích từng món
     const parsedItems = itemMatches.map((im, index) => {
-      const amt = parseNumberString(im.amtStr);
-      // Tách số lượng, đơn vị và tên thịt từ chuỗi ví dụ: "4kg Sườn" hoặc "2.5kg Bắp hoa"
-      const qtyMatch = im.desc.match(/^([\d.,]+)\s*([a-zA-ZÀ-ỹ]*)\s+(.+)$/);
-      let qty = 1;
-      let unit = 'kg';
-      let prodName = im.desc;
-
-      if (qtyMatch) {
-        qty = parseFloat(qtyMatch[1].replace(',', '.')) || 1;
-        unit = qtyMatch[2] || 'kg';
-        prodName = qtyMatch[3].trim();
-      }
-
+      const qty = im.qty;
+      const unit = im.unit || 'kg';
+      const prodName = im.prodName;
+      const amt = im.amt;
       const price = qty > 0 ? Math.round(amt / qty) : amt;
 
-      // Tìm sản phẩm trùng tên trong danh mục đã tải
+      // Tìm sản phẩm trùng tên trong danh mục đã tải (chuẩn hóa tên để tìm chính xác)
+      const cleanProdName = prodName.trim().toLowerCase();
       const matchedProd = (availableProducts || []).find(
-        (p) => p.name.trim().toLowerCase() === prodName.toLowerCase()
+        (p) => p.name.trim().toLowerCase() === cleanProdName
       );
 
       const product = matchedProd || {
