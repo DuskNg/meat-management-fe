@@ -5,6 +5,9 @@
  */
 export const isChiTuyetToanNgaCustomer = (customer) => {
   if (!customer) return false;
+  if (customer === '585fa225-f5e2-407d-89ea-c0afecc8263b' || customer?.id === '585fa225-f5e2-407d-89ea-c0afecc8263b') {
+    return true;
+  }
   const raw = typeof customer === 'string'
     ? customer
     : `${customer.name || ''} ${customer.customerName || ''} ${customer.label || ''} ${customer.phone || ''} ${customer.note || ''} ${customer.alias || ''}`;
@@ -97,11 +100,11 @@ const isReturnPaymentRecord = (item) => {
  * Cấu hình tạo tin nhắn công nợ ĐẶC BIỆT RIÊNG cho khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
  * Định dạng chuẩn theo yêu cầu:
  * 8/9
- * bò: 23+11.8-4.3=4422
- * thăn: 2.85=727
+ * bò(145): 23+11.8-4.3=4422
+ * thăn(255): 2.85=727
  * tổng 5149
  */
-export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = []) => {
+export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [], cust = null) => {
   if (!dateKey) return '';
 
   const dayTrans = (transList || []).filter((t) => {
@@ -127,10 +130,10 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [])
   const [dStr, mStr] = dateKey.split('/');
   const dayHeader = `${parseInt(dStr, 10)}/${parseInt(mStr, 10)}`;
 
-  // Bảng gom nhóm các món: 'bò' và 'thăn'
+  // Bảng gom nhóm các món: 'bò' và 'thăn' kèm theo mảng lưu đơn giá riêng
   const groups = {
-    'bò': { posQuantities: [], retQuantities: [], amount: 0 },
-    'thăn': { posQuantities: [], retQuantities: [], amount: 0 },
+    'bò': { posQuantities: [], retQuantities: [], amount: 0, prices: [] },
+    'thăn': { posQuantities: [], retQuantities: [], amount: 0, prices: [] },
   };
 
   let totalPayment = 0;
@@ -148,7 +151,15 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [])
 
         const groupKey = getChiTuyetProductGroup(name);
         if (!groups[groupKey]) {
-          groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0 };
+          groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0, prices: [] };
+        }
+
+        // Lưu đơn giá nghìn đồng (ví dụ 145000 -> 145, 255000 -> 255)
+        if (p > 0) {
+          const priceK = Math.round(p / 1000);
+          if (!groups[groupKey].prices.includes(priceK)) {
+            groups[groupKey].prices.push(priceK);
+          }
         }
 
         if (q < 0) {
@@ -195,7 +206,7 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [])
 
         const groupKey = prodName ? getChiTuyetProductGroup(prodName) : 'bò';
         if (!groups[groupKey]) {
-          groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0 };
+          groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0, prices: [] };
         }
 
         if (qty && qty > 0) {
@@ -248,10 +259,22 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [])
     const groupAmountK = Math.round(g.amount / 1000);
     sumDisplayedK += groupAmountK;
 
+    // Xác định đơn giá riêng hiển thị trong ngoặc: bò(145), thăn(255)
+    let priceK = null;
+    if (g.prices && g.prices.length > 0) {
+      priceK = g.prices[0];
+    } else {
+      // Fallback giá riêng chuẩn cho khách hàng Chị Tuyết nếu không có item price
+      if (key === 'bò') priceK = 145;
+      else if (key === 'thăn') priceK = 255;
+    }
+
+    const label = priceK ? `${key}(${priceK})` : key;
+
     if (formula) {
-      lines.push(`${key}: ${formula}=${groupAmountK}`);
+      lines.push(`${label}: ${formula}=${groupAmountK}`);
     } else if (groupAmountK !== 0) {
-      lines.push(`${key}: ${groupAmountK}`);
+      lines.push(`${label}: ${groupAmountK}`);
     }
   });
 

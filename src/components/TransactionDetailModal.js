@@ -19,8 +19,8 @@ import PinSetupModal from './PinSetupModal';
 import PopupModal from './PopupModal';
 import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import InvoiceImageUploadModal from './InvoiceImageUploadModal';
-import { hasPin, isSessionValid } from '../store/pinStore';
 import { showGlobalToast } from '../store/toastStore';
+import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../utils/debtMessageHelper';
 
 /**
  * Modal hiển thị chi tiết tất cả giao dịch trong một ngày.
@@ -375,6 +375,23 @@ const TransactionDetailModal = forwardRef(({
   const handleCopyDailyMessage = async () => {
     if (!dayGroup) return;
     const { transactions: dayTrans = [], payments: dayPays = [], totalDebt: dayTotalDebt = 0, dateKey } = dayGroup;
+
+    // Định dạng tin nhắn đặc biệt riêng cho khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
+    if (isChiTuyetToanNgaCustomer(customerId)) {
+      const msg = buildChiTuyetDailyMessage(dateKey, dayTrans, dayPays);
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(msg);
+        } else {
+          showGlobalToast('Thiết bị không hỗ trợ clipboard tự động.', 'warning');
+          return;
+        }
+        showGlobalToast(`Đã sao chép tin nhắn công nợ ngày ${dateKey}!`, 'success');
+      } catch (err) {
+        showGlobalToast('Không thể sao chép tin nhắn công nợ.', 'error');
+      }
+      return;
+    }
 
     const lines = [];
     lines.push(`Ngày ${dateKey}`);

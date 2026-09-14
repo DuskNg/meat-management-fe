@@ -217,7 +217,7 @@ const buildDailyMessage = (dateKey, transList, payList, cust) => {
 
   // Áp dụng định dạng tin nhắn riêng cho khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
   if (isChiTuyetToanNgaCustomer(cust)) {
-    return buildChiTuyetDailyMessage(dateKey, transList, payList);
+    return buildChiTuyetDailyMessage(dateKey, transList, payList, cust);
   }
 
   const dayTrans = (transList || []).filter(t => {
