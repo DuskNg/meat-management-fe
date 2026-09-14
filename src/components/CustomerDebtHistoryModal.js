@@ -21,6 +21,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 import DailyDebtTile from './DailyDebtTile';
+import MoneyInput from './MoneyInput';
 
 const CustomerDebtHistoryModal = forwardRef(({
   paymentModalRef,
@@ -37,6 +38,7 @@ const CustomerDebtHistoryModal = forwardRef(({
   const [monthGroups, setMonthGroups] = useState([]);
   const [gridWidth, setGridWidth] = useState(0);
   const [expandedMonth, setExpandedMonth] = useState(null); // Lưu trữ khóa của tháng đang mở rộng
+  const [payInputAmount, setPayInputAmount] = useState(0); // Số tiền trả nợ mô phỏng cho tổng các tháng
 
   // 1. Phơi bày các hàm điều khiển (open, close, refresh) ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -45,6 +47,7 @@ const CustomerDebtHistoryModal = forwardRef(({
       setVisible(true);
       setExpandedMonth(null);
       setMonthGroups([]);
+      setPayInputAmount(0);
       fetchDebtHistory(customerData.id);
     },
     close: () => {
@@ -392,6 +395,67 @@ const CustomerDebtHistoryModal = forwardRef(({
   const TILE_GAP = 8;
   const tileSize = Math.max(0, Math.floor((gridWidth - TILE_GAP * (NUM_COLS - 1)) / NUM_COLS));
 
+  // 4. Tổng nợ còn lại của tất cả các tháng
+  const totalAllRemainingDebt = monthGroups.reduce((sum, m) => sum + (m.remainingDebt || 0), 0);
+
+  // 5. Phân bổ số tiền trả nợ mô phỏng: trừ dần từ tháng cũ nhất có nợ đến tháng mới nhất (FIFO)
+  const getSimulatedAllocation = (amount) => {
+    if (!amount || amount <= 0) return { monthAllocMap: {}, remainingSurplus: 0, totalAllocated: 0 };
+
+    // Sắp xếp các tháng theo thứ tự thời gian tăng dần (cũ nhất trước)
+    const chronologicalMonths = [...monthGroups].sort((a, b) => {
+      const [aM, aY] = a.monthKey.split('/').map(Number);
+      const [bM, bY] = b.monthKey.split('/').map(Number);
+      return aY - bY || aM - bM;
+    });
+
+    let remainingToAllocate = amount;
+    const monthAllocMap = {}; // monthKey -> { allocated, originalDebt, newRemaining, isPaidOff }
+
+    for (const month of chronologicalMonths) {
+      const debt = month.remainingDebt || 0;
+      if (debt <= 0) {
+        monthAllocMap[month.monthKey] = {
+          allocated: 0,
+          originalDebt: 0,
+          newRemaining: 0,
+          isPaidOff: true,
+        };
+        continue;
+      }
+
+      if (remainingToAllocate <= 0) {
+        monthAllocMap[month.monthKey] = {
+          allocated: 0,
+          originalDebt: debt,
+          newRemaining: debt,
+          isPaidOff: false,
+        };
+        continue;
+      }
+
+      const alloc = Math.min(debt, remainingToAllocate);
+      const newRemaining = Math.max(0, debt - alloc);
+      remainingToAllocate -= alloc;
+
+      monthAllocMap[month.monthKey] = {
+        allocated: alloc,
+        originalDebt: debt,
+        newRemaining,
+        isPaidOff: newRemaining === 0,
+      };
+    }
+
+    const totalAllocated = amount - remainingToAllocate;
+    return {
+      monthAllocMap,
+      remainingSurplus: remainingToAllocate,
+      totalAllocated,
+    };
+  };
+
+  const simAllocation = getSimulatedAllocation(payInputAmount);
+
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
@@ -420,11 +484,120 @@ const CustomerDebtHistoryModal = forwardRef(({
           </View>
         ) : (
           <>
+            {/* Ô nhập số tiền trả cho tổng các tháng & trừ dần từ tháng cũ nhất */}
+            <View style={styles.paymentSimCard}>
+              <View style={styles.paymentSimHeaderRow}>
+                <Text style={styles.paymentSimTitle}>💵 Trả nợ tổng các tháng (trừ từ cũ nhất):</Text>
+                {totalAllRemainingDebt > 0 && (
+                  <Text style={styles.paymentSimTotalDebt}>
+                    Tổng nợ: <Text style={styles.paymentSimTotalDebtBold}>{formatCurrency(totalAllRemainingDebt)}</Text>
+                  </Text>
+                )}
+              </View>
+
+              <View style={styles.paymentSimInputRow}>
+                <View style={{ flex: 1 }}>
+                  <MoneyInput
+                    value={payInputAmount}
+                    onChangeValue={(val) => setPayInputAmount(val)}
+                    placeholder="Nhập số tiền trả (VD: 100.000.000)..."
+                    style={styles.paymentSimMoneyInput}
+                    inputStyle={styles.paymentSimMoneyTextInput}
+                  />
+                </View>
+                {payInputAmount > 0 && (
+                  <TouchableOpacity
+                    style={styles.paymentSimClearBtn}
+                    onPress={() => setPayInputAmount(0)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.paymentSimClearText}>✕ Xóa</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Phím gợi ý chọn nhanh */}
+              <View style={styles.quickChipsWrap}>
+                <TouchableOpacity
+                  style={styles.quickChip}
+                  onPress={() => setPayInputAmount(10_000_000)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.quickChipText}>10tr</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickChip}
+                  onPress={() => setPayInputAmount(20_000_000)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.quickChipText}>20tr</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickChip}
+                  onPress={() => setPayInputAmount(50_000_000)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.quickChipText}>50tr</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickChip}
+                  onPress={() => setPayInputAmount(100_000_000)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.quickChipText}>100tr</Text>
+                </TouchableOpacity>
+                {totalAllRemainingDebt > 0 && (
+                  <TouchableOpacity
+                    style={[styles.quickChip, styles.quickChipFull]}
+                    onPress={() => setPayInputAmount(totalAllRemainingDebt)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.quickChipText, styles.quickChipFullText]}>
+                      Trả hết ({formatAmountShort(totalAllRemainingDebt)})
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Kết quả phân bổ khi nhập số tiền > 0 */}
+              {payInputAmount > 0 && (
+                <View style={styles.simResultBanner}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.simResultText}>
+                      {simAllocation.remainingSurplus > 0 ? (
+                        <>
+                          Đã trừ hết <Text style={styles.boldText}>{formatCurrency(simAllocation.totalAllocated)}</Text> nợ. Thừa: <Text style={[styles.boldText, { color: '#059669' }]}>+{formatCurrency(simAllocation.remainingSurplus)}</Text> (trả trước)
+                        </>
+                      ) : (
+                        <>
+                          Đã trừ: <Text style={[styles.boldText, { color: '#059669' }]}>{formatCurrency(simAllocation.totalAllocated)}</Text> (Còn nợ: <Text style={[styles.boldText, { color: '#DC2626' }]}>{formatCurrency(Math.max(0, totalAllRemainingDebt - payInputAmount))}</Text>)
+                        </>
+                      )}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.simSubmitBtn}
+                    onPress={() => {
+                      setVisible(false);
+                      paymentModalRef?.current?.open(payInputAmount);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.simSubmitBtnText}>Thu tiền ngay 💵</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
             <Text style={styles.helperText}>• Bấm vào từng tháng để xem chi tiết</Text>
             <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
             {monthGroups.map((month) => {
               const isExpanded = expandedMonth === month.monthKey;
               const hasDebt = month.remainingDebt > 0;
+              const allocInfo = simAllocation.monthAllocMap[month.monthKey];
+              const isSimActive = payInputAmount > 0 && allocInfo;
+              const isDeducted = isSimActive && allocInfo.allocated > 0;
+              const isSimPaidOff = isSimActive && allocInfo.isPaidOff && hasDebt;
 
               return (
                 <View key={month.monthKey} style={styles.monthSection}>
@@ -433,7 +606,9 @@ const CustomerDebtHistoryModal = forwardRef(({
                     style={[
                       styles.monthHeader,
                       isExpanded && styles.monthHeaderExpanded,
-                      hasDebt ? styles.monthHeaderDebt : styles.monthHeaderNoDebt
+                      hasDebt ? styles.monthHeaderDebt : styles.monthHeaderNoDebt,
+                      isSimPaidOff && styles.monthHeaderSimPaidOff,
+                      isDeducted && !isSimPaidOff && styles.monthHeaderSimDeducted,
                     ]}
                     onPress={() => {
                       // Kích hoạt hiệu ứng mở rộng/thu gọn mượt mà
@@ -446,9 +621,28 @@ const CustomerDebtHistoryModal = forwardRef(({
                       <Text style={styles.chevronIcon}>{isExpanded ? '▼' : '▶'}</Text>
                       <Text style={styles.monthTitleText}>{month.monthLabel}</Text>
                     </View>
-                    <Text style={[styles.monthDebtStatus, hasDebt ? styles.textDebt : styles.textNoDebt]}>
-                      {hasDebt ? `Còn nợ: ${formatAmountShort(month.remainingDebt)}` : 'Hết nợ ✅'}
-                    </Text>
+
+                    {isSimActive && hasDebt ? (
+                      <View style={styles.monthStatusSimWrap}>
+                        <View style={styles.monthStatusSimRow}>
+                          <Text style={styles.monthOriginalDebtStriked}>
+                            {formatAmountShort(month.remainingDebt)}
+                          </Text>
+                          <Text style={[styles.monthNewDebtText, isSimPaidOff ? styles.textSuccessBold : styles.textDebt]}>
+                            ➜ {isSimPaidOff ? 'Hết nợ ✅' : `Còn: ${formatAmountShort(allocInfo.newRemaining)}`}
+                          </Text>
+                        </View>
+                        {allocInfo.allocated > 0 && (
+                          <Text style={styles.monthDeductBadge}>
+                            (-{formatAmountShort(allocInfo.allocated)})
+                          </Text>
+                        )}
+                      </View>
+                    ) : (
+                      <Text style={[styles.monthDebtStatus, hasDebt ? styles.textDebt : styles.textNoDebt]}>
+                        {hasDebt ? `Còn nợ: ${formatAmountShort(month.remainingDebt)}` : 'Hết nợ ✅'}
+                      </Text>
+                    )}
                   </TouchableOpacity>
 
                   {/* Phần hiển thị chi tiết khi mở rộng tháng */}
@@ -472,6 +666,25 @@ const CustomerDebtHistoryModal = forwardRef(({
                             {formatCurrency(month.remainingDebt)}
                           </Text>
                         </View>
+
+                        {/* Dự kiến trừ mô phỏng nếu đang có số tiền trả */}
+                        {isDeducted && (
+                          <View style={styles.simSummaryBox}>
+                            <Text style={styles.simSummaryTitle}>Dự kiến trừ khi trả {formatCurrency(payInputAmount)}:</Text>
+                            <View style={styles.summaryRow}>
+                              <Text style={styles.summaryLabel}>Trừ vào tháng này:</Text>
+                              <Text style={[styles.summaryValue, { color: '#059669', fontWeight: 'bold' }]}>
+                                -{formatCurrency(allocInfo.allocated)}
+                              </Text>
+                            </View>
+                            <View style={styles.summaryRow}>
+                              <Text style={styles.summaryLabelBold}>Còn lại sau trừ:</Text>
+                              <Text style={[styles.summaryValueBold, allocInfo.newRemaining > 0 ? styles.textDebt : styles.textNoDebt]}>
+                                {allocInfo.newRemaining > 0 ? formatCurrency(allocInfo.newRemaining) : '0 đ (Hết nợ ✅)'}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
                       </View>
 
                       {/* Các nút thao tác nhanh: Ghi nợ / Thu tiền */}
@@ -814,5 +1027,176 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginBottom: 8,
     paddingHorizontal: 4,
+  },
+
+  // ─── STYLES KHỐI NHẬP TRẢ NỢ VÀ TRỪ DẦN CÁC THÁNG ───
+  paymentSimCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    padding: 10,
+    marginBottom: 10,
+  },
+  paymentSimHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  paymentSimTitle: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  paymentSimTotalDebt: {
+    fontSize: 12,
+    color: '#475569',
+  },
+  paymentSimTotalDebtBold: {
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
+  paymentSimInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  paymentSimMoneyInput: {
+    height: 38,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+  },
+  paymentSimMoneyTextInput: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  paymentSimClearBtn: {
+    height: 38,
+    paddingHorizontal: 10,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  paymentSimClearText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  quickChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 6,
+  },
+  quickChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+  },
+  quickChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  quickChipFull: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+  },
+  quickChipFullText: {
+    color: '#1D4ED8',
+    fontWeight: 'bold',
+  },
+  simResultBanner: {
+    marginTop: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 8,
+    padding: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  simResultText: {
+    fontSize: 11.5,
+    color: '#065F46',
+    lineHeight: 16,
+  },
+  simSubmitBtn: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  simSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: 'bold',
+  },
+  monthHeaderSimPaidOff: {
+    borderColor: '#10B981',
+    backgroundColor: '#F0FDF4',
+  },
+  monthHeaderSimDeducted: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#FFFBEB',
+  },
+  monthStatusSimWrap: {
+    alignItems: 'flex-end',
+  },
+  monthStatusSimRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  monthOriginalDebtStriked: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
+  },
+  monthNewDebtText: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+  },
+  textSuccessBold: {
+    color: '#059669',
+    fontWeight: 'bold',
+  },
+  monthDeductBadge: {
+    fontSize: 10,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  simSummaryBox: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  simSummaryTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#065F46',
+    marginBottom: 4,
   },
 });

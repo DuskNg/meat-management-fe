@@ -51,7 +51,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
       // Làm tròn số nợ đề xuất để tránh lỗi phần thập phân (float) của tiền VNĐ
       const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
       setAmountVND(numericAmount);
-      setMaxAmount(defaultAmount ? numericAmount : null);
+      setMaxAmount((monthKey && defaultAmount) ? numericAmount : null);
       setTargetMonthKey(monthKey);
       setNote('');
       setError('');
