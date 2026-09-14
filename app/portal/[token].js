@@ -491,9 +491,8 @@ const buildInvoiceRows = (
   });
 
   // 4. Xác định trạng thái thanh toán của từng ngày (Đã thanh toán / Còn nợ theo nguyên tắc FIFO)
-  let unpaidDebt = currentCustomerTotalDebt !== null && currentCustomerTotalDebt !== undefined
-    ? Math.max(0, Number(currentCustomerTotalDebt))
-    : Math.max(0, totalMeatAmount - totalReturnAmount - totalPaymentAmount);
+  // Chỉ tính theo số nợ thực tế của kỳ đang lọc, không lấy tổng nợ hiện tại của tháng sau đè lên tháng trước
+  let unpaidDebt = Math.max(0, (totalMeatAmount - totalReturnAmount) - totalPaymentAmount);
 
   // Sắp xếp các ngày từ mới nhất đến cũ nhất: ngày cũ được thanh toán trước, ngày mới nhất sẽ gánh phần nợ còn lại
   const daysNewestToOldest = [...sortedDays].sort((a, b) => {
@@ -533,7 +532,7 @@ const buildInvoiceRows = (
 };
 
 // Helper vẽ ảnh Canvas độ nét cao 2x chuẩn hóa đơn kế toán
-const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', toDateStr = '', timePresetLabel = '', branchList = []) => {
+const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', toDateStr = '', timePresetLabel = '', branchList = [], paymentType = 'LUMP_SUM') => {
   if (typeof document === 'undefined') return null;
   const startX = 36;
   const colWidths = [65, 195, 65, 100, 135]; // Tổng chiều rộng 1 panel: 560px
@@ -770,26 +769,41 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         ctx.stroke();
       }
 
-      // Ô ngày gộp chung: bôi xanh (đã thanh toán) và đỏ (còn nợ)
-      ctx.fillStyle = day.isPaid ? '#F0FDF4' : '#FEF2F2';
-      ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
-      ctx.strokeStyle = day.isPaid ? '#BBF7D0' : '#FECACA';
-      ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
+      if (paymentType === 'LUMP_SUM') {
+        // Khách trả 1 cục: cột ngày xám nhẹ trung tính, không vẽ đỏ/xanh và không chữ Còn nợ/Đã thanh toán
+        ctx.fillStyle = '#F8FAFC';
+        ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
+        ctx.strokeStyle = '#CBD5E1';
+        ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
-      const dayMidY = dayStartY + dayHeight / 2;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = day.isPaid ? '#047857' : '#B91C1C';
-      ctx.font = 'bold 12.5px Arial, sans-serif';
-      ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
-
-      ctx.font = 'bold 9px Arial, sans-serif';
-      if (day.isPaid) {
-        ctx.fillStyle = '#059669';
-        ctx.fillText('Đã thanh toán', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        const dayMidY = dayStartY + dayHeight / 2;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#334155';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY);
       } else {
-        ctx.fillStyle = '#DC2626';
-        ctx.fillText('Còn nợ', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        // Khách trả theo ngày: bôi xanh (đã thanh toán) và đỏ (còn nợ)
+        ctx.fillStyle = day.isPaid ? '#F0FDF4' : '#FEF2F2';
+        ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
+        ctx.strokeStyle = day.isPaid ? '#BBF7D0' : '#FECACA';
+        ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
+
+        const dayMidY = dayStartY + dayHeight / 2;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = day.isPaid ? '#047857' : '#B91C1C';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
+
+        ctx.font = 'bold 9px Arial, sans-serif';
+        if (day.isPaid) {
+          ctx.fillStyle = '#059669';
+          ctx.fillText('Đã thanh toán', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        } else {
+          ctx.fillStyle = '#DC2626';
+          ctx.fillText('Còn nợ', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        }
       }
 
       // Kẻ ngang phân cách ngày (ĐẬM NHẤT)
@@ -1197,6 +1211,43 @@ export default function PortalScreen() {
     );
   }, [portalData?.transactions, portalData?.payments, portalData?.summary, fromDate, toDate, sortOrder, branchList]);
 
+  // Tự động nhận diện hình thức thanh toán của khách hàng:
+  // - Nếu có khoản thanh toán không gắn với ngày cụ thể (thu tiền tổng từ ô nhập tiền) -> 'LUMP_SUM' (Trả 1 cục)
+  // - Nếu toàn bộ thanh toán đều chỉ định ngày cụ thể ('Thanh toán nợ ngày DD/MM/YYYY') -> 'DAILY' (Trả theo ngày)
+  const detectedPaymentType = useMemo(() => {
+    const pays = portalData?.payments || [];
+    if (!pays || pays.length === 0) return 'LUMP_SUM';
+    const hasDaily = pays.some((p) => {
+      const note = (p.note || '').trim();
+      return note.match(/^Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    });
+    const hasLumpSum = pays.some((p) => {
+      if (isReturnPayment(p)) return false;
+      const note = (p.note || '').trim();
+      return !note.match(/^Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    });
+
+    if (hasLumpSum) return 'LUMP_SUM';
+    if (hasDaily) return 'DAILY';
+    return 'LUMP_SUM';
+  }, [portalData?.payments]);
+
+  const [paymentTypeOverride, setPaymentTypeOverride] = useState(null);
+  const paymentType = paymentTypeOverride || detectedPaymentType;
+  const togglePaymentType = () => {
+    setPaymentTypeOverride((prev) => {
+      const current = prev || detectedPaymentType;
+      const next = current === 'LUMP_SUM' ? 'DAILY' : 'LUMP_SUM';
+      showGlobalToast(
+        next === 'LUMP_SUM'
+          ? 'Đã chuyển sang chế độ: Trả 1 cục (ẩn đỏ/xanh theo ngày)'
+          : 'Đã chuyển sang chế độ: Trả theo ngày (hiển thị trạng thái theo ngày)',
+        'info'
+      );
+      return next;
+    });
+  };
+
   // Dữ liệu bảng kê sau khi áp dụng thanh tìm kiếm nhanh
   const displayInvoiceData = useMemo(() => {
     if (!invoiceData?.sortedDays) return invoiceData;
@@ -1305,7 +1356,8 @@ export default function PortalScreen() {
         fromDate,
         toDate,
         presetLabel,
-        branchList
+        branchList,
+        paymentType
       );
 
       if (!dataUrl) {
@@ -1421,6 +1473,23 @@ export default function PortalScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.groupNameText}>{portalInfo?.name}</Text>
+          <TouchableOpacity
+            style={[
+              styles.paymentTypeBadge,
+              paymentType === 'LUMP_SUM' ? styles.paymentTypeBadgeLumpSum : styles.paymentTypeBadgeDaily,
+            ]}
+            onPress={togglePaymentType}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.paymentTypeBadgeText,
+                paymentType === 'LUMP_SUM' ? styles.paymentTypeBadgeTextLumpSum : styles.paymentTypeBadgeTextDaily,
+              ]}
+            >
+              {paymentType === 'LUMP_SUM' ? '📦 Trả 1 cục' : '📅 Trả theo ngày'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.headerRight}>
@@ -1668,25 +1737,31 @@ export default function PortalScreen() {
                           <View
                             style={[
                               styles.tdDateCol,
-                              day.isPaid ? styles.tdDateColPaid : styles.tdDateColUnpaid,
+                              paymentType === 'LUMP_SUM'
+                                ? styles.tdDateColNeutral
+                                : (day.isPaid ? styles.tdDateColPaid : styles.tdDateColUnpaid),
                             ]}
                           >
                             <Text
                               style={[
                                 styles.tdDateText,
-                                day.isPaid ? styles.tdDateTextPaid : styles.tdDateTextUnpaid,
+                                paymentType === 'LUMP_SUM'
+                                  ? styles.tdDateTextNeutral
+                                  : (day.isPaid ? styles.tdDateTextPaid : styles.tdDateTextUnpaid),
                               ]}
                             >
                               {day.displayDate}
                             </Text>
-                            <Text
-                              style={[
-                                styles.tdDateStatusText,
-                                day.isPaid ? styles.tdDateStatusPaid : styles.tdDateStatusUnpaid,
-                              ]}
-                            >
-                              {day.isPaid ? 'Đã\nthanh\ntoán' : 'Còn\nnợ'}
-                            </Text>
+                            {paymentType !== 'LUMP_SUM' && (
+                              <Text
+                                style={[
+                                  styles.tdDateStatusText,
+                                  day.isPaid ? styles.tdDateStatusPaid : styles.tdDateStatusUnpaid,
+                                ]}
+                              >
+                                {day.isPaid ? 'Đã\nthanh\ntoán' : 'Còn\nnợ'}
+                              </Text>
+                            )}
                           </View>
 
                           {/* Danh sách các dòng món hàng bên phải */}
@@ -2049,6 +2124,10 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
   },
   ownerBadge: {
     fontSize: 9,
@@ -2060,6 +2139,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  paymentTypeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  paymentTypeBadgeLumpSum: {
+    backgroundColor: 'rgba(239, 246, 255, 0.95)',
+    borderColor: '#93C5FD',
+  },
+  paymentTypeBadgeDaily: {
+    backgroundColor: 'rgba(240, 253, 244, 0.95)',
+    borderColor: '#86EFAC',
+  },
+  paymentTypeBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  paymentTypeBadgeTextLumpSum: {
+    color: '#1D4ED8',
+  },
+  paymentTypeBadgeTextDaily: {
+    color: '#047857',
   },
   ownerPhoneText: {
     fontSize: 10,
@@ -2799,6 +2904,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
     borderRightColor: '#FECACA',
   },
+  tdDateColNeutral: {
+    backgroundColor: '#F8FAFC',
+    borderRightColor: '#CBD5E1',
+  },
   tdDateText: {
     fontSize: 10.5,
     fontWeight: '700',
@@ -2809,6 +2918,12 @@ const styles = StyleSheet.create({
   },
   tdDateTextUnpaid: {
     color: '#B91C1C',
+  },
+  tdDateTextNeutral: {
+    color: '#334155',
+    fontSize: 10.5,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   tdDateStatusText: {
     fontSize: 8,
