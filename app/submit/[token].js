@@ -471,23 +471,23 @@ export default function StaffSubmitScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <View style={styles.innerWrapper}>
-        {/* ─── TIÊU ĐỀ ─── */}
+        {/* ─── TIÊU ĐỀ GỌN GÀNG ─── */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Gửi hóa đơn trong ngày</Text>
         </View>
 
-        {/* ─── 1. PHẦN CHỌN NGÀY ─── */}
+        {/* ─── KHỐI THAO TÁC CỐT LÕI (CHỌN NGÀY & ĐĂNG ẢNH/VIDEO) ─── */}
         <View style={styles.card}>
-          <Text style={styles.fieldLabel}>📅 Chọn ngày hóa đơn</Text>
-          <DatePickerInput
-            value={selectedDate}
-            onChange={setSelectedDate}
-            placeholder="DD/MM/YYYY"
-          />
-        </View>
+          {/* Ô chọn ngày thu gọn (dense), không lãng phí diện tích */}
+          <View style={styles.datePickerWrap}>
+            <DatePickerInput
+              value={selectedDate}
+              onChange={setSelectedDate}
+              dense={true}
+              placeholder="DD/MM/YYYY"
+            />
+          </View>
 
-        {/* ─── 2. NÚT DUY NHẤT: ĐĂNG ẢNH / VIDEO (CHỌN NHIỀU TỪ THƯ VIỆN) ─── */}
-        <View style={styles.card}>
           {/* Thẻ input ẩn cho Web */}
           {Platform.OS === 'web' && (
             <input
@@ -717,8 +717,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', // Toàn bộ màn hình nền trắng sáng tinh tế
   },
   contentContainer: {
-    paddingVertical: 20,
-    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 24,
+    paddingHorizontal: 12,
     alignItems: 'center',
   },
   innerWrapper: {
@@ -819,65 +820,68 @@ const styles = StyleSheet.create({
 
   // Header gọn nhẹ
   header: {
-    marginBottom: 16,
+    marginBottom: 8,
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 2,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'center',
   },
   headerOwner: {
-    fontSize: 13.5,
+    fontSize: 13,
     color: '#64748B',
     textAlign: 'center',
   },
 
-  // Card trắng sạch sẽ
+  // Card trắng sạch sẽ gọn gàng
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+  },
+  datePickerWrap: {
+    marginBottom: 10,
   },
   fieldLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#1E293B',
-    marginBottom: 8,
+    marginBottom: 6,
   },
 
-  // Nút chính: ĐĂNG ẢNH / VIDEO (Một nút duy nhất, rõ ràng)
+  // Nút chính: ĐĂNG ẢNH / VIDEO (Một nút duy nhất, rõ ràng, chiều cao vừa vặn)
   btnPickMediaMain: {
     backgroundColor: '#F0FDF4',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: '#86EFAC',
-    borderRadius: 14,
-    paddingVertical: 28,
-    paddingHorizontal: 16,
+    borderRadius: 10,
+    paddingVertical: 18,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
   },
   pickMediaIcon: {
-    fontSize: 36,
-    marginBottom: 8,
+    fontSize: 28,
+    marginBottom: 4,
   },
   pickMediaTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#047857',
     letterSpacing: 0.3,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   pickMediaSub: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#059669',
     textAlign: 'center',
   },
