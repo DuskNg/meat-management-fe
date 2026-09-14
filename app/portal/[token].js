@@ -337,6 +337,69 @@ const buildInvoiceRows = (
   let totalReturnAmount = 0;
   let totalPaymentAmount = 0;
 
+  // 0. Tính nợ cũ kỳ trước (nợ tích lũy tồn đọng trước ngày fromD)
+  let previousDebt = 0;
+  if (fromD) {
+    let totalMeatBefore = 0;
+    transactions.forEach((tx) => {
+      if (!tx.date) return;
+      const d = new Date(tx.date);
+      if (isNaN(d.getTime())) return;
+      if (d < fromD) {
+        if (tx.items && tx.items.length > 0) {
+          tx.items.forEach((item) => {
+            totalMeatBefore += Number(item.total) || (Number(item.quantity) * Number(item.price)) || 0;
+          });
+        } else {
+          totalMeatBefore += Number(tx.totalAmount) || 0;
+        }
+      }
+    });
+
+    let totalReturnBefore = 0;
+    let totalPaidBefore = 0;
+    (payments || []).forEach((pm) => {
+      if (!pm.paidAt) return;
+      const { effectiveDate } = getEffectivePaymentInfo(pm);
+      if (isNaN(effectiveDate.getTime())) return;
+      if (effectiveDate < fromD) {
+        const amt = Number(pm.amount) || 0;
+        if (isReturnPayment(pm)) {
+          totalReturnBefore += amt;
+        } else {
+          totalPaidBefore += amt;
+        }
+      }
+    });
+
+    // Nếu có công nợ ban đầu (manualDebt) từ tổng nợ hệ thống
+    let manualDebtEstimate = 0;
+    if (currentCustomerTotalDebt !== null && currentCustomerTotalDebt !== undefined) {
+      let allMeat = 0;
+      transactions.forEach((tx) => {
+        if (tx.items && tx.items.length > 0) {
+          tx.items.forEach((item) => {
+            allMeat += Number(item.total) || (Number(item.quantity) * Number(item.price)) || 0;
+          });
+        } else {
+          allMeat += Number(tx.totalAmount) || 0;
+        }
+      });
+      let allReturn = 0;
+      let allPaid = 0;
+      (payments || []).forEach((pm) => {
+        const amt = Number(pm.amount) || 0;
+        if (isReturnPayment(pm)) allReturn += amt;
+        else allPaid += amt;
+      });
+      const netLifetime = (allMeat - allReturn) - allPaid;
+      manualDebtEstimate = Math.max(0, Number(currentCustomerTotalDebt) - netLifetime);
+    }
+
+    const netBefore = (totalMeatBefore - totalReturnBefore + manualDebtEstimate) - totalPaidBefore;
+    previousDebt = Math.max(0, Math.round(netBefore));
+  }
+
   // 1. Gom các món thịt từ đơn hàng
   filteredTxs.forEach((tx) => {
     const d = new Date(tx.date);
@@ -493,7 +556,7 @@ const buildInvoiceRows = (
   // 4. Xác định trạng thái thanh toán của từng ngày (Đã thanh toán / Còn nợ theo nguyên tắc FIFO)
   let unpaidDebt = currentCustomerTotalDebt !== null && currentCustomerTotalDebt !== undefined
     ? Math.max(0, Number(currentCustomerTotalDebt))
-    : Math.max(0, totalMeatAmount - totalReturnAmount - totalPaymentAmount);
+    : Math.max(0, previousDebt + totalMeatAmount - totalReturnAmount - totalPaymentAmount);
 
   // Sắp xếp các ngày từ mới nhất đến cũ nhất: ngày cũ được thanh toán trước, ngày mới nhất sẽ gánh phần nợ còn lại
   const daysNewestToOldest = [...sortedDays].sort((a, b) => {
@@ -519,11 +582,12 @@ const buildInvoiceRows = (
     }
   });
 
-  const finalDebt = Math.max(0, totalMeatAmount - totalReturnAmount - totalPaymentAmount);
+  const finalDebt = Math.max(0, previousDebt + totalMeatAmount - totalReturnAmount - totalPaymentAmount);
 
   return {
     sortedDays,
     totals: {
+      previousDebt,
       totalMeat: totalMeatAmount,
       totalReturn: totalReturnAmount,
       totalPaid: totalPaymentAmount,
@@ -576,7 +640,7 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
   const maxRows = Math.max(leftCount, rightCount, 1);
   const tableContentHeight = maxRows * rowHeight;
 
-  const summaryCount = 1 + (totals.totalReturn > 0 ? 1 : 0) + (totals.totalPaid > 0 ? 1 : 0) + 1;
+  const summaryCount = (totals.previousDebt > 0 ? 1 : 0) + 1 + (totals.totalReturn > 0 ? 1 : 0) + (totals.totalPaid > 0 ? 1 : 0) + 1;
   const summaryHeight = summaryCount * summaryRowHeight;
   const summaryStartY = startTableY + tableHeaderHeight + tableContentHeight + 16;
   const canvasHeight = summaryStartY + summaryHeight + 30;
@@ -818,6 +882,22 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
   const summaryStartX = isSplit ? (startX + panelWidth + panelGap) : startX;
   let curSummaryY = summaryStartY;
   const summaryColLeft = 240;
+
+  // 0. Nợ cũ kỳ trước (Nếu có)
+  if (totals.previousDebt > 0) {
+    ctx.fillStyle = '#FFFBEB';
+    ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+    ctx.strokeStyle = '#FDE68A';
+    ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+    ctx.fillStyle = '#B45309';
+    ctx.font = 'bold 14px Arial, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('NỢ CŨ KỲ TRƯỚC:', summaryStartX + summaryColLeft, curSummaryY + summaryRowHeight / 2);
+    ctx.fillStyle = '#D97706';
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillText(`+ ${new Intl.NumberFormat('vi-VN').format(totals.previousDebt)} đ`, summaryStartX + panelWidth - 12, curSummaryY + summaryRowHeight / 2);
+    curSummaryY += summaryRowHeight;
+  }
 
   // 1. Tổng tiền hàng
   ctx.fillStyle = '#F8FAFC';
@@ -1263,11 +1343,13 @@ export default function PortalScreen() {
       }
     });
 
-    const finalDebt = Math.max(0, filteredTotalMeat - filteredTotalReturn - filteredTotalPaid);
+    const prevDebt = invoiceData?.totals?.previousDebt || 0;
+    const finalDebt = Math.max(0, prevDebt + filteredTotalMeat - filteredTotalReturn - filteredTotalPaid);
 
     return {
       sortedDays: filteredDays,
       totals: {
+        previousDebt: prevDebt,
         totalMeat: filteredTotalMeat,
         totalReturn: filteredTotalReturn,
         totalPaid: filteredTotalPaid,
@@ -1819,6 +1901,17 @@ export default function PortalScreen() {
 
                       {/* Khối tổng kết cuối bảng chuẩn đồ họa cao cấp */}
                       <View style={styles.invoiceSummaryCard}>
+                        {displayInvoiceData.totals.previousDebt > 0 && (
+                          <View style={[styles.invSumRow, styles.invSumPrevDebtRow]}>
+                            <Text style={[styles.invSumLabel, { color: '#B45309' }]}>
+                              NỢ CŨ KỲ TRƯỚC:
+                            </Text>
+                            <Text style={[styles.invSumValue, { color: '#D97706' }]}>
+                              + {formatCurrency(displayInvoiceData.totals.previousDebt)}
+                            </Text>
+                          </View>
+                        )}
+
                         <View style={styles.invSumRow}>
                           <Text style={styles.invSumLabel}>TỔNG TIỀN HÀNG:</Text>
                           <Text style={styles.invSumValue}>
@@ -2956,6 +3049,10 @@ const styles = StyleSheet.create({
   invSumReturnRow: {
     backgroundColor: '#FFF7ED',
     borderBottomColor: '#FED7AA',
+  },
+  invSumPrevDebtRow: {
+    backgroundColor: '#FFFBEB',
+    borderBottomColor: '#FDE68A',
   },
   invSumPaidRow: {
     backgroundColor: '#F0FDF4',
