@@ -301,6 +301,240 @@ const getRestaurantColor = (customerName, branchList = []) => {
   return RESTAURANT_PASTEL_COLORS[Math.abs(rank) % RESTAURANT_PASTEL_COLORS.length];
 };
 
+// Helper chuyển Date/ISO string sang DD/MM/YYYY
+const toDateKey = (dateInput) => {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+};
+
+// Helper chuyển Date/ISO string sang MM/YYYY
+const toMonthKey = (dateInput) => {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '';
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${mm}/${yyyy}`;
+};
+
+/**
+ * Thuật toán Phân bổ thanh toán thông minh (Smart Payment Allocation - Ý tưởng A):
+ * - Tự động đối trừ tiền trả hàng theo ngày phát sinh.
+ * - Ưu tiên thanh toán đích danh theo ghi chú (nợ ngày DD/MM/YYYY, nợ Tháng MM/YYYY).
+ * - Phân bổ thanh toán chung theo nguyên tắc FIFO (nợ cũ được thanh toán trước).
+ * - Ghi nhận chi tiết luồng tiền phân bổ để hiển thị minh bạch cho khách hàng ở từng kỳ tra cứu.
+ */
+const runSmartPaymentAllocation = (allTransactions = [], allPayments = [], manualDebt = 0) => {
+  const txList = [];
+
+  // Nếu có công nợ ban đầu (manualDebt), coi như 1 khoản nợ tích lũy cũ nhất
+  if (manualDebt > 0) {
+    txList.push({
+      id: '__MANUAL_DEBT__',
+      date: new Date(0).toISOString(),
+      timestamp: 0,
+      dateKey: 'CŨ',
+      monthKey: 'CŨ',
+      isManualDebt: true,
+      amount: manualDebt,
+      remaining: manualDebt,
+      allocations: [],
+    });
+  }
+
+  allTransactions.forEach((tx, idx) => {
+    if (!tx.date) return;
+    const d = new Date(tx.date);
+    if (isNaN(d.getTime())) return;
+
+    let txAmount = 0;
+    if (tx.items && tx.items.length > 0) {
+      tx.items.forEach((item) => {
+        txAmount += Number(item.total) || (Number(item.quantity) * Number(item.price)) || 0;
+      });
+    } else {
+      txAmount += Number(tx.totalAmount) || 0;
+    }
+
+    const txId = tx.id || tx._id || `tx_${idx}_${d.getTime()}`;
+    txList.push({
+      id: String(txId),
+      originalTx: tx,
+      date: tx.date,
+      timestamp: d.getTime(),
+      dateKey: toDateKey(tx.date),
+      monthKey: toMonthKey(tx.date),
+      amount: txAmount,
+      remaining: txAmount,
+      allocations: [],
+    });
+  });
+
+  // Sắp xếp đơn hàng tăng dần theo thời gian (cũ nhất -> mới nhất)
+  txList.sort((a, b) => {
+    if (a.isManualDebt) return -1;
+    if (b.isManualDebt) return 1;
+    return a.timestamp - b.timestamp;
+  });
+
+  // 1.1. Khấu trừ các khoản trả lại hàng vào đơn hàng để xác định công nợ ròng thực tế cần thanh toán
+  const returnPayments = (allPayments || []).filter((pm) => isReturnPayment(pm) && Number(pm.amount) > 0);
+  returnPayments.forEach((ret) => {
+    let retRemaining = Number(ret.amount) || 0;
+    const { effectiveDate } = getEffectivePaymentInfo(ret);
+    const retDateKey = toDateKey(effectiveDate || ret.paidAt);
+
+    // Ưu tiên trừ vào các đơn hàng cùng ngày phát sinh trả hàng trước
+    txList.forEach((tx) => {
+      if (retRemaining > 0 && !tx.isManualDebt && tx.dateKey === retDateKey && tx.remaining > 0) {
+        const deduct = Math.min(retRemaining, tx.remaining);
+        tx.remaining -= deduct;
+        retRemaining -= deduct;
+      }
+    });
+
+    // Nếu vẫn còn tiền trả hàng, khấu trừ lũy kế vào các đơn hàng theo thời gian
+    if (retRemaining > 0) {
+      txList.forEach((tx) => {
+        if (retRemaining > 0 && !tx.isManualDebt && tx.remaining > 0) {
+          const deduct = Math.min(retRemaining, tx.remaining);
+          tx.remaining -= deduct;
+          retRemaining -= deduct;
+        }
+      });
+    }
+  });
+
+  // Chuẩn bị danh sách các khoản thanh toán bằng tiền (bỏ qua trả hàng)
+  const cashPayments = [];
+  (allPayments || []).forEach((pm, idx) => {
+    if (!pm.paidAt) return;
+    if (isReturnPayment(pm)) return;
+
+    const amt = Number(pm.amount) || 0;
+    if (amt <= 0) return;
+
+    const d = new Date(pm.paidAt);
+    if (isNaN(d.getTime())) return;
+
+    const trimNote = (pm.note || '').trim();
+
+    // Kiểm tra có chỉ định ngày cụ thể trong ghi chú không
+    const dateMatch = trimNote.match(/Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i) ||
+                      trimNote.match(/ngày\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    let targetDateKey = null;
+    if (dateMatch) {
+      const dd = String(parseInt(dateMatch[1], 10)).padStart(2, '0');
+      const mm = String(parseInt(dateMatch[2], 10)).padStart(2, '0');
+      const yyyy = dateMatch[3];
+      targetDateKey = `${dd}/${mm}/${yyyy}`;
+    }
+
+    // Kiểm tra có chỉ định tháng cụ thể trong ghi chú không
+    const monthMatch = trimNote.match(/Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{1,2})\/(\d{4})/i);
+    let targetMonthKey = null;
+    if (monthMatch) {
+      const mm = String(parseInt(monthMatch[1], 10)).padStart(2, '0');
+      const yyyy = monthMatch[2];
+      targetMonthKey = `${mm}/${yyyy}`;
+    }
+
+    const pmId = pm.id || pm._id || `pm_${idx}_${d.getTime()}`;
+    cashPayments.push({
+      id: String(pmId),
+      originalPm: pm,
+      paidAt: pm.paidAt,
+      timestamp: d.getTime(),
+      dateKey: toDateKey(pm.paidAt),
+      monthKey: toMonthKey(pm.paidAt),
+      amount: amt,
+      remaining: amt,
+      note: trimNote,
+      targetDateKey,
+      targetMonthKey,
+      allocations: [],
+    });
+  });
+
+  // Sắp xếp các khoản thanh toán tăng dần theo ngày thanh toán
+  cashPayments.sort((a, b) => a.timestamp - b.timestamp);
+
+  // Helper trích tiền từ payment sang transaction
+  const allocate = (pm, tx, maxAmt) => {
+    const amt = Math.min(pm.remaining, tx.remaining, maxAmt);
+    if (amt <= 0) return 0;
+
+    pm.remaining -= amt;
+    tx.remaining -= amt;
+
+    pm.allocations.push({
+      txId: tx.id,
+      txDate: tx.date,
+      txDateKey: tx.dateKey,
+      txMonthKey: tx.monthKey,
+      isManualDebt: Boolean(tx.isManualDebt),
+      allocatedAmount: amt,
+    });
+
+    tx.allocations.push({
+      paymentId: pm.id,
+      paidAt: pm.paidAt,
+      paymentDateKey: pm.dateKey,
+      paymentMonthKey: pm.monthKey,
+      paymentTotalAmount: pm.amount,
+      allocatedAmount: amt,
+      note: pm.note,
+    });
+
+    return amt;
+  };
+
+  // BƯỚC 1: Ưu tiên các thanh toán chỉ định ngày cụ thể
+  cashPayments.forEach((pm) => {
+    if (pm.targetDateKey && pm.remaining > 0) {
+      txList.forEach((tx) => {
+        if (pm.remaining > 0 && tx.remaining > 0 && tx.dateKey === pm.targetDateKey) {
+          allocate(pm, tx, pm.remaining);
+        }
+      });
+    }
+  });
+
+  // BƯỚC 2: Ưu tiên các thanh toán chỉ định tháng cụ thể
+  cashPayments.forEach((pm) => {
+    if (pm.targetMonthKey && pm.remaining > 0) {
+      txList.forEach((tx) => {
+        if (pm.remaining > 0 && tx.remaining > 0 && tx.monthKey === pm.targetMonthKey) {
+          allocate(pm, tx, pm.remaining);
+        }
+      });
+    }
+  });
+
+  // BƯỚC 3: Phân bổ FIFO cho các thanh toán thông thường vào các đơn hàng cũ nhất trước
+  cashPayments.forEach((pm) => {
+    if (pm.remaining > 0) {
+      for (let i = 0; i < txList.length; i++) {
+        if (pm.remaining <= 0) break;
+        const tx = txList[i];
+        if (tx.remaining > 0) {
+          allocate(pm, tx, pm.remaining);
+        }
+      }
+    }
+  });
+
+  return {
+    txList,
+    cashPayments,
+  };
+};
+
 // Helper gom nhóm giao dịch và thanh toán theo từng ngày (Bảng kê chi tiết chuẩn hóa đơn)
 const buildInvoiceRows = (
   transactions = [],
@@ -314,6 +548,42 @@ const buildInvoiceRows = (
   const fromD = parseDDMMYYYY(fromDateStr, false);
   const toD = parseDDMMYYYY(toDateStr, true);
 
+  // 0. Ước tính công nợ ban đầu (manualDebt) nếu tổng nợ hệ thống lớn hơn phát sinh ròng
+  let manualDebt = 0;
+  if (currentCustomerTotalDebt !== null && currentCustomerTotalDebt !== undefined) {
+    let allMeat = 0;
+    transactions.forEach((tx) => {
+      if (tx.items && tx.items.length > 0) {
+        tx.items.forEach((item) => {
+          allMeat += Number(item.total) || (Number(item.quantity) * Number(item.price)) || 0;
+        });
+      } else {
+        allMeat += Number(tx.totalAmount) || 0;
+      }
+    });
+    let allReturn = 0;
+    let allPaid = 0;
+    (payments || []).forEach((pm) => {
+      const amt = Number(pm.amount) || 0;
+      if (isReturnPayment(pm)) allReturn += amt;
+      else allPaid += amt;
+    });
+    const netLifetime = (allMeat - allReturn) - allPaid;
+    manualDebt = Math.max(0, Math.round(Number(currentCustomerTotalDebt) - netLifetime));
+  }
+
+  // 1. Thực thi thuật toán phân bổ thanh toán thông minh toàn diện
+  const { txList, cashPayments } = runSmartPaymentAllocation(transactions, payments, manualDebt);
+
+  // Map tra cứu trạng thái phân bổ của từng đơn hàng
+  const txAllocMap = {};
+  txList.forEach((item) => {
+    if (!item.isManualDebt) {
+      txAllocMap[item.id] = item;
+    }
+  });
+
+  // Lọc các đơn hàng trong khoảng thời gian tra cứu
   const filteredTxs = transactions.filter((tx) => {
     if (!tx.date) return false;
     const d = new Date(tx.date);
@@ -323,6 +593,7 @@ const buildInvoiceRows = (
     return true;
   });
 
+  // Lọc các khoản trả hàng trong khoảng thời gian tra cứu
   const filteredPays = (payments || []).filter((pm) => {
     if (!pm.paidAt) return false;
     const { effectiveDate } = getEffectivePaymentInfo(pm);
@@ -335,91 +606,30 @@ const buildInvoiceRows = (
   const dayMap = {};
   let totalMeatAmount = 0;
   let totalReturnAmount = 0;
-  let totalPaymentAmount = 0;
 
-  // 0. Tính nợ cũ kỳ trước (nợ tích lũy tồn đọng trước ngày fromD)
-  let previousDebt = 0;
-  if (fromD) {
-    let totalMeatBefore = 0;
-    transactions.forEach((tx) => {
-      if (!tx.date) return;
-      const d = new Date(tx.date);
-      if (isNaN(d.getTime())) return;
-      if (d < fromD) {
-        if (tx.items && tx.items.length > 0) {
-          tx.items.forEach((item) => {
-            totalMeatBefore += Number(item.total) || (Number(item.quantity) * Number(item.price)) || 0;
-          });
-        } else {
-          totalMeatBefore += Number(tx.totalAmount) || 0;
-        }
-      }
-    });
-
-    let totalReturnBefore = 0;
-    let totalPaidBefore = 0;
-    (payments || []).forEach((pm) => {
-      if (!pm.paidAt) return;
-      const { effectiveDate } = getEffectivePaymentInfo(pm);
-      if (isNaN(effectiveDate.getTime())) return;
-      if (effectiveDate < fromD) {
-        const amt = Number(pm.amount) || 0;
-        if (isReturnPayment(pm)) {
-          totalReturnBefore += amt;
-        } else {
-          totalPaidBefore += amt;
-        }
-      }
-    });
-
-    // Nếu có công nợ ban đầu (manualDebt) từ tổng nợ hệ thống
-    let manualDebtEstimate = 0;
-    if (currentCustomerTotalDebt !== null && currentCustomerTotalDebt !== undefined) {
-      let allMeat = 0;
-      transactions.forEach((tx) => {
-        if (tx.items && tx.items.length > 0) {
-          tx.items.forEach((item) => {
-            allMeat += Number(item.total) || (Number(item.quantity) * Number(item.price)) || 0;
-          });
-        } else {
-          allMeat += Number(tx.totalAmount) || 0;
-        }
-      });
-      let allReturn = 0;
-      let allPaid = 0;
-      (payments || []).forEach((pm) => {
-        const amt = Number(pm.amount) || 0;
-        if (isReturnPayment(pm)) allReturn += amt;
-        else allPaid += amt;
-      });
-      const netLifetime = (allMeat - allReturn) - allPaid;
-      manualDebtEstimate = Math.max(0, Number(currentCustomerTotalDebt) - netLifetime);
-    }
-
-    const netBefore = (totalMeatBefore - totalReturnBefore + manualDebtEstimate) - totalPaidBefore;
-    previousDebt = Math.max(0, Math.round(netBefore));
-  }
-
-  // 1. Gom các món thịt từ đơn hàng
-  filteredTxs.forEach((tx) => {
+  // Gom các món thịt từ đơn hàng
+  filteredTxs.forEach((tx, idx) => {
     const d = new Date(tx.date);
     const dd = String(d.getDate()).padStart(2, '0');
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const yyyy = d.getFullYear();
     const dateKey = `${dd}/${mm}/${yyyy}`;
     const displayDate = `${dd}/${mm}`;
+    const txId = String(tx.id || tx._id || `tx_${idx}_${d.getTime()}`);
 
     if (!dayMap[dateKey]) {
       dayMap[dateKey] = {
         date: tx.date,
         dateKey,
         displayDate,
+        txIds: [],
         entries: [],
         invoices: [],
       };
     }
 
-    // Thu thập danh sách ảnh hóa đơn đính kèm của đơn
+    dayMap[dateKey].txIds.push(txId);
+
     if (tx.invoices && tx.invoices.length > 0) {
       dayMap[dateKey].invoices.push(...tx.invoices);
     }
@@ -460,7 +670,7 @@ const buildInvoiceRows = (
     }
   });
 
-  // 2. Gom các khoản trả hàng và tính tổng thanh toán
+  // Gom các khoản trả hàng
   filteredPays.forEach((pm) => {
     const amt = Number(pm.amount) || 0;
     const isRet = isReturnPayment(pm);
@@ -478,6 +688,7 @@ const buildInvoiceRows = (
           date: effectiveDate.toISOString(),
           dateKey,
           displayDate,
+          txIds: [],
           entries: [],
           invoices: [],
         };
@@ -492,14 +703,10 @@ const buildInvoiceRows = (
           customerName: payCustomerName,
         });
       });
-    } else {
-      // Khoản thanh toán tiền: cộng dồn vào tổng tiền thanh toán để tính công nợ
-      // Tuyệt đối KHÔNG hiển thị dòng "THANH TOÁN" trong danh sách các món của ngày
-      totalPaymentAmount += amt;
     }
   });
 
-  // 3. Sắp xếp các dòng món trong từng ngày theo thứ tự nhà hàng ưu tiên
+  // Sắp xếp các dòng món trong từng ngày theo thứ tự nhà hàng ưu tiên
   Object.values(dayMap).forEach((day) => {
     day.entries.sort((a, b) => {
       const rankA = getRestaurantRank(a.customerName, branchList);
@@ -513,7 +720,6 @@ const buildInvoiceRows = (
         const cmp = nameA.localeCompare(nameB, 'vi');
         if (cmp !== 0) return cmp;
       }
-      // Trong cùng 1 nhà hàng: thịt trước, trả hàng sau
       const typeOrder = { MEAT: 1, DELIVERY: 2, RETURN: 3 };
       return (typeOrder[a.type] || 5) - (typeOrder[b.type] || 5);
     });
@@ -526,7 +732,7 @@ const buildInvoiceRows = (
     return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
   });
 
-  // Chuẩn hóa thứ tự các món trong ngày: MEAT/DELIVERY -> RETURN -> TỔNG (đã trừ trả hàng)
+  // Chuẩn hóa thứ tự món trong ngày và tính dòng TỔNG ngày
   sortedDays.forEach((day) => {
     const meatEntries = (day.entries || []).filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY');
     const returnEntries = (day.entries || []).filter((e) => e.type === 'RETURN');
@@ -534,11 +740,9 @@ const buildInvoiceRows = (
 
     const newEntries = [...meatEntries, ...returnEntries];
 
-    // Hiển thị dòng TỔNG nếu có từ 2 món thịt trở lên hoặc có cả thịt và trả hàng
     if (meatEntries.length > 1 || (meatEntries.length >= 1 && returnEntries.length > 0)) {
       const dayMeatTotal = meatEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
       const dayReturnTotal = returnEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      // Phần tổng trừ đi cả phần trả hàng nếu có
       const dayFinalTotal = dayMeatTotal - dayReturnTotal;
 
       newEntries.push({
@@ -551,47 +755,148 @@ const buildInvoiceRows = (
     }
 
     day.entries = [...newEntries, ...others];
+
+    // Xác định trạng thái thanh toán của ngày dựa trên số dư còn lại của các đơn hàng trong ngày
+    let dayRemaining = 0;
+    (day.txIds || []).forEach((tId) => {
+      const allocTx = txAllocMap[tId];
+      if (allocTx) {
+        dayRemaining += (allocTx.remaining || 0);
+      }
+    });
+
+    // Nếu ngày chỉ có trả hàng hoặc số dư còn lại <= 0 -> Đã thanh toán (xanh lá)
+    day.remainingDebt = Math.max(0, dayRemaining);
+    day.isPaid = (day.remainingDebt <= 0);
   });
 
-  // 4. Xác định trạng thái thanh toán của từng ngày (Đã thanh toán / Còn nợ theo nguyên tắc FIFO)
-  let unpaidDebt = currentCustomerTotalDebt !== null && currentCustomerTotalDebt !== undefined
-    ? Math.max(0, Number(currentCustomerTotalDebt))
-    : Math.max(0, previousDebt + totalMeatAmount - totalReturnAmount - totalPaymentAmount);
+  // 2. Tính toán tổng phân bổ thanh toán cho kỳ này và tạo ghi chú minh bạch
+  let periodAllocatedPayment = 0;
+  const allocationsToThisPeriodFromOutside = [];
+  const paymentsInPeriodWithPriorAllocation = [];
+  const excessPaymentsInPeriod = [];
 
-  // Sắp xếp các ngày từ mới nhất đến cũ nhất: ngày cũ được thanh toán trước, ngày mới nhất sẽ gánh phần nợ còn lại
-  const daysNewestToOldest = [...sortedDays].sort((a, b) => {
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
-  });
+  // Tổng số tiền đã được thanh toán cho các đơn hàng trong kỳ này
+  filteredTxs.forEach((tx, idx) => {
+    const txId = String(tx.id || tx._id || `tx_${idx}_${new Date(tx.date).getTime()}`);
+    const allocTx = txAllocMap[txId];
+    if (allocTx && allocTx.allocations) {
+      allocTx.allocations.forEach((al) => {
+        periodAllocatedPayment += al.allocatedAmount;
 
-  daysNewestToOldest.forEach((day) => {
-    const meatSum = (day.entries || [])
-      .filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY')
-      .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-    const returnSum = (day.entries || [])
-      .filter((e) => e.type === 'RETURN')
-      .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-    const dayNetTotal = meatSum - returnSum;
-
-    if (unpaidDebt > 0) {
-      day.isPaid = false;
-      day.remainingDebt = Math.min(Math.max(0, dayNetTotal), unpaidDebt);
-      unpaidDebt = Math.max(0, unpaidDebt - Math.max(0, dayNetTotal));
-    } else {
-      day.isPaid = true;
-      day.remainingDebt = 0;
+        // Nếu thanh toán này được chuyển ngoài kỳ (trước fromD hoặc sau toD)
+        const pDate = new Date(al.paidAt);
+        const isOutsidePeriod = (fromD && pDate < fromD) || (toD && pDate > toD);
+        if (isOutsidePeriod) {
+          allocationsToThisPeriodFromOutside.push({
+            paymentId: al.paymentId,
+            paymentDateKey: al.paymentDateKey,
+            paymentTotalAmount: al.paymentTotalAmount,
+            allocatedAmount: al.allocatedAmount,
+          });
+        }
+      });
     }
   });
 
-  const finalDebt = Math.max(0, previousDebt + totalMeatAmount - totalReturnAmount - totalPaymentAmount);
+  // Kiểm tra các khoản thanh toán được thực hiện TRONG kỳ này
+  cashPayments.forEach((pm) => {
+    const pDate = new Date(pm.paidAt);
+    const isInPeriod = (!fromD || pDate >= fromD) && (!toD || pDate <= toD);
+    if (!isInPeriod) return;
+
+    // Khoản tiền của thanh toán này đã dùng để cấn trừ nợ cũ trước kỳ
+    const allocatedToEarlier = (pm.allocations || [])
+      .filter((al) => al.isManualDebt || (al.txDate && fromD && new Date(al.txDate) < fromD))
+      .reduce((sum, al) => sum + al.allocatedAmount, 0);
+
+    const allocatedToThis = (pm.allocations || [])
+      .filter((al) => !al.isManualDebt && al.txDate && (!fromD || new Date(al.txDate) >= fromD) && (!toD || new Date(al.txDate) <= toD))
+      .reduce((sum, al) => sum + al.allocatedAmount, 0);
+
+    if (allocatedToEarlier > 0) {
+      paymentsInPeriodWithPriorAllocation.push({
+        paymentId: pm.id,
+        dateKey: pm.dateKey,
+        amount: pm.amount,
+        allocatedToThis,
+        allocatedToEarlier,
+        remaining: pm.remaining,
+      });
+    } else if (pm.remaining > 0) {
+      excessPaymentsInPeriod.push({
+        paymentId: pm.id,
+        dateKey: pm.dateKey,
+        amount: pm.amount,
+        allocatedToThis,
+        remaining: pm.remaining,
+      });
+    }
+  });
+
+  // Tạo danh sách ghi chú minh bạch (paymentNotes)
+  const paymentNotes = [];
+
+  // Nhóm các allocation ngoài kỳ theo paymentId để gộp thành 1 dòng ghi chú rõ ràng
+  if (allocationsToThisPeriodFromOutside.length > 0) {
+    const outsideGroup = {};
+    allocationsToThisPeriodFromOutside.forEach((item) => {
+      if (!outsideGroup[item.paymentId]) {
+        outsideGroup[item.paymentId] = {
+          dateKey: item.paymentDateKey,
+          totalAmount: item.paymentTotalAmount,
+          allocatedAmount: 0,
+        };
+      }
+      outsideGroup[item.paymentId].allocatedAmount += item.allocatedAmount;
+    });
+
+    Object.values(outsideGroup).forEach((g) => {
+      paymentNotes.push(
+        `*(Được thanh toán ${formatCurrency(g.allocatedAmount)} từ đợt chuyển ${formatCurrency(g.totalAmount)} ngày ${g.dateKey})*`
+      );
+    });
+  }
+
+  // Ghi chú cho các khoản thanh toán trong kỳ nhưng đã trích cấn trừ nợ cũ trước đó
+  paymentsInPeriodWithPriorAllocation.forEach((p) => {
+    let noteText = `*(Trích ${formatCurrency(p.allocatedToThis)} từ đợt chuyển ${formatCurrency(p.amount)} ngày ${p.dateKey} (đã cấn trừ ${formatCurrency(p.allocatedToEarlier)} cho nợ trước đó)`;
+    if (p.remaining > 0) {
+      noteText += `; còn dư ${formatCurrency(p.remaining)} cấn trừ các đơn sau`;
+    }
+    noteText += ')*';
+    paymentNotes.push(noteText);
+  });
+
+  // Ghi chú cho các khoản thanh toán chuyển dư tiền trong kỳ
+  excessPaymentsInPeriod.forEach((p) => {
+    paymentNotes.push(
+      `*(Đợt chuyển ${formatCurrency(p.amount)} ngày ${p.dateKey}: đã thanh toán ${formatCurrency(p.allocatedToThis)}, còn dư ${formatCurrency(p.remaining)} cấn trừ các đơn sau)*`
+    );
+  });
+
+  // Tính số tiền nợ cũ thực tế trước kỳ chưa được thanh toán (nếu có)
+  let unpaidBeforeFromD = 0;
+  if (fromD) {
+    unpaidBeforeFromD = txList
+      .filter((tx) => (tx.isManualDebt || (tx.date && new Date(tx.date) < fromD)) && tx.remaining > 0)
+      .reduce((sum, tx) => sum + tx.remaining, 0);
+  }
+
+  const netPeriodAmount = Math.max(0, totalMeatAmount - totalReturnAmount);
+  // Số tiền đã thanh toán hiển thị cho kỳ này là số tiền thực tế đã phân bổ cho kỳ
+  const displayTotalPaid = periodAllocatedPayment;
+  const finalDebt = Math.max(0, unpaidBeforeFromD + netPeriodAmount - displayTotalPaid);
 
   return {
     sortedDays,
     totals: {
-      previousDebt,
+      previousDebt: unpaidBeforeFromD,
       totalMeat: totalMeatAmount,
       totalReturn: totalReturnAmount,
-      totalPaid: totalPaymentAmount,
+      totalPaid: displayTotalPaid,
       finalDebt,
+      paymentNotes,
     },
   };
 };
@@ -640,8 +945,9 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
   const maxRows = Math.max(leftCount, rightCount, 1);
   const tableContentHeight = maxRows * rowHeight;
 
+  const notesCount = (totals.paymentNotes && totals.paymentNotes.length > 0) ? totals.paymentNotes.length : 0;
   const summaryCount = (totals.previousDebt > 0 ? 1 : 0) + 1 + (totals.totalReturn > 0 ? 1 : 0) + (totals.totalPaid > 0 ? 1 : 0) + 1;
-  const summaryHeight = summaryCount * summaryRowHeight;
+  const summaryHeight = summaryCount * summaryRowHeight + (notesCount * 20);
   const summaryStartY = startTableY + tableHeaderHeight + tableContentHeight + 16;
   const canvasHeight = summaryStartY + summaryHeight + 30;
 
@@ -940,6 +1246,17 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
     ctx.font = 'bold 18px Arial, sans-serif';
     ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totals.totalPaid)} đ`, summaryStartX + panelWidth - 12, curSummaryY + summaryRowHeight / 2);
     curSummaryY += summaryRowHeight;
+  }
+
+  // Ghi chú chi tiết phân bổ thanh toán nếu có
+  if (totals.paymentNotes && totals.paymentNotes.length > 0) {
+    totals.paymentNotes.forEach((note) => {
+      ctx.fillStyle = '#065F46';
+      ctx.font = 'italic 11px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(note, summaryStartX + panelWidth - 12, curSummaryY + 14);
+      curSummaryY += 20;
+    });
   }
 
   // 4. Còn lại phải thu
@@ -1344,7 +1661,8 @@ export default function PortalScreen() {
     });
 
     const prevDebt = invoiceData?.totals?.previousDebt || 0;
-    const finalDebt = Math.max(0, prevDebt + filteredTotalMeat - filteredTotalReturn - filteredTotalPaid);
+    const finalPaid = invoiceData?.totals?.totalPaid ?? filteredTotalPaid;
+    const finalDebt = Math.max(0, prevDebt + filteredTotalMeat - filteredTotalReturn - finalPaid);
 
     return {
       sortedDays: filteredDays,
@@ -1352,8 +1670,9 @@ export default function PortalScreen() {
         previousDebt: prevDebt,
         totalMeat: filteredTotalMeat,
         totalReturn: filteredTotalReturn,
-        totalPaid: filteredTotalPaid,
+        totalPaid: finalPaid,
         finalDebt,
+        paymentNotes: invoiceData?.totals?.paymentNotes || [],
       },
     };
   }, [invoiceData, searchKeyword]);
@@ -1938,6 +2257,16 @@ export default function PortalScreen() {
                             <Text style={[styles.invSumValue, { color: '#059669' }]}>
                               - {formatCurrency(displayInvoiceData.totals.totalPaid)}
                             </Text>
+                          </View>
+                        )}
+
+                        {displayInvoiceData.totals.paymentNotes && displayInvoiceData.totals.paymentNotes.length > 0 && (
+                          <View style={styles.invSumNoteWrap}>
+                            {displayInvoiceData.totals.paymentNotes.map((note, idx) => (
+                              <Text key={idx} style={styles.invSumNoteText}>
+                                {note}
+                              </Text>
+                            ))}
                           </View>
                         )}
 
@@ -3057,6 +3386,21 @@ const styles = StyleSheet.create({
   invSumPaidRow: {
     backgroundColor: '#F0FDF4',
     borderBottomColor: '#BBF7D0',
+  },
+  invSumNoteWrap: {
+    backgroundColor: '#F0FDF4',
+    borderLeftWidth: 3,
+    borderLeftColor: '#10B981',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#BBF7D0',
+  },
+  invSumNoteText: {
+    fontSize: 11.5,
+    color: '#065F46',
+    fontStyle: 'italic',
+    lineHeight: 17,
   },
   invSumFinalRow: {
     backgroundColor: '#EFF6FF',
