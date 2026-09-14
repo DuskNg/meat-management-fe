@@ -471,7 +471,10 @@ export default function StaffSubmitScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <View style={styles.innerWrapper}>
-
+        {/* ─── TIÊU ĐỀ ─── */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Gửi hóa đơn trong ngày</Text>
+        </View>
 
         {/* ─── 1. PHẦN CHỌN NGÀY ─── */}
         <View style={styles.card}>
@@ -818,16 +821,13 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 16,
     alignItems: 'center',
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    paddingVertical: 6,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'center',
-    marginBottom: 4,
   },
   headerOwner: {
     fontSize: 13.5,
