@@ -543,10 +543,10 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
     rightDays = sortedDays.slice(bestK);
   }
 
-  const rowHeight = 34;
-  const tableHeaderHeight = 38;
-  const summaryRowHeight = 46;
-  const startTableY = 78;
+  const rowHeight = 28;
+  const tableHeaderHeight = 32;
+  const summaryRowHeight = 44;
+  const startTableY = 74;
 
   const leftCount = leftDays.reduce((sum, d) => sum + d.entries.length, 0);
   const rightCount = rightDays.reduce((sum, d) => sum + d.entries.length, 0);
@@ -2658,7 +2658,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     borderBottomWidth: 1.2,
     borderBottomColor: '#94A3B8',
-    paddingVertical: 8,
+    paddingVertical: 5,
     borderTopLeftRadius: 9,
     borderTopRightRadius: 9,
   },
@@ -2712,7 +2712,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
-    paddingVertical: 5,
+    paddingVertical: 2,
   },
   tdDateText: {
     fontSize: 11,
@@ -2726,7 +2726,7 @@ const styles = StyleSheet.create({
   itemSubRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 2.5,
     backgroundColor: '#FFFFFF',
   },
   itemSubRowBorder: {
@@ -2771,8 +2771,8 @@ const styles = StyleSheet.create({
   dayTotalInvoiceBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
     borderRadius: 4,
     borderWidth: 1,
   },
