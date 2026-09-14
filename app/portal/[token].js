@@ -1508,7 +1508,7 @@ export default function PortalScreen() {
                 </View>
               </View>
 
-              {/* DÒNG THÔNG TIN ĐỒNG BỘ THEO LỊCH 16H - 19H - 22H */}
+              {/* DÒNG THÔNG TIN ĐỒNG BỘ THEO LỊCH 12H - 16H - 19H - 22H */}
               {portalData?.syncSchedule && (
                 <View style={styles.syncScheduleRow}>
                   <Text style={styles.syncScheduleIcon}>
@@ -1517,7 +1517,7 @@ export default function PortalScreen() {
                   <Text style={styles.syncScheduleText}>
                     {portalData.syncSchedule.isLocalhost
                       ? 'Dev Mode: Cập nhật tức thì (localhost)'
-                      : `Đồng bộ số liệu: ${portalData.syncSchedule.lastUpdateLabel || '16h, 19h, 22h'} (Lần tới: ${portalData.syncSchedule.nextUpdateLabel || '...' })`}
+                      : `Đồng bộ số liệu: ${portalData.syncSchedule.lastUpdateLabel || '12h, 16h, 19h, 22h'} (Lần tới: ${portalData.syncSchedule.nextUpdateLabel || '...' })`}
                   </Text>
                 </View>
               )}
