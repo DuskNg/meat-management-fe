@@ -20,6 +20,7 @@ import PopupModal from './PopupModal';
 import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import InvoiceImageUploadModal from './InvoiceImageUploadModal';
 import { showGlobalToast } from '../store/toastStore';
+import { hasPin, isSessionValid } from '../store/pinStore';
 import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../utils/debtMessageHelper';
 
 /**
