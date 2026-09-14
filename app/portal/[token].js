@@ -676,11 +676,11 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         const itemY = dayStartY + idx * rowHeight;
         const midY = itemY + rowHeight / 2;
 
-        // Màu nền: ngày đã thanh toán nền xanh nhẹ, ngày chưa thanh toán nền trắng
+        // Màu nền: ngày đã thanh toán nền xanh rất nhạt, ngày chưa thanh toán nền trắng
         const isDayTotal = entry.type === 'DAY_TOTAL';
-        let rowBg = day.isPaid ? '#F0FDF4' : '#FFFFFF';
+        let rowBg = day.isPaid ? '#F6FCF8' : '#FFFFFF';
         if (isDayTotal) {
-          rowBg = day.isPaid ? '#DCFCE7' : '#F8FAFC';
+          rowBg = day.isPaid ? '#E8F8EE' : '#F8FAFC';
         } else if (entry.type === 'RETURN') {
           rowBg = '#FFF7ED';
         } else if (entry.customerName && !day.isPaid) {
@@ -774,9 +774,9 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
       }
 
       // Ô ngày gộp chung
-      ctx.fillStyle = day.isPaid ? '#F0FDF4' : '#FFFFFF';
+      ctx.fillStyle = day.isPaid ? '#F6FCF8' : '#FFFFFF';
       ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
-      ctx.strokeStyle = day.isPaid ? '#BBF7D0' : '#CBD5E1';
+      ctx.strokeStyle = day.isPaid ? '#D1FAE5' : '#CBD5E1';
       ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
       const dayMidY = dayStartY + dayHeight / 2;
@@ -1661,9 +1661,8 @@ export default function PortalScreen() {
                                 styles.tdDateStatusText,
                                 day.isPaid ? styles.tdDateStatusPaid : styles.tdDateStatusUnpaid,
                               ]}
-                              numberOfLines={2}
                             >
-                              {day.isPaid ? 'Đã thanh toán' : 'Còn nợ'}
+                              {day.isPaid ? 'Đã\nthanh\ntoán' : 'Còn\nnợ'}
                             </Text>
                           </View>
 
@@ -1680,11 +1679,11 @@ export default function PortalScreen() {
                               const isDayTotal = entry.type === 'DAY_TOTAL';
                               const isReturn = entry.type === 'RETURN';
 
-                              // Màu nền: ngày đã thanh toán nền xanh nhẹ, ngày chưa thanh toán nền trắng
+                              // Màu nền: ngày đã thanh toán nền xanh rất nhạt, ngày chưa thanh toán nền trắng
                               const rowBg = isDayTotal
-                                ? (day.isPaid ? '#DCFCE7' : '#F8FAFC')
+                                ? (day.isPaid ? '#E8F8EE' : '#F8FAFC')
                                 : (day.isPaid
-                                    ? '#F0FDF4'
+                                    ? '#F6FCF8'
                                     : (entry.customerName ? getRestaurantColor(entry.customerName, branchList) : '#FFFFFF'));
 
                               return (
@@ -1693,7 +1692,7 @@ export default function PortalScreen() {
                                   style={[
                                     styles.itemSubRow,
                                     { backgroundColor: rowBg },
-                                    isDayTotal && { borderTopWidth: 1, borderTopColor: day.isPaid ? '#BBF7D0' : '#CBD5E1' },
+                                    isDayTotal && { borderTopWidth: 1, borderTopColor: day.isPaid ? '#D1FAE5' : '#CBD5E1' },
                                     !isLast && (isRestaurantBoundary ? styles.itemSubRowBoundary : (day.isPaid ? styles.itemSubRowBorderPaid : styles.itemSubRowBorder)),
                                     isReturn && styles.itemSubRowReturn,
                                   ]}
@@ -2708,7 +2707,7 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   thDate: {
-    width: 62,
+    width: 42,
     textAlign: 'center',
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
@@ -2746,7 +2745,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#0F172A',
   },
   tdDateCol: {
-    width: 62,
+    width: 42,
     alignItems: 'center',
     justifyContent: 'center',
     borderRightWidth: 1,
@@ -2754,31 +2753,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 1,
   },
   tdDateColPaid: {
-    backgroundColor: '#F0FDF4',
-    borderRightColor: '#BBF7D0',
+    backgroundColor: '#F6FCF8',
+    borderRightColor: '#D1FAE5',
   },
   tdDateColUnpaid: {
     backgroundColor: '#FFFFFF',
     borderRightColor: '#CBD5E1',
   },
   tdDateText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#334155',
     textAlign: 'center',
   },
   tdDateTextPaid: {
-    color: '#065F46',
+    color: '#047857',
   },
   tdDateStatusText: {
-    fontSize: 8.5,
+    fontSize: 8,
     fontWeight: 'bold',
     textAlign: 'center',
     marginTop: 2,
-    lineHeight: 11,
+    lineHeight: 9.5,
   },
   tdDateStatusPaid: {
-    color: '#047857',
+    color: '#059669',
   },
   tdDateStatusUnpaid: {
     color: '#DC2626',
@@ -2798,7 +2797,7 @@ const styles = StyleSheet.create({
   },
   itemSubRowBorderPaid: {
     borderBottomWidth: 1,
-    borderBottomColor: '#DCFCE7',
+    borderBottomColor: '#E6F7ED',
   },
   itemSubRowBoundary: {
     borderBottomWidth: 1.5,
