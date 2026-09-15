@@ -312,6 +312,39 @@ const getRestaurantColor = (customerName, branchList = []) => {
   return RESTAURANT_PASTEL_COLORS[Math.abs(rank) % RESTAURANT_PASTEL_COLORS.length];
 };
 
+// Helper gom danh sách chuỗi thành định dạng tiếng Việt: "A, B và C"
+const formatJoinList = (items = []) => {
+  if (!items || items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  return `${items.slice(0, -1).join(', ')} và ${items[items.length - 1]}`;
+};
+
+// Helper định dạng rút gọn số tiền đợt trả (ví dụ: 280.000.000 -> "280tr")
+const formatBatchAmount = (amt) => {
+  if (!amt || isNaN(amt)) return '';
+  const num = Number(amt);
+  if (num >= 1000000) {
+    const millions = num / 1000000;
+    const formatted = Number.isInteger(millions)
+      ? `${millions}tr`
+      : `${millions.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}tr`;
+    return formatted;
+  }
+  if (num >= 1000) {
+    const thousands = num / 1000;
+    const formatted = Number.isInteger(thousands)
+      ? `${thousands}k`
+      : `${thousands.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}k`;
+    return formatted;
+  }
+  return formatCurrency(num);
+};
+
+// Helper kiểm tra dòng có phải là dòng tổng kết của ngày (TỔNG / ĐÃ TRẢ / CÒN LẠI) hay không
+const isDaySummaryEntry = (e) => {
+  return Boolean(e && (e.type === 'DAY_TOTAL' || e.type === 'DAY_PARTIAL_PAID' || e.type === 'DAY_PARTIAL_REMAINING'));
+};
+
 // Helper gom nhóm giao dịch và thanh toán theo từng ngày (Bảng kê chi tiết chuẩn hóa đơn)
 const buildInvoiceRows = (
   transactions = [],
@@ -325,61 +358,50 @@ const buildInvoiceRows = (
   const fromD = parseDDMMYYYY(fromDateStr, false);
   const toD = parseDDMMYYYY(toDateStr, true);
 
-  const filteredTxs = transactions.filter((tx) => {
-    if (!tx.date) return false;
+  // 1. Chuẩn bị bản đồ ngày trên TOÀN BỘ lịch sử giao dịch (để tính FIFO xuyên tháng)
+  const allDayMap = {};
+
+  // Gom toàn bộ transactions vào từng ngày
+  (transactions || []).forEach((tx) => {
+    if (!tx.date) return;
     const d = new Date(tx.date);
-    if (isNaN(d.getTime())) return false;
-    if (fromD && d < fromD) return false;
-    if (toD && d > toD) return false;
-    return true;
-  });
+    if (isNaN(d.getTime())) return;
 
-  const filteredPays = (payments || []).filter((pm) => {
-    if (!pm.paidAt) return false;
-    const { effectiveDate } = getEffectivePaymentInfo(pm);
-    if (isNaN(effectiveDate.getTime())) return false;
-    if (fromD && effectiveDate < fromD) return false;
-    if (toD && effectiveDate > toD) return false;
-    return true;
-  });
-
-  const dayMap = {};
-  let totalMeatAmount = 0;
-  let totalReturnAmount = 0;
-  let totalPaymentAmount = 0;
-
-  // 1. Gom các món thịt từ đơn hàng
-  filteredTxs.forEach((tx) => {
-    const d = new Date(tx.date);
     const dd = String(d.getDate()).padStart(2, '0');
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const yyyy = d.getFullYear();
     const dateKey = `${dd}/${mm}/${yyyy}`;
     const displayDate = `${dd}/${mm}`;
+    const monthKey = `${mm}/${yyyy}`;
 
-    if (!dayMap[dateKey]) {
-      dayMap[dateKey] = {
+    if (!allDayMap[dateKey]) {
+      allDayMap[dateKey] = {
         date: tx.date,
+        dateObj: d,
         dateKey,
         displayDate,
+        monthKey,
+        monthDisplay: `T${d.getMonth() + 1}`,
+        monthFull: `T${d.getMonth() + 1}/${yyyy}`,
         entries: [],
         invoices: [],
+        meatSum: 0,
+        returnSum: 0,
       };
     }
 
-    // Thu thập danh sách ảnh hóa đơn đính kèm của đơn
     if (tx.invoices && tx.invoices.length > 0) {
-      dayMap[dateKey].invoices.push(...tx.invoices);
+      allDayMap[dateKey].invoices.push(...tx.invoices);
     }
 
     if (tx.items && tx.items.length > 0) {
       tx.items.forEach((item) => {
         const amt = Number(item.total) || (Number(item.quantity) * Number(item.price)) || 0;
-        totalMeatAmount += amt;
+        allDayMap[dateKey].meatSum += amt;
         const rawName = item.productName || 'THỊT';
         const isQuick = rawName === 'Tiền hàng' || rawName.toLowerCase().startsWith('tiền') || tx.note === 'Ghi nợ nhanh' || (Number(item.quantity) === 1 && Number(item.price) === amt && rawName.toLowerCase().includes('tiền'));
 
-        dayMap[dateKey].entries.push({
+        allDayMap[dateKey].entries.push({
           type: 'MEAT',
           isQuick,
           name: isQuick ? 'TIỀN HÀNG' : rawName.toUpperCase(),
@@ -392,10 +414,10 @@ const buildInvoiceRows = (
       });
     } else {
       const amt = Number(tx.totalAmount) || 0;
-      totalMeatAmount += amt;
+      allDayMap[dateKey].meatSum += amt;
       const noteName = tx.note ? tx.note.toUpperCase() : 'GIAO HÀNG';
       const isQuick = noteName === 'TIỀN HÀNG' || noteName.startsWith('TIỀN') || tx.note === 'Ghi nợ nhanh';
-      dayMap[dateKey].entries.push({
+      allDayMap[dateKey].entries.push({
         type: 'DELIVERY',
         isQuick,
         name: isQuick ? 'TIỀN HÀNG' : noteName,
@@ -408,87 +430,213 @@ const buildInvoiceRows = (
     }
   });
 
-  // 2. Gom các khoản trả hàng và tính tổng thanh toán
-  filteredPays.forEach((pm) => {
+  // 2. Gom các khoản trả hàng (RETURN) vào từng ngày, đồng thời tách riêng các khoản thanh toán tiền mặt/chuyển khoản
+  const allCashPayments = [];
+
+  (payments || []).forEach((pm) => {
+    if (!pm.paidAt) return;
     const amt = Number(pm.amount) || 0;
     const isRet = isReturnPayment(pm);
+    const { effectiveDate } = getEffectivePaymentInfo(pm);
+    if (isNaN(effectiveDate.getTime())) return;
 
     if (isRet) {
-      const { effectiveDate } = getEffectivePaymentInfo(pm);
       const dd = String(effectiveDate.getDate()).padStart(2, '0');
       const mm = String(effectiveDate.getMonth() + 1).padStart(2, '0');
       const yyyy = effectiveDate.getFullYear();
       const dateKey = `${dd}/${mm}/${yyyy}`;
       const displayDate = `${dd}/${mm}`;
+      const monthKey = `${mm}/${yyyy}`;
 
-      if (!dayMap[dateKey]) {
-        dayMap[dateKey] = {
+      if (!allDayMap[dateKey]) {
+        allDayMap[dateKey] = {
           date: effectiveDate.toISOString(),
+          dateObj: effectiveDate,
           dateKey,
           displayDate,
+          monthKey,
+          monthDisplay: `T${effectiveDate.getMonth() + 1}`,
+          monthFull: `T${effectiveDate.getMonth() + 1}/${yyyy}`,
           entries: [],
           invoices: [],
+          meatSum: 0,
+          returnSum: 0,
         };
       }
 
-      totalReturnAmount += amt;
+      allDayMap[dateKey].returnSum += amt;
       const payCustomerName = pm.customerName || pm.customer?.name || null;
       const returnItems = parseReturnItems(pm.note, amt);
       returnItems.forEach((rItem) => {
-        dayMap[dateKey].entries.push({
+        allDayMap[dateKey].entries.push({
           ...rItem,
           customerName: payCustomerName,
         });
       });
     } else {
-      // Khoản thanh toán tiền: cộng dồn vào tổng tiền thanh toán để tính công nợ
-      // Tuyệt đối KHÔNG hiển thị dòng "THANH TOÁN" trong danh sách các món của ngày
-      totalPaymentAmount += amt;
+      // Khoản thanh toán tiền thực tế (chuyển khoản, tiền mặt)
+      // Sử dụng effectiveDate đã phân tích từ ghi chú (ví dụ: Thanh toán nợ ngày 31/07 hay nợ Tháng 08)
+      const payDate = effectiveDate;
+      const pmMonth = payDate.getMonth() + 1;
+      const pmYear = payDate.getFullYear();
+      allCashPayments.push({
+        id: pm.id || Math.random().toString(),
+        amount: amt,
+        remaining: amt,
+        paidAt: payDate,
+        monthKey: `${String(pmMonth).padStart(2, '0')}/${pmYear}`,
+        monthDisplay: `T${pmMonth}`,
+        monthFull: `T${pmMonth}/${pmYear}`,
+        allocations: [],
+      });
     }
   });
 
-  // 3. Sắp xếp các dòng món trong từng ngày theo thứ tự nhà hàng ưu tiên
-  Object.values(dayMap).forEach((day) => {
+  // Tính dayNetTotal cho mỗi ngày trên toàn lịch sử
+  Object.values(allDayMap).forEach((day) => {
+    day.dayNetTotal = Math.max(0, day.meatSum - day.returnSum);
+    day.paidAmount = 0;
+    day.remainingDebt = day.dayNetTotal;
+    day.isPaid = false;
+    day.isPartialPaid = false;
+    day.paymentsApplied = [];
+  });
+
+  // 3. Phân bổ FIFO các khoản thanh toán tiền mặt từ ngày CŨ NHẤT đến MỚI NHẤT
+  const allDaysOldestToNewest = Object.values(allDayMap).sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+  const sortedCashPayments = allCashPayments.sort((a, b) => a.paidAt.getTime() - b.paidAt.getTime());
+
+  // Xử lý nợ cũ ban đầu (manualDebt) nếu có
+  if (currentCustomerTotalDebt !== null && currentCustomerTotalDebt !== undefined) {
+    const allMeatSum = (transactions || []).reduce((sum, tx) => sum + (Number(tx.totalAmount) || 0), 0);
+    const allPaySum = allCashPayments.reduce((sum, p) => sum + p.amount, 0);
+    const calculatedDebt = allMeatSum - allPaySum;
+    if (currentCustomerTotalDebt > calculatedDebt) {
+      let remManualDebt = Math.max(0, currentCustomerTotalDebt - calculatedDebt);
+      for (const pm of sortedCashPayments) {
+        if (remManualDebt <= 0) break;
+        const used = Math.min(pm.remaining, remManualDebt);
+        pm.remaining -= used;
+        remManualDebt -= used;
+      }
+    }
+  }
+
+  allDaysOldestToNewest.forEach((day) => {
+    const needed = day.dayNetTotal;
+    while (day.paidAmount < needed) {
+      const pm = sortedCashPayments.find((p) => p.remaining > 0);
+      if (!pm) break; // Hết tiền thanh toán
+
+      const toPay = needed - day.paidAmount;
+      const used = Math.min(pm.remaining, toPay);
+
+      day.paidAmount += used;
+      pm.remaining -= used;
+
+      day.paymentsApplied.push({
+        paymentId: pm.id,
+        amount: used,
+        paidAt: pm.paidAt,
+        paidMonthKey: pm.monthKey,
+        paidMonthDisplay: pm.monthDisplay,
+        paidMonthFull: pm.monthFull,
+        isSameMonth: pm.monthKey === day.monthKey,
+        totalPaymentAmount: pm.amount,
+      });
+
+      pm.allocations.push({
+        targetDateKey: day.dateKey,
+        targetMonthKey: day.monthKey,
+        targetMonthDisplay: day.monthDisplay,
+        targetMonthFull: day.monthFull,
+        amount: used,
+        isSameMonth: pm.monthKey === day.monthKey,
+      });
+    }
+
+    if (day.paidAmount >= day.dayNetTotal) {
+      day.isPaid = true;
+      day.isPartialPaid = false;
+      day.remainingDebt = 0;
+    } else if (day.paidAmount > 0) {
+      day.isPaid = false;
+      day.isPartialPaid = true;
+      day.remainingDebt = day.dayNetTotal - day.paidAmount;
+    } else {
+      day.isPaid = false;
+      day.isPartialPaid = false;
+      day.remainingDebt = day.dayNetTotal;
+    }
+  });
+
+  // 4. Lọc các ngày thuộc khoảng thời gian người dùng đang xem [fromD, toD]
+  const periodDays = allDaysOldestToNewest.filter((day) => {
+    if (fromD && day.dateObj < fromD) return false;
+    if (toD && day.dateObj > toD) return false;
+    return true;
+  });
+
+  // Sắp xếp các dòng món trong từng ngày và thêm dòng TỔNG
+  periodDays.forEach((day) => {
     day.entries.sort((a, b) => {
       const rankA = getRestaurantRank(a.customerName, branchList);
       const rankB = getRestaurantRank(b.customerName, branchList);
-      if (rankA !== rankB) {
-        return rankA - rankB;
-      }
+      if (rankA !== rankB) return rankA - rankB;
       if (rankA === 1000 && rankB === 1000) {
         const nameA = a.customerName || '';
         const nameB = b.customerName || '';
         const cmp = nameA.localeCompare(nameB, 'vi');
         if (cmp !== 0) return cmp;
       }
-      // Trong cùng 1 nhà hàng: thịt trước, trả hàng sau
       const typeOrder = { MEAT: 1, DELIVERY: 2, RETURN: 3 };
       return (typeOrder[a.type] || 5) - (typeOrder[b.type] || 5);
     });
-  });
 
-  // Sắp xếp các ngày theo tùy chọn (mới nhất hoặc cũ nhất)
-  const sortedDays = Object.values(dayMap).sort((a, b) => {
-    const timeA = new Date(a.date).getTime();
-    const timeB = new Date(b.date).getTime();
-    return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
-  });
-
-  // Chuẩn hóa thứ tự các món trong ngày: MEAT/DELIVERY -> RETURN -> TỔNG (đã trừ trả hàng)
-  sortedDays.forEach((day) => {
     const meatEntries = (day.entries || []).filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY');
     const returnEntries = (day.entries || []).filter((e) => e.type === 'RETURN');
-    const others = (day.entries || []).filter((e) => e.type !== 'MEAT' && e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'PAYMENT' && e.type !== 'DAY_TOTAL');
+    const others = (day.entries || []).filter((e) => e.type !== 'MEAT' && e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'PAYMENT' && !isDaySummaryEntry(e));
 
     const newEntries = [...meatEntries, ...returnEntries];
 
-    // Hiển thị dòng TỔNG nếu có từ 2 món thịt trở lên hoặc có cả thịt và trả hàng
-    if (meatEntries.length > 1 || (meatEntries.length >= 1 && returnEntries.length > 0)) {
-      const dayMeatTotal = meatEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      const dayReturnTotal = returnEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      // Phần tổng trừ đi cả phần trả hàng nếu có
-      const dayFinalTotal = dayMeatTotal - dayReturnTotal;
+    const dayMeatTotal = meatEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+    const dayReturnTotal = returnEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+    const dayFinalTotal = dayMeatTotal - dayReturnTotal;
 
+    if (day.isPartialPaid) {
+      // 1. Dòng TỔNG tiền hàng của ngày
+      newEntries.push({
+        type: 'DAY_TOTAL',
+        name: 'TỔNG',
+        quantity: null,
+        price: null,
+        amount: dayFinalTotal,
+      });
+
+      // 2. Dòng ĐÃ TRẢ (kèm thông tin đợt trả)
+      const batchAmounts = Array.from(
+        new Set((day.paymentsApplied || []).map((p) => p.totalPaymentAmount || p.amount))
+      );
+      const batchText = batchAmounts.map((amt) => formatBatchAmount(amt)).filter(Boolean).join(', ');
+      const paidLabel = batchText ? `ĐÃ TRẢ (đợt trả ${batchText})` : 'ĐÃ TRẢ';
+
+      newEntries.push({
+        type: 'DAY_PARTIAL_PAID',
+        name: paidLabel,
+        quantity: null,
+        price: null,
+        amount: day.paidAmount,
+      });
+
+      // 3. Dòng CÒN LẠI của ngày
+      newEntries.push({
+        type: 'DAY_PARTIAL_REMAINING',
+        name: 'CÒN LẠI',
+        quantity: null,
+        price: null,
+        amount: day.remainingDebt,
+      });
+    } else if (meatEntries.length > 1 || (meatEntries.length >= 1 && returnEntries.length > 0)) {
       newEntries.push({
         type: 'DAY_TOTAL',
         name: 'TỔNG',
@@ -501,43 +649,107 @@ const buildInvoiceRows = (
     day.entries = [...newEntries, ...others];
   });
 
-  // 4. Xác định trạng thái thanh toán của từng ngày (Đã thanh toán / Còn nợ theo nguyên tắc FIFO)
-  // Chỉ tính theo số nợ thực tế của kỳ đang lọc, không lấy tổng nợ hiện tại của tháng sau đè lên tháng trước
-  let unpaidDebt = Math.max(0, (totalMeatAmount - totalReturnAmount) - totalPaymentAmount);
-
-  // Sắp xếp các ngày từ mới nhất đến cũ nhất: ngày cũ được thanh toán trước, ngày mới nhất sẽ gánh phần nợ còn lại
-  const daysNewestToOldest = [...sortedDays].sort((a, b) => {
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  // Sắp xếp các ngày hiển thị theo tùy chọn người dùng (mới nhất hoặc cũ nhất)
+  const sortedDays = [...periodDays].sort((a, b) => {
+    const timeA = a.dateObj.getTime();
+    const timeB = b.dateObj.getTime();
+    return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
   });
 
-  daysNewestToOldest.forEach((day) => {
-    const meatSum = (day.entries || [])
-      .filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY')
-      .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-    const returnSum = (day.entries || [])
-      .filter((e) => e.type === 'RETURN')
-      .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-    const dayNetTotal = meatSum - returnSum;
+  // 5. Tính toán tổng kết cho kỳ lọc và tạo ghi chú bù trừ nợ liên tháng (Cross-month Breakdown Note)
+  let totalMeatAmount = 0;
+  let totalReturnAmount = 0;
+  let totalPaidForPeriod = 0;
 
-    if (unpaidDebt > 0) {
-      day.isPaid = false;
-      day.remainingDebt = Math.min(Math.max(0, dayNetTotal), unpaidDebt);
-      unpaidDebt = Math.max(0, unpaidDebt - Math.max(0, dayNetTotal));
-    } else {
-      day.isPaid = true;
-      day.remainingDebt = 0;
+  periodDays.forEach((day) => {
+    totalMeatAmount += day.meatSum;
+    totalReturnAmount += day.returnSum;
+    totalPaidForPeriod += day.paidAmount;
+  });
+
+  const netPeriodAmount = Math.max(0, totalMeatAmount - totalReturnAmount);
+
+  // Xác định nhãn tháng của kỳ lọc (ví dụ: "T8" hoặc "T9")
+  let currentPeriodMonthLabel = '';
+  if (fromD) {
+    const m = fromD.getMonth() + 1;
+    const y = fromD.getFullYear();
+    const nowY = new Date().getFullYear();
+    currentPeriodMonthLabel = y === nowY ? `T${m}` : `T${m}/${y}`;
+  }
+
+  // A. Tiền từ tháng khác bù về cho các ngày trong kỳ lọc này (như trường hợp Tháng 8 nhận tiền trả ở T9)
+  const transferredInMap = {};
+  let paidFromSamePeriod = 0;
+
+  periodDays.forEach((day) => {
+    (day.paymentsApplied || []).forEach((pa) => {
+      const isPaidInPeriod = (!fromD || pa.paidAt >= fromD) && (!toD || pa.paidAt <= toD);
+      if (isPaidInPeriod) {
+        paidFromSamePeriod += pa.amount;
+      } else {
+        // Tiền trả ngoài kỳ này nhưng được bù vào kỳ này
+        const label = pa.paidMonthDisplay || pa.paidMonthKey;
+        transferredInMap[label] = (transferredInMap[label] || 0) + pa.amount;
+      }
+    });
+  });
+
+  // B. Tiền trả trong kỳ lọc này nhưng bị lấy đi bù cho các tháng cũ (như trường hợp Tháng 9 bù cho T8)
+  const transferredOutMap = {};
+  let totalCashPaidInPeriodRaw = 0;
+
+  sortedCashPayments.forEach((pm) => {
+    const isPmInPeriod = (!fromD || pm.paidAt >= fromD) && (!toD || pm.paidAt <= toD);
+    if (isPmInPeriod) {
+      totalCashPaidInPeriodRaw += pm.amount;
+      (pm.allocations || []).forEach((alloc) => {
+        // Kiểm tra xem ngày nhận có nằm ngoài kỳ lọc không (đặc biệt là các ngày cũ)
+        const targetDay = allDayMap[alloc.targetDateKey];
+        const isTargetInPeriod = targetDay && (!fromD || targetDay.dateObj >= fromD) && (!toD || targetDay.dateObj <= toD);
+        if (!isTargetInPeriod) {
+          const label = alloc.targetMonthDisplay || alloc.targetMonthKey;
+          transferredOutMap[label] = (transferredOutMap[label] || 0) + alloc.amount;
+        }
+      });
     }
   });
 
-  const finalDebt = Math.max(0, totalMeatAmount - totalReturnAmount - totalPaymentAmount);
+  // Xây dựng chuỗi ghi chú mở ngoặc bên dưới dòng ĐÃ THANH TOÁN
+  let paidBreakdownNote = '';
+
+  const transferredInList = Object.entries(transferredInMap);
+  const transferredOutList = Object.entries(transferredOutMap);
+
+  if (transferredInList.length > 0) {
+    // Trường hợp nhận tiền bù từ tháng khác (Ví dụ T8: đã trả 900tr ở T8 và 170tr ở T9)
+    const inItems = transferredInList.map(([month, amt]) => `${formatCurrency(amt)} ở ${month}`);
+    if (paidFromSamePeriod > 0) {
+      const sameLabel = currentPeriodMonthLabel ? ` ở ${currentPeriodMonthLabel}` : ' trong kỳ';
+      paidBreakdownNote = `(đã trả ${formatCurrency(paidFromSamePeriod)}${sameLabel} và ${formatJoinList(inItems)})`;
+    } else {
+      paidBreakdownNote = `(đã thanh toán ${formatJoinList(inItems)})`;
+    }
+  } else if (transferredOutList.length > 0) {
+    // Trường hợp tiền trả trong kỳ này bị mang đi bù cho tháng cũ (Ví dụ T9: khách trả 280tr ở T9, đã bù 170tr cho T8)
+    const outItems = transferredOutList.map(([month, amt]) => `${formatCurrency(amt)} cho ${month}`);
+    const sameLabel = currentPeriodMonthLabel ? ` ở ${currentPeriodMonthLabel}` : ' trong kỳ';
+    paidBreakdownNote = `(khách trả ${formatCurrency(totalCashPaidInPeriodRaw)}${sameLabel}, đã bù ${formatJoinList(outItems)})`;
+  }
+
+  // Số tiền ĐÃ THANH TOÁN hiển thị: bằng tổng tiền thực tế đã phân bổ cho các ngày trong kỳ lọc
+  const displayTotalPaid = totalPaidForPeriod;
+  const finalDebt = Math.max(0, netPeriodAmount - displayTotalPaid);
 
   return {
     sortedDays,
     totals: {
       totalMeat: totalMeatAmount,
       totalReturn: totalReturnAmount,
-      totalPaid: totalPaymentAmount,
+      totalPaid: displayTotalPaid,
       finalDebt,
+      paidBreakdownNote: paidBreakdownNote || null,
+      rawPaidInPeriod: totalCashPaidInPeriodRaw,
     },
   };
 };
@@ -586,7 +798,7 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
   const maxRows = Math.max(leftCount, rightCount, 1);
   const tableContentHeight = maxRows * rowHeight;
 
-  const summaryCount = 1 + (totals.totalReturn > 0 ? 1 : 0) + (totals.totalPaid > 0 ? 1 : 0) + 1;
+  const summaryCount = 1 + (totals.totalReturn > 0 ? 1 : 0) + ((totals.totalPaid > 0 || totals.paidBreakdownNote) ? 1 : 0) + 1;
   const summaryHeight = summaryCount * summaryRowHeight;
   const summaryStartY = startTableY + tableHeaderHeight + tableContentHeight + 16;
   const canvasHeight = summaryStartY + summaryHeight + 30;
@@ -685,8 +897,16 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
 
         // Chỉ bôi màu ở cột Ngày, các dòng món hàng giữ màu chuẩn
         const isDayTotal = entry.type === 'DAY_TOTAL';
+        const isPartialPaid = entry.type === 'DAY_PARTIAL_PAID';
+        const isPartialRemaining = entry.type === 'DAY_PARTIAL_REMAINING';
+        const isSummary = isDayTotal || isPartialPaid || isPartialRemaining;
+
         let rowBg = '#FFFFFF';
-        if (isDayTotal) {
+        if (isPartialPaid) {
+          rowBg = '#F0FDF4';
+        } else if (isPartialRemaining) {
+          rowBg = '#FEF2F2';
+        } else if (isDayTotal) {
           rowBg = '#F8FAFC';
         } else if (entry.type === 'RETURN') {
           rowBg = '#FFF7ED';
@@ -712,6 +932,14 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
           ctx.fillStyle = '#0F172A';
           ctx.font = 'bold 13.5px Arial, sans-serif';
           ctx.fillText(entry.name, pColX[1] + 8, midY);
+        } else if (isPartialPaid) {
+          ctx.fillStyle = '#047857';
+          ctx.font = 'bold 12.5px Arial, sans-serif';
+          ctx.fillText(entry.name, pColX[1] + 8, midY);
+        } else if (isPartialRemaining) {
+          ctx.fillStyle = '#DC2626';
+          ctx.font = 'bold 13px Arial, sans-serif';
+          ctx.fillText(entry.name, pColX[1] + 8, midY);
         } else if (entry.type === 'RETURN') {
           ctx.fillStyle = '#DC2626';
           ctx.font = '13.5px Arial, sans-serif';
@@ -724,15 +952,15 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
           ctx.fillText(displayName, pColX[1] + 8, midY);
         }
 
-        // SL (Dạng Tiền hàng không hiển thị số cân)
+        // SL (Dạng Tiền hàng và Dòng tổng kết không hiển thị số cân)
         ctx.textAlign = 'right';
-        ctx.fillStyle = entry.type === 'RETURN' ? '#DC2626' : '#0F172A';
+        ctx.fillStyle = (entry.type === 'RETURN' || isPartialRemaining) ? '#DC2626' : (isPartialPaid ? '#047857' : '#0F172A');
         const isQuickEntry = entry.isQuick || entry.name === 'TIỀN HÀNG' || entry.name?.startsWith('TIỀN');
-        const qtyText = (isDayTotal || isQuickEntry) ? '-' : (entry.quantity != null ? String(entry.quantity) : '-');
+        const qtyText = (isSummary || isQuickEntry) ? '-' : (entry.quantity != null ? String(entry.quantity) : '-');
         ctx.fillText(qtyText, pColX[2] + colWidths[2] - 8, midY);
 
-        // Đơn giá (Dạng Tiền hàng không hiển thị đơn giá)
-        const priceText = (isDayTotal || isQuickEntry) ? '-' : (entry.price != null ? new Intl.NumberFormat('vi-VN').format(entry.price) : '-');
+        // Đơn giá (Dạng Tiền hàng và Dòng tổng kết không hiển thị đơn giá)
+        const priceText = (isSummary || isQuickEntry) ? '-' : (entry.price != null ? new Intl.NumberFormat('vi-VN').format(entry.price) : '-');
         ctx.font = 'bold 14px Arial, sans-serif';
         ctx.fillText(priceText, pColX[3] + colWidths[3] - 8, midY);
 
@@ -741,6 +969,12 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         ctx.font = 'bold 14.5px Arial, sans-serif';
         if (isDayTotal) {
           ctx.fillStyle = '#0F172A';
+          ctx.fillText(amtText, pColX[4] + colWidths[4] - 8, midY);
+        } else if (isPartialPaid) {
+          ctx.fillStyle = '#047857';
+          ctx.fillText(`-${amtText}`, pColX[4] + colWidths[4] - 8, midY);
+        } else if (isPartialRemaining) {
+          ctx.fillStyle = '#DC2626';
           ctx.fillText(amtText, pColX[4] + colWidths[4] - 8, midY);
         } else if (entry.type === 'RETURN') {
           ctx.fillText(`-${amtText}`, pColX[4] + colWidths[4] - 8, midY);
@@ -780,16 +1014,24 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         ctx.stroke();
       }
 
-      // Ô ngày gộp chung: bôi xanh (đã thanh toán) và đỏ (còn nợ)
-      ctx.fillStyle = day.isPaid ? '#F0FDF4' : '#FEF2F2';
+      // Ô ngày gộp chung: xanh (đã thanh toán), cam (thanh toán 1 phần), đỏ (còn nợ)
+      let dateCellBg, dateCellBorder, dateCellTextColor;
+      if (day.isPaid) {
+        dateCellBg = '#F0FDF4'; dateCellBorder = '#BBF7D0'; dateCellTextColor = '#047857';
+      } else if (day.isPartialPaid) {
+        dateCellBg = '#FFF7ED'; dateCellBorder = '#FED7AA'; dateCellTextColor = '#C2410C';
+      } else {
+        dateCellBg = '#FEF2F2'; dateCellBorder = '#FECACA'; dateCellTextColor = '#B91C1C';
+      }
+      ctx.fillStyle = dateCellBg;
       ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
-      ctx.strokeStyle = day.isPaid ? '#BBF7D0' : '#FECACA';
+      ctx.strokeStyle = dateCellBorder;
       ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
       const dayMidY = dayStartY + dayHeight / 2;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = day.isPaid ? '#047857' : '#B91C1C';
+      ctx.fillStyle = dateCellTextColor;
       ctx.font = 'bold 12.5px Arial, sans-serif';
       ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
 
@@ -797,6 +1039,9 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
       if (day.isPaid) {
         ctx.fillStyle = '#059669';
         ctx.fillText('Đã thanh toán', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+      } else if (day.isPartialPaid) {
+        ctx.fillStyle = '#C2410C';
+        ctx.fillText('Trả 1 phần', pColX[0] + colWidths[0] / 2, dayMidY + 8);
       } else {
         ctx.fillStyle = '#DC2626';
         ctx.fillText('Còn nợ', pColX[0] + colWidths[0] / 2, dayMidY + 8);
@@ -858,17 +1103,36 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
   }
 
   // 3. Đã thanh toán
-  if (totals.totalPaid > 0) {
+  if (totals.totalPaid > 0 || totals.paidBreakdownNote) {
     ctx.fillStyle = '#F0FDF4';
     ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
     ctx.strokeStyle = '#BBF7D0';
     ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
-    ctx.fillStyle = '#047857';
-    ctx.font = 'bold 14px Arial, sans-serif';
-    ctx.fillText('ĐÃ THANH TOÁN:', summaryStartX + summaryColLeft, curSummaryY + summaryRowHeight / 2);
-    ctx.fillStyle = '#059669';
-    ctx.font = 'bold 18px Arial, sans-serif';
-    ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totals.totalPaid)} đ`, summaryStartX + panelWidth - 12, curSummaryY + summaryRowHeight / 2);
+
+    if (totals.paidBreakdownNote) {
+      // Dòng 1: Tiêu đề và số tiền đã thanh toán
+      ctx.fillStyle = '#047857';
+      ctx.font = 'bold 13px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('ĐÃ THANH TOÁN:', summaryStartX + summaryColLeft, curSummaryY + 16);
+      ctx.fillStyle = '#059669';
+      ctx.font = 'bold 16.5px Arial, sans-serif';
+      ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totals.totalPaid)} đ`, summaryStartX + panelWidth - 12, curSummaryY + 16);
+
+      // Dòng 2: Ghi chú bù trừ nợ liên tháng mở ngoặc
+      ctx.fillStyle = '#047857';
+      ctx.font = 'italic 10.5px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(totals.paidBreakdownNote, summaryStartX + panelWidth - 12, curSummaryY + 33);
+    } else {
+      ctx.fillStyle = '#047857';
+      ctx.font = 'bold 14px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('ĐÃ THANH TOÁN:', summaryStartX + summaryColLeft, curSummaryY + summaryRowHeight / 2);
+      ctx.fillStyle = '#059669';
+      ctx.font = 'bold 18px Arial, sans-serif';
+      ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totals.totalPaid)} đ`, summaryStartX + panelWidth - 12, curSummaryY + summaryRowHeight / 2);
+    }
     curSummaryY += summaryRowHeight;
   }
 
@@ -1255,9 +1519,9 @@ export default function PortalScreen() {
     const filteredDays = [];
 
     invoiceData.sortedDays.forEach((day) => {
-      // Lọc các entries thực (bỏ DAY_TOTAL gốc để tính lại sau lọc)
+      // Lọc các entries thực (bỏ các dòng tổng kết ngày gốc để tính lại sau lọc)
       const matchedEntries = (day.entries || []).filter((entry) => {
-        if (entry.type === 'DAY_TOTAL') return false;
+        if (isDaySummaryEntry(entry)) return false;
 
         const matchesName = matchSearch(entry.name, q);
         const matchesCustomer = matchSearch(entry.customerName, q);
@@ -1281,15 +1545,44 @@ export default function PortalScreen() {
 
         const deliveries = matchedEntries.filter((e) => e.type === 'MEAT' || e.type === 'DELIVERY');
         const returns = matchedEntries.filter((e) => e.type === 'RETURN');
-        const others = matchedEntries.filter((e) => e.type !== 'MEAT' && e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'DAY_TOTAL');
+        const others = matchedEntries.filter((e) => e.type !== 'MEAT' && e.type !== 'DELIVERY' && e.type !== 'RETURN' && !isDaySummaryEntry(e));
 
         const newEntries = [...deliveries, ...returns];
+        const dayMeatTotal = deliveries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+        const dayReturnTotal = returns.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+        const dayFinalTotal = dayMeatTotal - dayReturnTotal;
 
-        if (deliveries.length > 1 || (deliveries.length >= 1 && returns.length > 0)) {
-          const dayMeatTotal = deliveries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-          const dayReturnTotal = returns.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-          const dayFinalTotal = dayMeatTotal - dayReturnTotal;
+        if (day.isPartialPaid) {
+          newEntries.push({
+            type: 'DAY_TOTAL',
+            name: 'TỔNG',
+            quantity: null,
+            price: null,
+            amount: dayFinalTotal,
+          });
 
+          const batchAmounts = Array.from(
+            new Set((day.paymentsApplied || []).map((p) => p.totalPaymentAmount || p.amount))
+          );
+          const batchText = batchAmounts.map((amt) => formatBatchAmount(amt)).filter(Boolean).join(', ');
+          const paidLabel = batchText ? `ĐÃ TRẢ (đợt trả ${batchText})` : 'ĐÃ TRẢ';
+
+          newEntries.push({
+            type: 'DAY_PARTIAL_PAID',
+            name: paidLabel,
+            quantity: null,
+            price: null,
+            amount: day.paidAmount,
+          });
+
+          newEntries.push({
+            type: 'DAY_PARTIAL_REMAINING',
+            name: 'CÒN LẠI',
+            quantity: null,
+            price: null,
+            amount: day.remainingDebt,
+          });
+        } else if (deliveries.length > 1 || (deliveries.length >= 1 && returns.length > 0)) {
           newEntries.push({
             type: 'DAY_TOTAL',
             name: 'TỔNG',
@@ -1302,6 +1595,7 @@ export default function PortalScreen() {
         filteredDays.push({
           ...day,
           isPaid: day.isPaid,
+          isPartialPaid: day.isPartialPaid,
           remainingDebt: day.remainingDebt,
           entries: [...newEntries, ...others],
         });
@@ -1315,8 +1609,9 @@ export default function PortalScreen() {
       totals: {
         totalMeat: filteredTotalMeat,
         totalReturn: filteredTotalReturn,
-        totalPaid: filteredTotalPaid,
-        finalDebt,
+        totalPaid: q ? filteredTotalPaid : invoiceData.totals.totalPaid,
+        finalDebt: q ? finalDebt : invoiceData.totals.finalDebt,
+        paidBreakdownNote: q ? null : invoiceData.totals.paidBreakdownNote,
       },
     };
   }, [invoiceData, searchKeyword]);
@@ -1325,7 +1620,7 @@ export default function PortalScreen() {
   const totalMatchedItems = useMemo(() => {
     if (!searchKeyword.trim() || !displayInvoiceData?.sortedDays) return 0;
     return displayInvoiceData.sortedDays.reduce((sum, day) => {
-      return sum + (day.entries || []).filter((e) => e.type !== 'DAY_TOTAL').length;
+      return sum + (day.entries || []).filter((e) => !isDaySummaryEntry(e)).length;
     }, 0);
   }, [searchKeyword, displayInvoiceData]);
 
@@ -1700,13 +1995,21 @@ export default function PortalScreen() {
                           <View
                             style={[
                               styles.tdDateCol,
-                              day.isPaid ? styles.tdDateColPaid : styles.tdDateColUnpaid,
+                              day.isPaid
+                                ? styles.tdDateColPaid
+                                : day.isPartialPaid
+                                ? styles.tdDateColPartial
+                                : styles.tdDateColUnpaid,
                             ]}
                           >
                             <Text
                               style={[
                                 styles.tdDateText,
-                                day.isPaid ? styles.tdDateTextPaid : styles.tdDateTextUnpaid,
+                                day.isPaid
+                                  ? styles.tdDateTextPaid
+                                  : day.isPartialPaid
+                                  ? styles.tdDateTextPartial
+                                  : styles.tdDateTextUnpaid,
                               ]}
                             >
                               {day.displayDate}
@@ -1714,10 +2017,18 @@ export default function PortalScreen() {
                             <Text
                               style={[
                                 styles.tdDateStatusText,
-                                day.isPaid ? styles.tdDateStatusPaid : styles.tdDateStatusUnpaid,
+                                day.isPaid
+                                  ? styles.tdDateStatusPaid
+                                  : day.isPartialPaid
+                                  ? styles.tdDateStatusPartial
+                                  : styles.tdDateStatusUnpaid,
                               ]}
                             >
-                              {day.isPaid ? 'Đã\nthanh\ntoán' : 'Còn\nnợ'}
+                              {day.isPaid
+                                ? 'Đã\nthanh\ntoán'
+                                : day.isPartialPaid
+                                ? 'Trả\n1 phần'
+                                : 'Còn\nnợ'}
                             </Text>
                           </View>
 
@@ -1732,10 +2043,17 @@ export default function PortalScreen() {
                                 entry.customerName !== nextEntry?.customerName;
 
                               const isDayTotal = entry.type === 'DAY_TOTAL';
+                              const isPartialPaid = entry.type === 'DAY_PARTIAL_PAID';
+                              const isPartialRemaining = entry.type === 'DAY_PARTIAL_REMAINING';
+                              const isSummary = isDayTotal || isPartialPaid || isPartialRemaining;
                               const isReturn = entry.type === 'RETURN';
 
                               // Chỉ bôi màu đỏ/xanh ở cột Ngày, các dòng dữ liệu giữ màu chuẩn
-                              const rowBg = isDayTotal
+                              const rowBg = isPartialPaid
+                                ? '#F0FDF4'
+                                : isPartialRemaining
+                                ? '#FEF2F2'
+                                : isDayTotal
                                 ? '#F8FAFC'
                                 : (entry.customerName ? getRestaurantColor(entry.customerName, branchList) : '#FFFFFF');
 
@@ -1750,10 +2068,19 @@ export default function PortalScreen() {
                                     isReturn && styles.itemSubRowReturn,
                                   ]}
                                 >
-                                  {isDayTotal ? (
+                                  {isSummary ? (
                                     <View style={[styles.tdName, styles.tdTotalCellWrap]}>
-                                      <Text style={styles.tdTotalTitleText}>TỔNG</Text>
-                                      {day.invoices && day.invoices.length > 0 && (
+                                      <Text
+                                        style={[
+                                          styles.tdTotalTitleText,
+                                          isPartialPaid && { color: '#047857', fontSize: 11 },
+                                          isPartialRemaining && { color: '#DC2626', fontSize: 11.5, fontWeight: 'bold' },
+                                        ]}
+                                        numberOfLines={1}
+                                      >
+                                        {entry.name}
+                                      </Text>
+                                      {isDayTotal && day.invoices && day.invoices.length > 0 && (
                                         <TouchableOpacity
                                           style={[
                                             styles.dayTotalInvoiceBtn,
@@ -1792,7 +2119,7 @@ export default function PortalScreen() {
                                         )}
                                       </Text>
                                       {/* Nếu ngày không có dòng TỔNG nhưng có ảnh hóa đơn và đây là món đầu tiên thì hiển thị nút xem ảnh */}
-                                      {day.invoices && day.invoices.length > 0 && !day.entries.some(e => e.type === 'DAY_TOTAL') && idx === 0 && (
+                                      {day.invoices && day.invoices.length > 0 && !day.entries.some(isDaySummaryEntry) && idx === 0 && (
                                         <TouchableOpacity
                                           style={[
                                             styles.dayTotalInvoiceBtn,
@@ -1820,7 +2147,7 @@ export default function PortalScreen() {
                                       isReturn && styles.textRed,
                                     ]}
                                   >
-                                    {(!entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.quantity != null) ? entry.quantity : '-'}
+                                    {(!isSummary && !entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.quantity != null) ? entry.quantity : '-'}
                                   </Text>
                                   <Text
                                     style={[
@@ -1829,16 +2156,18 @@ export default function PortalScreen() {
                                       isReturn && styles.textRed,
                                     ]}
                                   >
-                                    {(!entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.price != null) ? formatShortPrice(entry.price) : '-'}
+                                    {(!isSummary && !entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.price != null) ? formatShortPrice(entry.price) : '-'}
                                   </Text>
                                   <Text
                                     style={[
                                       styles.tdCell,
                                       styles.tdAmount,
                                       isReturn && styles.textRed,
+                                      isPartialPaid && { color: '#047857' },
+                                      isPartialRemaining && styles.textRed,
                                     ]}
                                   >
-                                    {isReturn
+                                    {isReturn || isPartialPaid
                                       ? `-${formatCurrency(entry.amount)}`
                                       : formatCurrency(entry.amount)}
                                   </Text>
@@ -1869,14 +2198,37 @@ export default function PortalScreen() {
                           </View>
                         )}
 
-                        {displayInvoiceData.totals.totalPaid > 0 && (
-                          <View style={[styles.invSumRow, styles.invSumPaidRow]}>
-                            <Text style={[styles.invSumLabel, { color: '#047857' }]}>
-                              ĐÃ THANH TOÁN:
-                            </Text>
-                            <Text style={[styles.invSumValue, { color: '#059669' }]}>
-                              - {formatCurrency(displayInvoiceData.totals.totalPaid)}
-                            </Text>
+                        {(displayInvoiceData.totals.totalPaid > 0 || displayInvoiceData.totals.paidBreakdownNote) && (
+                          <View
+                            style={[
+                              styles.invSumRow,
+                              styles.invSumPaidRow,
+                              displayInvoiceData.totals.paidBreakdownNote && {
+                                flexDirection: 'column',
+                                alignItems: 'stretch',
+                              },
+                            ]}
+                          >
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                width: '100%',
+                              }}
+                            >
+                              <Text style={[styles.invSumLabel, { color: '#047857' }]}>
+                                ĐÃ THANH TOÁN:
+                              </Text>
+                              <Text style={[styles.invSumValue, { color: '#059669' }]}>
+                                - {formatCurrency(displayInvoiceData.totals.totalPaid)}
+                              </Text>
+                            </View>
+                            {displayInvoiceData.totals.paidBreakdownNote ? (
+                              <Text style={styles.invSumPaidBreakdownText}>
+                                {displayInvoiceData.totals.paidBreakdownNote}
+                              </Text>
+                            ) : null}
                           </View>
                         )}
 
@@ -2813,6 +3165,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
     borderRightColor: '#FECACA',
   },
+  // Trạng thái thanh toán 1 phần (màu cam)
+  tdDateColPartial: {
+    backgroundColor: '#FFF7ED',
+    borderRightColor: '#FED7AA',
+  },
   tdDateText: {
     fontSize: 10.5,
     fontWeight: '700',
@@ -2823,6 +3180,9 @@ const styles = StyleSheet.create({
   },
   tdDateTextUnpaid: {
     color: '#B91C1C',
+  },
+  tdDateTextPartial: {
+    color: '#C2410C',
   },
   tdDateStatusText: {
     fontSize: 8,
@@ -2836,6 +3196,9 @@ const styles = StyleSheet.create({
   },
   tdDateStatusUnpaid: {
     color: '#DC2626',
+  },
+  tdDateStatusPartial: {
+    color: '#C2410C',
   },
   tdItemsCol: {
     flex: 1,
@@ -2974,6 +3337,14 @@ const styles = StyleSheet.create({
   invSumPaidRow: {
     backgroundColor: '#F0FDF4',
     borderBottomColor: '#BBF7D0',
+  },
+  invSumPaidBreakdownText: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: '#047857',
+    marginTop: 4,
+    textAlign: 'right',
+    fontWeight: '500',
   },
   invSumFinalRow: {
     backgroundColor: '#EFF6FF',

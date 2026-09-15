@@ -84,10 +84,11 @@ export const useCustomerGroups = (userId) => {
   }, [loadGroups]);
 
   // Lưu nhóm mới hoặc cập nhật nhóm đã có
-  const saveGroup = useCallback(async (name, customerIds) => {
+  const saveGroup = useCallback(async (name, customerIds, options = {}) => {
     if (!name || !name.trim()) return null;
     const cleanName = name.trim();
     const cleanIds = Array.from(new Set(customerIds || []));
+    const { billingCycle = 'custom', note = '' } = options;
 
     let savedList = [];
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -108,6 +109,8 @@ export const useCustomerGroups = (userId) => {
     if (existingIdx >= 0) {
       // Cập nhật nhóm đã tồn tại
       savedList[existingIdx].customerIds = cleanIds;
+      savedList[existingIdx].billingCycle = billingCycle || savedList[existingIdx].billingCycle || 'custom';
+      savedList[existingIdx].note = note !== undefined ? note : (savedList[existingIdx].note || '');
       savedList[existingIdx].updatedAt = new Date().toISOString();
       targetGroup = savedList[existingIdx];
       updatedList = [...savedList];
@@ -117,6 +120,8 @@ export const useCustomerGroups = (userId) => {
         id: `grp_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         name: cleanName,
         customerIds: cleanIds,
+        billingCycle: billingCycle || 'custom',
+        note: note || '',
         createdAt: new Date().toISOString(),
       };
       updatedList = [targetGroup, ...savedList];
@@ -128,6 +133,39 @@ export const useCustomerGroups = (userId) => {
 
     await loadGroups();
     return targetGroup;
+  }, [storageKey, loadGroups]);
+
+  // Cập nhật chi tiết một nhóm theo id
+  const updateGroup = useCallback(async (groupId, updates = {}) => {
+    if (!groupId) return null;
+
+    let savedList = [];
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw) {
+        try {
+          savedList = JSON.parse(raw);
+        } catch (e) {
+          savedList = [];
+        }
+      }
+    }
+
+    const existingIdx = savedList.findIndex(g => g.id === groupId);
+    if (existingIdx < 0) return null;
+
+    savedList[existingIdx] = {
+      ...savedList[existingIdx],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(storageKey, JSON.stringify(savedList));
+    }
+
+    await loadGroups();
+    return savedList[existingIdx];
   }, [storageKey, loadGroups]);
 
   // Xóa một nhóm đã lưu
@@ -156,7 +194,9 @@ export const useCustomerGroups = (userId) => {
     groups,
     loading,
     saveGroup,
+    updateGroup,
     deleteGroup,
     refreshGroups: loadGroups,
   };
 };
+

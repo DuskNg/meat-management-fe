@@ -149,7 +149,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setNote('');
       setError('');
       setErrorField('');
-      
+
       // Reset trạng thái của tab ghi nợ nhanh và mặc định chọn tab thủ công
       setActiveTab('manual');
       setQuickProductName('Tiền hàng');
@@ -473,320 +473,320 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         >
           {/* Thanh chọn giữa 2 hình thức ghi nợ */}
           <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'manual' && styles.tabButtonActive]}
-            onPress={() => {
-              setActiveTab('manual');
-              setError('');
-              setErrorField('');
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'manual' && styles.tabButtonActive]}
+              onPress={() => {
+                setActiveTab('manual');
+                setError('');
+                setErrorField('');
+              }}
+            >
+              <Text style={[styles.tabButtonText, activeTab === 'manual' && styles.tabButtonTextActive]}>
+                📝 Ghi nợ thủ công
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'quick' && styles.tabButtonActive]}
+              onPress={() => {
+                setActiveTab('quick');
+                setError('');
+                setErrorField('');
+              }}
+            >
+              <Text style={[styles.tabButtonText, activeTab === 'quick' && styles.tabButtonTextActive]}>
+                ⚡ Ghi nợ nhanh
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Thông báo lỗi chung */}
+          {error && !['date', 'product', 'quantity', 'price', 'quickAmount', 'quickProductName'].includes(errorField) ? (
+            <Text style={styles.errorText}>⚠️ {error}</Text>
+          ) : null}
+
+          {/* ── NGÀY GHI NỢ ĐƯA LÊN TRÊN CÙNG ĐẦU TIÊN ── */}
+          <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
+          <DatePickerInput
+            value={dateStr}
+            onChange={(val) => {
+              setDateStr(val);
+              if (errorField === 'date') {
+                setError('');
+                setErrorField('');
+              }
             }}
-          >
-            <Text style={[styles.tabButtonText, activeTab === 'manual' && styles.tabButtonTextActive]}>
-              📝 Ghi nợ thủ công
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'quick' && styles.tabButtonActive]}
-            onPress={() => {
-              setActiveTab('quick');
-              setError('');
-              setErrorField('');
-            }}
-          >
-            <Text style={[styles.tabButtonText, activeTab === 'quick' && styles.tabButtonTextActive]}>
-              ⚡ Ghi nợ nhanh
-            </Text>
-          </TouchableOpacity>
-        </View>
+            allowFuture={true}
+            hasError={errorField === 'date'}
+            disabled={disableDate}
+            minDate={minDate}
+            maxDate={maxDate}
+          />
+          {errorField === 'date' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 
-        {/* Thông báo lỗi chung */}
-        {error && !['date', 'product', 'quantity', 'price', 'quickAmount', 'quickProductName'].includes(errorField) ? (
-          <Text style={styles.errorText}>⚠️ {error}</Text>
-        ) : null}
+          <View style={styles.divider} />
 
-        {/* ── NGÀY GHI NỢ ĐƯA LÊN TRÊN CÙNG ĐẦU TIÊN ── */}
-        <Text style={styles.label}>📅 Ngày ghi nợ:</Text>
-        <DatePickerInput
-          value={dateStr}
-          onChange={(val) => {
-            setDateStr(val);
-            if (errorField === 'date') {
-              setError('');
-              setErrorField('');
-            }
-          }}
-          allowFuture={true}
-          hasError={errorField === 'date'}
-          disabled={disableDate}
-          minDate={minDate}
-          maxDate={maxDate}
-        />
-        {errorField === 'date' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
-
-        <View style={styles.divider} />
-
-        {activeTab === 'manual' ? (
-          <>
-            {/* ── GIỎ HÀNG: Danh sách mặt hàng đã thêm ── */}
-            {cartItems.length > 0 && (
-              <View style={styles.cartSection}>
-                <View style={styles.cartHeader}>
-                  <Text style={styles.cartTitle}>
-                    🛒 Đơn hàng ({cartItems.length} mặt hàng)
-                  </Text>
-                  <Text style={styles.cartTotalText}>{formatCurrency(cartTotal)}</Text>
-                </View>
-                <ScrollView style={styles.cartItemsScroll} nestedScrollEnabled={true}>
-                  {cartItems.map((item) => (
-                    <View key={item.tempId} style={styles.cartItem}>
-                      <View style={styles.cartItemInfo}>
-                        <Text style={styles.cartItemText}>
-                          <Text style={styles.cartItemName}>{item.product.name}</Text>
-                          <Text style={styles.cartItemMeta}>
-                            {` - ${item.quantity} ${item.product.unit} × ${item.displayPrice}đ = `}
-                            <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>
-                              {formatCurrency(item.amount)}
+          {activeTab === 'manual' ? (
+            <>
+              {/* ── GIỎ HÀNG: Danh sách mặt hàng đã thêm ── */}
+              {cartItems.length > 0 && (
+                <View style={styles.cartSection}>
+                  <View style={styles.cartHeader}>
+                    <Text style={styles.cartTitle}>
+                      🛒 Đơn hàng ({cartItems.length} mặt hàng)
+                    </Text>
+                    <Text style={styles.cartTotalText}>{formatCurrency(cartTotal)}</Text>
+                  </View>
+                  <ScrollView style={styles.cartItemsScroll} nestedScrollEnabled={true}>
+                    {cartItems.map((item) => (
+                      <View key={item.tempId} style={styles.cartItem}>
+                        <View style={styles.cartItemInfo}>
+                          <Text style={styles.cartItemText}>
+                            <Text style={styles.cartItemName}>{item.product.name}</Text>
+                            <Text style={styles.cartItemMeta}>
+                              {` - ${item.quantity} ${item.product.unit} × ${item.displayPrice}đ = `}
+                              <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>
+                                {formatCurrency(item.amount)}
+                              </Text>
                             </Text>
                           </Text>
-                        </Text>
+                        </View>
+                        {/* Nút xóa mặt hàng khỏi giỏ */}
+                        <TouchableOpacity
+                          style={styles.cartRemoveBtn}
+                          onPress={() => handleRemoveFromCart(item.tempId)}
+                        >
+                          <Text style={styles.cartRemoveText}>✕</Text>
+                        </TouchableOpacity>
                       </View>
-                      {/* Nút xóa mặt hàng khỏi giỏ */}
-                      <TouchableOpacity
-                        style={styles.cartRemoveBtn}
-                        onPress={() => handleRemoveFromCart(item.tempId)}
-                      >
-                        <Text style={styles.cartRemoveText}>✕</Text>
-                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* ── CHỌN LOẠI THỊT (dạng Select Dropdown) ── */}
+              <Text style={styles.label}>
+                {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt:'}
+              </Text>
+              <ProductSelector
+                products={products}
+                currentProduct={currentProduct}
+                onSelectProduct={handleSelectProduct}
+                onClearProduct={() => {
+                  setCurrentProduct(null);
+                  setCurrentPrice('');
+                  setProductSearch('');
+                }}
+                onAddProduct={() => productModalRef.current?.open()}
+                formatCurrency={formatCurrency}
+                hasError={errorField === 'product'}
+                error={error}
+              />
+
+              <>
+                {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
+                {currentProduct ? (
+                  <View>
+                    {/* Khối lượng */}
+                    <Text style={styles.label}>
+                      Khối lượng ({currentProduct.unit}):
+                    </Text>
+                    <View style={styles.numericRow}>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          { flex: 1, minWidth: 0, fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 0 },
+                          errorField === 'quantity' && styles.inputError
+                        ]}
+                        placeholder="Ví dụ: 1.5"
+                        placeholderTextColor={COLORS.textLight}
+                        keyboardType="decimal-pad"
+                        value={currentQuantity}
+                        onChangeText={(text) => {
+                          // Chỉ cho phép số, dấu chấm và dấu phẩy
+                          const filtered = text.replace(/[^0-9.,]/g, '');
+                          setCurrentQuantity(filtered);
+                          if (errorField === 'quantity') {
+                            setError('');
+                            setErrorField('');
+                          }
+                        }}
+                      />
+                      <Text style={styles.unitText}>{currentProduct.unit}</Text>
                     </View>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
+                    {errorField === 'quantity' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 
-            {/* ── CHỌN LOẠI THỊT (dạng Select Dropdown) ── */}
-            <Text style={styles.label}>
-              {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt:'}
-            </Text>
-            <ProductSelector
-              products={products}
-              currentProduct={currentProduct}
-              onSelectProduct={handleSelectProduct}
-              onClearProduct={() => {
-                setCurrentProduct(null);
-                setCurrentPrice('');
-                setProductSearch('');
-              }}
-              onAddProduct={() => productModalRef.current?.open()}
-              formatCurrency={formatCurrency}
-              hasError={errorField === 'product'}
-              error={error}
-            />
-
-            <>
-              {/* ── FORM NHẬP MẶT HÀNG ĐANG CHỌN ── */}
-              {currentProduct ? (
-                <View>
-                  {/* Khối lượng */}
-                  <Text style={styles.label}>
-                    Khối lượng ({currentProduct.unit}):
-                  </Text>
-                  <View style={styles.numericRow}>
+                    {/* Đơn giá */}
+                    <Text style={styles.label}>Giá bán thực tế tại thời điểm này (VND):</Text>
                     <TextInput
                       style={[
                         styles.input,
-                        { flex: 1, minWidth: 0, fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 0 },
-                        errorField === 'quantity' && styles.inputError
+                        { fontSize: 16, fontWeight: 'bold' },
+                        errorField === 'price' && styles.inputError
                       ]}
-                      placeholder="Ví dụ: 1.5"
+                      placeholder="Ví dụ: 130.000"
                       placeholderTextColor={COLORS.textLight}
-                      keyboardType="decimal-pad"
-                      value={currentQuantity}
+                      keyboardType="number-pad"
+                      value={currentPrice}
                       onChangeText={(text) => {
-                        // Chỉ cho phép số, dấu chấm và dấu phẩy
-                        const filtered = text.replace(/[^0-9.,]/g, '');
-                        setCurrentQuantity(filtered);
-                        if (errorField === 'quantity') {
+                        setCurrentPrice(formatNumberString(text));
+                        if (errorField === 'price') {
                           setError('');
                           setErrorField('');
                         }
                       }}
+                      onBlur={() => {
+                        const pVal = parseNumberString(currentPrice);
+                        if (pVal > 0 && pVal < 1000) {
+                          setCurrentPrice(formatNumberString((pVal * 1000).toString()));
+                        }
+                      }}
                     />
-                    <Text style={styles.unitText}>{currentProduct.unit}</Text>
-                  </View>
-                  {errorField === 'quantity' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
+                    {errorField === 'price' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 
-                  {/* Đơn giá */}
-                  <Text style={styles.label}>Giá bán thực tế tại thời điểm này (VND):</Text>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      { fontSize: 16, fontWeight: 'bold' },
-                      errorField === 'price' && styles.inputError
-                    ]}
-                    placeholder="Ví dụ: 130.000"
-                    placeholderTextColor={COLORS.textLight}
-                    keyboardType="number-pad"
-                    value={currentPrice}
-                    onChangeText={(text) => {
-                      setCurrentPrice(formatNumberString(text));
-                      if (errorField === 'price') {
-                        setError('');
-                        setErrorField('');
-                      }
-                    }}
-                    onBlur={() => {
-                      const pVal = parseNumberString(currentPrice);
-                      if (pVal > 0 && pVal < 1000) {
-                        setCurrentPrice(formatNumberString((pVal * 1000).toString()));
-                      }
-                    }}
-                  />
-                  {errorField === 'price' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
-
-                  {/* Xem trước thành tiền & lãi mặt hàng đang nhập */}
-                  {displayCurrentSubtotal > 0 && (
-                    <View style={styles.previewRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={styles.previewLabel}>Thành tiền:</Text>
-                        <Text style={styles.previewValue}>
-                          {formatCurrency(displayCurrentSubtotal)}
-                        </Text>
-                      </View>
-                      {displayCurrentCost > 0 && displayCurrentProfit > 0 && (
+                    {/* Xem trước thành tiền & lãi mặt hàng đang nhập */}
+                    {displayCurrentSubtotal > 0 && (
+                      <View style={styles.previewRow}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={[styles.previewLabel, { color: '#0369A1' }]}>Lãi dự tính:</Text>
-                          <Text style={[styles.previewValue, { color: '#0369A1', fontWeight: 'bold' }]}>
-                            +{formatCurrency(displayCurrentProfit)} ({displayCurrentMargin}%)
+                          <Text style={styles.previewLabel}>Thành tiền:</Text>
+                          <Text style={styles.previewValue}>
+                            {formatCurrency(displayCurrentSubtotal)}
                           </Text>
                         </View>
-                      )}
-                    </View>
-                  )}
+                        {displayCurrentCost > 0 && displayCurrentProfit > 0 && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.previewLabel, { color: '#0369A1' }]}>Lãi dự tính:</Text>
+                            <Text style={[styles.previewValue, { color: '#0369A1', fontWeight: 'bold' }]}>
+                              +{formatCurrency(displayCurrentProfit)} ({displayCurrentMargin}%)
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
 
-                  {/* Nút thêm vào giỏ hàng */}
-                  <TouchableOpacity style={styles.addToCartBtn} onPress={handleAddToCart}>
-                    <Text style={styles.addToCartText}>➕ THÊM VÀO ĐƠN</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : products.length === 0 ? (
-                <Text style={[styles.selectPrompt, { color: COLORS.dangerDark, fontWeight: '600' }]}>
-                  Hiện tại chưa có loại thịt, vui lòng thêm loại thịt.
-                </Text>
-              ) : cartItems.length === 0 ? (
-                <Text style={styles.selectPrompt}>
-                  Vui lòng chạm chọn loại thịt ở danh sách phía trên.
-                </Text>
-              ) : null}
-
-              {/* ── GHI CHÚ CHUNG CHO CẢ ĐƠN ── */}
-              {(cartItems.length > 0 || currentProduct) && (
-                <View style={styles.sharedFields}>
-                  <View style={styles.divider} />
-                  <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
-                    placeholderTextColor={COLORS.textLight}
-                    value={note}
-                    onChangeText={setNote}
-                  />
-                </View>
-              )}
-            </>
-          </>
-        ) : (
-          /* ── TAB GHI NỢ NHANH ── */
-          <>
-            <>
-              {/* Nội dung/Tên khoản nợ */}
-              <Text style={styles.label}>📝 Nội dung ghi nợ:</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  { fontSize: 16, fontWeight: 'bold' },
-                  errorField === 'quickProductName' && styles.inputError
-                ]}
-                placeholder="Ví dụ: Tiền hàng, Tiền túi bóng..."
-                placeholderTextColor={COLORS.textLight}
-                value={quickProductName}
-                onChangeText={(text) => {
-                  setQuickProductName(text);
-                  if (errorField === 'quickProductName') {
-                    setError('');
-                    setErrorField('');
-                  }
-                }}
-              />
-              {errorField === 'quickProductName' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
-
-              {/* Số tiền nợ và % Lợi nhuận */}
-              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-                <View style={{ flex: 1.5 }}>
-                  <Text style={styles.label}>💰 Số tiền nợ (VND):</Text>
-                  <MoneyInput
-                    style={[
-                      styles.quickAmountContainer,
-                      errorField === 'quickAmount' && styles.inputError
-                    ]}
-                    inputStyle={{ fontSize: 18, fontWeight: 'bold', color: COLORS.danger }}
-                    value={quickAmountVND}
-                    onChangeValue={(val) => {
-                      setQuickAmountVND(val);
-                      if (errorField === 'quickAmount') {
-                        setError('');
-                        setErrorField('');
-                      }
-                    }}
-                    placeholder="Ví dụ: 500"
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>📈 % Lợi nhuận:</Text>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      {
-                        height: 48,
-                        borderColor: '#7DD3FC',
-                        backgroundColor: '#F0F9FF',
-                        color: '#0369A1',
-                        fontWeight: 'bold',
-                        fontSize: 16,
-                        textAlign: 'center',
-                        marginBottom: 0
-                      }
-                    ]}
-                    placeholder="Ví dụ: 15"
-                    placeholderTextColor="#0284C7"
-                    value={quickProfitPercent}
-                    onChangeText={(txt) => setQuickProfitPercent(txt.replace(/[^0-9.]/g, ''))}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-              </View>
-              {errorField === 'quickAmount' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
-
-              {quickAmountVND > 0 && quickProfitPercent ? (
-                <View style={{ backgroundColor: '#F0F9FF', borderColor: '#BAE6FD', borderWidth: 1, borderRadius: 8, padding: 8, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 12, color: '#0369A1', fontWeight: '600' }}>💵 Tiền lãi ước tính ({quickProfitPercent}%):</Text>
-                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0369A1' }}>
-                    +{formatCurrency(Math.round(quickAmountVND * (parseFloat(quickProfitPercent) / 100)))}
+                    {/* Nút thêm vào giỏ hàng */}
+                    <TouchableOpacity style={styles.addToCartBtn} onPress={handleAddToCart}>
+                      <Text style={styles.addToCartText}>➕ THÊM VÀO ĐƠN</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : products.length === 0 ? (
+                  <Text style={[styles.selectPrompt, { color: COLORS.dangerDark, fontWeight: '600' }]}>
+                    Hiện tại chưa có loại thịt, vui lòng thêm loại thịt.
                   </Text>
-                </View>
-              ) : null}
+                ) : cartItems.length === 0 ? (
+                  <Text style={styles.selectPrompt}>
+                    Vui lòng chạm chọn loại thịt ở danh sách phía trên.
+                  </Text>
+                ) : null}
 
-              {/* Ghi chú thêm cho nợ nhanh */}
-              <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Ví dụ: Tiền hàng sáng nay"
-                placeholderTextColor={COLORS.textLight}
-                value={note}
-                onChangeText={setNote}
-              />
+                {/* ── GHI CHÚ CHUNG CHO CẢ ĐƠN ── */}
+                {(cartItems.length > 0 || currentProduct) && (
+                  <View style={styles.sharedFields}>
+                    <View style={styles.divider} />
+                    <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
+                      placeholderTextColor={COLORS.textLight}
+                      value={note}
+                      onChangeText={setNote}
+                    />
+                  </View>
+                )}
+              </>
             </>
-          </>
-        )}
+          ) : (
+            /* ── TAB GHI NỢ NHANH ── */
+            <>
+              <>
+                {/* Nội dung/Tên khoản nợ */}
+                <Text style={styles.label}>📝 Nội dung ghi nợ:</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { fontSize: 16, fontWeight: 'bold' },
+                    errorField === 'quickProductName' && styles.inputError
+                  ]}
+                  placeholder="Ví dụ: Tiền hàng, Tiền túi bóng..."
+                  placeholderTextColor={COLORS.textLight}
+                  value={quickProductName}
+                  onChangeText={(text) => {
+                    setQuickProductName(text);
+                    if (errorField === 'quickProductName') {
+                      setError('');
+                      setErrorField('');
+                    }
+                  }}
+                />
+                {errorField === 'quickProductName' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
+
+                {/* Số tiền nợ và % Lợi nhuận */}
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                  <View style={{ flex: 1.5 }}>
+                    <Text style={styles.label}>💰 Số tiền nợ (VND):</Text>
+                    <MoneyInput
+                      style={[
+                        styles.quickAmountContainer,
+                        errorField === 'quickAmount' && styles.inputError
+                      ]}
+                      inputStyle={{ fontSize: 18, fontWeight: 'bold', color: COLORS.danger }}
+                      value={quickAmountVND}
+                      onChangeValue={(val) => {
+                        setQuickAmountVND(val);
+                        if (errorField === 'quickAmount') {
+                          setError('');
+                          setErrorField('');
+                        }
+                      }}
+                      placeholder="Ví dụ: 500"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>📈 % Lợi nhuận:</Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          height: 48,
+                          borderColor: '#7DD3FC',
+                          backgroundColor: '#F0F9FF',
+                          color: '#0369A1',
+                          fontWeight: 'bold',
+                          fontSize: 16,
+                          textAlign: 'center',
+                          marginBottom: 0
+                        }
+                      ]}
+                      placeholder="Ví dụ: 15"
+                      placeholderTextColor="#0284C7"
+                      value={quickProfitPercent}
+                      onChangeText={(txt) => setQuickProfitPercent(txt.replace(/[^0-9.]/g, ''))}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                </View>
+                {errorField === 'quickAmount' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
+
+                {quickAmountVND > 0 && quickProfitPercent ? (
+                  <View style={{ backgroundColor: '#F0F9FF', borderColor: '#BAE6FD', borderWidth: 1, borderRadius: 8, padding: 8, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: '#0369A1', fontWeight: '600' }}>💵 Tiền lãi ước tính ({quickProfitPercent}%):</Text>
+                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0369A1' }}>
+                      +{formatCurrency(Math.round(quickAmountVND * (parseFloat(quickProfitPercent) / 100)))}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Ghi chú thêm cho nợ nhanh */}
+                <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ví dụ: Tiền hàng sáng nay"
+                  placeholderTextColor={COLORS.textLight}
+                  value={note}
+                  onChangeText={setNote}
+                />
+              </>
+            </>
+          )}
         </ScrollView>
 
         {/* ── TỔNG TIỀN CẢ ĐƠN (cố định ở bottom) ── */}

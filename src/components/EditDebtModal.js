@@ -322,14 +322,14 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
     if (editingItemId !== null) {
       setCartItems((prev) => prev.map((item) => item.tempId === editingItemId
         ? {
-            ...item,
-            quantity: q,
-            price: p,
-            costPrice: item.costPrice !== undefined ? item.costPrice : (currentProduct?.costPrice || 0),
-            displayQuantity: currentQuantity,
-            displayPrice: currentPrice,
-            amount: q * p
-          }
+          ...item,
+          quantity: q,
+          price: p,
+          costPrice: item.costPrice !== undefined ? item.costPrice : (currentProduct?.costPrice || 0),
+          displayQuantity: currentQuantity,
+          displayPrice: currentPrice,
+          amount: q * p
+        }
         : item
       ));
       setEditingItemId(null);

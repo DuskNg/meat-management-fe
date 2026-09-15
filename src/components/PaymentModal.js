@@ -127,7 +127,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
         const mm = (d.getMonth() + 1).toString().padStart(2, '0');
         const yyyy = d.getFullYear();
         const dateStr = `${dd}/${mm}/${yyyy}`;
-        
+
         const prefix = `Thanh toán nợ Tháng ${targetMonthKey} (ngày ${dateStr})`;
         finalNote = finalNote ? `${prefix} - ${finalNote}` : prefix;
 

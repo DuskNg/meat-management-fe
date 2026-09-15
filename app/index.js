@@ -1,5 +1,4 @@
-// meat-management-fe/app/index.js
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -57,6 +56,8 @@ import PortalFeedbackAdminModal from '../src/components/PortalFeedbackAdminModal
 import InvoiceImageUploadModal from '../src/components/InvoiceImageUploadModal';
 import InvoiceImageViewerModal from '../src/components/InvoiceImageViewerModal';
 import BatchExportDebtModal from '../src/components/BatchExportDebtModal';
+import CustomerGroupsModal from '../src/components/CustomerGroupsModal';
+import { useCustomerGroups } from '../src/hooks/useCustomerGroups';
 import QuickNoteModal from '../src/components/QuickNoteModal';
 import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewModal';
 import { showGlobalToast } from '../src/store/toastStore';
@@ -160,9 +161,24 @@ export default function DashboardScreen() {
   const regularCustomersModalRef = useRef(null); // Modal quản lý khách quen và đối chiếu công nợ tránh sót đơn
   const portalManagementModalRef = useRef(null); // Modal quản lý Link Ghim Zalo cho nhóm khách và NCC
   const batchExportDebtModalRef = useRef(null); // Modal xuất công nợ hàng loạt (tải ảnh PC / chuyển tiếp Zalo)
+  const customerGroupsModalRef = useRef(null); // Modal quản lý nhóm nhà hàng & chuỗi chi nhánh
   const portalFeedbackAdminModalRef = useRef(null); // Modal quản lý phản hồi, thắc mắc công nợ từ khách hàng qua Zalo Portal
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
   const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
+
+  // Nhắc hẹn chốt công nợ định kỳ theo nhóm nhà hàng (ví dụ: nhóm Trường Hoàng từ 15 đến 31)
+  const [dismissedReminderGroupIds, setDismissedReminderGroupIds] = useState(new Set());
+  const { groups: userCustomerGroups } = useCustomerGroups(auth.user?.id);
+  const todayDayOfMonth = new Date().getDate();
+  const activeReminderGroups = useMemo(() => {
+    if (!userCustomerGroups || userCustomerGroups.length === 0) return [];
+    return userCustomerGroups.filter((g) => {
+      if (dismissedReminderGroupIds.has(g.id)) return false;
+      if (g.billingCycle === '15_to_end' && todayDayOfMonth >= 15) return true;
+      if (g.billingCycle === 'end_of_month' && todayDayOfMonth >= 26) return true;
+      return false;
+    });
+  }, [userCustomerGroups, todayDayOfMonth, dismissedReminderGroupIds]);
 
   // Lấy số lượng phản hồi đang chờ xử lý từ khách hàng Zalo Portal (cập nhật mỗi 30s)
   const { data: pendingFeedbacksRes } = useQuery({
@@ -2900,6 +2916,37 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* BANNER NHẮC HẸN CHỐT CÔNG NỢ ĐỊNH KỲ CHO CÁC NHÓM NHÀ HÀNG */}
+        {!auth.user?.workspaceMember && activeReminderGroups.length > 0 && (
+          <View style={styles.groupReminderBannerContainer}>
+            {activeReminderGroups.map((rg) => (
+              <View key={rg.id} style={styles.groupReminderBanner}>
+                <Text style={styles.groupReminderIcon}>📅</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupReminderTitle}>
+                    Đến kỳ gửi công nợ {rg.billingCycle === '15_to_end' ? 'nửa tháng (15 - 31)' : 'cuối tháng'}: <Text style={{ fontWeight: 'bold' }}>{rg.name}</Text>
+                  </Text>
+                  <Text style={styles.groupReminderSub}>
+                    Gồm {(rg.customerIds || []).length} quán thành viên. Bấm nút bên cạnh để xuất bảng kê gửi Zalo ngay!
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.groupReminderActionBtn}
+                  onPress={() => batchExportDebtModalRef.current?.open(rg.customerIds)}
+                >
+                  <Text style={styles.groupReminderActionBtnText}>📊 Xuất nợ ngay</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.groupReminderDismissBtn}
+                  onPress={() => setDismissedReminderGroupIds((prev) => new Set([...prev, rg.id]))}
+                >
+                  <Text style={styles.groupReminderDismissBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* TỔNG TIỀN NỢ & KINH DOANH: Chỉ hiện với chủ tài khoản, ẩn với tài khoản thành viên */}
         {!auth.user?.workspaceMember && <View style={styles.summaryCard}>
           {/* Thanh tiêu đề nhỏ hiển thị tháng và gợi ý mở rộng */}
@@ -3107,6 +3154,22 @@ export default function DashboardScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.smartDebtMenuTitle}>Thu nợ hàng loạt</Text>
                     <Text style={styles.smartDebtMenuSub}>Thu tiền trả nợ từ nhiều khách hàng cùng lúc</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    customerGroupsModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>🏢</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Quản lý nhóm nhà hàng & chuỗi</Text>
+                    <Text style={styles.smartDebtMenuSub}>Gom cụm chi nhánh, xem tổng nợ chuỗi, thu nợ gộp & nhắc lịch</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -3382,7 +3445,11 @@ export default function DashboardScreen() {
       <BatchDebtModal ref={batchDebtModalRef} onRefresh={handleRefreshAll} />
 
       {/* MODAL THU NỢ HÀNG LOẠT (Ẩn) */}
-      <BatchPaymentModal ref={batchPaymentModalRef} onRefresh={handleRefreshAll} />
+      <BatchPaymentModal
+        ref={batchPaymentModalRef}
+        onRefresh={handleRefreshAll}
+        currentUserId={auth.user?.id}
+      />
 
       {/* MODAL XUẤT CÔNG NỢ DẠNG ẢNH (Ẩn) */}
       <ExportDebtModal ref={exportDebtModalRef} onRefresh={handleRefreshAll} />
@@ -3503,6 +3570,15 @@ export default function DashboardScreen() {
         ref={batchExportDebtModalRef}
         popupModalRef={popupModalRef}
         currentUserId={auth.user?.id}
+      />
+
+      {/* MODAL QUẢN LÝ NHÓM NHÀ HÀNG & CHUỖI CHI NHÁNH */}
+      <CustomerGroupsModal
+        ref={customerGroupsModalRef}
+        currentUserId={auth.user?.id}
+        popupModalRef={popupModalRef}
+        onGroupBatchPayment={(group) => batchPaymentModalRef.current?.openWithGroup(group)}
+        onGroupBatchExport={(group) => batchExportDebtModalRef.current?.open(group.customerIds)}
       />
 
       {/* MODAL GHI CHÚ NHANH CẦN NHỚ */}
@@ -5627,5 +5703,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#334155',
+  },
+  /* Styles cho Banner nhắc nhở chốt nợ nhóm nhà hàng */
+  groupReminderBannerContainer: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    gap: 8,
+  },
+  groupReminderBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  groupReminderIcon: {
+    fontSize: 20,
+  },
+  groupReminderTitle: {
+    fontSize: 13,
+    color: '#92400E',
+    lineHeight: 18,
+  },
+  groupReminderSub: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
+  },
+  groupReminderActionBtn: {
+    backgroundColor: '#D97706',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  groupReminderActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  groupReminderDismissBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FDE68A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupReminderDismissBtnText: {
+    color: '#78350F',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
 });

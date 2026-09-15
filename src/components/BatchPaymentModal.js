@@ -18,6 +18,7 @@ import PinSetupModal from './PinSetupModal';
 import CustomSelect from './CustomSelect';
 import { api } from '../api/client';
 import { COLORS, SHADOWS } from '../theme';
+import { useCustomerGroups } from '../hooks/useCustomerGroups';
 import { hasPin, isSessionValid } from '../store/pinStore';
 import { showGlobalToast } from '../store/toastStore';
 import * as SecureStore from 'expo-secure-store';
@@ -121,14 +122,22 @@ const clearDraftCache = async () => {
   }
 };
 
-const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
+const BatchPaymentModal = forwardRef(({ onRefresh, currentUserId }, ref) => {
   const [visible, setVisible] = useState(false);
   const [dateStr, setDateStr] = useState(getTodayFormatted());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [customers, setCustomers] = useState([]);
+  const [allCustomers, setAllCustomers] = useState([]);
   const [rows, setRows] = useState([]);
   const [activeRowTempId, setActiveRowTempId] = useState(null);
+
+  // Quản lý trạng thái Thu nợ gộp theo nhóm nhà hàng
+  const [selectedGroupId, setSelectedGroupId] = useState('none');
+  const [groupLumpSum, setGroupLumpSum] = useState('');
+  const [isGroupSelectOpen, setIsGroupSelectOpen] = useState(false);
+
+  const { groups, refreshGroups } = useCustomerGroups(currentUserId);
 
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
@@ -144,17 +153,30 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
       setVisible(true);
       setDateStr(getTodayFormatted());
       setError('');
+      setSelectedGroupId('none');
+      setGroupLumpSum('');
       isLoadedCacheRef.current = false;
       fetchData();
+      refreshGroups();
+    },
+    openWithGroup: (targetGroup) => {
+      setVisible(true);
+      setDateStr(getTodayFormatted());
+      setError('');
+      setGroupLumpSum('');
+      isLoadedCacheRef.current = false;
+      fetchData(targetGroup);
+      refreshGroups();
     },
     close: () => setVisible(false),
   }));
 
   // Helper tạo dòng thu nợ mới với ID luôn unique
-  const createEmptyRow = () => ({
+  const createEmptyRow = (customerId = null) => ({
     tempId: `row_${rowIdCounterRef.current++}`,
-    selectedCustomerId: null,
+    selectedCustomerId: customerId,
     amount: '',
+    amountVND: 0,
   });
 
   // Khởi tạo danh sách hàng mặc định (10 hàng)
@@ -169,17 +191,36 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   // Tải danh sách khách hàng từ server
-  const fetchData = async () => {
+  const fetchData = async (targetGroup = null) => {
     setLoading(true);
     setError('');
     try {
       const custRes = await api.get('/customers?isBadDebt=false');
-      const custData = custRes.data?.data || [];
-      // Chỉ lấy những khách hàng đang phát sinh công nợ (nợ > 0)
-      const debtCustomers = custData.filter((c) => Math.round(c.debt || 0) > 0);
+      const allCustData = custRes.data?.data || (Array.isArray(custRes.data) ? custRes.data : []);
+      setAllCustomers(allCustData);
+
+      // Chỉ lấy những khách hàng đang phát sinh công nợ (nợ > 0) cho danh sách chọn lẻ
+      const debtCustomers = allCustData.filter((c) => Math.round(c.debt || 0) > 0);
       setCustomers(debtCustomers);
 
-      // Đọc bản nháp từ cache nếu có
+      // Nếu mở kèm nhóm chỉ định cụ thể
+      if (targetGroup && targetGroup.id) {
+        setSelectedGroupId(targetGroup.id);
+        const memberIds = new Set(targetGroup.customerIds || []);
+        const groupCusts = allCustData.filter((c) => memberIds.has(c.id));
+        groupCusts.sort((a, b) => (parseFloat(b.debt) || 0) - (parseFloat(a.debt) || 0));
+
+        if (groupCusts.length > 0) {
+          const groupRows = groupCusts.map((c) => createEmptyRow(c.id));
+          setRows(groupRows);
+          isLoadedCacheRef.current = true;
+          return;
+        }
+      } else {
+        setSelectedGroupId('none');
+      }
+
+      // Đọc bản nháp từ cache nếu có (khi không mở theo nhóm)
       const draft = await loadDraftCache();
       if (draft && Array.isArray(draft.rows) && draft.rows.length > 0) {
         setRows(padRowsToMin(draft.rows, 10));
@@ -199,9 +240,9 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Tự động lưu bản nháp khi rows, dateStr thay đổi
+  // Tự động lưu bản nháp khi rows, dateStr thay đổi (chỉ lưu khi thu lẻ)
   useEffect(() => {
-    if (!visible || !isLoadedCacheRef.current) return;
+    if (!visible || !isLoadedCacheRef.current || selectedGroupId !== 'none') return;
     const hasData = rows.some((r) => r.selectedCustomerId || parseNumberString(r.amount) > 0);
     if (hasData) {
       saveDraftCache({
@@ -210,13 +251,147 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
         savedAt: new Date().toISOString(),
       });
     }
-  }, [rows, dateStr, visible]);
+  }, [rows, dateStr, visible, selectedGroupId]);
 
   // Xóa toàn bộ nháp
   const handleClearDraft = async () => {
     await clearDraftCache();
     setRows(createInitialRows(10));
+    setSelectedGroupId('none');
+    setGroupLumpSum('');
     setError('');
+  };
+
+  // Chọn nhóm nhà hàng từ dropdown
+  const handleSelectGroup = (groupId) => {
+    setSelectedGroupId(groupId);
+    setGroupLumpSum('');
+    setError('');
+
+    if (groupId === 'none') {
+      setRows(createInitialRows(10));
+      return;
+    }
+
+    const group = groups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    const memberIds = new Set(group.customerIds || []);
+    const groupCusts = allCustomers.filter((c) => memberIds.has(c.id));
+    // Ưu tiên quán có công nợ nợ nhiều nhất lên đầu
+    groupCusts.sort((a, b) => (parseFloat(b.debt) || 0) - (parseFloat(a.debt) || 0));
+
+    if (groupCusts.length > 0) {
+      const groupRows = groupCusts.map((c) => createEmptyRow(c.id));
+      setRows(groupRows);
+    } else {
+      setRows(createInitialRows(10));
+      setError(`Nhóm [${group.name}] hiện chưa có quán thành viên nào.`);
+    }
+  };
+
+  // 1. Tự động trừ cuốn chiếu (quán nợ trước/từ trên xuống dứt điểm trước)
+  const handleAutoAllocateFIFO = () => {
+    const lumpSum = parseNumberString(groupLumpSum);
+    if (lumpSum <= 0) {
+      setError('Vui lòng nhập số tiền chuỗi chuyển khoản gộp > 0 đ.');
+      return;
+    }
+    setError('');
+    let remaining = lumpSum;
+    const updated = rows.map((r) => {
+      if (!r.selectedCustomerId) return r;
+      const cust = allCustomers.find((c) => c.id === r.selectedCustomerId);
+      const debt = Math.round(Math.max(0, cust?.debt || 0));
+      if (debt <= 0 || remaining <= 0) {
+        return { ...r, amount: '', amountVND: 0 };
+      }
+      const pay = Math.min(debt, remaining);
+      remaining -= pay;
+      return {
+        ...r,
+        amountVND: pay,
+        amount: formatNumberString(pay.toString()),
+      };
+    });
+    setRows(updated);
+    showGlobalToast(
+      `Đã tự động trừ dứt điểm ${formatCurrency(lumpSum - remaining)} cho các quán từ trên xuống!`,
+      'success'
+    );
+  };
+
+  // 2. Phân bổ theo tỷ lệ % nợ
+  const handleAutoAllocateProRata = () => {
+    const lumpSum = parseNumberString(groupLumpSum);
+    if (lumpSum <= 0) {
+      setError('Vui lòng nhập số tiền chuỗi chuyển khoản gộp > 0 đ.');
+      return;
+    }
+    setError('');
+
+    // Tổng nợ của các quán trong bảng
+    const totalDebt = rows.reduce((sum, r) => {
+      const cust = allCustomers.find((c) => c.id === r.selectedCustomerId);
+      return sum + Math.round(Math.max(0, cust?.debt || 0));
+    }, 0);
+
+    if (totalDebt <= 0) {
+      setError('Tổng công nợ của các nhà hàng hiện tại bằng 0 đ.');
+      return;
+    }
+
+    let allocatedTotal = 0;
+    const debtRows = rows.filter((r) => {
+      const cust = allCustomers.find((c) => c.id === r.selectedCustomerId);
+      return cust && (cust.debt || 0) > 0;
+    });
+
+    const updated = rows.map((r) => {
+      if (!r.selectedCustomerId) return r;
+      const cust = allCustomers.find((c) => c.id === r.selectedCustomerId);
+      const debt = Math.round(Math.max(0, cust?.debt || 0));
+      if (debt <= 0) return { ...r, amount: '', amountVND: 0 };
+
+      const ratio = debt / totalDebt;
+      const pay = Math.min(debt, Math.round(lumpSum * ratio));
+      allocatedTotal += pay;
+      return {
+        ...r,
+        amountVND: pay,
+        amount: formatNumberString(pay.toString()),
+      };
+    });
+
+    // Bù sai lệch số lẻ nếu có vào quán cuối cùng có nợ
+    const diff = lumpSum - allocatedTotal;
+    if (diff !== 0 && debtRows.length > 0) {
+      const lastRow = debtRows[debtRows.length - 1];
+      const idx = updated.findIndex((r) => r.tempId === lastRow.tempId);
+      if (idx >= 0) {
+        const cust = allCustomers.find((c) => c.id === updated[idx].selectedCustomerId);
+        const curAmt = updated[idx].amountVND || 0;
+        const maxDebt = Math.round(cust?.debt || curAmt);
+        const adjusted = Math.min(maxDebt, Math.max(0, curAmt + diff));
+        updated[idx] = {
+          ...updated[idx],
+          amountVND: adjusted,
+          amount: formatNumberString(adjusted.toString()),
+        };
+      }
+    }
+
+    setRows(updated);
+    showGlobalToast(
+      `Đã phân bổ ${formatCurrency(lumpSum)} theo tỷ lệ % nợ cho các quán!`,
+      'success'
+    );
+  };
+
+  // 3. Xóa số tiền của các dòng
+  const handleClearGroupAmounts = () => {
+    const cleared = rows.map((r) => ({ ...r, amount: '', amountVND: 0 }));
+    setRows(cleared);
   };
 
   // Thêm dòng khách hàng trả nợ
@@ -262,6 +437,25 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
   const validRows = rows.filter((r) => r.selectedCustomerId && parseNumberString(r.amount) > 0);
   const totalBatchAmount = rows.reduce((sum, r) => sum + parseNumberString(r.amount), 0);
 
+  // Tính các chỉ số cho nhóm đang chọn
+  const activeGroup = groups.find((g) => g.id === selectedGroupId);
+  const activeGroupTotalDebt = rows.reduce((sum, r) => {
+    const cust = allCustomers.find((c) => c.id === r.selectedCustomerId);
+    return sum + Math.round(Math.max(0, cust?.debt || 0));
+  }, 0);
+  const enteredLumpSum = parseNumberString(groupLumpSum);
+  const remainingGroupDebt = Math.max(0, activeGroupTotalDebt - totalBatchAmount);
+  const diffLumpSum = enteredLumpSum > 0 ? enteredLumpSum - totalBatchAmount : 0;
+
+  // Lựa chọn dropdown nhóm
+  const groupSelectOptions = [
+    { id: 'none', name: '📋 Thu lẻ từng khách hàng (Mặc định)' },
+    ...groups.map((g) => ({
+      id: g.id,
+      name: `🏢 ${g.name} (${g.count || (g.customerIds || []).length} quán)`,
+    })),
+  ];
+
   // Kiểm tra mã PIN trước khi thu tiền hàng loạt (Chặn bấm đúp / spam nút bấm)
   const requirePin = async (action) => {
     if (loading || isSubmittingRef.current) return;
@@ -303,7 +497,7 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
     // Kiểm tra không cho phép nhập số tiền vượt quá tổng nợ hiện tại
     for (const row of validRows) {
-      const cust = customers.find((c) => c.id === row.selectedCustomerId);
+      const cust = allCustomers.find((c) => c.id === row.selectedCustomerId) || customers.find((c) => c.id === row.selectedCustomerId);
       const payAmount = parseNumberString(row.amount);
       if (cust && cust.debt > 0 && payAmount > cust.debt) {
         setError(`Số tiền thu của [${cust.name}] (${formatCurrency(payAmount)}) không được vượt quá số nợ hiện tại (${formatCurrency(cust.debt)}).`);
@@ -317,12 +511,17 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
     isSubmittingRef.current = true;
 
     try {
+      const defaultNote = activeGroup
+        ? `Thu nợ gộp nhóm [${activeGroup.name}] - Tổng tiền đợt này ${formatCurrency(totalBatchAmount)} ngày ${dateStr}`
+        : null;
+
       const promises = validRows.map((row) => {
         const payAmount = parseNumberString(row.amount);
         return api.post('/payments', {
           customerId: row.selectedCustomerId,
           amount: payAmount,
           paidAt: isoDate,
+          note: defaultNote,
         });
       });
 
@@ -334,6 +533,8 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
       // Reset về 10 dòng trống
       setRows(createInitialRows(10));
+      setSelectedGroupId('none');
+      setGroupLumpSum('');
 
       if (onRefresh) onRefresh();
 
@@ -341,7 +542,9 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
 
       // Thông báo Toast thành công
       showGlobalToast(
-        `Đã thu nợ thành công cho ${validRows.length} khách hàng với tổng tiền ${formatCurrency(totalBatchAmount)}.`,
+        activeGroup
+          ? `Đã thu nợ thành công cho nhóm [${activeGroup.name}] (${validRows.length} quán) với tổng tiền ${formatCurrency(totalBatchAmount)}.`
+          : `Đã thu nợ thành công cho ${validRows.length} khách hàng với tổng tiền ${formatCurrency(totalBatchAmount)}.`,
         'success'
       );
     } catch (err) {
@@ -366,11 +569,11 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
 
-        {/* Thanh điều khiển trên cùng: Ngày thu tiền */}
+        {/* Thanh điều khiển trên cùng: Ngày thu tiền & Chọn nhóm nhà hàng */}
         <View style={styles.topControlRow}>
           <View style={styles.dateAndDraftRow}>
             <View style={styles.dateInlineGroup}>
-              <Text style={styles.dateLabelInline}>📅 Ngày thu tiền:</Text>
+              <Text style={styles.dateLabelInline}>📅 Ngày thu:</Text>
               <DatePickerInput
                 value={dateStr}
                 onChange={setDateStr}
@@ -380,10 +583,129 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
             </View>
 
             <TouchableOpacity style={styles.clearDraftBtnHeader} onPress={handleClearDraft}>
-              <Text style={styles.clearDraftTextHeader}>🧹 Xóa nháp</Text>
+              <Text style={styles.clearDraftTextHeader}>🧹 Xóa làm lại</Text>
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Thanh chọn nhóm khách hàng */}
+        <View
+          style={[
+            styles.groupToolbar,
+            isGroupSelectOpen && { zIndex: 999999, elevation: 999999 },
+          ]}
+        >
+          <View style={styles.groupSelectWrap}>
+            <Text style={styles.groupSelectLabel}>🏢 Chế độ thu:</Text>
+            <View style={{ flex: 1 }}>
+              <CustomSelect
+                value={groupSelectOptions.find((g) => g.id === selectedGroupId) || groupSelectOptions[0]}
+                options={groupSelectOptions}
+                getOptionLabel={(g) => g.name}
+                renderSelected={(g) => g.name}
+                onSelect={(g) => handleSelectGroup(g.id)}
+                onOpenChange={setIsGroupSelectOpen}
+                compact={true}
+                zIndex={999999}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Khung điều khiển Thu Nợ Gộp Chuỗi (Chỉ hiện khi đang chọn 1 nhóm nhà hàng) */}
+        {selectedGroupId !== 'none' && activeGroup && (
+          <View style={styles.groupBatchControlCard}>
+            <View style={styles.groupCardHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.groupCardHeaderTitle}>
+                  🏢 Thu nợ gộp: <Text style={{ color: '#047857' }}>{activeGroup.name}</Text> ({rows.length} quán)
+                </Text>
+                <Text style={styles.groupCardSub}>
+                  Nhập số tiền chuyển khoản một cục $\rightarrow$ Bấm nút để máy tự động phân bổ trừ nợ
+                </Text>
+              </View>
+              <View style={styles.groupTotalDebtBadge}>
+                <Text style={styles.groupTotalDebtLabel}>TỔNG NỢ NHÓM</Text>
+                <Text style={styles.groupTotalDebtVal}>{formatCurrency(activeGroupTotalDebt)}</Text>
+              </View>
+            </View>
+
+            {/* Ô nhập số tiền chuỗi chuyển và các nút tự động phân bổ */}
+            <View style={styles.allocationActionRow}>
+              <View style={styles.lumpSumInputBox}>
+                <Text style={styles.lumpSumInputLabel}>Tiền chuỗi chuyển khoản (VNĐ):</Text>
+                <MoneyInput
+                  valueVND={parseNumberString(groupLumpSum)}
+                  onChangeVND={(val) => setGroupLumpSum(val ? val.toString() : '')}
+                  placeholder="Ví dụ: 100.000.000"
+                  style={styles.lumpSumInput}
+                />
+              </View>
+
+              <View style={styles.allocBtnGroup}>
+                <TouchableOpacity
+                  style={[styles.allocBtn, styles.allocBtnFIFO]}
+                  onPress={handleAutoAllocateFIFO}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.allocBtnFIFOText}>⚡ Trừ cuốn chiếu (Nợ cũ trước)</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.allocBtn, styles.allocBtnProRata]}
+                  onPress={handleAutoAllocateProRata}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.allocBtnProRataText}>📊 Chia theo tỷ lệ % nợ</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.allocBtn, styles.allocBtnClear]}
+                  onPress={handleClearGroupAmounts}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.allocBtnClearText}>🧹 Xóa tiền</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Thanh thống kê kết quả phân bổ trực quan theo thời gian thực */}
+            <View style={styles.allocResultBar}>
+              <View style={styles.allocResultItem}>
+                <Text style={styles.allocResultLabel}>Khách chuyển:</Text>
+                <Text style={styles.allocResultVal}>{formatCurrency(enteredLumpSum)}</Text>
+              </View>
+              <View style={styles.allocResultItem}>
+                <Text style={styles.allocResultLabel}>Đã phân bổ:</Text>
+                <Text style={[styles.allocResultVal, { color: '#047857' }]}>
+                  {formatCurrency(totalBatchAmount)}
+                </Text>
+              </View>
+              <View style={styles.allocResultItem}>
+                <Text style={styles.allocResultLabel}>Khớp tiền:</Text>
+                {enteredLumpSum === 0 ? (
+                  <Text style={[styles.allocBadgeText, { color: '#64748B' }]}>Chưa nhập tiền</Text>
+                ) : diffLumpSum === 0 ? (
+                  <Text style={[styles.allocBadgeText, { color: '#15803D' }]}>✓ Khớp chuẩn 100%</Text>
+                ) : diffLumpSum > 0 ? (
+                  <Text style={[styles.allocBadgeText, { color: '#B45309' }]}>
+                    Còn dư {formatCurrency(diffLumpSum)}
+                  </Text>
+                ) : (
+                  <Text style={[styles.allocBadgeText, { color: COLORS.danger }]}>
+                    Vượt quá {formatCurrency(Math.abs(diffLumpSum))}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.allocResultItem}>
+                <Text style={styles.allocResultLabel}>Nợ còn lại sau trừ:</Text>
+                <Text style={[styles.allocResultVal, { color: COLORS.danger, fontWeight: 'bold' }]}>
+                  {formatCurrency(remainingGroupDebt)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Banner thông báo lỗi */}
         {error ? (
@@ -401,13 +723,15 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
         >
           <View style={styles.tableContainer}>
             <View style={styles.tableHeaderRow}>
-              <Text style={[styles.thText, { flex: 2 }]}>Khách hàng trả nợ</Text>
+              <Text style={[styles.thText, { flex: 2 }]}>Nhà hàng / Khách hàng</Text>
               <Text style={[styles.thText, { flex: 1.5, textAlign: 'right' }]}>Số tiền thu (VNĐ)</Text>
               <Text style={[styles.thText, { width: 32, textAlign: 'center' }]}></Text>
             </View>
 
             {rows.map((row, index) => {
-              const selectedCust = customers.find((c) => c.id === row.selectedCustomerId);
+              const selectedCust =
+                allCustomers.find((c) => c.id === row.selectedCustomerId) ||
+                customers.find((c) => c.id === row.selectedCustomerId);
               const amt = parseNumberString(row.amount);
               const isActive = activeRowTempId === row.tempId;
               const rowZIndex = isActive ? 999999 : (rows.length - index) * 10;
@@ -419,7 +743,8 @@ const BatchPaymentModal = forwardRef(({ onRefresh }, ref) => {
                   .filter((r) => r.tempId !== row.tempId && r.selectedCustomerId)
                   .map((r) => r.selectedCustomerId)
               );
-              const availableCustomers = customers.filter(
+              const customerPool = selectedGroupId !== 'none' ? allCustomers : customers;
+              const availableCustomers = customerPool.filter(
                 (c) => !otherSelectedCustomerIds.has(c.id)
               );
 
@@ -894,5 +1219,171 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  /* Styles cho chế độ Thu Nợ Gộp Theo Nhóm */
+  groupToolbar: {
+    marginBottom: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  groupSelectWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  groupSelectLabel: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#334155',
+  },
+  groupBatchControlCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    padding: 10,
+    marginBottom: 10,
+    ...SHADOWS.card,
+  },
+  groupCardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  groupCardHeaderTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  groupCardSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  groupTotalDebtBadge: {
+    alignItems: 'flex-end',
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  groupTotalDebtLabel: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#991B1B',
+  },
+  groupTotalDebtVal: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#DC2626',
+    marginTop: 1,
+  },
+  allocationActionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  lumpSumInputBox: {
+    flex: 1,
+    minWidth: 200,
+  },
+  lumpSumInputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 4,
+  },
+  lumpSumInput: {
+    height: 38,
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    backgroundColor: '#F0FDF4',
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#047857',
+  },
+  allocBtnGroup: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    alignItems: 'center',
+  },
+  allocBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  allocBtnFIFO: {
+    backgroundColor: '#059669',
+  },
+  allocBtnFIFOText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  allocBtnProRata: {
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  allocBtnProRataText: {
+    color: '#0369A1',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  allocBtnClear: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  allocBtnClearText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  allocResultBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 6,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  allocResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  allocResultLabel: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  allocResultVal: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#1E293B',
+  },
+  allocBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold',
   },
 });
