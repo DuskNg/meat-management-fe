@@ -165,8 +165,8 @@ const CustomerGroupsModal = forwardRef(
         showGlobalToast('Vui lòng nhập tên nhóm nhà hàng.', 'warning');
         return;
       }
-      if (selectedCustomerIds.size === 0) {
-        showGlobalToast('Vui lòng chọn ít nhất 1 nhà hàng vào nhóm.', 'warning');
+      if (selectedCustomerIds.size < 2) {
+        showGlobalToast('Một nhóm phải có từ 2 nhà hàng trở lên. Vui lòng chọn ít nhất 2 nhà hàng.', 'warning');
         return;
       }
 

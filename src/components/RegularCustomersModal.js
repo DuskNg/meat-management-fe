@@ -16,6 +16,8 @@ import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import { matchItemSearch } from '../utils/searchHelper';
 import AnimatedPressable from './AnimatedPressable';
+import { showGlobalToast } from '../store/toastStore';
+import { downloadOrShareImage } from '../utils/imageShareHelper';
 
 // Định dạng tiền tệ VNĐ
 const formatCurrency = (amount) =>
@@ -329,7 +331,7 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
   // Xử lý xuất ảnh danh sách khách quen chưa có đơn trong ngày (Chỉ hiển thị tên khách)
   const handleExportImage = () => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') {
-      alert('Chức năng xuất ảnh hiện hỗ trợ trên trình duyệt Web.');
+      showGlobalToast('Chức năng xuất ảnh hiện hỗ trợ trên trình duyệt Web.', 'warning');
       return;
     }
 
@@ -471,15 +473,17 @@ const RegularCustomersModal = forwardRef(({ onRefresh, onOpenDebt, onViewHistory
       ctx.textAlign = 'right';
       ctx.fillText('Phần mềm Quản lý Giao dịch & Công nợ Sạp thịt', width - padding, footerY + 18);
 
-      // Tải file ảnh về máy
+      // Tải file ảnh hoặc chuyển tiếp Zalo theo quy chuẩn hệ thống (Web PC vs Web Mobile)
       const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = `Khach_Chua_Len_Don_${selectedDate.replace(/\//g, '_')}.png`;
-      link.href = dataUrl;
-      link.click();
+      downloadOrShareImage({
+        imageUri: dataUrl,
+        fileName: `Khach_Chua_Len_Don_${selectedDate.replace(/\//g, '_')}.png`,
+        title: 'Danh sách khách chưa lên đơn hôm nay',
+        text: `Danh sách ${listToExport.length} khách quen chưa lên đơn ngày ${selectedDate}`,
+      });
     } catch (err) {
       console.error('[EXPORT REGULAR CUSTOMERS IMAGE ERROR]', err);
-      alert('Đã xảy ra lỗi khi xuất ảnh danh sách khách.');
+      showGlobalToast('Đã xảy ra lỗi khi xuất ảnh danh sách khách.', 'error');
     }
   };
 

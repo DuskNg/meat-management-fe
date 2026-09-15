@@ -60,6 +60,7 @@ import CustomerGroupsModal from '../src/components/CustomerGroupsModal';
 import { useCustomerGroups } from '../src/hooks/useCustomerGroups';
 import QuickNoteModal from '../src/components/QuickNoteModal';
 import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewModal';
+import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
 import { showGlobalToast } from '../src/store/toastStore';
 import { isMobileDevice } from '../src/utils/imageShareHelper';
 import AnimatedPressable from '../src/components/AnimatedPressable';
@@ -165,6 +166,7 @@ export default function DashboardScreen() {
   const portalFeedbackAdminModalRef = useRef(null); // Modal quản lý phản hồi, thắc mắc công nợ từ khách hàng qua Zalo Portal
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
   const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
+  const quickPriceLinkModalRef = useRef(null); // Modal link Zalo cập nhật giá bán cho Anh Chủ
 
   // Nhắc hẹn chốt công nợ định kỳ theo nhóm nhà hàng (ví dụ: nhóm Trường Hoàng từ 15 đến 31)
   const [dismissedReminderGroupIds, setDismissedReminderGroupIds] = useState(new Set());
@@ -1878,6 +1880,18 @@ export default function DashboardScreen() {
             </TouchableOpacity>
 
             <View style={styles.headerRightRow}>
+              {/* Nút Link Zalo cập nhật giá cho Anh Chủ */}
+              {!auth.user?.workspaceMember && (
+                <TouchableOpacity
+                  style={[styles.portalNotifyBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
+                  onPress={() => quickPriceLinkModalRef.current?.open()}
+                  activeOpacity={0.7}
+                  title="Link Zalo Anh Chủ Cập Nhật Giá Bán Nhanh"
+                >
+                  <Text style={styles.portalNotifyIcon}>⚡</Text>
+                </TouchableOpacity>
+              )}
+
               {/* Nút duyệt hóa đơn nhân viên gửi qua Zalo (AI bóc tách) */}
               {!auth.user?.workspaceMember && (
                 <TouchableOpacity
@@ -2860,6 +2874,18 @@ export default function DashboardScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerRightRow}>
+            {/* Nút Link Zalo cập nhật giá cho Anh Chủ */}
+            {!auth.user?.workspaceMember && (
+              <TouchableOpacity
+                style={[styles.portalNotifyBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
+                onPress={() => quickPriceLinkModalRef.current?.open()}
+                activeOpacity={0.7}
+                title="Link Zalo Anh Chủ Cập Nhật Giá Bán Nhanh"
+              >
+                <Text style={styles.portalNotifyIcon}>⚡</Text>
+              </TouchableOpacity>
+            )}
+
             {/* Nút duyệt hóa đơn nhân viên gửi qua Zalo (AI bóc tách) */}
             {!auth.user?.workspaceMember && (
               <TouchableOpacity
@@ -3311,6 +3337,22 @@ export default function DashboardScreen() {
                   style={styles.smartDebtMenuItem}
                   onPress={() => {
                     setShowDebtToolsMenu(false);
+                    quickPriceLinkModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>⚡</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Link Zalo Anh Chủ Cập Nhật Giá</Text>
+                    <Text style={styles.smartDebtMenuSub}>Gửi Zalo cho anh chủ tự sửa tên thịt, chỉnh giá riêng & tính lại nợ</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
                     recurringDebtModalRef.current?.open();
                   }}
                 >
@@ -3583,6 +3625,9 @@ export default function DashboardScreen() {
 
       {/* MODAL GHI CHÚ NHANH CẦN NHỚ */}
       <QuickNoteModal ref={quickNoteModalRef} />
+
+      {/* MODAL LINK ZALO ANH CHỦ CẬP NHẬT GIÁ BÁN RIÊNG */}
+      <QuickPriceLinkModal ref={quickPriceLinkModalRef} />
 
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />

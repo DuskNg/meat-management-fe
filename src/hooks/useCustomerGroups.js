@@ -38,7 +38,7 @@ export const useCustomerGroups = (userId) => {
         const portalRes = await api.get('/portal/manage/links');
         const links = portalRes.data?.data || [];
         portalGroups = links
-          .filter(l => l.customers && l.customers.length > 0)
+          .filter(l => l.customers && l.customers.length >= 2)
           .map(l => ({
             id: `portal_${l.id}`,
             name: `${l.name} (Zalo Portal)`,
@@ -50,9 +50,11 @@ export const useCustomerGroups = (userId) => {
         // Bỏ qua nếu lỗi mạng hoặc không có quyền portal
       }
 
-      // Kết hợp nhóm người dùng tự lưu và nhóm từ portal
+      // Kết hợp nhóm người dùng tự lưu và nhóm từ portal (Định nghĩa nhóm: tối thiểu 2 nhà hàng trở lên)
       const allGroups = [
-        ...savedList.map(g => ({ ...g, source: 'saved', count: (g.customerIds || []).length })),
+        ...savedList
+          .filter(g => (g.customerIds || []).length >= 2)
+          .map(g => ({ ...g, source: 'saved', count: (g.customerIds || []).length })),
         ...portalGroups,
       ];
 
@@ -61,6 +63,7 @@ export const useCustomerGroups = (userId) => {
       const seenSignatures = new Set();
 
       for (const g of allGroups) {
+        if (!g.customerIds || g.customerIds.length < 2) continue;
         // Tạo chữ ký dựa trên danh sách thành viên (sort để không phụ thuộc thứ tự)
         const sig = [...(g.customerIds || [])].sort().join(',');
         if (sig && seenSignatures.has(sig)) {
@@ -88,6 +91,7 @@ export const useCustomerGroups = (userId) => {
     if (!name || !name.trim()) return null;
     const cleanName = name.trim();
     const cleanIds = Array.from(new Set(customerIds || []));
+    if (cleanIds.length < 2) return null; // Bắt buộc từ 2 nhà hàng trở lên mới là nhóm
     const { billingCycle = 'custom', note = '' } = options;
 
     let savedList = [];
@@ -153,6 +157,8 @@ export const useCustomerGroups = (userId) => {
 
     const existingIdx = savedList.findIndex(g => g.id === groupId);
     if (existingIdx < 0) return null;
+
+    if (updates.customerIds && updates.customerIds.length < 2) return null; // Từ 2 nhà hàng trở lên mới là nhóm
 
     savedList[existingIdx] = {
       ...savedList[existingIdx],
