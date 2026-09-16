@@ -47,6 +47,10 @@
       "destination": "/api/quick-price-meta"
     },
     {
+      "source": "/submit/:match*",
+      "destination": "/api/submit-meta"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

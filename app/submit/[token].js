@@ -267,6 +267,13 @@ export default function StaffSubmitScreen() {
     }
   };
 
+  // Cập nhật tiêu đề tab trình duyệt web
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.title = 'Gửi ảnh hóa đơn, video công nợ';
+    }
+  }, []);
+
   useEffect(() => {
     fetchLinkInfo();
   }, [token]);
