@@ -390,38 +390,39 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             </View>
           </View>
 
-          {/* ─── THANH QUẢN LÝ LINK ZALO NHÂN VIÊN (HIỂN THỊ KHI BẤM) ─── */}
+          {/* ─── THANH LINK GỬI HÓA ĐƠN/VIDEO ─── */}
           {showLinkManager && (
             <View style={styles.linkManagerBox}>
-              <View style={styles.linkManagerHeader}>
-                <Text style={styles.linkManagerTitle}>📌 ĐƯỜNG DẪN GHIM NHÓM ZALO NHÂN VIÊN</Text>
-                <TouchableOpacity onPress={() => setShowLinkManager(false)}>
-                  <Text style={{ color: '#94A3B8', fontSize: 13 }}>Đóng lại ✕</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.linkManagerDesc}>
-                Ghim link này vào nhóm Zalo để nhân viên gửi ảnh tích kê và video cân thịt hàng ngày:
-              </Text>
-
               {loadingLinks ? (
                 <ActivityIndicator color="#10B981" size="small" />
               ) : (
                 staffLinks.map((link) => (
                   <View key={link.id} style={styles.linkRowItem}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.linkItemName}>{link.name}</Text>
-                      <Text style={styles.linkItemToken}>
-                        Mã: <Text style={{ color: '#38BDF8', fontWeight: 'bold' }}>{link.token}</Text>
-                        {link.pin ? ` • PIN: ${link.pin}` : ' • Không có PIN'}
+                    <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+                      <Text style={styles.linkItemName} numberOfLines={1}>
+                        🔗 Gửi ảnh hóa đơn, video công nợ
+                      </Text>
+                      <Text style={styles.linkItemToken} numberOfLines={1}>
+                        Mã: <Text style={{ color: '#0284C7', fontWeight: 'bold' }}>{link.token}</Text>
+                        {link.pin ? ` • PIN: ${link.pin}` : ''}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      style={styles.btnCopyLink}
-                      onPress={() => handleCopyLink(link.token)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.btnCopyLinkText}>📋 Sao chép link</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <TouchableOpacity
+                        style={styles.btnCopyLink}
+                        onPress={() => handleCopyLink(link.token)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.btnCopyLinkText}>📋 Sao chép</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.btnCloseLinkBar}
+                        onPress={() => setShowLinkManager(false)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.btnCloseLinkBarText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))
               )}
@@ -994,46 +995,32 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   linkManagerBox: {
-    backgroundColor: '#F1F5F9',
-    padding: 12,
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#CBD5E1',
-  },
-  linkManagerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  linkManagerTitle: {
-    color: '#1E293B',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  linkManagerDesc: {
-    color: '#64748B',
-    fontSize: 12,
-    marginBottom: 8,
+    borderBottomColor: '#E2E8F0',
   },
   linkRowItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
-    padding: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
   },
   linkItemName: {
     color: '#0F172A',
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   linkItemToken: {
     color: '#64748B',
     fontSize: 11.5,
-    marginTop: 2,
+    marginTop: 1,
   },
   btnCopyLink: {
     backgroundColor: '#10B981',
@@ -1043,6 +1030,19 @@ const styles = StyleSheet.create({
   },
   btnCopyLinkText: {
     color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  btnCloseLinkBar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  btnCloseLinkBarText: {
+    color: '#64748B',
     fontSize: 12,
     fontWeight: 'bold',
   },
