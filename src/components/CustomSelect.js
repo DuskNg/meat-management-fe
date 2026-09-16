@@ -423,7 +423,12 @@ const styles = StyleSheet.create({
     width: '100%',
     minWidth: 0,
     overflow: 'hidden',
-    ...(Platform.OS === 'web' ? { cursor: 'text' } : {}),
+    ...(Platform.OS === 'web' ? {
+      cursor: 'text',
+      outlineStyle: 'none',
+      outlineWidth: 0,
+      boxShadow: 'none',
+    } : {}),
   },
   selectTriggerCompact: {
     height: 34,
@@ -433,8 +438,13 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   selectTriggerOpen: {
-    borderColor: '#2563EB',
+    borderColor: '#CBD5E1', // CẤM hiện border / đổi màu border khi focus/mở theo rule
     backgroundColor: '#FFFFFF',
+    ...(Platform.OS === 'web' ? {
+      outlineStyle: 'none',
+      outlineWidth: 0,
+      boxShadow: 'none',
+    } : {}),
   },
   selectTriggerError: {
     borderColor: '#EF4444',
@@ -453,8 +463,13 @@ const styles = StyleSheet.create({
     padding: 0,
     margin: 0,
     height: '100%',
+    borderWidth: 0,
+    borderColor: 'transparent',
+    backgroundColor: 'transparent',
     ...(Platform.OS === 'web' ? {
       outlineStyle: 'none',
+      outlineWidth: 0,
+      boxShadow: 'none',
       cursor: 'text',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap',

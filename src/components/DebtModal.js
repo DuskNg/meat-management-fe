@@ -456,7 +456,8 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
       : 0;
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>🔴 GHI NỢ THỊT MỚI</Text>
@@ -839,18 +840,19 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Modal quản lý danh mục thịt */}
-      <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
-
-      {/* Modal nhập PIN khi phiên hết hạn */}
-      <PinInputModal ref={pinInputRef} />
-      {/* Modal tạo PIN lần đầu */}
-      <PinSetupModal ref={pinSetupRef} />
-      {/* Toast thông báo ghi nợ thành công */}
-      <PopupModal ref={popupRef} />
     </SmoothModal>
-  );
+
+    {/* Modal quản lý danh mục thịt */}
+    <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
+
+    {/* Modal nhập PIN khi phiên hết hạn */}
+    <PinInputModal ref={pinInputRef} />
+    {/* Modal tạo PIN lần đầu */}
+    <PinSetupModal ref={pinSetupRef} />
+    {/* Toast thông báo ghi nợ thành công */}
+    <PopupModal ref={popupRef} />
+  </>
+);
 });
 
 export default DebtModal;

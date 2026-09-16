@@ -146,7 +146,7 @@ const PinSetupModal = forwardRef((props, ref) => {
   const isEnterStep = step === STEP_ENTER;
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <SmoothModal visible={visible} onClose={() => setVisible(false)} zIndex={9999999}>
       <View style={styles.container}>
         {/* Biểu tượng khiên bảo vệ */}
         <View style={[styles.iconWrapper, isEnterStep ? styles.iconWrapperPrimary : styles.iconWrapperConfirm]}>
@@ -217,6 +217,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 32,
     alignItems: 'center',
+    zIndex: 9999999,
+    elevation: 9999999,
   },
   iconWrapper: {
     width: 72,

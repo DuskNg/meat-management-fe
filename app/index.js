@@ -1880,13 +1880,13 @@ export default function DashboardScreen() {
             </TouchableOpacity>
 
             <View style={styles.headerRightRow}>
-              {/* Nút Link Zalo cập nhật giá cho Anh Chủ */}
+              {/* Nút Link Zalo cập nhật giá bán nhanh */}
               {!auth.user?.workspaceMember && (
                 <TouchableOpacity
                   style={[styles.portalNotifyBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
                   onPress={() => quickPriceLinkModalRef.current?.open()}
                   activeOpacity={0.7}
-                  title="Link Zalo Anh Chủ Cập Nhật Giá Bán Nhanh"
+                  title="Link Zalo Cập Nhật Giá Bán Nhanh"
                 >
                   <Text style={styles.portalNotifyIcon}>⚡</Text>
                 </TouchableOpacity>
@@ -2874,13 +2874,13 @@ export default function DashboardScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerRightRow}>
-            {/* Nút Link Zalo cập nhật giá cho Anh Chủ */}
+            {/* Nút Link Zalo cập nhật giá bán nhanh */}
             {!auth.user?.workspaceMember && (
               <TouchableOpacity
                 style={[styles.portalNotifyBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
                 onPress={() => quickPriceLinkModalRef.current?.open()}
                 activeOpacity={0.7}
-                title="Link Zalo Anh Chủ Cập Nhật Giá Bán Nhanh"
+                title="Link Zalo Cập Nhật Giá Bán Nhanh"
               >
                 <Text style={styles.portalNotifyIcon}>⚡</Text>
               </TouchableOpacity>
@@ -3342,8 +3342,8 @@ export default function DashboardScreen() {
                 >
                   <Text style={styles.smartDebtMenuIcon}>⚡</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.smartDebtMenuTitle}>Link Zalo Anh Chủ Cập Nhật Giá</Text>
-                    <Text style={styles.smartDebtMenuSub}>Gửi Zalo cho anh chủ tự sửa tên thịt, chỉnh giá riêng & tính lại nợ</Text>
+                    <Text style={styles.smartDebtMenuTitle}>Link Zalo Cập Nhật Giá Nhanh</Text>
+                    <Text style={styles.smartDebtMenuSub}>Gửi Zalo để tự sửa tên thịt, chỉnh giá riêng & tính lại nợ</Text>
                   </View>
                 </TouchableOpacity>
 

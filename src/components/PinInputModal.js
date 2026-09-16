@@ -193,7 +193,7 @@ const PinInputModal = forwardRef((props, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <SmoothModal visible={visible} onClose={() => setVisible(false)} zIndex={9999999}>
       <View style={styles.container}>
         {/* Biểu tượng khóa */}
         <View style={styles.iconWrapper}>
@@ -246,6 +246,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 32,
     alignItems: 'center',
+    zIndex: 9999999,
+    elevation: 9999999,
   },
   iconWrapper: {
     width: 72,

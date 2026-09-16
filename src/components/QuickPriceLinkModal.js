@@ -98,7 +98,7 @@ const QuickPriceLinkModal = forwardRef((props, ref) => {
       type: 'confirm',
       title: '🔄 Tạo Lại Mã Link Mới',
       message:
-        'Khi tạo mã mới, đường link cũ đã gửi vào Zalo trước đây sẽ KHÔNG còn dùng được nữa.\n\nAnh chủ có chắc chắn muốn tạo mã link mới?',
+        'Khi tạo mã mới, đường link cũ đã gửi vào Zalo trước đây sẽ KHÔNG còn dùng được nữa.\n\nBạn có chắc chắn muốn tạo mã link mới?',
       confirmText: 'Đồng ý tạo lại',
       cancelText: 'Hủy bỏ',
       onConfirm: async () => {
@@ -143,16 +143,18 @@ const QuickPriceLinkModal = forwardRef((props, ref) => {
 
   return (
     <>
-      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)} centered={true}>
         <View style={styles.modalView}>
           {/* Header modal */}
           <View style={styles.modalHeader}>
             <View style={styles.titleWrap}>
               <Text style={styles.headerIcon}>🥩</Text>
-              <View>
-                <Text style={styles.modalTitle}>LINK ZALO CẬP NHẬT GIÁ CHO ANH CHỦ</Text>
-                <Text style={styles.modalSubtitle}>
-                  Gửi link này vào Zalo để anh chủ chủ động chỉnh giá riêng mà không cần vào hệ thống
+              <View style={styles.titleTextCol}>
+                <Text style={styles.modalTitle} numberOfLines={1}>
+                  LINK ZALO CẬP NHẬT GIÁ
+                </Text>
+                <Text style={styles.modalSubtitle} numberOfLines={1}>
+                  Chỉnh giá bán riêng & tự động tính lại đơn nợ
                 </Text>
               </View>
             </View>
@@ -189,24 +191,33 @@ const QuickPriceLinkModal = forwardRef((props, ref) => {
                 </View>
               </View>
 
-              {/* Thông tin tính năng nổi bật */}
+              {/* Thông tin tiện ích tinh gọn (compact UI) */}
               <View style={styles.infoBox}>
-                <Text style={styles.infoTitle}>✨ Tiện ích vượt trội khi dùng link này:</Text>
-                <Text style={styles.infoItem}>• Mở nhanh trực tiếp trên điện thoại từ tin nhắn Zalo.</Text>
-                <Text style={styles.infoItem}>• Chọn ngày áp dụng giá mới (đơn nợ cũ trước ngày áp dụng giữ nguyên 100%).</Text>
-                <Text style={styles.infoItem}>• Chọn cửa hàng, cho phép sửa tên thịt và chỉnh giá bán riêng theo ý muốn.</Text>
-                <Text style={styles.infoItem}>• Tự động tính lại toàn bộ đơn nợ từ ngày áp dụng trở về sau khi bấm Áp dụng.</Text>
+                <Text style={styles.infoText}>
+                  💡 <Text style={{ fontWeight: '700' }}>Tiện ích:</Text> Mở trực tiếp từ Zalo trên điện thoại để sửa tên thịt, cập nhật giá riêng và tự động tính lại đơn nợ mà không cần đăng nhập.
+                </Text>
               </View>
 
               {/* Khu vực bảo mật mã PIN */}
               <View style={styles.pinSection}>
                 <View style={styles.pinHeaderRow}>
-                  <View>
-                    <Text style={styles.pinSectionTitle}>🔒 Bảo mật mã PIN 4 số</Text>
+                  <View style={styles.pinInfoCol}>
+                    <View style={styles.pinTitleRow}>
+                      <Text style={styles.pinSectionTitle}>🔒 Mã PIN bảo vệ</Text>
+                      {linkData?.hasPin ? (
+                        <View style={styles.pinActiveBadge}>
+                          <Text style={styles.pinActiveBadgeText}>Bảo vệ: {linkData.pin}</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.pinInactiveBadge}>
+                          <Text style={styles.pinInactiveBadgeText}>Chưa cài PIN</Text>
+                        </View>
+                      )}
+                    </View>
                     <Text style={styles.pinStatusText}>
                       {linkData?.hasPin
-                        ? `Đang bật bảo vệ (Mã PIN: ${linkData.pin})`
-                        : 'Chưa cài đặt mã PIN (Bất kỳ ai có link đều mở được)'}
+                        ? 'Yêu cầu mã PIN 4 số khi mở link'
+                        : 'Bất kỳ ai có link đều mở được'}
                     </Text>
                   </View>
 
@@ -215,7 +226,7 @@ const QuickPriceLinkModal = forwardRef((props, ref) => {
                     onPress={() => setIsSettingPin(!isSettingPin)}
                   >
                     <Text style={styles.togglePinBtnText}>
-                      {isSettingPin ? 'Đóng lại' : linkData?.hasPin ? 'Đổi PIN' : 'Cài PIN'}
+                      {isSettingPin ? 'Đóng' : linkData?.hasPin ? 'Đổi PIN' : 'Cài PIN'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -226,7 +237,7 @@ const QuickPriceLinkModal = forwardRef((props, ref) => {
                       style={styles.pinInput}
                       value={pin}
                       onChangeText={setPin}
-                      placeholder="Nhập 4 số PIN mới (để trống để bỏ)"
+                      placeholder="Nhập 4 số PIN mới (để trống để gỡ)"
                       placeholderTextColor="#94A3B8"
                       keyboardType="numeric"
                       maxLength={6}
@@ -248,7 +259,7 @@ const QuickPriceLinkModal = forwardRef((props, ref) => {
 
               {/* Nút tạo lại mã link */}
               <View style={styles.regenerateRow}>
-                <TouchableOpacity style={styles.regenerateBtn} onPress={handleRegenerate}>
+                <TouchableOpacity style={styles.regenerateBtn} onPress={handleRegenerate} activeOpacity={0.7}>
                   <Text style={styles.regenerateBtnText}>🔄 Đổi mã link mới (Thu hồi link cũ)</Text>
                 </TouchableOpacity>
               </View>
@@ -265,9 +276,9 @@ const QuickPriceLinkModal = forwardRef((props, ref) => {
 const styles = StyleSheet.create({
   modalView: {
     width: '95%',
-    maxWidth: 600,
+    maxWidth: 480,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: 'hidden',
     ...SHADOWS.large,
   },
@@ -275,8 +286,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
     backgroundColor: '#F8FAFC',
@@ -284,73 +295,76 @@ const styles = StyleSheet.create({
   titleWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     flex: 1,
-    marginRight: 10,
+    marginRight: 8,
+  },
+  titleTextCol: {
+    flex: 1,
   },
   headerIcon: {
-    fontSize: 26,
+    fontSize: 22,
   },
   modalTitle: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: 0.2,
   },
   modalSubtitle: {
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#64748B',
-    marginTop: 2,
+    marginTop: 1,
   },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#475569',
   },
   loadingWrap: {
-    padding: 40,
+    padding: 30,
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   loadingText: {
     fontSize: 13,
     color: '#64748B',
   },
   body: {
-    padding: 16,
-    gap: 14,
+    padding: 12,
+    gap: 10,
   },
   linkCard: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 10,
+    padding: 10,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
   },
   linkLabel: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#1E293B',
     marginBottom: 6,
   },
   urlBox: {
     backgroundColor: '#FFFFFF',
-    padding: 10,
-    borderRadius: 8,
+    padding: 8,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 10,
+    borderColor: '#CBD5E1',
+    marginBottom: 8,
   },
   urlText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#2563EB',
   },
@@ -360,67 +374,91 @@ const styles = StyleSheet.create({
   },
   copyBtn: {
     flex: 1,
-    height: 42,
+    height: 38,
     backgroundColor: '#2563EB',
-    borderRadius: 8,
+    borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
   },
   copyBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '800',
   },
   openBtn: {
-    paddingHorizontal: 16,
-    height: 42,
+    paddingHorizontal: 14,
+    height: 38,
     backgroundColor: '#EEF2FF',
     borderWidth: 1,
     borderColor: '#C7D2FE',
-    borderRadius: 8,
+    borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
   },
   openBtnText: {
     color: '#4338CA',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
   },
   infoBox: {
     backgroundColor: '#F0FDF4',
     borderLeftWidth: 3,
     borderLeftColor: '#16A34A',
-    padding: 10,
+    padding: 8,
     borderRadius: 6,
-    gap: 4,
   },
-  infoTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#166534',
-    marginBottom: 2,
-  },
-  infoItem: {
-    fontSize: 11,
+  infoText: {
+    fontSize: 11.5,
     color: '#14532D',
     lineHeight: 16,
   },
   pinSection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: 8,
+    padding: 10,
   },
   pinHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  pinInfoCol: {
+    flex: 1,
+    marginRight: 8,
+  },
+  pinTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   pinSectionTitle: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#1E293B',
+  },
+  pinActiveBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  pinActiveBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  pinInactiveBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  pinInactiveBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '600',
+    color: '#64748B',
   },
   pinStatusText: {
     fontSize: 11,
@@ -429,34 +467,37 @@ const styles = StyleSheet.create({
   },
   togglePinBtn: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: '#F1F5F9',
+    paddingVertical: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
     borderRadius: 6,
   },
   togglePinBtnText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
-    color: '#475569',
+    color: '#334155',
   },
   pinForm: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
+    gap: 6,
+    marginTop: 8,
     alignItems: 'center',
   },
   pinInput: {
     flex: 1,
-    height: 38,
+    height: 34,
     borderWidth: 1,
     borderColor: '#CBD5E1',
     borderRadius: 6,
-    paddingHorizontal: 10,
-    fontSize: 13,
+    paddingHorizontal: 8,
+    fontSize: 12.5,
     color: '#0F172A',
+    backgroundColor: '#FFFFFF',
   },
   savePinBtn: {
-    paddingHorizontal: 16,
-    height: 38,
+    paddingHorizontal: 14,
+    height: 34,
     backgroundColor: COLORS.primary,
     borderRadius: 6,
     justifyContent: 'center',
@@ -464,22 +505,25 @@ const styles = StyleSheet.create({
   },
   savePinBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
   regenerateRow: {
     alignItems: 'center',
-    paddingTop: 4,
+    paddingTop: 2,
   },
   regenerateBtn: {
     paddingVertical: 6,
     paddingHorizontal: 12,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 6,
   },
   regenerateBtnText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#DC2626',
     fontWeight: '600',
-    textDecorationLine: 'underline',
   },
   btnDisabled: {
     opacity: 0.5,

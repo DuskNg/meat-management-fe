@@ -294,17 +294,17 @@ const CustomerGroupsModal = forwardRef(
     };
 
     return (
-      <SmoothModal visible={visible} onClose={() => setVisible(false)} centered={true}>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
         <View style={styles.modalContainer}>
           {/* Header */}
-          <View style={styles.modalHeader}>
-            <View style={{ flex: 1 }}>
+          <View style={styles.modalHeaderRow}>
+            <View style={{ flex: 1, paddingRight: 8 }}>
               <Text style={styles.modalTitle}>
                 {mode === 'list'
-                  ? '🏢 Quản Lý Nhóm Nhà Hàng & Chuỗi'
+                  ? '🏢 QUẢN LÝ NHÓM NHÀ HÀNG & CHUỖI'
                   : mode === 'create'
-                  ? '➕ Tạo Nhóm Nhà Hàng Mới'
-                  : '✏️ Chỉnh Sửa Nhóm Nhà Hàng'}
+                  ? '➕ TẠO NHÓM NHÀ HÀNG MỚI'
+                  : '✏️ CHỈNH SỬA NHÓM NHÀ HÀNG'}
               </Text>
               <Text style={styles.modalSubtitle}>
                 {mode === 'list'
@@ -312,8 +312,12 @@ const CustomerGroupsModal = forwardRef(
                   : 'Gom các nhà hàng lẻ thành một nhóm để xuất nợ & thu tiền một thể'}
               </Text>
             </View>
-            <TouchableOpacity style={styles.closeBtn} onPress={() => setVisible(false)}>
-              <Text style={styles.closeBtnText}>✕</Text>
+            <TouchableOpacity
+              style={styles.modalCloseIconBtn}
+              onPress={() => setVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalCloseIconText}>✕</Text>
             </TouchableOpacity>
           </View>
 
@@ -352,21 +356,28 @@ const CustomerGroupsModal = forwardRef(
                     <View key={group.id} style={styles.groupCard}>
                       {/* Tiêu đề & Thông tin cơ bản */}
                       <View style={styles.groupCardHeader}>
-                        <View style={{ flex: 1 }}>
+                        <View style={{ flex: 1, paddingRight: 8 }}>
                           <View style={styles.groupTitleRow}>
                             <Text style={styles.groupCardName}>{group.name}</Text>
+                            <View style={styles.cycleBadge}>
+                              <Text style={styles.cycleBadgeText}>
+                                📅 {getCycleLabel(group.billingCycle)}
+                              </Text>
+                            </View>
                             {group.source === 'portal' && (
                               <View style={styles.portalBadge}>
                                 <Text style={styles.portalBadgeText}>Zalo Portal</Text>
                               </View>
                             )}
                           </View>
-                          {group.note ? (
-                            <Text style={styles.groupCardNote}>{group.note}</Text>
-                          ) : null}
                           <Text style={styles.groupCardMembers} numberOfLines={1}>
                             👥 {group.memberCount} quán: {group.memberNamesPreview || 'Chưa có quán'}
                           </Text>
+                          {group.note ? (
+                            <Text style={styles.groupCardNote} numberOfLines={1}>
+                              📝 {group.note}
+                            </Text>
+                          ) : null}
                         </View>
 
                         {/* Tổng nợ của nhóm */}
@@ -379,15 +390,6 @@ const CustomerGroupsModal = forwardRef(
                             ]}
                           >
                             {formatCurrency(group.totalDebt)}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Badge chu kỳ thanh toán */}
-                      <View style={styles.groupMetaRow}>
-                        <View style={styles.cycleBadge}>
-                          <Text style={styles.cycleBadgeText}>
-                            📅 Chu kỳ: {getCycleLabel(group.billingCycle)}
                           </Text>
                         </View>
                       </View>
@@ -581,6 +583,17 @@ const CustomerGroupsModal = forwardRef(
               </View>
             </ScrollView>
           )}
+
+          {/* Nút đóng chân Modal chuẩn Ảnh 2 */}
+          {mode === 'list' && (
+            <TouchableOpacity
+              style={styles.closeFooterBtn}
+              onPress={() => setVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.closeFooterBtnText}>ĐÓNG LẠI</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </SmoothModal>
     );
@@ -591,72 +604,91 @@ export default CustomerGroupsModal;
 
 const styles = StyleSheet.create({
   modalContainer: {
-    width: '95%',
+    width: '100%',
     maxWidth: 680,
-    maxHeight: '90%',
+    maxHeight: '92%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    overflow: 'hidden',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: Platform.OS === 'web' ? 16 : 24,
     alignSelf: 'center',
     marginHorizontal: 'auto',
-    ...SHADOWS.card,
   },
-  modalHeader: {
+  modalHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#F8FAFC',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    paddingBottom: 2,
   },
   modalTitle: {
     fontSize: 17,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#0F172A',
+    letterSpacing: 0.3,
   },
   modalSubtitle: {
     fontSize: 12,
-    color: COLORS.textSecondary,
+    color: '#64748B',
     marginTop: 2,
   },
-  closeBtn: {
+  modalCloseIconBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeBtnText: {
-    fontSize: 14,
+  modalCloseIconText: {
+    fontSize: 16,
+    color: '#64748B',
     fontWeight: 'bold',
-    color: COLORS.textSecondary,
+    lineHeight: 18,
+  },
+  closeFooterBtn: {
+    backgroundColor: '#F1F5F9',
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  closeFooterBtnText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#334155',
   },
   listContainer: {
-    padding: 14,
-    maxHeight: 560,
+    flexShrink: 1,
   },
   toolbarRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
+    paddingBottom: 2,
   },
   groupCountBadge: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color: '#475569',
+    fontWeight: '500',
   },
   createBtn: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: '#10B981',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    ...SHADOWS.small,
   },
   createBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   loadingBox: {
     padding: 40,
@@ -673,50 +705,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F8FAFC',
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderStyle: 'dashed',
+    marginVertical: 10,
   },
   emptyIcon: {
-    fontSize: 40,
+    fontSize: 44,
     marginBottom: 8,
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#0F172A',
     marginBottom: 6,
   },
   emptyDesc: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color: '#64748B',
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 480,
     marginBottom: 16,
   },
   emptyCreateBtn: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 16,
+    backgroundColor: '#10B981',
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 10,
+    ...SHADOWS.small,
   },
   emptyCreateBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: 'bold',
+    fontSize: 13.5,
+    fontWeight: '700',
   },
   groupScroll: {
-    maxHeight: 480,
+    maxHeight: 560,
   },
   groupCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     padding: 12,
     marginBottom: 10,
+    ...SHADOWS.small,
   },
   groupCardHeader: {
     flexDirection: 'row',
@@ -729,74 +764,76 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
+    marginBottom: 4,
   },
   groupCardName: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: COLORS.text,
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: '#0F172A',
   },
   portalBadge: {
     backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   portalBadgeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#0284C7',
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   groupCardNote: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
+    fontSize: 11.5,
+    color: '#64748B',
     marginTop: 2,
+    fontStyle: 'italic',
   },
   groupCardMembers: {
     fontSize: 12,
-    color: '#64748B',
-    marginTop: 4,
+    color: '#475569',
+    marginTop: 2,
   },
   debtBox: {
     alignItems: 'flex-end',
     backgroundColor: '#F8FAFC',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     flexShrink: 0,
   },
   debtBoxLabel: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: COLORS.textSecondary,
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.3,
   },
   debtBoxValue: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    marginTop: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 2,
   },
   debtPositive: {
-    color: COLORS.danger,
+    color: '#DC2626',
   },
   debtZero: {
-    color: COLORS.primary,
-  },
-  groupMetaRow: {
-    marginTop: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
+    color: '#16A34A',
   },
   cycleBadge: {
     backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   cycleBadgeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#B45309',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   groupActionsRow: {
     flexDirection: 'row',
@@ -809,40 +846,51 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   actionBtn: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   payBtn: {
     backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
   },
   payBtnText: {
     color: '#15803D',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   exportBtn: {
     backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
   },
   exportBtnText: {
     color: '#0369A1',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   editBtn: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   editBtnText: {
-    color: COLORS.textSecondary,
+    color: '#475569',
     fontSize: 12,
     fontWeight: '600',
   },
   deleteBtn: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
     paddingHorizontal: 8,
   },
   deleteBtnText: {
-    color: COLORS.danger,
+    color: '#DC2626',
     fontSize: 12,
   },
   /* Form */
@@ -860,27 +908,28 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   textInput: {
-    height: 38,
+    height: 40,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 6,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
     paddingHorizontal: 10,
     backgroundColor: '#F8FAFC',
-    fontSize: 13,
+    fontSize: 13.5,
+    color: '#0F172A',
   },
   quickTemplateBtn: {
     backgroundColor: '#FEF9C3',
     borderWidth: 1,
     borderColor: '#FDE047',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
+    paddingVertical: 9,
+    borderRadius: 8,
     marginBottom: 12,
   },
   quickTemplateBtnText: {
     color: '#854D0E',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '700',
     textAlign: 'center',
   },
   selectHeaderRow: {
@@ -897,27 +946,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   quickSelectBtnText: {
     fontSize: 11,
-    color: COLORS.text,
+    color: '#334155',
     fontWeight: '600',
   },
   searchInput: {
-    height: 34,
+    height: 36,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 6,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
     paddingHorizontal: 10,
     backgroundColor: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 12.5,
     marginBottom: 6,
+    color: '#0F172A',
   },
   customerListBox: {
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 6,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
     backgroundColor: '#F8FAFC',
     overflow: 'hidden',
   },
@@ -935,73 +985,78 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FDF4',
   },
   checkboxSquare: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 6,
     borderWidth: 1.5,
     borderColor: '#94A3B8',
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkboxSquareChecked: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
   },
   checkIcon: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   custName: {
     fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.text,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   custAddress: {
     fontSize: 11,
-    color: COLORS.textSecondary,
+    color: '#64748B',
     marginTop: 1,
   },
   custDebtText: {
     fontSize: 12,
-    fontWeight: 'bold',
-    color: COLORS.danger,
+    fontWeight: '700',
+    color: '#DC2626',
   },
   noCustText: {
     padding: 16,
     textAlign: 'center',
     fontSize: 12,
-    color: COLORS.textSecondary,
+    color: '#64748B',
   },
   formFooterRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
     gap: 10,
     marginTop: 14,
-    paddingTop: 10,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    borderTopColor: '#E2E8F0',
   },
   cancelBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 6,
+    paddingHorizontal: 16,
+    height: 46,
+    borderRadius: 10,
     backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelBtnText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
+    fontSize: 14,
+    color: '#475569',
     fontWeight: '600',
   },
   submitBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 6,
-    backgroundColor: COLORS.primary,
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.small,
   },
   submitBtnText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#FFFFFF',
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
 });

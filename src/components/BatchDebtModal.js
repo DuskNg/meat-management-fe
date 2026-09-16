@@ -717,7 +717,8 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={handleClose}>
+    <>
+      <SmoothModal visible={visible} onClose={handleClose}>
       <View style={styles.modalViewFullScreen}>
         {/* Header Modal Full Màn Hình Cực Kỳ Tinh Gọn */}
         <View style={styles.modalHeader}>
@@ -1181,12 +1182,13 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
           </View>
         </View>
       </View>
+    </SmoothModal>
 
       {/* Modals hỗ trợ PIN & Popup */}
       <PinInputModal ref={pinInputRef} />
       <PinSetupModal ref={pinSetupRef} />
       <PopupModal ref={popupRef} />
-    </SmoothModal>
+    </>
   );
 });
 

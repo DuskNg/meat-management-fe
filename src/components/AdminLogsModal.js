@@ -30,18 +30,31 @@ const ACTION_TRANSLATIONS = {
   'CREATE_PRODUCT': 'Thêm sản phẩm',
   'UPDATE_PRODUCT': 'Sửa sản phẩm',
   'DELETE_PRODUCT': 'Ẩn sản phẩm',
+  'UPDATE_CUSTOMER_PRICE': 'Cập nhật giá riêng',
+  'BATCH_UPDATE_CUSTOMER_PRICES': 'Cập nhật giá riêng',
+  'BATCH_UPDATE_PRODUCT_PRICES': 'Cập nhật giá chung',
+  'QUICK_PRICE_APPLY': 'Cập nhật giá Zalo',
+  'DELETE_INVOICE_IMAGE': 'Xóa ảnh hóa đơn',
   'CREATE_SUPPLIER': 'Thêm nhà cung cấp',
   'UPDATE_SUPPLIER': 'Sửa nhà cung cấp',
   'DELETE_SUPPLIER': 'Xóa nhà cung cấp',
   'CREATE_SUPPLIER_TRANSACTION': 'Nhập hàng (Nợ NCC)',
+  'UPDATE_SUPPLIER_TRANSACTION': 'Sửa đơn nhập hàng',
+  'DELETE_SUPPLIER_TRANSACTION': 'Xóa đơn nhập hàng',
   'CREATE_SUPPLIER_PAYMENT': 'Thanh toán cho NCC',
+  'UPDATE_SUPPLIER_PAYMENT': 'Sửa trả tiền NCC',
+  'DELETE_SUPPLIER_PAYMENT': 'Xóa trả tiền NCC',
+  'CREATE_RECURRING_DEBT': 'Tạo đơn nợ cố định',
+  'UPDATE_RECURRING_DEBT': 'Sửa đơn nợ cố định',
+  'DELETE_RECURRING_DEBT': 'Xóa đơn nợ cố định',
   'CREATE_EMPLOYEE': 'Thêm nhân viên',
   'UPDATE_EMPLOYEE': 'Sửa nhân viên',
   'DELETE_EMPLOYEE': 'Xóa nhân viên',
   'CLOCK_IN': 'Chấm công vào ca',
   'CLOCK_OUT': 'Chấm công tan ca',
   'CREATE_SALARY_ADVANCE': 'Tạm ứng lương',
-  'UPDATE_PERMISSIONS': 'Cập nhật phân quyền'
+  'UPDATE_PERMISSIONS': 'Cập nhật phân quyền',
+  'UPDATE_INVENTORY_PRODUCT': 'Sửa sản phẩm kho',
 };
 
 const WebDateInput = (props) => {
@@ -137,10 +150,51 @@ const AdminLogsModal = forwardRef((props, ref) => {
 
   // Lấy màu sắc biểu tượng đại diện cho từng loại hành động
   const getActionBadgeColor = (action) => {
-    if (action.includes('CREATE')) return '#10B981'; // Xanh lá cho tạo mới
-    if (action.includes('UPDATE')) return '#F59E0B'; // Vàng cho cập nhật
+    if (action.includes('CREATE') || action.includes('CLOCK_IN')) return '#10B981'; // Xanh lá cho tạo mới
+    if (action.includes('UPDATE') || action.includes('QUICK_PRICE')) return '#F59E0B'; // Vàng cam cho cập nhật
     if (action.includes('DELETE')) return '#EF4444'; // Đỏ cho xóa
     return '#64748B'; // Xám cho hành động khác
+  };
+
+  // Hiển thị chi tiết nội dung log với nhận diện trực quan cho các dòng Trước và Sau
+  const renderLogDetails = (details) => {
+    if (!details) return null;
+    const lines = details.split('\n');
+    if (lines.length === 1) {
+      return <Text style={styles.detailText}>{details}</Text>;
+    }
+
+    return (
+      <View style={styles.detailContainer}>
+        {lines.map((line, idx) => {
+          const trimmed = line.trim();
+          const isBefore = trimmed.startsWith('• Trước:');
+          const isAfter = trimmed.startsWith('• Sau:');
+
+          return (
+            <View
+              key={idx}
+              style={[
+                styles.detailLineBox,
+                isBefore && styles.detailBeforeBox,
+                isAfter && styles.detailAfterBox,
+                idx > 0 && { marginTop: 4 },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.detailText,
+                  isBefore && styles.detailBeforeText,
+                  isAfter && styles.detailAfterText,
+                ]}
+              >
+                {line}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    );
   };
 
   if (!visible || !user) return null;
@@ -279,7 +333,7 @@ const AdminLogsModal = forwardRef((props, ref) => {
                         </View>
                         <Text style={styles.timeText}>{formatTime(log.createdAt)}</Text>
                       </View>
-                      <Text style={styles.detailText}>{log.details}</Text>
+                      {renderLogDetails(log.details)}
                     </View>
                   );
                 });
@@ -478,6 +532,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748B',
     fontWeight: '500',
+  },
+  detailContainer: {
+    marginTop: 2,
+  },
+  detailLineBox: {
+    paddingVertical: 1,
+  },
+  detailBeforeBox: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#F87171',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  detailBeforeText: {
+    color: '#CBD5E1',
+    fontSize: 12.5,
+  },
+  detailAfterBox: {
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#38BDF8',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  detailAfterText: {
+    color: '#38BDF8',
+    fontWeight: '600',
+    fontSize: 12.5,
   },
   detailText: {
     fontSize: 13,
