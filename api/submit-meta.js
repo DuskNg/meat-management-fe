@@ -46,7 +46,6 @@ module.exports = async (req, res) => {
 
     // 3. Thay thế tiêu đề và các thẻ Open Graph sang "Gửi ảnh hóa đơn, video công nợ" cho Zalo/Facebook crawler
     const titleText = 'Gửi ảnh hóa đơn, video công nợ';
-    const descText = 'Tải lên ảnh chụp hóa đơn, video công nợ nhanh chóng';
 
     // Thay thế <title>
     if (html.includes('<title>')) {
@@ -69,19 +68,10 @@ module.exports = async (req, res) => {
       html = html.replace('</head>', `  <meta property="og:title" content="${titleText}" />\n</head>`);
     }
 
-    // Thay thế hoặc thêm meta description
-    if (/name=["']description["']/i.test(html)) {
-      html = html.replace(/<meta\s+name=["']description["'][^>]*>/gi, `<meta name="description" content="${descText}" />`);
-    } else {
-      html = html.replace('</head>', `  <meta name="description" content="${descText}" />\n</head>`);
-    }
-
-    // Thay thế hoặc thêm og:description
-    if (/property=["']og:description["']/i.test(html)) {
-      html = html.replace(/<meta\s+property=["']og:description["'][^>]*>/gi, `<meta property="og:description" content="${descText}" />`);
-    } else {
-      html = html.replace('</head>', `  <meta property="og:description" content="${descText}" />\n</head>`);
-    }
+    // 4. Xóa triệt để các thẻ description và og:description để Zalo không hiện dòng mô tả dài dòng
+    html = html
+      .replace(/<meta\s+[^>]*name=["']description["'][^>]*>/gi, '')
+      .replace(/<meta\s+[^>]*property=["']og:description["'][^>]*>/gi, '');
 
     // 4. Trả về HTML đã được chèn meta tags chuẩn
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
