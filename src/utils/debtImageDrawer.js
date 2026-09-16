@@ -872,3 +872,290 @@ export const drawDebtImageCanvas = async ({
     hasTransactions: true,
   };
 };
+
+/**
+ * Vẽ ảnh bảng tổng hợp công nợ của cả nhóm khách hàng / chuỗi cửa hàng
+ * @param {Object} params
+ * @param {string} params.groupName - Tên nhóm khách hàng
+ * @param {string} params.fromDate - Từ ngày (DD/MM/YYYY)
+ * @param {string} params.toDate - Đến ngày (DD/MM/YYYY)
+ * @param {Array} params.items - Danh sách kết quả từng khách: [{ customer, totalMeatAmount, totalReturnAmount, totalPaymentAmount, finalDebt, hasData }]
+ * @returns {Promise<{ imageUri: string, groupTotalMeat: number, groupTotalReturn: number, groupTotalPayment: number, groupTotalDebt: number }>}
+ */
+export const drawGroupSummaryCanvas = async ({
+  groupName = 'Nhóm khách hàng',
+  fromDate = '',
+  toDate = '',
+  items = [],
+}) => {
+  if (typeof document === 'undefined') {
+    return { imageUri: null, groupTotalMeat: 0, groupTotalReturn: 0, groupTotalPayment: 0, groupTotalDebt: 0 };
+  }
+
+  // Tính các con số tổng của cả nhóm
+  const groupTotalMeat = items.reduce((sum, it) => sum + (Number(it.totalMeatAmount) || 0), 0);
+  const groupTotalReturn = items.reduce((sum, it) => sum + (Number(it.totalReturnAmount) || 0), 0);
+  const groupTotalPayment = items.reduce((sum, it) => sum + (Number(it.totalPaymentAmount) || 0), 0);
+  const groupTotalDebt = items.reduce((sum, it) => sum + (Number(it.finalDebt) || 0), 0);
+
+  const hasAnyReturn = items.some(it => (Number(it.totalReturnAmount) || 0) > 0);
+
+  // Định nghĩa cột bảng
+  const startX = 36;
+  const colWidths = hasAnyReturn
+    ? [46, 230, 125, 105, 125, 139]
+    : [46, 254, 150, 150, 160];
+  const colHeaders = hasAnyReturn
+    ? ['STT', 'CỬA HÀNG / KHÁCH HÀNG', 'TIỀN HÀNG', 'TRẢ HÀNG', 'ĐÃ THU', 'CÒN NỢ']
+    : ['STT', 'CỬA HÀNG / KHÁCH HÀNG', 'TIỀN HÀNG', 'ĐÃ THU', 'CÒN NỢ'];
+  const colAligns = hasAnyReturn
+    ? ['center', 'left', 'right', 'right', 'right', 'right']
+    : ['center', 'left', 'right', 'right', 'right'];
+
+  const panelWidth = colWidths.reduce((a, b) => a + b, 0);
+  const canvasWidth = startX * 2 + panelWidth;
+
+  const headerCardHeight = 66;
+  const headerCardY = 22;
+  const startTableY = headerCardY + headerCardHeight + 20;
+  const tableHeaderHeight = 38;
+  const rowHeight = 36;
+  const tableContentHeight = Math.max(items.length, 1) * rowHeight;
+
+  const summaryRowHeight = 44;
+  const summaryRowsCount = 1 + (hasAnyReturn ? 1 : 0) + (groupTotalPayment > 0 ? 1 : 0) + 1;
+  const summaryHeight = summaryRowsCount * summaryRowHeight;
+  const summaryStartY = startTableY + tableHeaderHeight + tableContentHeight + 16;
+  const footerNoteHeight = 46;
+  const canvasHeight = summaryStartY + summaryHeight + footerNoteHeight + 24;
+
+  // Tạo Canvas với scale = 2 (Chuẩn Retina sắc nét cao)
+  const canvas = document.createElement('canvas');
+  const scale = 2;
+  canvas.width = canvasWidth * scale;
+  canvas.height = canvasHeight * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+
+  // Nền trắng toàn bộ ảnh
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  // ─── 1. Khung Header ───
+  const cardRadius = 10;
+  const cardX = startX;
+  const cardW = panelWidth;
+
+  ctx.fillStyle = '#F8FAFC';
+  ctx.strokeStyle = '#CBD5E1';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(cardX, headerCardY, cardW, headerCardHeight, cardRadius);
+  } else {
+    ctx.rect(cardX, headerCardY, cardW, headerCardHeight);
+  }
+  ctx.fill();
+  ctx.stroke();
+
+  // Tiêu đề Header
+  ctx.fillStyle = '#0F172A';
+  ctx.font = 'bold 18px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BẢNG TỔNG HỢP CÔNG NỢ NHÓM', canvasWidth / 2, headerCardY + 22);
+
+  // Phụ đề (Tên nhóm & Thời gian)
+  const dateRangeStr = (fromDate && toDate && fromDate === toDate)
+    ? `Ngày: ${fromDate}`
+    : `Từ ${fromDate || ''} đến ${toDate || ''}`;
+  const subText = `NHÓM: ${groupName.toUpperCase()}  •  ${dateRangeStr}  •  ${items.length} CỬA HÀNG`;
+
+  ctx.fillStyle = '#475569';
+  ctx.font = 'bold 12.5px Arial, sans-serif';
+  ctx.fillText(subText, canvasWidth / 2, headerCardY + 46);
+
+  // ─── 2. Bảng dữ liệu từng cửa hàng ───
+  ctx.fillStyle = '#1E293B';
+  ctx.fillRect(startX, startTableY, panelWidth, tableHeaderHeight);
+  ctx.strokeStyle = '#0F172A';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(startX, startTableY, panelWidth, tableHeaderHeight);
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 12px Arial, sans-serif';
+  ctx.textBaseline = 'middle';
+
+  let curColX = startX;
+  for (let c = 0; c < colHeaders.length; c++) {
+    const colW = colWidths[c];
+    const align = colAligns[c];
+    ctx.textAlign = align;
+    let textX = curColX + (align === 'center' ? colW / 2 : align === 'right' ? colW - 10 : 10);
+    ctx.fillText(colHeaders[c], textX, startTableY + tableHeaderHeight / 2);
+
+    if (c < colHeaders.length - 1) {
+      ctx.strokeStyle = '#334155';
+      ctx.beginPath();
+      ctx.moveTo(curColX + colW, startTableY);
+      ctx.lineTo(curColX + colW, startTableY + tableHeaderHeight);
+      ctx.stroke();
+    }
+    curColX += colW;
+  }
+
+  // Vẽ từng dòng dữ liệu khách hàng
+  let curRowY = startTableY + tableHeaderHeight;
+  items.forEach((it, idx) => {
+    // Màu nền so le
+    ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+    ctx.fillRect(startX, curRowY, panelWidth, rowHeight);
+
+    // Viền ngang
+    ctx.strokeStyle = '#E2E8F0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(startX, curRowY + rowHeight);
+    ctx.lineTo(startX + panelWidth, curRowY + rowHeight);
+    ctx.stroke();
+
+    const stt = String(idx + 1);
+    const custName = it.customer?.name || 'Khách hàng';
+    const meatAmt = Number(it.totalMeatAmount) || 0;
+    const returnAmt = Number(it.totalReturnAmount) || 0;
+    const payAmt = Number(it.totalPaymentAmount) || 0;
+    const debtAmt = Number(it.finalDebt) || 0;
+
+    const rowValues = hasAnyReturn
+      ? [
+          stt,
+          custName,
+          meatAmt > 0 ? `${meatAmt.toLocaleString('vi-VN')} đ` : '-',
+          returnAmt > 0 ? `${returnAmt.toLocaleString('vi-VN')} đ` : '-',
+          payAmt > 0 ? `${payAmt.toLocaleString('vi-VN')} đ` : '-',
+          debtAmt > 0 ? `${debtAmt.toLocaleString('vi-VN')} đ` : '0 đ',
+        ]
+      : [
+          stt,
+          custName,
+          meatAmt > 0 ? `${meatAmt.toLocaleString('vi-VN')} đ` : '-',
+          payAmt > 0 ? `${payAmt.toLocaleString('vi-VN')} đ` : '-',
+          debtAmt > 0 ? `${debtAmt.toLocaleString('vi-VN')} đ` : '0 đ',
+        ];
+
+    let rowX = startX;
+    for (let c = 0; c < rowValues.length; c++) {
+      const colW = colWidths[c];
+      const align = colAligns[c];
+      ctx.textAlign = align;
+      let textX = rowX + (align === 'center' ? colW / 2 : align === 'right' ? colW - 10 : 10);
+
+      // Định dạng màu sắc từng cột
+      if (c === rowValues.length - 1) {
+        ctx.fillStyle = debtAmt > 0 ? '#DC2626' : '#059669';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+      } else if (c === 1) {
+        ctx.fillStyle = '#0F172A';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+      } else if (hasAnyReturn && c === 3) {
+        ctx.fillStyle = returnAmt > 0 ? '#D97706' : '#94A3B8';
+        ctx.font = '12px Arial, sans-serif';
+      } else if ((hasAnyReturn && c === 4) || (!hasAnyReturn && c === 3)) {
+        ctx.fillStyle = payAmt > 0 ? '#059669' : '#94A3B8';
+        ctx.font = '12px Arial, sans-serif';
+      } else {
+        ctx.fillStyle = (meatAmt > 0 || c === 0) ? '#334155' : '#94A3B8';
+        ctx.font = '12px Arial, sans-serif';
+      }
+
+      ctx.fillText(rowValues[c], textX, curRowY + rowHeight / 2);
+
+      // Viền dọc giữa các cột
+      if (c < rowValues.length - 1) {
+        ctx.strokeStyle = '#E2E8F0';
+        ctx.beginPath();
+        ctx.moveTo(rowX + colW, curRowY);
+        ctx.lineTo(rowX + colW, curRowY + rowHeight);
+        ctx.stroke();
+      }
+      rowX += colW;
+    }
+
+    curRowY += rowHeight;
+  });
+
+  // Viền bao quanh bảng
+  ctx.strokeStyle = '#CBD5E1';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(startX, startTableY, panelWidth, tableHeaderHeight + tableContentHeight);
+
+  // ─── 3. Bảng tổng cộng của cả nhóm (Summary Panel) ───
+  let curSummaryY = summaryStartY;
+  const summaryColLeftWidth = panelWidth - 210;
+
+  const drawSummaryRow = (label, valueStr, isTotal = false, isDebt = false) => {
+    ctx.fillStyle = isDebt ? '#FEF2F2' : (isTotal ? '#F1F5F9' : '#FFFFFF');
+    ctx.fillRect(startX, curSummaryY, panelWidth, summaryRowHeight);
+
+    ctx.strokeStyle = isDebt ? '#FCA5A5' : '#CBD5E1';
+    ctx.lineWidth = isDebt ? 1.5 : 1;
+    ctx.strokeRect(startX, curSummaryY, panelWidth, summaryRowHeight);
+
+    // Vạch ngăn giữa nhãn và số tiền
+    ctx.beginPath();
+    ctx.moveTo(startX + summaryColLeftWidth, curSummaryY);
+    ctx.lineTo(startX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
+    ctx.stroke();
+
+    // Nhãn bên trái
+    ctx.fillStyle = isDebt ? '#991B1B' : '#334155';
+    ctx.font = isDebt ? 'bold 14px Arial, sans-serif' : 'bold 13px Arial, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, startX + summaryColLeftWidth - 12, curSummaryY + summaryRowHeight / 2);
+
+    // Số tiền bên phải
+    ctx.fillStyle = isDebt ? (groupTotalDebt > 0 ? '#DC2626' : '#059669') : (isTotal ? '#0F172A' : '#059669');
+    ctx.font = isDebt ? 'bold 18.5px Arial, sans-serif' : 'bold 14.5px Arial, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(valueStr, startX + panelWidth - 12, curSummaryY + summaryRowHeight / 2);
+
+    curSummaryY += summaryRowHeight;
+  };
+
+  drawSummaryRow('TỔNG TIỀN HÀNG CẢ NHÓM:', `${groupTotalMeat.toLocaleString('vi-VN')} đ`, true);
+  if (hasAnyReturn) {
+    drawSummaryRow('TỔNG TIỀN TRẢ HÀNG:', `${groupTotalReturn.toLocaleString('vi-VN')} đ`, false);
+  }
+  if (groupTotalPayment > 0) {
+    drawSummaryRow('TỔNG ĐÃ THANH TOÁN:', `${groupTotalPayment.toLocaleString('vi-VN')} đ`, false);
+  }
+  drawSummaryRow('TỔNG CÔNG NỢ CỦA NHÓM:', `${groupTotalDebt.toLocaleString('vi-VN')} đ`, true, true);
+
+  // Viền ngoài bảng tổng
+  ctx.strokeStyle = '#64748B';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(startX, summaryStartY, panelWidth, curSummaryY - summaryStartY);
+
+  // ─── 4. Dòng ghi chú chân trang ───
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const exportTimeStr = `${pad(now.getHours())}:${pad(now.getMinutes())} ngày ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+
+  ctx.font = 'italic 12px Arial, sans-serif';
+  ctx.fillStyle = '#64748B';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`* Bảng tổng hợp tự động bao gồm ${items.length} cửa hàng/khách hàng trong nhóm`, startX, curSummaryY + 16);
+  ctx.textAlign = 'right';
+  ctx.fillText(`Xuất lúc: ${exportTimeStr}`, startX + panelWidth, curSummaryY + 16);
+
+  const url = canvas.toDataURL('image/png');
+  return {
+    imageUri: url,
+    groupTotalMeat,
+    groupTotalReturn,
+    groupTotalPayment,
+    groupTotalDebt,
+  };
+};

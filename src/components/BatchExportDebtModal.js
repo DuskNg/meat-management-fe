@@ -19,7 +19,7 @@ import DatePickerInput from './DatePickerInput';
 import CustomSelect from './CustomSelect';
 import { showGlobalToast } from '../store/toastStore';
 import { useCustomerGroups } from '../hooks/useCustomerGroups';
-import { drawDebtImageCanvas, parseDDMMYYYY } from '../utils/debtImageDrawer';
+import { drawDebtImageCanvas, parseDDMMYYYY, drawGroupSummaryCanvas } from '../utils/debtImageDrawer';
 import {
   downloadOrShareMultipleImages,
   downloadOrShareImage,
@@ -135,6 +135,17 @@ const BatchExportDebtModal = forwardRef(({ popupModalRef, currentUserId }, ref) 
   const [activePreset, setActivePreset] = useState('this_month');
   const [fromDate, setFromDate] = useState(getPresetRange('this_month').from);
   const [toDate, setToDate] = useState(getPresetRange('this_month').to);
+
+  // Tên của nhóm khách hàng đang chọn (dùng đặt tiêu đề bảng tổng hợp)
+  const currentGroupName = useMemo(() => {
+    if (selectedGroupId && selectedGroupId !== 'all' && selectedGroupId !== 'has_debt' && selectedGroupId !== 'custom') {
+      const g = groups.find(x => x.id === selectedGroupId);
+      if (g?.name) return g.name;
+    }
+    if (selectedGroupId === 'has_debt') return 'Khách còn nợ';
+    if (selectedGroupId === 'all') return 'Tất cả khách hàng';
+    return 'Nhóm khách hàng';
+  }, [selectedGroupId, groups]);
 
   // Trạng thái tiến trình xuất nợ
   const [exporting, setExporting] = useState(false);
@@ -431,9 +442,47 @@ const BatchExportDebtModal = forwardRef(({ popupModalRef, currentUserId }, ref) 
         }
       }
 
+      // ─── TẠO THÊM 1 ẢNH BẢNG TỔNG HỢP CÔNG NỢ CỦA CẢ NHÓM ───
+      let groupSummaryData = null;
+      try {
+        const summaryResult = await drawGroupSummaryCanvas({
+          groupName: currentGroupName,
+          fromDate,
+          toDate,
+          items: results,
+        });
+
+        if (summaryResult && summaryResult.imageUri) {
+          const cleanGroupName = (currentGroupName || 'Nhom').replace(/[^a-zA-Z0-9À-ỹ]/g, '_');
+          const cleanFrom = fromDate.replace(/\//g, '-');
+          const cleanTo = toDate.replace(/\//g, '-');
+          const summaryFileName = `Tong_hop_cong_no_Nhom_${cleanGroupName}_${cleanFrom}_${cleanTo}.png`;
+
+          const summaryImageItem = {
+            imageUri: summaryResult.imageUri,
+            fileName: summaryFileName,
+            customerName: `Tổng hợp nhóm ${currentGroupName}`,
+            isGroupSummary: true,
+          };
+
+          // Đưa ảnh tổng hợp nhóm lên ĐẦU danh sách ảnh để xuất ra máy / chuyển tiếp Zalo
+          imagesToProcess.unshift(summaryImageItem);
+
+          groupSummaryData = {
+            ...summaryResult,
+            imageUri: summaryResult.imageUri,
+            fileName: summaryFileName,
+            groupName: currentGroupName,
+          };
+        }
+      } catch (sumErr) {
+        console.error('Lỗi khi vẽ ảnh tổng hợp nhóm:', sumErr);
+      }
+
       setExportResults({
         items: results,
         successImages: imagesToProcess,
+        groupSummary: groupSummaryData,
         fromDate,
         toDate,
       });
@@ -445,7 +494,7 @@ const BatchExportDebtModal = forwardRef(({ popupModalRef, currentUserId }, ref) 
         await downloadOrShareMultipleImages({
           items: imagesToProcess,
           title: `Bảng kê công nợ (${fromDate} - ${toDate})`,
-          text: `Bảng kê công nợ ${imagesToProcess.length} khách hàng`,
+          text: `Bảng kê công nợ ${imagesToProcess.length} ảnh (${currentGroupName})`,
         });
       } else {
         showGlobalToast('Không có giao dịch phát sinh nào trong khoảng thời gian đã chọn.', 'warning');
@@ -485,6 +534,18 @@ const BatchExportDebtModal = forwardRef(({ popupModalRef, currentUserId }, ref) 
       text: `Gửi bảng kê công nợ của ${item.customer.name}`,
       phone: item.customer.phone,
       customerName: item.customer.name,
+    });
+  };
+
+  // Tải hoặc gửi Zalo riêng cho ảnh tổng hợp nhóm
+  const handleSingleGroupSummaryAction = async (summary) => {
+    if (!summary?.imageUri) return;
+    await downloadOrShareImage({
+      imageUri: summary.imageUri,
+      fileName: summary.fileName,
+      title: `Bảng tổng hợp công nợ - ${summary.groupName}`,
+      text: `Bảng tổng hợp công nợ ${summary.groupName}`,
+      customerName: summary.groupName,
     });
   };
 
@@ -569,6 +630,57 @@ const BatchExportDebtModal = forwardRef(({ popupModalRef, currentUserId }, ref) 
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* ─── ẢNH BẢNG TỔNG HỢP CÔNG NỢ CẢ NHÓM ─── */}
+            {exportResults.groupSummary && exportResults.groupSummary.imageUri && (
+              <View style={styles.groupSummarySection}>
+                <Text style={styles.sectionHeaderLabel}>Bảng tổng hợp công nợ nhóm:</Text>
+                <View style={styles.groupSummaryCard}>
+                  <View style={styles.resultItemInfo}>
+                    <View style={styles.resultItemTitleRow}>
+                      <Text style={styles.groupSummaryBadge}>📊 TỔNG HỢP NHÓM</Text>
+                      <Text style={styles.resultItemName}>{exportResults.groupSummary.groupName}</Text>
+                    </View>
+                    <View style={styles.resultItemMetrics}>
+                      <Text style={styles.metricText}>
+                        Tiền hàng: <Text style={styles.metricValue}>{formatCurrency(exportResults.groupSummary.groupTotalMeat)}</Text>
+                      </Text>
+                      <Text style={styles.metricDivider}>•</Text>
+                      <Text style={styles.metricText}>
+                        Đã thu: <Text style={styles.metricValueGreen}>{formatCurrency(exportResults.groupSummary.groupTotalPayment)}</Text>
+                      </Text>
+                      <Text style={styles.metricDivider}>•</Text>
+                      <Text style={styles.metricText}>
+                        Còn nợ: <Text style={styles.metricValueRed}>{formatCurrency(exportResults.groupSummary.groupTotalDebt)}</Text>
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.resultItemActions}>
+                    <TouchableOpacity
+                      style={styles.thumbnailBtn}
+                      onPress={() => setZoomedImage(exportResults.groupSummary.imageUri)}
+                      activeOpacity={0.8}
+                    >
+                      <Image source={{ uri: exportResults.groupSummary.imageUri }} style={styles.thumbnailImg} resizeMode="cover" />
+                      <View style={styles.thumbnailZoomBadge}>
+                        <Text style={styles.thumbnailZoomText}>🔍</Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.itemDirectActionBtn, isMobileDevice() ? styles.zaloMiniBtn : styles.pcMiniBtn]}
+                      onPress={() => handleSingleGroupSummaryAction(exportResults.groupSummary)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.itemDirectActionBtnText}>
+                        {isMobileDevice() ? '💬 Zalo' : '💾 Tải'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            )}
 
             {/* Danh sách từng khách hàng đã xuất */}
             <Text style={styles.sectionHeaderLabel}>Chi tiết từng khách hàng:</Text>
@@ -1361,6 +1473,29 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#334155',
     marginBottom: 8,
+  },
+  groupSummarySection: {
+    marginBottom: 10,
+  },
+  groupSummaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  groupSummaryBadge: {
+    backgroundColor: '#2563EB',
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
   },
   resultItemCard: {
     flexDirection: 'row',
