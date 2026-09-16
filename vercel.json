@@ -43,6 +43,10 @@
   ],
   "rewrites": [
     {
+      "source": "/quick-price/:match*",
+      "destination": "/api/quick-price-meta"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

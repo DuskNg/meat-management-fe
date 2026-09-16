@@ -103,6 +103,13 @@ export default function QuickPriceScreen() {
     }
   };
 
+  // Cập nhật tiêu đề tab trình duyệt web
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.title = 'Cập nhật giá thịt';
+    }
+  }, []);
+
   useEffect(() => {
     fetchLinkData();
   }, [token]);

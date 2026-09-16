@@ -575,18 +575,22 @@ const BatchExportDebtModal = forwardRef(({ popupModalRef, currentUserId }, ref) 
             {exportResults.items.map((resItem, idx) => (
               <View key={resItem.customer.id || idx} style={styles.resultItemCard}>
                 <View style={styles.resultItemInfo}>
-                  <Text style={styles.resultItemName}>{resItem.customer.name}</Text>
-                  <Text style={styles.resultItemPhone}>
-                    📞 {resItem.customer.phone || 'Chưa có SĐT'}
-                  </Text>
+                  <View style={styles.resultItemTitleRow}>
+                    <Text style={styles.resultItemName}>{resItem.customer.name}</Text>
+                    {Boolean(resItem.customer.phone) && (
+                      <Text style={styles.resultItemPhone}>📞 {resItem.customer.phone}</Text>
+                    )}
+                  </View>
                   {resItem.hasData ? (
                     <View style={styles.resultItemMetrics}>
                       <Text style={styles.metricText}>
                         Tiền hàng: <Text style={styles.metricValue}>{formatCurrency(resItem.totalMeatAmount)}</Text>
                       </Text>
+                      <Text style={styles.metricDivider}>•</Text>
                       <Text style={styles.metricText}>
                         Đã thu: <Text style={styles.metricValueGreen}>{formatCurrency(resItem.totalPaymentAmount)}</Text>
                       </Text>
+                      <Text style={styles.metricDivider}>•</Text>
                       <Text style={styles.metricText}>
                         Còn nợ: <Text style={styles.metricValueRed}>{formatCurrency(resItem.finalDebt)}</Text>
                       </Text>
@@ -605,8 +609,10 @@ const BatchExportDebtModal = forwardRef(({ popupModalRef, currentUserId }, ref) 
                       onPress={() => setZoomedImage(resItem.imageUri)}
                       activeOpacity={0.8}
                     >
-                      <Image source={{ uri: resItem.imageUri }} style={styles.thumbnailImg} resizeMode="contain" />
-                      <Text style={styles.thumbnailZoomText}>🔍 Xem</Text>
+                      <Image source={{ uri: resItem.imageUri }} style={styles.thumbnailImg} resizeMode="cover" />
+                      <View style={styles.thumbnailZoomBadge}>
+                        <Text style={styles.thumbnailZoomText}>🔍</Text>
+                      </View>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -1363,26 +1369,40 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 10,
-    marginBottom: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    marginBottom: 6,
   },
   resultItemInfo: {
     flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  resultItemTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
   },
   resultItemName: {
     fontSize: 13.5,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#0F172A',
   },
   resultItemPhone: {
     fontSize: 11.5,
     color: '#64748B',
-    marginTop: 1,
   },
   resultItemMetrics: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 2,
+  },
+  metricDivider: {
+    fontSize: 10,
+    color: '#CBD5E1',
   },
   metricText: {
     fontSize: 11.5,
@@ -1397,38 +1417,50 @@ const styles = StyleSheet.create({
     color: '#059669',
   },
   metricValueRed: {
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#DC2626',
   },
   noDataWarningText: {
-    fontSize: 11.5,
+    fontSize: 11,
     color: '#D97706',
-    marginTop: 4,
+    marginTop: 2,
   },
   resultItemActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginLeft: 8,
+    flexShrink: 0,
   },
   thumbnailBtn: {
-    alignItems: 'center',
+    position: 'relative',
+    borderRadius: 6,
+    overflow: 'hidden',
   },
   thumbnailImg: {
-    width: 44,
-    height: 44,
-    borderRadius: 4,
+    width: 34,
+    height: 34,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+  },
+  thumbnailZoomBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    paddingHorizontal: 3,
+    paddingVertical: 1,
+    borderTopLeftRadius: 4,
   },
   thumbnailZoomText: {
-    fontSize: 10,
-    color: '#2563EB',
-    marginTop: 2,
+    fontSize: 8.5,
+    color: '#FFFFFF',
   },
   itemDirectActionBtn: {
+    height: 34,
     paddingHorizontal: 10,
-    paddingVertical: 8,
     borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1441,7 +1473,7 @@ const styles = StyleSheet.create({
   },
   itemDirectActionBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   zoomModalView: {
