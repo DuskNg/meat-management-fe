@@ -198,8 +198,8 @@ export default function DashboardScreen() {
   const { data: pendingStaffSubmissionsRes, refetch: refetchStaffSubmissions } = useQuery({
     queryKey: ['staffPendingSubmissions'],
     queryFn: async () => {
-      const res = await api.get('/staff-submissions', { params: { status: 'READY_FOR_REVIEW' } });
-      return res.data;
+      const res = await api.get('/staff-submissions');
+      return { data: (res.data?.data || []).filter((s) => s.status !== 'APPROVED') };
     },
     refetchInterval: 20000,
     enabled: !!auth.user && !auth.user?.workspaceMember,
@@ -1898,7 +1898,7 @@ export default function DashboardScreen() {
                   style={[styles.portalNotifyBtn, { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }]}
                   onPress={() => staffSubmissionReviewModalRef.current?.open()}
                   activeOpacity={0.7}
-                  title="Duyệt hóa đơn nhân viên gửi qua Zalo (AI tự phân tích)"
+                  title="Phân tích hóa đơn & nhập công nợ từ Zalo nhân viên"
                 >
                   <Text style={styles.portalNotifyIcon}>🤖</Text>
                   {pendingStaffSubmissionCount > 0 && (
@@ -2892,7 +2892,7 @@ export default function DashboardScreen() {
                 style={[styles.portalNotifyBtn, { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }]}
                 onPress={() => staffSubmissionReviewModalRef.current?.open()}
                 activeOpacity={0.7}
-                title="Duyệt hóa đơn nhân viên gửi qua Zalo (AI tự phân tích)"
+                title="Phân tích hóa đơn & nhập công nợ từ Zalo nhân viên"
               >
                 <Text style={styles.portalNotifyIcon}>🤖</Text>
                 {pendingStaffSubmissionCount > 0 && (

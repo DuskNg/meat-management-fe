@@ -13,22 +13,67 @@ import {
   Modal,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { api } from '../../src/api/client';
+import { api, API_HOST } from '../../src/api/client';
 import { showGlobalToast } from '../../src/store/toastStore';
 import DatePickerInput from '../../src/components/DatePickerInput';
 import ImagePreviewModal from '../../src/components/ImagePreviewModal';
 
-// Helper nén ảnh bằng HTML5 Canvas trên trình duyệt trước khi upload
-const compressImageClient = (file, maxWidth = 1800, quality = 0.85) => {
-  return new Promise((resolve) => {
-    if (!file || !file.type?.startsWith('image/')) {
-      return resolve(null);
+// Helper chuẩn hóa URL hình ảnh/video (hỗ trợ cả link Cloudinary lẫn link cục bộ máy chủ)
+const resolveMediaUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  return `${API_HOST}${url}`;
+};
+
+// Helper nén ảnh siêu tốc bằng HTML5 Canvas + createImageBitmap / Blob URL (Tối ưu tuyệt đối cho hóa đơn giấy)
+const compressImageClient = async (file, maxWidth = 1280, quality = 0.70) => {
+  if (!file || !file.type?.startsWith('image/')) {
+    return null;
+  }
+
+  try {
+    // 1. Ưu tiên giải mã phần cứng bằng createImageBitmap (cực nhanh, đa luồng off-thread, không tốn RAM)
+    if (typeof window !== 'undefined' && 'createImageBitmap' in window) {
+      try {
+        const bitmap = await createImageBitmap(file);
+        let width = bitmap.width;
+        let height = bitmap.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { alpha: false }); // Tắt alpha channel để tăng tốc render 2x
+        if (ctx) {
+          ctx.imageSmoothingQuality = 'medium'; // Tối ưu tốc độ xử lý điểm ảnh
+          ctx.drawImage(bitmap, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          if (typeof bitmap.close === 'function') bitmap.close();
+          return compressedDataUrl;
+        }
+      } catch (bitmapErr) {
+        console.warn('createImageBitmap lỗi, chuyển sang fallback Blob URL:', bitmapErr);
+      }
     }
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
+
+    // 2. Fallback sử dụng URL.createObjectURL (nhanh hơn gấp nhiều lần FileReader thông thường)
+    return await new Promise((resolve) => {
+      if (typeof URL === 'undefined' || !URL.createObjectURL) {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => resolve(event.target.result);
+        reader.onerror = () => resolve(null);
+        return;
+      }
+
+      const blobUrl = URL.createObjectURL(file);
       const img = new window.Image();
-      img.src = event.target.result;
       img.onload = () => {
         let width = img.width;
         let height = img.height;
@@ -41,16 +86,28 @@ const compressImageClient = (file, maxWidth = 1800, quality = 0.85) => {
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve(compressedDataUrl);
+        const ctx = canvas.getContext('2d', { alpha: false });
+        if (ctx) {
+          ctx.imageSmoothingQuality = 'medium';
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          URL.revokeObjectURL(blobUrl);
+          resolve(compressedDataUrl);
+        } else {
+          URL.revokeObjectURL(blobUrl);
+          resolve(null);
+        }
       };
-      img.onerror = () => resolve(event.target.result);
-    };
-    reader.onerror = () => resolve(null);
-  });
+      img.onerror = () => {
+        URL.revokeObjectURL(blobUrl);
+        resolve(null);
+      };
+      img.src = blobUrl;
+    });
+  } catch (err) {
+    console.error('Lỗi khi nén ảnh:', err);
+    return null;
+  }
 };
 
 // Helper sinh ảnh thumbnail thực tế từ frame đầu tiên của Video
@@ -118,6 +175,7 @@ const generateVideoThumbnail = (file) => {
 // Component hiển thị khung hình Video thực tế (thay cho icon mặc định)
 const VideoThumbPreview = ({ file }) => {
   const [thumbSrc, setThumbSrc] = useState(file.thumbUrl || null);
+  const [videoError, setVideoError] = useState(false);
 
   useEffect(() => {
     if (!thumbSrc && file.fileData && typeof document !== 'undefined') {
@@ -126,6 +184,9 @@ const VideoThumbPreview = ({ file }) => {
       v.muted = true;
       v.playsInline = true;
       v.src = file.blobUrl || file.fileData;
+      v.onerror = () => {
+        setVideoError(true);
+      };
       v.onloadeddata = () => {
         v.currentTime = 0.5;
       };
@@ -146,9 +207,16 @@ const VideoThumbPreview = ({ file }) => {
     <View style={styles.videoThumbWrap}>
       {thumbSrc ? (
         <Image source={{ uri: thumbSrc }} style={styles.thumbImage} resizeMode="cover" />
-      ) : typeof window !== 'undefined' ? (
+      ) : !videoError && typeof window !== 'undefined' ? (
         <video
           src={file.blobUrl || file.fileData}
+          onError={(e) => {
+            setVideoError(true);
+            try {
+              e.target.removeAttribute('src');
+              e.target.load();
+            } catch {}
+          }}
           style={{
             width: '100%',
             height: '100%',
@@ -207,6 +275,10 @@ export default function StaffSubmitScreen() {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Trạng thái xử lý và nén tệp khi người dùng vừa chọn từ thư viện
+  const [isProcessingMedia, setIsProcessingMedia] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState({ current: 0, total: 0, text: '', percent: 0 });
 
   // Lịch sử gửi trong ngày của nhóm
   const [historySubmissions, setHistorySubmissions] = useState([]);
@@ -304,64 +376,96 @@ export default function StaffSubmitScreen() {
     }
   };
 
-  // Xử lý chọn nhiều ảnh và video từ thư viện máy
+  // Xử lý chọn nhiều ảnh và video từ thư viện máy với cơ chế NÉN SONG SONG ĐA LUỒNG siêu tốc
   const handleMediaChange = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    showGlobalToast(`Đang tải và chuẩn bị ${files.length} tệp...`, 'info');
+    setIsProcessingMedia(true);
+    setProcessingStatus({ current: 0, total: files.length, text: 'Bắt đầu nén song song...', percent: 10 });
 
-    const processedFiles = [];
-    for (const file of files) {
-      if (file.type.startsWith('image/')) {
-        try {
+    let completedCount = 0;
+
+    // Xử lý 1 tệp độc lập
+    const processSingleFile = async (file) => {
+      const isVideo = file.type.startsWith('video/');
+      try {
+        if (file.type.startsWith('image/')) {
           const base64Data = await compressImageClient(file);
+          completedCount++;
+          setProcessingStatus({
+            current: completedCount,
+            total: files.length,
+            text: `Đã nén tối ưu ${completedCount}/${files.length} tệp...`,
+            percent: Math.round((completedCount / files.length) * 100),
+          });
+
           if (base64Data) {
-            processedFiles.push({
-              id: `${Date.now()}_${Math.random()}`,
+            const approxKb = Math.round((base64Data.length * 0.75) / 1024);
+            return {
+              id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               name: file.name,
               fileType: 'IMAGE',
               fileData: base64Data,
-              sizeStr: `${Math.round(file.size / 1024)} KB`,
-            });
+              sizeStr: `${approxKb} KB`,
+            };
           }
-        } catch (err) {
-          console.error('Lỗi khi nén ảnh:', err);
-        }
-      } else if (file.type.startsWith('video/')) {
-        let thumbUrl = null;
-        let blobUrl = null;
-        try {
-          if (typeof URL !== 'undefined' && URL.createObjectURL) {
-            blobUrl = URL.createObjectURL(file);
+        } else if (isVideo) {
+          let thumbUrl = null;
+          let blobUrl = null;
+          try {
+            if (typeof URL !== 'undefined' && URL.createObjectURL) {
+              blobUrl = URL.createObjectURL(file);
+            }
+            thumbUrl = await generateVideoThumbnail(file);
+          } catch (e) {
+            console.warn('Không thể tạo thumbnail video:', e);
           }
-          thumbUrl = await generateVideoThumbnail(file);
-        } catch (e) {
-          console.warn('Không thể tạo thumbnail video:', e);
-        }
 
-        await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(file);
-          reader.onload = (event) => {
-            processedFiles.push({
-              id: `${Date.now()}_${Math.random()}`,
+          const fileData = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => resolve(event.target.result);
+            reader.onerror = () => resolve(null);
+          });
+
+          completedCount++;
+          setProcessingStatus({
+            current: completedCount,
+            total: files.length,
+            text: `Đã xử lý ${completedCount}/${files.length} tệp...`,
+            percent: Math.round((completedCount / files.length) * 100),
+          });
+
+          if (fileData) {
+            return {
+              id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               name: file.name,
               fileType: 'VIDEO',
-              fileData: event.target.result,
-              blobUrl: blobUrl || event.target.result,
+              fileData,
+              blobUrl: blobUrl || fileData,
               thumbUrl: thumbUrl || null,
               sizeStr: `${Math.round(file.size / (1024 * 1024))} MB`,
-            });
-            resolve();
-          };
-          reader.onerror = () => resolve();
-        });
+            };
+          }
+        }
+      } catch (err) {
+        console.error('Lỗi khi chuẩn bị tệp:', err);
       }
-    }
+      return null;
+    };
+
+    // Chạy song song tất cả các tệp cùng lúc (cực nhanh, tận dụng đa nhân CPU)
+    const results = await Promise.all(files.map(processSingleFile));
+    const processedFiles = results.filter(Boolean);
 
     setSelectedFiles((prev) => [...prev, ...processedFiles]);
+    setIsProcessingMedia(false);
     if (mediaInputRef.current) mediaInputRef.current.value = '';
+
+    if (processedFiles.length > 0) {
+      showGlobalToast(`⚡ Đã xử lý siêu tốc ${processedFiles.length} tệp, sẵn sàng gửi.`, 'success');
+    }
   };
 
   // Xóa 1 file khỏi danh sách chọn
@@ -369,7 +473,7 @@ export default function StaffSubmitScreen() {
     setSelectedFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
-  // Gửi toàn bộ hóa đơn / video lên: Lưu trữ trước -> Bắn thông báo thành công ngay -> AI chạy ngầm
+  // Gửi toàn bộ hóa đơn / video lên: Upload kèm theo dõi tiến trình thực tế onUploadProgress
   const handleSubmit = async () => {
     if (selectedFiles.length === 0) {
       showGlobalToast('Vui lòng chọn ít nhất 1 ảnh hóa đơn hoặc video.', 'warning');
@@ -380,7 +484,7 @@ export default function StaffSubmitScreen() {
 
     try {
       setUploading(true);
-      setUploadProgress(25);
+      setUploadProgress(5);
 
       // Chuẩn bị ngày theo định dạng YYYY-MM-DD
       const [d, m, y] = selectedDate.split('/');
@@ -397,8 +501,15 @@ export default function StaffSubmitScreen() {
         })),
       };
 
-      setUploadProgress(60);
-      const res = await api.post(`/staff-submissions/public/submit/${token}`, payload);
+      const res = await api.post(`/staff-submissions/public/submit/${token}`, payload, {
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.min(95, Math.round((progressEvent.loaded * 100) / progressEvent.total));
+            setUploadProgress(percent);
+          }
+        },
+      });
+
       setUploadProgress(100);
 
       if (res.data.success) {
@@ -508,7 +619,8 @@ export default function StaffSubmitScreen() {
           )}
 
           <TouchableOpacity
-            style={styles.btnPickMediaMain}
+            style={[styles.btnPickMediaMain, isProcessingMedia && styles.btnPickMediaDisabled]}
+            disabled={isProcessingMedia}
             onPress={() => {
               if (Platform.OS === 'web' && mediaInputRef.current) {
                 mediaInputRef.current.click();
@@ -516,9 +628,22 @@ export default function StaffSubmitScreen() {
             }}
             activeOpacity={0.85}
           >
-            <Text style={styles.pickMediaIcon}>📸 🎬</Text>
-            <Text style={styles.pickMediaTitle}>ĐĂNG ẢNH / VIDEO</Text>
-            <Text style={styles.pickMediaSub}>Chạm để chọn nhiều ảnh hoặc video từ thư viện máy</Text>
+            {isProcessingMedia ? (
+              <View style={styles.processingMediaBox}>
+                <ActivityIndicator size="small" color="#047857" style={{ marginBottom: 6 }} />
+                <Text style={styles.pickMediaTitle}>ĐANG XỬ LÝ & TỐI ƯU TỆP...</Text>
+                <Text style={styles.pickMediaSub}>{processingStatus.text}</Text>
+                <View style={styles.miniProgressTrack}>
+                  <View style={[styles.miniProgressFill, { width: `${processingStatus.percent}%` }]} />
+                </View>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.pickMediaIcon}>📸 🎬</Text>
+                <Text style={styles.pickMediaTitle}>GỬI HÓA ĐƠN / VIDEO HÓA ĐƠN</Text>
+                <Text style={styles.pickMediaSub}>Chạm để chọn nhiều ảnh hoặc video từ thư viện máy</Text>
+              </>
+            )}
           </TouchableOpacity>
 
           {/* DANH SÁCH ẢNH / VIDEO ĐÃ CHỌN (XEM TRƯỚC DẠNG LƯỚI) */}
@@ -599,68 +724,73 @@ export default function StaffSubmitScreen() {
           {historySubmissions.length === 0 ? (
             <Text style={styles.historyEmptyText}>Chưa có hóa đơn nào được gửi trong ngày hôm nay.</Text>
           ) : (
-            <View style={styles.historyList}>
+            <View style={styles.historyGrid}>
               {historySubmissions.map((item, idx) => {
-                const statusMap = {
-                  PENDING: { label: '💾 Đã lưu • AI đang đọc ngầm...', color: '#B45309', bg: '#FEF3C7' },
-                  ANALYZING: { label: '🤖 AI đang bóc tách số kg...', color: '#1D4ED8', bg: '#DBEAFE' },
-                  READY_FOR_REVIEW: { label: '📋 Chờ chủ duyệt', color: '#047857', bg: '#D1FAE5' },
-                  APPROVED: { label: '✅ Đã lên sổ nợ', color: '#059669', bg: '#ECFDF5' },
-                  REJECTED: { label: '❌ Bỏ qua', color: '#B91C1C', bg: '#FEE2E2' },
-                };
-                const s = statusMap[item.status] || statusMap.PENDING;
+                const isVideo = item.fileType === 'VIDEO';
+                const mediaUrl = resolveMediaUrl(item.fileUrl);
+                const timeStr = item.createdAt
+                  ? new Date(item.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                  : '';
 
                 return (
-                  <View key={item.id || idx} style={styles.historyRow}>
-                    <TouchableOpacity
-                      style={styles.historyThumbBox}
-                      activeOpacity={0.8}
-                      onPress={() => handlePreviewMedia(item.fileUrl, item.fileType)}
-                    >
-                      {item.fileType === 'VIDEO' ? (
-                        <View style={styles.historyVideoThumbWrap}>
-                          {typeof window !== 'undefined' && item.fileUrl ? (
-                            <video
-                              src={item.fileUrl}
-                              poster={item.fileUrl?.replace(/\.(mp4|mov|avi|webm)$/i, '.jpg')}
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                pointerEvents: 'none',
-                                backgroundColor: '#0F172A',
-                              }}
-                              muted
-                              playsInline
-                              preload="metadata"
-                            />
-                          ) : (
-                            <View style={styles.historyVideoPlaceholder}>
-                              <Text style={{ fontSize: 18 }}>🎬</Text>
-                            </View>
-                          )}
-                          <View style={styles.historyPlayBadge}>
-                            <Text style={{ color: '#FFFFFF', fontSize: 9 }}>▶</Text>
+                  <TouchableOpacity
+                    key={item.id || idx}
+                    style={styles.historyGridBox}
+                    activeOpacity={0.85}
+                    onPress={() => handlePreviewMedia(mediaUrl, item.fileType)}
+                  >
+                    {isVideo ? (
+                      <View style={styles.historyVideoWrap}>
+                        {typeof window !== 'undefined' && mediaUrl ? (
+                          <video
+                            src={mediaUrl}
+                            poster={mediaUrl?.replace(/\.(mp4|mov|avi|webm)$/i, '.jpg')}
+                            onError={(e) => {
+                              try {
+                                e.target.style.display = 'none';
+                                e.target.removeAttribute('src');
+                                e.target.load();
+                              } catch {}
+                            }}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              pointerEvents: 'none',
+                              backgroundColor: '#0F172A',
+                            }}
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                        ) : (
+                          <View style={styles.historyVideoFallback}>
+                            <Text style={{ fontSize: 22 }}>🎬</Text>
+                          </View>
+                        )}
+                        <View style={styles.videoPlayOverlay}>
+                          <View style={styles.videoPlayCircle}>
+                            <Text style={styles.videoPlayTriangle}>▶</Text>
                           </View>
                         </View>
-                      ) : (
-                        <Image source={{ uri: item.fileUrl }} style={styles.historyThumbImg} resizeMode="cover" />
-                      )}
-                    </TouchableOpacity>
+                        <View style={styles.videoBadgeTag}>
+                          <Text style={styles.videoBadgeTagText}>VIDEO</Text>
+                        </View>
+                      </View>
+                    ) : (
+                      <Image source={{ uri: mediaUrl }} style={styles.historyGridImg} resizeMode="cover" />
+                    )}
 
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.historyTime}>
-                        🕒 {new Date(item.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                      </Text>
-                      <Text style={styles.historyDate}>
-                        Ngày: {new Date(item.date).toLocaleDateString('vi-VN')}
-                      </Text>
+                    {/* Số thứ tự và giờ gửi nhỏ ở góc */}
+                    <View style={styles.historyIndexBadge}>
+                      <Text style={styles.historyIndexBadgeText}>#{idx + 1}</Text>
                     </View>
-
-                    <View style={[styles.historyBadge, { backgroundColor: s.bg }]}>
-                      <Text style={[styles.historyBadgeText, { color: s.color }]}>{s.label}</Text>
-                    </View>
-                  </View>
+                    {timeStr && !isVideo ? (
+                      <View style={styles.historyTimeBadge}>
+                        <Text style={styles.historyTimeBadgeText}>{timeStr}</Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -700,6 +830,12 @@ export default function StaffSubmitScreen() {
                   controls
                   autoPlay
                   playsInline
+                  onError={(e) => {
+                    try {
+                      e.target.removeAttribute('src');
+                      e.target.load();
+                    } catch {}
+                  }}
                   style={{
                     width: '100%',
                     maxHeight: '75vh',
@@ -711,6 +847,30 @@ export default function StaffSubmitScreen() {
                 <Text style={{ color: '#FFFFFF' }}>Không hỗ trợ phát video trên thiết bị này</Text>
               )}
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── MODAL TIẾN TRÌNH TẢI LÊN MÁY CHỦ (UPLOAD OVERLAY) ─── */}
+      <Modal visible={uploading} transparent={true} animationType="fade">
+        <View style={styles.uploadOverlay}>
+          <View style={styles.uploadModalCard}>
+            <View style={styles.uploadIconCircle}>
+              <ActivityIndicator size="large" color="#059669" />
+            </View>
+            <Text style={styles.uploadModalTitle}>Đang tải hóa đơn lên...</Text>
+            <Text style={styles.uploadModalSub}>
+              Đã tải {uploadProgress}% • Vui lòng giữ màn hình
+            </Text>
+
+            {/* Thanh tiến trình Upload thực tế */}
+            <View style={styles.uploadProgressBarTrack}>
+              <View style={[styles.uploadProgressBarFill, { width: `${uploadProgress}%` }]} />
+            </View>
+
+            <Text style={styles.uploadModalTip}>
+              ⚡ Tệp đã được nén tối ưu để gửi đi với tốc độ cao nhất
+            </Text>
           </View>
         </View>
       </Modal>
@@ -892,6 +1052,29 @@ const styles = StyleSheet.create({
     color: '#059669',
     textAlign: 'center',
   },
+  btnPickMediaDisabled: {
+    opacity: 0.95,
+    backgroundColor: '#ECFDF5',
+    borderColor: '#34D399',
+  },
+  processingMediaBox: {
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 2,
+  },
+  miniProgressTrack: {
+    width: '80%',
+    height: 6,
+    backgroundColor: '#D1FAE5',
+    borderRadius: 3,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  miniProgressFill: {
+    height: '100%',
+    backgroundColor: '#059669',
+    borderRadius: 3,
+  },
 
   // Xem trước ảnh đã chọn
   previewSection: {
@@ -1022,55 +1205,68 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontStyle: 'italic',
   },
-  historyList: {
-    gap: 8,
-  },
-  historyRow: {
+  historyGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    backgroundColor: '#F8FAFC',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  historyGridBox: {
+    position: 'relative',
+    width: 76,
+    height: 76,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    gap: 10,
-  },
-  historyThumbBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 6,
     overflow: 'hidden',
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  historyThumbImg: {
+  historyGridImg: {
     width: '100%',
     height: '100%',
   },
-  historyVideoPlaceholder: {
+  historyVideoWrap: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    backgroundColor: '#0F172A',
+  },
+  historyVideoFallback: {
     width: '100%',
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5F3FF',
+    backgroundColor: '#1E293B',
   },
-  historyTime: {
-    fontSize: 12.5,
+  historyIndexBadge: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+    zIndex: 2,
+  },
+  historyIndexBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  historyTimeBadge: {
+    position: 'absolute',
+    bottom: 3,
+    right: 3,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+    zIndex: 2,
+  },
+  historyTimeBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8.5,
     fontWeight: '600',
-    color: '#334155',
-  },
-  historyDate: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  historyBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  historyBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
   },
 
   // ── Giao diện Video Thumbnail chân thực ──
@@ -1203,6 +1399,60 @@ const styles = StyleSheet.create({
   previewModalImage: {
     width: '100%',
     height: 420,
+  },
+  // Modal Overlay khi đang upload lên server
+  uploadOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 9999999,
+  },
+  uploadModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 26,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+  },
+  uploadIconCircle: {
+    marginBottom: 14,
+  },
+  uploadModalTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  uploadModalSub: {
+    fontSize: 13,
+    color: '#059669',
+    fontWeight: '600',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  uploadProgressBarTrack: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  uploadProgressBarFill: {
+    height: '100%',
+    backgroundColor: '#059669',
+    borderRadius: 4,
+  },
+  uploadModalTip: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
   },
 });
 

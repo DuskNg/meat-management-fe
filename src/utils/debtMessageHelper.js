@@ -49,27 +49,45 @@ const normalizeText = (str) => {
 
 /**
  * Phân loại nhóm sản phẩm riêng cho khách hàng Chị Tuyết:
- * - "bò": gồm các món lạm + chín (+ nạm, vai, bò)
  * - "thăn": gồm các món tái + thăn
+ * - Các loại thịt khác (gân, bắp, sườn, xương, đuôi, tim, cật, mỡ...): tách thành từng món riêng
+ * - "bò": gồm các món lạm + chín (+ nạm, vai lạm) hoặc thịt bò chung
  */
 export const getChiTuyetProductGroup = (productName) => {
   const norm = normalizeText(productName);
+  if (!norm) return 'bò';
+
   // 1. Nhóm thăn (tái + thăn)
   if (norm.includes('tai') || norm.includes('than')) {
     return 'thăn';
   }
-  // 2. Nhóm bò (lạm + chín + nạm + vai + bò)
-  if (
-    norm.includes('lam') ||
-    norm.includes('chin') ||
-    norm.includes('nam') ||
-    norm.includes('vai') ||
-    norm.includes('bo')
-  ) {
+
+  // 2. Các loại thịt khác tách riêng trước khi xét bò chung:
+  if (norm.includes('gan')) return 'gân';
+  if (norm.includes('bap')) return 'bắp';
+  if (norm.includes('suon')) return 'sườn';
+  if (norm.includes('xuong') || norm.includes('xg')) return 'xương';
+  if (norm.includes('duoi')) return 'đuôi';
+  if (norm.includes('tim')) return 'tim';
+  if (norm.includes('cat')) return 'cật';
+  if (norm.includes('mo')) return 'mỡ';
+  if (norm.includes('tiet')) return 'tiết';
+  if (norm.includes('sach')) return 'sách';
+
+  // 3. Nhóm bò (lạm, chín, nạm, vai lạm)
+  if (norm.includes('lam') || norm.includes('chin') || norm.includes('nam') || norm.includes('vai lam')) {
     return 'bò';
   }
-  // 3. Mặc định vào bò hoặc tên món riêng nếu có
-  return productName ? productName.toLowerCase().trim() : 'bò';
+
+  // Nếu chỉ là 'bò', 'thịt bò', 'vai bò', 'vai' mà không rơi vào các món riêng trên
+  if (norm === 'bo' || norm === 'thit bo' || norm === 'bo vai' || norm === 'thit vai' || norm === 'vai') {
+    return 'bò';
+  }
+
+  // 4. Các loại thịt còn lại khác: làm sạch tiền tố 'thịt', hậu tố 'bò' để lấy tên ngắn gọn
+  let clean = (productName || '').trim().toLowerCase();
+  clean = clean.replace(/^thịt\s+/i, '').replace(/^thịt\s+bò\s+/i, '').replace(/\s+bò$/i, '').trim();
+  return clean || 'bò';
 };
 
 /**
@@ -99,10 +117,11 @@ const isReturnPaymentRecord = (item) => {
 /**
  * Cấu hình tạo tin nhắn công nợ ĐẶC BIỆT RIÊNG cho khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
  * Định dạng chuẩn theo yêu cầu:
- * 8/9
- * bò(145): 23+11.8-4.3=4422
- * thăn(255): 2.85=727
- * tổng 5149
+ * 17/9
+ * bò(145): 22.44+31.2-6.69=6808
+ * thăn(255): 3.53=900
+ * gân(100): 11.48=1148
+ * tổng 8856
  */
 export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [], cust = null) => {
   if (!dateKey) return '';
@@ -147,7 +166,7 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
         const q = parseFloat(item.quantity || 0);
         const p = parseFloat(item.price || 0);
         const amt = parseFloat(item.amount !== undefined && item.amount !== null ? item.amount : q * p);
-        const name = item.product?.name || item.productName || 'Thịt';
+        const name = item.product?.name || item.productName || item.rawName || 'Thịt';
 
         const groupKey = getChiTuyetProductGroup(name);
         if (!groups[groupKey]) {
@@ -181,30 +200,35 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
     const amt = parseFloat(p.amount || 0);
     if (isReturnPaymentRecord(p)) {
       const note = p.note || '';
-      const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]/gi, '').trim();
+      const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
 
       // Tách theo các món nếu ghi chú có nhiều món phân tách bằng dấu phẩy
-      const parts = clean ? clean.split(/,\s*(?=\d)/) : [];
+      const parts = clean ? clean.split(/,\s*(?=[a-zA-Z\d\u00C0-\u1EF9])/) : [];
       let parsedAny = false;
 
       parts.forEach((part) => {
-        // Lấy số lượng ở đầu chuỗi (ví dụ: "4.59kg" hoặc "4.59")
-        const qtyMatch = part.match(/^([\d.,]+)\s*(?:kg)?/i);
-        const qty = qtyMatch ? parseFloat(qtyMatch[1].replace(',', '.')) : null;
+        // 1. Tìm số lượng kg trong chuỗi (ví dụ: "6.69kg", "4.59kg", hoặc số ở đầu chuỗi)
+        let qty = null;
+        const explicitKgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*kg/i);
+        const startQtyMatch = part.match(/^([\d]+[.,][\d]+|[\d]+)/);
+        const kgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*(?:kg|kilo)?/i);
 
-        // Lấy thành tiền ở dấu ngoặc đơn cuối cùng (ví dụ: "(665.550 đ)")
+        if (explicitKgMatch) {
+          qty = parseFloat(explicitKgMatch[1].replace(',', '.'));
+        } else if (startQtyMatch) {
+          qty = parseFloat(startQtyMatch[1].replace(',', '.'));
+        } else if (kgMatch) {
+          qty = parseFloat(kgMatch[1].replace(',', '.'));
+        }
+
+        // 2. Lấy thành tiền ở dấu ngoặc đơn cuối cùng (ví dụ: "(665.550 đ)")
         const amtMatch = part.match(/\(\s*([\d.,]+)\s*(?:đ|₫|VND)?\s*\)\s*$/i);
         const itemAmt = amtMatch
           ? parseFloat(amtMatch[1].replace(/\./g, '').replace(/,/g, ''))
           : (parts.length === 1 ? amt : 0);
 
-        // Tên món thịt (loại bỏ phần số lượng và số tiền ở ngoặc cuối)
-        let prodName = part;
-        if (qtyMatch) prodName = prodName.slice(qtyMatch[0].length);
-        if (amtMatch) prodName = prodName.slice(0, prodName.lastIndexOf(amtMatch[0]));
-        prodName = prodName.trim();
-
-        const groupKey = prodName ? getChiTuyetProductGroup(prodName) : 'bò';
+        // 3. Xác định nhóm sản phẩm từ nội dung part
+        const groupKey = getChiTuyetProductGroup(part);
         if (!groups[groupKey]) {
           groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0, prices: [] };
         }
@@ -259,14 +283,20 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
     const groupAmountK = Math.round(g.amount / 1000);
     sumDisplayedK += groupAmountK;
 
-    // Xác định đơn giá riêng hiển thị trong ngoặc: bò(145), thăn(255)
+    // Xác định đơn giá riêng hiển thị trong ngoặc: bò(145), thăn(255), gân(100)...
     let priceK = null;
-    if (g.prices && g.prices.length > 0) {
-      priceK = g.prices[0];
+    if (key === 'bò') {
+      if (g.prices.includes(145)) priceK = 145;
+      else if (g.prices.length > 0) priceK = g.prices[0];
+      else priceK = 145;
+    } else if (key === 'thăn') {
+      if (g.prices.includes(255)) priceK = 255;
+      else if (g.prices.length > 0) priceK = g.prices[0];
+      else priceK = 255;
     } else {
-      // Fallback giá riêng chuẩn cho khách hàng Chị Tuyết nếu không có item price
-      if (key === 'bò') priceK = 145;
-      else if (key === 'thăn') priceK = 255;
+      if (g.prices && g.prices.length > 0) {
+        priceK = g.prices[0];
+      }
     }
 
     const label = priceK ? `${key}(${priceK})` : key;

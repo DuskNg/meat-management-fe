@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/CustomSelect.js
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useTransition } from 'react';
 import {
   StyleSheet,
   Text,
@@ -53,6 +53,9 @@ const CustomSelect = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  // deferredSearch: cập nhật chậm hơn search → tải lại danh sách không block UI khi gõ nhanh
+  const [deferredSearch, setDeferredSearch] = useState('');
+  const [, startTransition] = useTransition();
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0, isUp: false });
   const dropdownRef = useRef(null);
   const inputRef = useRef(null);
@@ -139,8 +142,14 @@ const CustomSelect = ({
   useEffect(() => {
     if (!open || Platform.OS !== 'web') return;
 
+    // Dùng requestAnimationFrame để throttle: tránh gọi measureAndOpen quá nhiều khi scroll
+    let rafId = null;
     const handleScrollOrResize = () => {
-      measureAndOpen();
+      if (rafId) return; // Đã có 1 frame được lên lịch, bỏ qua
+      rafId = requestAnimationFrame(() => {
+        measureAndOpen();
+        rafId = null;
+      });
     };
 
     // Bắt sự kiện scroll và resize ở bất kỳ container cha/con nào để dropdown luôn bám sát ô chọn
@@ -150,6 +159,7 @@ const CustomSelect = ({
     return () => {
       window.removeEventListener('scroll', handleScrollOrResize, true);
       window.removeEventListener('resize', handleScrollOrResize);
+      if (rafId) cancelAnimationFrame(rafId);
     };
   }, [open, measureAndOpen]);
 
@@ -165,14 +175,17 @@ const CustomSelect = ({
   const closeDropdown = useCallback(() => {
     setOpen(false);
     setSearch('');
+    setDeferredSearch('');
     if (onOpenChange) onOpenChange(false);
   }, [onOpenChange]);
 
-  // Lọc danh sách tùy chọn dựa theo từ khóa tìm kiếm
-  const filteredOptions = options.filter((opt) => {
-    const label = getOptionLabel(opt);
-    return matchSearch(label, search);
-  });
+  // Lọc danh sách tùy chọn dựa theo từ khóa tìm kiếm (memo hóa để không tính lại khi re-render không liên quan)
+  const filteredOptions = useMemo(() => {
+    return options.filter((opt) => {
+      const label = getOptionLabel(opt);
+      return matchSearch(label, deferredSearch);
+    });
+  }, [options, deferredSearch, getOptionLabel]);
 
   // Xử lý khi người dùng chọn 1 option:
   // Phải hủy blur-timeout trước để tránh dropdown bị đóng trước khi select kịp xử lý
@@ -184,6 +197,7 @@ const CustomSelect = ({
     onSelect(opt);
     setOpen(false);
     setSearch('');
+    setDeferredSearch('');
     if (onOpenChange) onOpenChange(false);
     if (inputRef.current) {
       inputRef.current.blur();
@@ -350,13 +364,19 @@ const CustomSelect = ({
               blurTimeoutRef.current = setTimeout(() => {
                 setOpen(false);
                 setSearch('');
+                setDeferredSearch('');
                 if (onOpenChange) onOpenChange(false);
                 blurTimeoutRef.current = null;
               }, 200);
             }
           }}
           onChangeText={(text) => {
+            // Cập nhật search ngay lập tức để hiển thị trong input (không bị giật)
             setSearch(text);
+            // Cập nhật deferredSearch trong transition: render danh sách không block input
+            startTransition(() => {
+              setDeferredSearch(text);
+            });
             if (!open && !disabled) {
               if (Platform.OS === 'web') measureAndOpen();
               setOpen(true);

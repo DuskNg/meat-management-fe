@@ -1123,36 +1123,55 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
           const itemY = currentY + rowIndex * rowHeight;
 
-          // Tên khách hàng (căn trái)
+          const isDayTab = activeReportTab === 'day';
+          const isDebt = item.type === 'debt';
+          const amtStr = isDayTab
+            ? `${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`
+            : `Còn nợ: ${formatCurrency(item.remainingInMonth)}`;
+
+          ctx.font = 'bold 14px Arial, sans-serif';
+          const amtWidth = ctx.measureText(amtStr).width;
+          const maxNameWidth = Math.max(80, actualColWidth - 20 - amtWidth - 14);
+
+          const fitText = (context, text, maxW) => {
+            if (!text) return '';
+            if (context.measureText(text).width <= maxW) return text;
+            let t = text;
+            while (t.length > 0 && context.measureText(`${t}...`).width > maxW) {
+              t = t.slice(0, -1);
+            }
+            return `${t.trim()}...`;
+          };
+
+          // Tên khách hàng (căn trái, chống đè chữ số tiền)
           ctx.fillStyle = '#1E293B';
           ctx.font = 'bold 14px Arial, sans-serif';
           ctx.textAlign = 'left';
-          ctx.fillText(item.customerName, textLeftX, itemY + 24);
+          ctx.fillText(fitText(ctx, item.customerName || '', maxNameWidth), textLeftX, itemY + 24);
 
-          if (activeReportTab === 'day') {
-            const isDebt = item.type === 'debt';
+          if (isDayTab) {
             // Chi tiết (mặt hàng/ghi chú)
             ctx.fillStyle = '#64748B';
             ctx.font = '12px Arial, sans-serif';
-            ctx.fillText(isDebt ? `🥩 ${item.details}` : `💵 ${item.details}`, textLeftX, itemY + 45);
+            const detailStr = isDebt ? `🥩 ${item.details || ''}` : `💵 ${item.details || ''}`;
+            ctx.fillText(fitText(ctx, detailStr, actualColWidth - 20), textLeftX, itemY + 45);
 
             // Số tiền (căn phải)
             ctx.fillStyle = isDebt ? '#DC2626' : '#16A34A';
             ctx.font = 'bold 14px Arial, sans-serif';
             ctx.textAlign = 'right';
-            const amtStr = `${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`;
             ctx.fillText(amtStr, textRightX, itemY + 34);
           } else {
             // Chi tiết tổng nợ / đã trả theo tháng
             ctx.fillStyle = '#64748B';
             ctx.font = '12px Arial, sans-serif';
-            ctx.fillText(`Tổng nợ: ${formatCurrency(item.totalDebt)}  |  Đã trả: ${formatCurrency(item.totalPaid)}`, textLeftX, itemY + 45);
+            const detailStr = `Tổng nợ: ${formatCurrency(item.totalDebt)}  |  Đã trả: ${formatCurrency(item.totalPaid)}`;
+            ctx.fillText(fitText(ctx, detailStr, actualColWidth - 20), textLeftX, itemY + 45);
 
             // Số tiền nợ còn lại (căn phải, hiển thị màu đỏ)
             ctx.fillStyle = '#DC2626';
             ctx.font = 'bold 14px Arial, sans-serif';
             ctx.textAlign = 'right';
-            const amtStr = `Còn nợ: ${formatCurrency(item.remainingInMonth)}`;
             ctx.fillText(amtStr, textRightX, itemY + 34);
           }
         });
@@ -1405,6 +1424,26 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         return lines;
       };
 
+      const fitTextWithEllipsis = (context, text, maxWidth) => {
+        if (!text) return '';
+        if (context.measureText(text).width <= maxWidth) return text;
+        let t = text;
+        while (t.length > 0 && context.measureText(`${t}...`).width > maxWidth) {
+          t = t.slice(0, -1);
+        }
+        return `${t.trim()}...`;
+      };
+
+      const fitCustomerTitleWithTag = (context, prefix, name, tag, maxWidth) => {
+        const full = `${prefix}${name}${tag}`;
+        if (context.measureText(full).width <= maxWidth) return full;
+        let truncated = name;
+        while (truncated.length > 0 && context.measureText(`${prefix}${truncated}...${tag}`).width > maxWidth) {
+          truncated = truncated.slice(0, -1);
+        }
+        return `${prefix}${truncated.trim()}...${tag}`;
+      };
+
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
 
@@ -1604,17 +1643,38 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             ctx.fillRect(startX, colY, colW, rowHeight);
             ctx.strokeRect(startX, colY, colW, rowHeight);
 
+            // 1. Tính toán trước số tiền (căn phải) và độ rộng để dành khoảng trống an toàn chống đè chữ
+            const amountText = `${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`;
+            ctx.font = `bold ${fontSizeAmount}px Arial, sans-serif`;
+            const amountWidth = ctx.measureText(amountText).width;
+
+            // Khoảng trống an toàn dành riêng cho tên khách hàng
+            const maxCustomerTitleWidth = Math.max(80, colW - 24 - amountWidth - 16);
+
+            // 2. Tên khách hàng & Thẻ số thứ tự / Đơn nợ trùng (tự động co gọn bằng "..." trước số tiền)
             ctx.fillStyle = (isDuplicate && activeFilter === 'duplicate') ? palette.canvasText : '#0F172A';
             ctx.font = `bold ${fontSizeName}px Arial, sans-serif`;
             ctx.textAlign = 'left';
             const dupTag = isDuplicate ? ` [${seqText}]` : '';
-            ctx.fillText(`${item.globalIdx || idx + 1}. ${item.customerName}${dupTag}`, startX + 12, colY + Math.round(rowHeight * 0.42));
+            const prefix = `${item.globalIdx || idx + 1}. `;
+            const titleText = fitCustomerTitleWithTag(ctx, prefix, item.customerName || '', dupTag, maxCustomerTitleWidth);
+            ctx.fillText(titleText, startX + 12, colY + Math.round(rowHeight * 0.42));
+
+            // 3. Tính toán thời gian (căn phải) và độ rộng an toàn cho chi tiết món thịt
+            const itemTimeStr = formatItemTime(item);
+            let timeWidth = 0;
+            if (itemTimeStr) {
+              ctx.font = `italic ${Math.max(9.5, fontSizeDetail - 1.5)}px Arial, sans-serif`;
+              timeWidth = ctx.measureText(itemTimeStr).width;
+            }
+            const maxDetailWidth = Math.max(60, colW - 34 - (timeWidth > 0 ? timeWidth + 16 : 0));
 
             ctx.fillStyle = '#64748B';
             ctx.font = `${fontSizeDetail}px Arial, sans-serif`;
-            const subText = wrapText(ctx, item.details || '', colW - 170)[0] || '';
+            const subText = fitTextWithEllipsis(ctx, item.details || '', maxDetailWidth);
             ctx.fillText(subText, startX + 22, colY + Math.round(rowHeight * 0.8));
 
+            // 4. Vẽ số tiền (căn phải)
             if (isEdited) {
               ctx.fillStyle = '#7E22CE';
             } else if (isReturnGoods) {
@@ -1627,9 +1687,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
             ctx.font = `bold ${fontSizeAmount}px Arial, sans-serif`;
             ctx.textAlign = 'right';
-            ctx.fillText(`${isDebt ? '+' : '-'}${formatCurrency(item.amount)}`, startX + colW - 12, colY + Math.round(rowHeight * 0.44));
+            ctx.fillText(amountText, startX + colW - 12, colY + Math.round(rowHeight * 0.44));
 
-            const itemTimeStr = formatItemTime(item);
+            // 5. Vẽ thời gian (căn phải)
             if (itemTimeStr) {
               ctx.fillStyle = isEdited ? '#7E22CE' : '#64748B';
               ctx.font = `italic ${Math.max(9.5, fontSizeDetail - 1.5)}px Arial, sans-serif`;

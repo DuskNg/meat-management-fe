@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/StaffSubmissionReviewModal.js
-import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,27 +16,1399 @@ import SmoothModal from './SmoothModal';
 import CustomSelect from './CustomSelect';
 import DatePickerInput from './DatePickerInput';
 import ImagePreviewModal from './ImagePreviewModal';
+import StaffSubmissionDetailModal from './StaffSubmissionDetailModal';
 import PopupModal from './PopupModal';
-import { api } from '../api/client';
+import MoneyInput from './MoneyInput';
+import { api, API_HOST } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 import { removeDiacritics } from '../utils/searchHelper';
+
+// Helper chuẩn hóa URL hình ảnh/video
+const resolveMediaUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  return `${API_HOST}${url}`;
+};
 
 // Helper định dạng tiền VNĐ
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('vi-VN').format(Math.round(amount || 0));
 
+// Helper định dạng ngày giờ hiển thị
+const formatDateTimeDisplay = (isoDate) => {
+  if (!isoDate) return '';
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} (${hours}:${mins})`;
+};
+
+const formatDateOnly = (isoDate) => {
+  if (!isoDate) return '';
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+/**
+ * Tạo ghi chú tự động cho đơn trả hàng theo format: "1.5kg bắp(300), 2kg nạc(500)"
+ * Là pure function để dùng được cả trong lúc init card lẫn khi toggle loại đơn
+ */
+const buildReturnNoteFromItems = (items) => {
+  if (!items || items.length === 0) return '';
+  return items
+    .filter((item) => item.name || item.selectedProduct?.name || item.rawName)
+    .map((item) => {
+      const name = item.selectedProduct?.name || item.name || item.rawName || 'thịt';
+      const qty = parseFloat(item.quantity) || 0;
+      const amt = parseFloat(item.amount) || 0;
+      const qtyStr = qty > 0 ? `${qty}kg` : '';
+      const amtStr = amt > 0 ? `(${Math.round(amt)})` : '';
+      // Format: "1.5kg bắp(300)" - không có khoảng trắng trước ngoặc
+      return [qtyStr, name].filter(Boolean).join(' ') + amtStr;
+    })
+    .filter(Boolean)
+    .join(', ');
+};
+
+
+/**
+ * Component nút chuyển nhanh hóa đơn ở thanh điều hướng trên cùng.
+ * Được bọc React.memo để không bị re-render vô ích khi người dùng gõ phím bên dưới.
+ */
+const QuickNavPill = React.memo(
+  ({ sub, idx, isApproved, hasCustomer, customerName, onScroll }) => (
+    <TouchableOpacity
+      style={[
+        styles.quickNavPill,
+        isApproved ? styles.quickNavPillApproved : hasCustomer ? styles.quickNavPillFilled : null,
+      ]}
+      onPress={onScroll}
+      activeOpacity={0.8}
+    >
+      <Text style={[styles.quickNavPillText, isApproved && { color: '#059669' }]}>
+        #{idx + 1} {sub.detectedCustomerName || customerName || 'Đơn'}
+      </Text>
+      {isApproved ? (
+        <Text style={{ fontSize: 10 }}>✅</Text>
+      ) : hasCustomer ? (
+        <View style={styles.dotFilled} />
+      ) : null}
+    </TouchableOpacity>
+  ),
+  (prev, next) =>
+    prev.sub === next.sub &&
+    prev.idx === next.idx &&
+    prev.isApproved === next.isApproved &&
+    prev.hasCustomer === next.hasCustomer &&
+    prev.customerName === next.customerName
+);
+
+/**
+ * Component hiển thị 1 thẻ hóa đơn (được bọc React.memo để triệt tiêu hoàn toàn giật lag).
+ * Khi người dùng nhập liệu ở bất kỳ thẻ nào, CHỈ DUY NHẤT thẻ đó re-render,
+ * toàn bộ các thẻ khác sẽ được React bỏ qua hoàn toàn -> đạt 60fps mượt mà tuyệt đối.
+ */
+const InvoiceReviewCard = React.memo(
+  ({
+    sub,
+    idx,
+    card,
+    isApproved,
+    isDropdownActive,
+    isMobile,
+    isTablet,
+    customers,
+    customerProducts,
+    cardRef,
+    onOpenDetail,
+    onOpenDropdown,
+    onCustomerChange,
+    onUpdateField,
+    onToggleReturnType,
+    onAddItem,
+    onRemoveItem,
+    onSelectProduct,
+    onUpdateItem,
+    onFetchCustomerProducts,
+    onToggleOrderMode,
+    onUpdateQuickAmount,
+    onAddQuickSubAmount,
+    onUpdateQuickSubAmount,
+    onRemoveQuickSubAmount,
+    onSave,
+    onReject,
+  }) => {
+    // Tính tổng tiền của thẻ này một cách độc lập
+    const cardTotal = useMemo(() => {
+      if (!card) return 0;
+      if (card.orderMode === 'quick') {
+        return parseFloat(card.quickAmount) || 0;
+      }
+      return (card.items || []).reduce((sum, it) => sum + (parseFloat(it.amount) || 0), 0);
+    }, [card?.orderMode, card?.quickAmount, card?.items]);
+
+    return (
+      <View
+        ref={cardRef}
+        style={[
+          styles.invoiceCard,
+          isApproved && styles.invoiceCardApproved,
+          isMobile ? styles.invoiceCardMobile : (isTablet ? styles.invoiceCardTablet : styles.invoiceCardPC),
+          isDropdownActive && { zIndex: 999999, elevation: 999999 },
+        ]}
+      >
+        {/* ═══ PHẦN TRÊN: ẢNH / VIDEO GỐC ═══ */}
+        <View style={[styles.cardMediaCol, isMobile && styles.cardMediaColMobile]}>
+          {/* Tiêu đề thẻ: Số thứ tự + Trạng thái */}
+          <View style={styles.cardHeaderTop}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
+              <Text style={styles.cardIndexBadge}>#{idx + 1}</Text>
+              <Text style={styles.cardSenderText} numberOfLines={1}>
+                {sub.senderName || 'Nhân viên'}
+              </Text>
+              {/* Hiển thị rõ ngày giờ tạo/gửi */}
+              <View style={styles.cardDateBadge}>
+                <Text style={styles.cardDateBadgeText}>
+                  📅 {sub.createdAt ? formatDateTimeDisplay(sub.createdAt) : formatDateOnly(sub.date)}
+                </Text>
+              </View>
+            </View>
+            {isApproved ? (
+              <View style={styles.badgeApprovedPill}>
+                <Text style={styles.badgeApprovedPillText}>✅ ĐÃ LÊN NỢ</Text>
+              </View>
+            ) : card.isReturn ? (
+              <View style={styles.badgeReturnPill}>
+                <Text style={styles.badgeReturnPillText}>↩️ ĐƠN TRẢ HÀNG</Text>
+              </View>
+            ) : (
+              <View style={styles.badgePendingPill}>
+                <Text style={styles.badgePendingPillText}>⚡ CHƯA LÊN NỢ</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Khung ảnh / video xem trước */}
+          <View style={[styles.cardMediaBox, isMobile && styles.cardMediaBoxMobile]}>
+            {sub.fileType === 'VIDEO' ? (
+              <View style={styles.cardVideoWrap}>
+                {typeof window !== 'undefined' && sub.fileUrl ? (
+                  <video
+                    src={resolveMediaUrl(sub.fileUrl)}
+                    controls
+                    playsInline
+                    onError={(e) => {
+                      try {
+                        e.target.removeAttribute('src');
+                        e.target.load();
+                      } catch {}
+                    }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      backgroundColor: '#0F172A',
+                      borderRadius: 8,
+                      objectFit: 'contain',
+                    }}
+                  />
+                ) : (
+                  <View style={styles.videoFallbackBox}>
+                    <Text style={{ fontSize: 28 }}>🎬</Text>
+                    <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>Video hóa đơn</Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={styles.zoomOverlayBadge}
+                  onPress={() => onOpenDetail(sub.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.zoomOverlayText}>🔍 Xem to</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={styles.cardImageTouch}
+                onPress={() => onOpenDetail(sub.id)}
+              >
+                <Image
+                  source={{ uri: resolveMediaUrl(sub.fileUrl) }}
+                  style={styles.cardImage}
+                  resizeMode="contain"
+                />
+                <View style={styles.zoomOverlayBadge}>
+                  <Text style={styles.zoomOverlayText}>🔍 Xem to</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Báo lỗi / nhắc nhở AI (nếu có) */}
+          {sub.aiError ? (
+            <View style={styles.cardAiErrorBanner}>
+              <Text style={styles.cardAiErrorText}>
+                ⚠️ {sub.aiError}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* ═══ PHẦN DƯỚI: FORM BÓC TÁCH & NHẬP NỢ ═══ */}
+        <View style={[styles.cardFormCol, isMobile && styles.cardFormColMobile]}>
+          {/* BANNER THÔNG BÁO ĐANG NẠP BẢNG GIÁ RIÊNG */}
+          {card.isLoadingPrice ? (
+            <View style={styles.cardLoadingPriceBanner}>
+              <ActivityIndicator size="small" color="#0284C7" />
+              <Text style={styles.cardLoadingPriceText}>Đang cập nhật giá riêng khách hàng...</Text>
+            </View>
+          ) : null}
+
+          {/* HÀNG 1: KHÁCH HÀNG */}
+          <View style={{ marginBottom: 8, width: '100%' }}>
+            <Text style={styles.cardFieldLabel}>
+              {card.isReturn ? 'Khách hàng trả hàng' : 'Khách hàng ghi nợ'} <Text style={{ color: '#EF4444' }}>*</Text>
+              {sub.detectedCustomerName ? (
+                <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 11.5 }}>
+                  {' '}(AI: "{sub.detectedCustomerName}")
+                </Text>
+              ) : null}
+            </Text>
+            <CustomSelect
+              value={card.customer}
+              placeholder="Chọn khách hàng..."
+              options={customers}
+              disabled={card.isLoadingPrice}
+              onOpenChange={onOpenDropdown}
+              onSelect={(c) => onCustomerChange(sub.id, c)}
+              renderSelected={(c) => c?.name || ''}
+              renderOption={(c) => (
+                <View style={styles.custOptionRow}>
+                  <Text style={styles.custOptionName}>{c.name}</Text>
+                  {c.phone ? <Text style={styles.custOptionPhone}>📞 {c.phone}</Text> : null}
+                </View>
+              )}
+            />
+          </View>
+
+          {/* HÀNG 2: NGÀY GIAO & GHI CHÚ (2 CỘT SONG SONG) */}
+          <View style={styles.mobileDateNoteRow}>
+            <View style={{ flex: 1.1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 22, marginBottom: 3 }}>
+                <Text style={[styles.cardFieldLabel, { marginBottom: 0 }]}>{card.isReturn ? 'Ngày trả' : 'Ngày giao'}</Text>
+              </View>
+              <DatePickerInput
+                value={card.date}
+                onChange={(d) => onUpdateField(sub.id, 'date', d)}
+                placeholder="DD/MM/YYYY"
+                compact={true}
+                disabled={card.isLoadingPrice}
+              />
+            </View>
+
+            <View style={{ flex: 1.6 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 22, marginBottom: 3 }}>
+                <Text style={[styles.cardFieldLabel, { marginBottom: 0 }]}>Ghi chú</Text>
+                {!isApproved && (
+                  <TouchableOpacity
+                    style={[styles.btnToggleOrderType, card.isReturn && styles.btnToggleOrderTypeReturn, card.isLoadingPrice && { opacity: 0.5 }]}
+                    onPress={() => onToggleReturnType(sub.id)}
+                    disabled={card.isLoadingPrice}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.btnToggleOrderTypeText, card.isReturn && styles.btnToggleOrderTypeTextReturn]}>
+                      {card.isReturn ? '↩️ Trả' : '🥩 Xuất'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <TextInput
+                style={[
+                  styles.cardInputNote,
+                  card.isReturn && { borderColor: '#FB923C', backgroundColor: '#FFF7ED' },
+                  card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 },
+                ]}
+                value={card.note}
+                onChangeText={(val) => onUpdateField(sub.id, 'note', val)}
+                editable={!card.isLoadingPrice}
+                placeholder={card.isReturn ? '1.5kg bắp(300), 2kg nạc(500)' : 'Ghi chú đơn...'}
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+          </View>
+
+          {/* HÀNG 3: THANH CHỌN CHẾ ĐỘ NHẬP NHANH (TIỀN HÀNG) HOẶC CHI TIẾT */}
+          <View style={styles.cardModeToggleRow}>
+            <TouchableOpacity
+              style={[styles.cardModeBtn, card.orderMode === 'quick' && styles.cardModeBtnActive]}
+              onPress={() => onToggleOrderMode && onToggleOrderMode(sub.id)}
+              disabled={isApproved || card.isLoadingPrice}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.cardModeBtnText, card.orderMode === 'quick' && styles.cardModeBtnTextActive]}>
+                ⚡ Nợ nhanh
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.cardModeBtn, card.orderMode !== 'quick' && styles.cardModeBtnActive]}
+              onPress={() => onToggleOrderMode && onToggleOrderMode(sub.id)}
+              disabled={isApproved || card.isLoadingPrice}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.cardModeBtnText, card.orderMode !== 'quick' && styles.cardModeBtnTextActive]}>
+                🥩 Chi tiết ({card.items?.length || 0})
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {card.orderMode === 'quick' ? (
+            <View style={styles.cardQuickDebtBox}>
+              <Text style={styles.cardFieldLabel}>
+                SỐ TIỀN CÔNG NỢ (VND) <Text style={{ color: '#EF4444' }}>*</Text>
+              </Text>
+              <MoneyInput
+                style={styles.cardQuickMoneyContainer}
+                inputStyle={styles.cardQuickMoneyInput}
+                value={card.quickAmount}
+                disabled={isApproved || card.isLoadingPrice}
+                onChangeValue={(val) => {
+                  onUpdateQuickAmount && onUpdateQuickAmount(sub.id, val > 0 ? String(val) : '');
+                }}
+                placeholder="0"
+                textAlign="center"
+              />
+
+              {/* Danh sách khoản tiền con */}
+              {(card.quickSubAmounts || []).length > 0 && (
+                <View style={styles.cardQuickSubWrap}>
+                  <Text style={styles.cardQuickSubTitle}>Các khoản cộng lại:</Text>
+                  <View style={styles.cardQuickSubChips}>
+                    {(card.quickSubAmounts || []).map((subAmt, sIdx) => (
+                      <View key={sIdx} style={styles.cardQuickSubChip}>
+                        <Text style={styles.cardQuickSubChipText}>{formatCurrency(subAmt)}đ</Text>
+                        {!isApproved && (
+                          <TouchableOpacity
+                            onPress={() => onRemoveQuickSubAmount && onRemoveQuickSubAmount(sub.id, sIdx)}
+                            hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                          >
+                            <Text style={styles.cardQuickSubChipDelete}>✕</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                    {!isApproved && (
+                      <TouchableOpacity
+                        style={styles.cardQuickAddChipBtn}
+                        onPress={() => onAddQuickSubAmount && onAddQuickSubAmount(sub.id)}
+                      >
+                        <Text style={styles.cardQuickAddChipText}>+ Thêm</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              )}
+            </View>
+          ) : (
+            /* BẢNG CÁC MÓN THỊT (DẠNG COMPACT 2 TẦNG TIỆN LỢI) */
+            <View style={styles.cardItemsTable}>
+              <View style={styles.cardItemsTableHeader}>
+                <Text style={styles.cardItemsTableTitle}>
+                  DANH SÁCH MÓN THỊT ({card.items?.length || 0})
+                </Text>
+                <TouchableOpacity
+                  style={[styles.cardBtnAddItem, card.isLoadingPrice && { opacity: 0.5 }]}
+                  onPress={() => onAddItem(sub.id)}
+                  disabled={card.isLoadingPrice}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.cardBtnAddItemText}>+ Thêm món</Text>
+                </TouchableOpacity>
+              </View>
+
+            {(card.items || []).map((item, itemIdx) => (
+              <View key={item.id} style={[styles.mobileItemCard, styles.mobileItemCardCompact]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                  <View style={{ flex: 1 }}>
+                    <CustomSelect
+                      value={item.selectedProduct}
+                      placeholder="Tên thịt..."
+                      options={customerProducts}
+                      disabled={card.isLoadingPrice}
+                      onOpenChange={(isOpen) => {
+                        if (isOpen && card.customer?.id) {
+                          onFetchCustomerProducts(card.customer.id);
+                        }
+                        onOpenDropdown(isOpen);
+                      }}
+                      onSelect={(p) => onSelectProduct(sub.id, itemIdx, p)}
+                      onInputChange={(txt) => onUpdateItem(sub.id, itemIdx, 'rawName', txt)}
+                      renderSelected={(p) => p?.name || item.rawName || ''}
+                      renderOption={(p) => {
+                        const isCustom = Boolean(p.hasCustomPrice || (p.customPrice !== undefined && p.customPrice !== null));
+                        const effectivePrice = isCustom ? p.customPrice : (p.baseDefaultPrice ?? p.defaultPrice);
+                        return (
+                          <View style={styles.productOptionRow}>
+                            <Text style={styles.productOptionName}>{p.name}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                              {isCustom && (
+                                <View style={styles.customPriceBadge}>
+                                  <Text style={styles.customPriceBadgeText}>Giá riêng</Text>
+                                </View>
+                              )}
+                              <Text style={[styles.productOptionPrice, isCustom && styles.productOptionCustomPrice]}>
+                                {formatCurrency(effectivePrice)}/{p.unit}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      }}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.btnRowDelete, styles.btnRowDeleteMobile, card.isLoadingPrice && { opacity: 0.4 }]}
+                    onPress={() => onRemoveItem(sub.id, itemIdx)}
+                    disabled={card.isLoadingPrice}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 14 }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Hàng 3 ô số liệu: Số kg | Đơn giá | Thành tiền */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <View style={{ flex: 0.9 }}>
+                    <TextInput
+                      style={[styles.compactInputCell, styles.compactInputCellMobile, card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
+                      value={item.quantity}
+                      onChangeText={(val) => onUpdateItem(sub.id, itemIdx, 'quantity', val)}
+                      editable={!card.isLoadingPrice}
+                      placeholder="Số kg"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="numeric"
+                      textAlign="center"
+                    />
+                  </View>
+                  <View style={{ flex: 1.15 }}>
+                    <MoneyInput
+                      style={[styles.tableMoneyContainer, styles.tableMoneyContainerMobile]}
+                      inputStyle={[styles.tableMoneyInput, styles.tableMoneyInputMobile]}
+                      value={item.price}
+                      disabled={card.isLoadingPrice}
+                      onChangeValue={(val) => {
+                        const priceNum = val > 0 ? val : 0;
+                        onUpdateItem(sub.id, itemIdx, 'price', priceNum > 0 ? String(priceNum) : '');
+                      }}
+                      placeholder="Đơn giá"
+                      textAlign="right"
+                    />
+                  </View>
+                  <View style={{ flex: 1.45 }}>
+                    <MoneyInput
+                      style={[styles.tableMoneyContainer, styles.tableMoneyContainerMobile]}
+                      inputStyle={[styles.tableMoneyInputAmount, styles.tableMoneyInputAmountMobile]}
+                      value={item.amount}
+                      disabled={card.isLoadingPrice}
+                      onChangeValue={(val) => {
+                        const amtNum = val > 0 ? val : 0;
+                        onUpdateItem(sub.id, itemIdx, 'amount', amtNum > 0 ? String(amtNum) : '');
+                      }}
+                      placeholder="Thành tiền"
+                      textAlign="right"
+                    />
+                  </View>
+                </View>
+              </View>
+            ))}
+            </View>
+          )}
+
+          {/* HÀNG 4: TỔNG TIỀN & NÚT HÀNH ĐỘNG */}
+          <View style={[styles.cardFooterRow, styles.cardFooterRowMobile]}>
+            <View style={styles.cardTotalWrap}>
+              <Text style={[styles.cardTotalLabel, card.isReturn && { color: '#EA580C' }]}>
+                {card.isReturn ? 'TIỀN TRẢ:' : 'TỔNG CỘNG:'}
+              </Text>
+              <Text style={[styles.cardTotalValue, card.isReturn && { color: '#F97316' }]}>
+                {card.isReturn ? `-${formatCurrency(cardTotal)}` : formatCurrency(cardTotal)} đ
+              </Text>
+            </View>
+
+            <View style={[styles.cardActionsWrap, styles.cardActionsWrapMobile]}>
+              <TouchableOpacity
+                style={[styles.btnCardReject, styles.btnCardRejectMobile]}
+                onPress={() => onReject(sub.id)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.btnCardRejectText}>🗑️ Bỏ qua</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.btnCardSave,
+                  card.isReturn && styles.btnCardSaveReturn,
+                  isApproved && styles.btnCardSaveApproved,
+                  styles.btnCardSaveMobile,
+                  (card.isSaving || card.isLoadingPrice) && { opacity: 0.7 },
+                ]}
+                onPress={() => onSave(sub.id)}
+                disabled={card.isSaving || card.isLoadingPrice}
+                activeOpacity={0.85}
+              >
+                {card.isSaving || card.isLoadingPrice ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.btnCardSaveText}>
+                    {isApproved
+                      ? '🔄 CẬP NHẬT LẠI'
+                      : (card.isReturn ? '↩️ TRỪ NỢ TRẢ HÀNG' : '💾 NHẬP CÔNG NỢ')}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  },
+  (prev, next) => {
+    // Chỉ re-render khi dữ liệu của chính thẻ này hoặc môi trường hiển thị thay đổi
+    if (prev.sub !== next.sub) return false;
+    if (prev.card !== next.card) return false;
+    if (prev.isApproved !== next.isApproved) return false;
+    if (prev.isDropdownActive !== next.isDropdownActive) return false;
+    if (prev.idx !== next.idx) return false;
+    if (prev.isMobile !== next.isMobile) return false;
+    if (prev.isTablet !== next.isTablet) return false;
+    if (prev.customers !== next.customers) return false;
+    if (prev.customerProducts !== next.customerProducts) return false;
+    return true;
+  }
+);
+
+/**
+ * Hàm nhận diện và so khớp khách hàng chính xác theo từ khóa AI bóc tách
+ */
+const resolveCustomerForSub = (sub, custList) => {
+  if (!sub) return null;
+  // Khách hàng
+let matchedCust = sub.matchedCustomer || null;
+if (!matchedCust && sub.matchedCustomerId) {
+  matchedCust = custList.find((c) => c.id === sub.matchedCustomerId) || null;
+}
+
+// Kiểm tra và sửa lỗi nếu AI nhận diện có thông tin rõ ràng
+if (sub.detectedCustomerName) {
+  // Làm sạch từ khóa trả hàng nếu có lẫn vào tên khách hàng (ví dụ "Thái Hà trả về", "Gửi lại Cô Thảo"...)
+  const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
+  const rawCustNameClean = sub.detectedCustomerName.replace(returnKeywordsRegex, '').replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
+  const cleanDetected = removeDiacritics((rawCustNameClean || sub.detectedCustomerName).toLowerCase().trim());
+  const cleanDetectedNoSpace = cleanDetected.replace(/\s+/g, '');
+  const currentCustClean = matchedCust ? removeDiacritics(matchedCust.name.toLowerCase().trim()) : '';
+
+  // 1. ĐẶC BIỆT: Khớp ưu tiên khách "Bún huế văn khê" nếu AI nhận diện có chứa "bun hue" hoặc "van khe"
+  if (
+    cleanDetected.includes('bun hue') ||
+    cleanDetected.includes('van khe') ||
+    cleanDetectedNoSpace.includes('bunhue') ||
+    cleanDetectedNoSpace.includes('vankhe')
+  ) {
+    if (!currentCustClean.includes('bun hue') && !currentCustClean.includes('van khe')) {
+      const bunHueCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('bun hue') && cClean.includes('van khe');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('van khe');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('bun hue');
+      }) || null;
+
+      if (bunHueCust) {
+        matchedCust = bunHueCust;
+      }
+    }
+  }
+
+  // 1b. ĐẶC BIỆT: Khớp ưu tiên khách "Huyền Đô Nghĩa" nếu AI nhận diện có chứa "huyen" hoặc "do nghia"
+  if (
+    cleanDetected.includes('huyen do nghia') ||
+    cleanDetected.includes('huyen do ngia') ||
+    cleanDetected.includes('do nghia') ||
+    cleanDetectedNoSpace === 'huyen' ||
+    cleanDetectedNoSpace === 'chihuyen' ||
+    cleanDetected === 'huyen'
+  ) {
+    if (!currentCustClean.includes('huyen') && !currentCustClean.includes('do nghia') && !currentCustClean.includes('do ngia')) {
+      const huyenCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('huyen') && (cClean.includes('do nghia') || cClean.includes('do ngia'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('do nghia') || cClean.includes('do ngia');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('huyen');
+      }) || null;
+
+      if (huyenCust) {
+        matchedCust = huyenCust;
+      }
+    }
+  }
+
+  // 1c. ĐẶC BIỆT: Khớp ưu tiên khách "Phở tưởng chị luyến" nếu AI nhận diện là "phở tưởng" hoặc "chị luyến"
+  if (
+    cleanDetected.includes('pho tuong') ||
+    cleanDetected.includes('tuong') ||
+    cleanDetected.includes('luyen') ||
+    cleanDetectedNoSpace.includes('photuong') ||
+    cleanDetectedNoSpace.includes('tuong') ||
+    cleanDetectedNoSpace.includes('luyen')
+  ) {
+    if (!currentCustClean.includes('tuong') && !currentCustClean.includes('luyen')) {
+      const phoTuongCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('tuong') && !cClean.includes('tien');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('luyen');
+      }) || null;
+
+      if (phoTuongCust) {
+        matchedCust = phoTuongCust;
+      }
+    }
+  }
+
+  // 1d. ĐẶC BIỆT: Khớp ưu tiên khách "Chị Thúy Nga" nếu AI nhận diện là "chinga", "chị nga", "nga"
+  if (
+    cleanDetected.includes('chinga') ||
+    cleanDetected.includes('chi nga') ||
+    cleanDetected.includes('thuy nga') ||
+    cleanDetectedNoSpace.includes('chinga') ||
+    cleanDetectedNoSpace.includes('thuynga') ||
+    cleanDetectedNoSpace === 'nga' ||
+    cleanDetected === 'nga'
+  ) {
+    if (!currentCustClean.includes('nga')) {
+      const thuyNgaCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('thuy') && cClean.includes('nga');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('nga');
+      }) || null;
+
+      if (thuyNgaCust) {
+        matchedCust = thuyNgaCust;
+      }
+    }
+  }
+
+  // 1e. ĐẶC BIỆT: Khớp ưu tiên khách "Hà Trì" nếu AI nhận diện là ha tri, ha li, ha lu...
+  if (
+    cleanDetected.includes('ha tri') ||
+    cleanDetected.includes('ha li') ||
+    cleanDetected.includes('ha lu') ||
+    cleanDetected.includes('ha thi') ||
+    cleanDetectedNoSpace === 'hatri' ||
+    cleanDetectedNoSpace === 'hali' ||
+    cleanDetectedNoSpace === 'halu' ||
+    cleanDetectedNoSpace === 'hathi' ||
+    cleanDetectedNoSpace.includes('hatri')
+  ) {
+    if (!currentCustClean.includes('ha tri') && !currentCustClean.includes('tri')) {
+      const haTriCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
+      }) || null;
+
+      if (haTriCust) {
+        matchedCust = haTriCust;
+      }
+    }
+  }
+
+  // 1f. ĐẶC BIỆT: Khớp ưu tiên khách "Thăn bình đà(anh Nghĩa)" nếu AI nhận diện là anh nghĩa, anh ngĩa, nghĩa, ngĩa, bình đà...
+  if (
+    cleanDetected.includes('anh nghia') ||
+    cleanDetected.includes('anh ngia') ||
+    cleanDetected.includes('binh da') ||
+    cleanDetected.includes('than binh da') ||
+    cleanDetectedNoSpace.includes('anhnghia') ||
+    cleanDetectedNoSpace.includes('anhngia') ||
+    cleanDetectedNoSpace === 'nghia' ||
+    cleanDetectedNoSpace === 'ngia'
+  ) {
+    if (!currentCustClean.includes('binh da') && !currentCustClean.includes('nghia')) {
+      const thanBinhDaCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('binh da') && (cClean.includes('nghia') || cClean.includes('than'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('binh da');
+      }) || null;
+
+      if (thanBinhDaCust) {
+        matchedCust = thanBinhDaCust;
+      }
+    }
+  }
+
+  // 1g. ĐẶC BIỆT: Khớp ưu tiên khách "Bà lưu" (kể cả khi AI đọc nhầm do nét chữ thảo: ba liu, ba linh, ba lui, ba lieu, ba lu, ba lúc)
+  if (
+    cleanDetected.includes('ba luu') ||
+    cleanDetected.includes('bà lưu') ||
+    cleanDetected.includes('ba liu') ||
+    cleanDetected.includes('ba lui') ||
+    cleanDetected.includes('ba lieu') ||
+    cleanDetected.includes('ba linh') ||
+    cleanDetected.includes('ba lu') ||
+    cleanDetected.includes('ba luc') ||
+    cleanDetectedNoSpace === 'baluu' ||
+    cleanDetectedNoSpace === 'baliu' ||
+    cleanDetectedNoSpace === 'balinh' ||
+    cleanDetectedNoSpace === 'balui' ||
+    cleanDetectedNoSpace === 'balieu' ||
+    cleanDetectedNoSpace === 'balu' ||
+    cleanDetectedNoSpace === 'luu' ||
+    cleanDetectedNoSpace === 'liu'
+  ) {
+    if (!currentCustClean.includes('luu')) {
+      const baLuuCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean === 'ba luu' || cClean.includes('ba luu');
+      }) || null;
+
+      if (baLuuCust) {
+        matchedCust = baLuuCust;
+      }
+    }
+  }
+
+  // 1g2. ĐẶC BIỆT: Khớp ưu tiên khách "Nguyễn khuyến trường hoàng" (khi AI đọc được nguyễn . hoàng, nguyễn hoàng, nguyễn khuyến, trường hoàng...)
+  const hasNguyenOrKhuyen = cleanDetected.includes('nguyen') || cleanDetected.includes('khuyen') || cleanDetectedNoSpace.includes('nguyen') || cleanDetectedNoSpace.includes('khuyen');
+  const hasHoang = cleanDetected.includes('hoang') || cleanDetectedNoSpace.includes('hoang');
+  const hasTruongHoang = cleanDetected.includes('truong hoang') || cleanDetectedNoSpace.includes('truonghoang');
+  const hasNguyenKhuyen = cleanDetected.includes('nguyen khuyen') || cleanDetectedNoSpace.includes('nguyenkhuyen');
+
+  if ((hasNguyenOrKhuyen && hasHoang) || (hasNguyenKhuyen && hasTruongHoang) || (hasNguyenKhuyen && hasHoang) || cleanDetected.includes('khuyen truong hoang')) {
+    if (!currentCustClean.includes('khuyen') || !currentCustClean.includes('hoang')) {
+      const nkCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('khuyen') && cClean.includes('hoang')) || (cClean.includes('nguyen') && cClean.includes('khuyen') && cClean.includes('hoang'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('khuyen') && (cClean.includes('truong') || cClean.includes('hoang'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('nguyen khuyen');
+      }) || null;
+
+      if (nkCust) {
+        matchedCust = nkCust;
+      }
+    }
+  }
+
+  // 1h. ĐẶC BIỆT: Khớp ưu tiên khách "52  trần thái tông" nếu quét được số 52
+  if (
+    cleanDetected.includes('52') ||
+    cleanDetectedNoSpace.includes('52') ||
+    (cleanDetected.includes('tran thai tong') && !cleanDetected.includes('47'))
+  ) {
+    if (!currentCustClean.includes('52')) {
+      const cust52 = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('52') && (cClean.includes('tran thai tong') || cClean.includes('thai tong') || cClean.includes('tran'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('52');
+      }) || null;
+
+      if (cust52) {
+        matchedCust = cust52;
+      }
+    }
+  }
+
+  // 1i. ĐẶC BIỆT: Khớp ưu tiên khách "Minh trang" nếu đọc được chữ minh hoặc mih
+  if (
+    cleanDetected.includes('minh trang') ||
+    cleanDetected.includes('mih trang') ||
+    cleanDetected.includes('minh tuy') ||
+    cleanDetected.includes('mih tuy') ||
+    cleanDetected.includes('mih') ||
+    cleanDetectedNoSpace === 'minh' ||
+    cleanDetectedNoSpace === 'mih' ||
+    cleanDetectedNoSpace.includes('minhtrang') ||
+    cleanDetectedNoSpace.includes('mihtrang') ||
+    cleanDetectedNoSpace.includes('mihtuy') ||
+    cleanDetectedNoSpace.includes('minhtuy')
+  ) {
+    if (!currentCustClean.includes('minh') || !currentCustClean.includes('trang')) {
+      const custMinhTrang = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('minh') && cClean.includes('trang');
+      }) || null;
+
+      if (custMinhTrang) {
+        matchedCust = custMinhTrang;
+      }
+    }
+  }
+
+  // 1j. ĐẶC BIỆT: Khớp ưu tiên khách "Trung kính" / "Bếp trung kính" nếu đọc được trung kinh, tuy kh, tug kh, trung kh
+  if (
+    cleanDetected.includes('trung kinh') ||
+    cleanDetected.includes('bep trung kinh') ||
+    cleanDetected.includes('trung kh') ||
+    cleanDetected.includes('tuy kh') ||
+    cleanDetected.includes('tuy ks') ||
+    cleanDetected.includes('tug kh') ||
+    cleanDetected.includes('tung kh') ||
+    cleanDetected.includes('truy kh') ||
+    cleanDetectedNoSpace === 'trungkinh' ||
+    cleanDetectedNoSpace === 'tuykh' ||
+    cleanDetectedNoSpace === 'tuykhs' ||
+    cleanDetectedNoSpace === 'tuyks' ||
+    cleanDetectedNoSpace === 'tugkh' ||
+    cleanDetectedNoSpace === 'tungkh' ||
+    cleanDetectedNoSpace === 'truykh' ||
+    cleanDetectedNoSpace.includes('trungkinh') ||
+    cleanDetectedNoSpace.includes('beptrungkinh')
+  ) {
+    if (!currentCustClean.includes('trung') || !currentCustClean.includes('kinh')) {
+      const custTrungKinh = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('bep trung kinh') || (cClean.includes('trung') && cClean.includes('kinh'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('trung kinh') || cClean === 'trungkinh';
+      }) || null;
+
+      if (custTrungKinh) {
+        matchedCust = custTrungKinh;
+      }
+    }
+  }
+
+  // 1k. ĐẶC BIỆT: Phân biệt rõ khách "văn khê" và "Bún huế van khe"
+  if (cleanDetected.includes('van khe') || cleanDetectedNoSpace.includes('vankhe')) {
+    const hasBunHue = cleanDetected.includes('bun hue') || cleanDetected.includes('bun bo hue') ||
+      cleanDetectedNoSpace.includes('bunhue') || (cleanDetected.includes('bun') && cleanDetected.includes('van khe'));
+    if (!hasBunHue) {
+      const custVanKhe = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean === 'van khe' || (cClean.includes('van khe') && !cClean.includes('bun'));
+      }) || null;
+      if (custVanKhe) matchedCust = custVanKhe;
+    } else {
+      const custBunHue = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('bun hue') && cClean.includes('van khe')) || (cClean.includes('bun') && cClean.includes('van khe'));
+      }) || null;
+      if (custBunHue) matchedCust = custBunHue;
+    }
+  } else if (cleanDetected.includes('bun hue') || cleanDetectedNoSpace.includes('bunhue')) {
+    const custBunHue = custList.find((c) => {
+      const cClean = removeDiacritics(c.name.toLowerCase());
+      return cClean.includes('bun hue');
+    }) || null;
+    if (custBunHue) matchedCust = custBunHue;
+  }
+
+  // 1l. ĐẶC BIỆT: Khớp ưu tiên khách "Thái hà" nếu nhận diện thái hà, hku ha, hki ha, hai ha...
+  if (
+    cleanDetected.includes('thai ha') ||
+    cleanDetected.includes('thái hà') ||
+    cleanDetectedNoSpace.includes('thaiha') ||
+    cleanDetected.includes('hku ha') ||
+    cleanDetectedNoSpace.includes('hkuha') ||
+    cleanDetected.includes('hki ha') ||
+    cleanDetectedNoSpace.includes('hkiha') ||
+    cleanDetected.includes('hkui ha') ||
+    cleanDetectedNoSpace.includes('hkuiha') ||
+    cleanDetected.includes('hkai ha') ||
+    cleanDetectedNoSpace.includes('hkaiha') ||
+    cleanDetected.includes('thki ha') ||
+    cleanDetectedNoSpace.includes('thkiha') ||
+    cleanDetected.includes('hai ha') ||
+    cleanDetectedNoSpace.includes('haiha')
+  ) {
+    const custThaiHa = custList.find((c) => {
+      const cClean = removeDiacritics(c.name.toLowerCase());
+      return cClean === 'thai ha' || (cClean.includes('thai') && cClean.includes('ha') && !cClean.includes('ngoc lam'));
+    }) || null;
+    if (custThaiHa) matchedCust = custThaiHa;
+  }
+
+  // 1m. ĐẶC BIỆT: Khớp ưu tiên khách "Anh thắng phố cổ" nếu là A Thang, A Thắng, ATHang, thang pho co...
+  if (
+    cleanDetected === 'a thang' ||
+    cleanDetected === 'athang' ||
+    cleanDetected === 'a.thang' ||
+    cleanDetected === 'anh thang' ||
+    cleanDetectedNoSpace === 'athang' ||
+    cleanDetectedNoSpace === 'anhthang' ||
+    cleanDetected.includes('thang pho co') ||
+    cleanDetectedNoSpace.includes('thangphoco') ||
+    (cleanDetected.includes('thang') && !cleanDetected.includes('chu tu'))
+  ) {
+    const custThangPhoCo = custList.find((c) => {
+      const cClean = removeDiacritics(c.name.toLowerCase());
+      return cClean.includes('thang') && cClean.includes('pho co');
+    }) || custList.find((c) => {
+      const cClean = removeDiacritics(c.name.toLowerCase());
+      return cClean === 'anh thang pho co';
+    }) || null;
+    if (custThangPhoCo) matchedCust = custThangPhoCo;
+  }
+
+  // 1n. ĐẶC BIỆT: Khớp ưu tiên khách "Phở đông" nếu là phở đg, phở đông, pho dg, pho dong...
+  if (
+    cleanDetected === 'pho dg' ||
+    cleanDetected === 'phodg' ||
+    cleanDetected === 'pho dong' ||
+    cleanDetected === 'phodong' ||
+    cleanDetected === 'dg' ||
+    cleanDetectedNoSpace === 'phodg' ||
+    cleanDetectedNoSpace === 'phodong' ||
+    (cleanDetected.includes('pho') && (cleanDetected.includes('dg') || cleanDetected.includes('dong'))) ||
+    cleanDetected.includes('pho dong')
+  ) {
+    const custPhoDong = custList.find((c) => {
+      const cClean = removeDiacritics(c.name.toLowerCase());
+      return cClean === 'pho dong' || (cClean.includes('pho') && cClean.includes('dong'));
+    }) || null;
+    if (custPhoDong) matchedCust = custPhoDong;
+  }
+
+  // 1o. ĐẶC BIỆT: Khớp ưu tiên khách "Gia Hưng cs2" nếu là Gia Hy CS2, Gia Hưng CS2, Gia Hưng 2...
+  if (
+    (cleanDetected.includes('gia') && (cleanDetected.includes('hung') || cleanDetected.includes('hy')) && (cleanDetected.includes('cs2') || cleanDetected.includes('cs 2') || cleanDetected.includes('co so 2') || cleanDetected.endsWith('2'))) ||
+    cleanDetectedNoSpace.includes('giahycs2') ||
+    cleanDetectedNoSpace.includes('giahungcs2') ||
+    cleanDetected.includes('gia hy cs2') ||
+    cleanDetected.includes('gia hung cs2')
+  ) {
+    const custGiaHungCs2 = custList.find((c) => {
+      const cClean = removeDiacritics(c.name.toLowerCase());
+      return cClean === 'gia hung cs2' || (cClean.includes('gia hung') && cClean.includes('cs2'));
+    }) || null;
+    if (custGiaHungCs2) matchedCust = custGiaHungCs2;
+  }
+
+  // 2. Nếu khách trước đó bị gán nhầm thành tên quá ngắn (1-2 ký tự như "N") trong khi AI đọc tên dài, hủy bỏ để tìm lại
+  if (matchedCust && currentCustClean.length <= 2 && cleanDetected.length > 2) {
+    matchedCust = null;
+  }
+
+  // 3. Ưu tiên khớp khách Cô thảo(thầy) nếu AI nhận diện là thầy hoặc cô thảo
+  if (!matchedCust) {
+    if (
+      cleanDetectedNoSpace === 'thay' ||
+      cleanDetectedNoSpace === 'cothao' ||
+      cleanDetectedNoSpace === 'thao' ||
+      cleanDetected.includes('thay') ||
+      cleanDetected.includes('thao')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('thao') && cClean.includes('thay');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('thao');
+      }) || null;
+    }
+  }
+
+  // 4. Ưu tiên khớp khách Tuyết
+  if (!matchedCust) {
+    if (cleanDetected.includes('tuyet') || cleanDetectedNoSpace.includes('tuyet')) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('tuyet');
+      }) || null;
+    }
+  }
+
+  // 5. Ưu tiên khớp các Bếp (B1, B2, B3, B4)
+  if (!matchedCust) {
+    if (
+      cleanDetectedNoSpace === 'b1' ||
+      cleanDetectedNoSpace === 'bep1' ||
+      cleanDetectedNoSpace === 'bephangxom1' ||
+      cleanDetected.includes('bep hang xom 1') ||
+      cleanDetected.includes('truong bo 1')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('bep hang xom') && cClean.includes('1')) || cClean.includes('b1') || cClean.includes('bep 1');
+      }) || null;
+    } else if (
+      cleanDetectedNoSpace === 'b2' ||
+      cleanDetectedNoSpace === 'bep2' ||
+      cleanDetectedNoSpace === 'bephangxom2' ||
+      cleanDetected.includes('bep hang xom 2')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('bep hang xom') && cClean.includes('2')) || cClean.includes('b2') || cClean.includes('bep 2');
+      }) || null;
+    } else if (
+      cleanDetectedNoSpace === 'b3' ||
+      cleanDetectedNoSpace === 'bep3' ||
+      cleanDetectedNoSpace === 'bephangxom3' ||
+      cleanDetected.includes('bep hang xom 3')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('bep hang xom') && cClean.includes('3')) || cClean.includes('b3') || cClean.includes('bep 3');
+      }) || null;
+    } else if (
+      cleanDetectedNoSpace === 'b4' ||
+      cleanDetectedNoSpace === 'bep4' ||
+      cleanDetectedNoSpace === 'vuonxanh' ||
+      cleanDetectedNoSpace === 'nhahangvuonxanh' ||
+      cleanDetected.includes('vuon xanh')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('vuon xanh') || cClean.includes('b4') || cClean.includes('bep 4');
+      }) || null;
+    }
+  }
+
+  // 5b. Ưu tiên khớp khách Huyền Đô Nghĩa nếu AI nhận diện là Huyền hoặc Huyền Đô Nghĩa
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('huyen do nghia') ||
+      cleanDetected.includes('huyen do ngia') ||
+      cleanDetected.includes('do nghia') ||
+      cleanDetectedNoSpace === 'huyen' ||
+      cleanDetectedNoSpace === 'chihuyen' ||
+      cleanDetected === 'huyen'
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('huyen') && (cClean.includes('do nghia') || cClean.includes('do ngia'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('do nghia') || cClean.includes('do ngia');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('huyen');
+      }) || null;
+    }
+  }
+
+  // 5c. Ưu tiên khớp khách Phở tưởng (chị Luyến) nếu AI nhận diện là phở tưởng hoặc luyến
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('pho tuong') ||
+      cleanDetected.includes('tuong') ||
+      cleanDetected.includes('luyen') ||
+      cleanDetectedNoSpace.includes('photuong') ||
+      cleanDetectedNoSpace.includes('tuong') ||
+      cleanDetectedNoSpace.includes('luyen')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('tuong') && !cClean.includes('tien');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('luyen');
+      }) || null;
+    }
+  }
+
+  // 5d. Ưu tiên khớp khách Chị Thúy Nga nếu AI nhận diện là chinga, chị nga, nga
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('chinga') ||
+      cleanDetected.includes('chi nga') ||
+      cleanDetected.includes('thuy nga') ||
+      cleanDetectedNoSpace.includes('chinga') ||
+      cleanDetectedNoSpace.includes('thuynga') ||
+      cleanDetectedNoSpace === 'nga' ||
+      cleanDetected === 'nga'
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('thuy') && cClean.includes('nga');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('nga');
+      }) || null;
+    }
+  }
+
+  // 5e. Ưu tiên khớp khách Hà Trì
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('ha tri') ||
+      cleanDetected.includes('ha li') ||
+      cleanDetected.includes('ha lu') ||
+      cleanDetected.includes('ha thi') ||
+      cleanDetectedNoSpace === 'hatri' ||
+      cleanDetectedNoSpace === 'hali' ||
+      cleanDetectedNoSpace === 'halu' ||
+      cleanDetectedNoSpace === 'hathi' ||
+      cleanDetectedNoSpace.includes('hatri')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
+      }) || null;
+    }
+  }
+
+  // 5f. Ưu tiên khớp khách Thăn bình đà(anh Nghĩa)
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('anh nghia') ||
+      cleanDetected.includes('anh ngia') ||
+      cleanDetected.includes('binh da') ||
+      cleanDetected.includes('than binh da') ||
+      cleanDetectedNoSpace.includes('anhnghia') ||
+      cleanDetectedNoSpace.includes('anhngia') ||
+      cleanDetectedNoSpace === 'nghia' ||
+      cleanDetectedNoSpace === 'ngia'
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('binh da') && (cClean.includes('nghia') || cClean.includes('than'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('binh da');
+      }) || null;
+    }
+  }
+
+  // 5g. Ưu tiên khớp khách Bà lưu
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('ba luu') ||
+      cleanDetected.includes('bà lưu') ||
+      cleanDetectedNoSpace === 'baluu' ||
+      cleanDetectedNoSpace === 'luu'
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean === 'ba luu' || cClean.includes('ba luu');
+      }) || null;
+    }
+  }
+
+  // 5h. Ưu tiên khớp khách 52 trần thái tông
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('52') ||
+      cleanDetectedNoSpace.includes('52') ||
+      (cleanDetected.includes('tran thai tong') && !cleanDetected.includes('47'))
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('52') && (cClean.includes('tran thai tong') || cClean.includes('thai tong') || cClean.includes('tran'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('52');
+      }) || null;
+    }
+  }
+
+  // 5i. Ưu tiên khớp khách Minh trang
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('minh trang') ||
+      cleanDetected.includes('mih trang') ||
+      cleanDetected.includes('minh tuy') ||
+      cleanDetected.includes('mih tuy') ||
+      cleanDetected.includes('mih') ||
+      cleanDetectedNoSpace === 'minh' ||
+      cleanDetectedNoSpace === 'mih' ||
+      cleanDetectedNoSpace.includes('minhtrang') ||
+      cleanDetectedNoSpace.includes('mihtrang') ||
+      cleanDetectedNoSpace.includes('mihtuy') ||
+      cleanDetectedNoSpace.includes('minhtuy')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('minh') && cClean.includes('trang');
+      }) || null;
+    }
+  }
+
+  // 5j. Ưu tiên khớp khách Trung kính / Bếp trung kính
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('trung kinh') ||
+      cleanDetected.includes('bep trung kinh') ||
+      cleanDetected.includes('trung kh') ||
+      cleanDetected.includes('tuy kh') ||
+      cleanDetected.includes('tuy ks') ||
+      cleanDetected.includes('tug kh') ||
+      cleanDetected.includes('tung kh') ||
+      cleanDetected.includes('truy kh') ||
+      cleanDetectedNoSpace === 'trungkinh' ||
+      cleanDetectedNoSpace === 'tuykh' ||
+      cleanDetectedNoSpace === 'tuykhs' ||
+      cleanDetectedNoSpace === 'tuyks' ||
+      cleanDetectedNoSpace === 'tugkh' ||
+      cleanDetectedNoSpace === 'tungkh' ||
+      cleanDetectedNoSpace === 'truykh' ||
+      cleanDetectedNoSpace.includes('trungkinh') ||
+      cleanDetectedNoSpace.includes('beptrungkinh')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('bep trung kinh') || (cClean.includes('trung') && cClean.includes('kinh'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('trung kinh') || cClean === 'trungkinh';
+      }) || null;
+    }
+  }
+
+  // 5k. Ưu tiên phân biệt rõ khách "văn khê" và "Bún huế van khe"
+  if (!matchedCust) {
+    if (cleanDetected.includes('van khe') || cleanDetectedNoSpace.includes('vankhe')) {
+      const hasBunHue = cleanDetected.includes('bun hue') || cleanDetected.includes('bun bo hue') ||
+        cleanDetectedNoSpace.includes('bunhue') || (cleanDetected.includes('bun') && cleanDetected.includes('van khe'));
+      if (!hasBunHue) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean === 'van khe' || (cClean.includes('van khe') && !cClean.includes('bun'));
+        }) || null;
+      } else {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('bun hue') && cClean.includes('van khe')) || (cClean.includes('bun') && cClean.includes('van khe'));
+        }) || null;
+      }
+    } else if (cleanDetected.includes('bun hue') || cleanDetectedNoSpace.includes('bunhue')) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('bun hue');
+      }) || null;
+    } else if (
+      cleanDetected.includes('thai ha') ||
+      cleanDetected.includes('thái hà') ||
+      cleanDetectedNoSpace.includes('thaiha') ||
+      cleanDetected.includes('hku ha') ||
+      cleanDetectedNoSpace.includes('hkuha') ||
+      cleanDetected.includes('hki ha') ||
+      cleanDetectedNoSpace.includes('hkiha') ||
+      cleanDetected.includes('hkui ha') ||
+      cleanDetectedNoSpace.includes('hkuiha') ||
+      cleanDetected.includes('hkai ha') ||
+      cleanDetectedNoSpace.includes('hkaiha') ||
+      cleanDetected.includes('thki ha') ||
+      cleanDetectedNoSpace.includes('thkiha') ||
+      cleanDetected.includes('hai ha') ||
+      cleanDetectedNoSpace.includes('haiha')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean === 'thai ha' || (cClean.includes('thai') && cClean.includes('ha') && !cClean.includes('ngoc lam'));
+      }) || null;
+    } else if (
+      cleanDetected === 'a thang' ||
+      cleanDetected === 'athang' ||
+      cleanDetected === 'a.thang' ||
+      cleanDetected === 'anh thang' ||
+      cleanDetectedNoSpace === 'athang' ||
+      cleanDetectedNoSpace === 'anhthang' ||
+      cleanDetected.includes('thang pho co') ||
+      cleanDetectedNoSpace.includes('thangphoco') ||
+      (cleanDetected.includes('thang') && !cleanDetected.includes('chu tu'))
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('thang') && cClean.includes('pho co');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean === 'anh thang pho co';
+      }) || null;
+    } else if (
+      cleanDetected === 'pho dg' ||
+      cleanDetected === 'phodg' ||
+      cleanDetected === 'pho dong' ||
+      cleanDetected === 'phodong' ||
+      cleanDetected === 'dg' ||
+      cleanDetectedNoSpace === 'phodg' ||
+      cleanDetectedNoSpace === 'phodong' ||
+      (cleanDetected.includes('pho') && (cleanDetected.includes('dg') || cleanDetected.includes('dong'))) ||
+      cleanDetected.includes('pho dong')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean === 'pho dong' || (cClean.includes('pho') && cClean.includes('dong'));
+      }) || null;
+    } else if (
+      (cleanDetected.includes('gia') && (cleanDetected.includes('hung') || cleanDetected.includes('hy')) && (cleanDetected.includes('cs2') || cleanDetected.includes('cs 2') || cleanDetected.includes('co so 2') || cleanDetected.endsWith('2'))) ||
+      cleanDetectedNoSpace.includes('giahycs2') ||
+      cleanDetectedNoSpace.includes('giahungcs2') ||
+      cleanDetected.includes('gia hy cs2') ||
+      cleanDetected.includes('gia hung cs2')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean === 'gia hung cs2' || (cClean.includes('gia hung') && cClean.includes('cs2'));
+      }) || null;
+    }
+  }
+
+  // 6. Khớp thông thường: Sắp xếp theo tên dài nhất và CẤM so khớp substring 1-2 ký tự
+  if (!matchedCust) {
+    const sortedCusts = [...custList].sort((a, b) => b.name.length - a.name.length);
+    matchedCust = sortedCusts.find((c) => {
+      const cName = removeDiacritics(c.name.toLowerCase().trim());
+      const cNameNoSpace = cName.replace(/\s+/g, '');
+      if (cName === cleanDetected || cNameNoSpace === cleanDetectedNoSpace) return true;
+      // Chỉ cho phép includes khi tên khách có ít nhất 3 ký tự (tránh khách 1 ký tự như "N")
+      if (cName.length >= 3 && cleanDetected.includes(cName)) return true;
+      if (cNameNoSpace.length >= 3 && cleanDetectedNoSpace.includes(cNameNoSpace)) return true;
+      if (cleanDetected.length >= 3 && cName.includes(cleanDetected)) return true;
+      if (cleanDetectedNoSpace.length >= 3 && cNameNoSpace.includes(cleanDetectedNoSpace)) return true;
+      return false;
+    }) || null;
+  }
+}
+  return matchedCust;
+};
+
 const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
+  const isTablet = width >= 768 && width < 1024;
+  const isPC = width >= 1024;
+  const [activeDropdownSubId, setActiveDropdownSubId] = useState(null);
 
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submissions, setSubmissions] = useState([]);
-  const [selectedSub, setSelectedSub] = useState(null);
 
   // Bộ lọc
-  const [filterStatus, setFilterStatus] = useState('READY_FOR_REVIEW'); // READY_FOR_REVIEW | APPROVED | ALL
+  const [filterStatus, setFilterStatus] = useState('ALL'); // ALL | UNPROCESSED | APPROVED
   const [filterDate, setFilterDate] = useState(() => {
     const today = new Date();
     const d = String(today.getDate()).padStart(2, '0');
@@ -49,20 +1421,22 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
 
-  // Form chỉnh sửa hóa đơn đang chọn
-  const [editCustomer, setEditCustomer] = useState(null);
-  const [editDate, setEditDate] = useState('');
-  const [editNote, setEditNote] = useState('');
-  const [editItems, setEditItems] = useState([]);
-  const [submittingApprove, setSubmittingApprove] = useState(false);
+  // Quản lý dữ liệu form cho TỪNG hóa đơn (Key: sub.id)
+  const [cardDataMap, setCardDataMap] = useState({});
+
+  // Trạng thái lưu hàng loạt
+  const [submittingBatch, setSubmittingBatch] = useState(false);
 
   // Quản lý link Zalo nhân viên
   const [showLinkManager, setShowLinkManager] = useState(false);
   const [staffLinks, setStaffLinks] = useState([]);
   const [loadingLinks, setLoadingLinks] = useState(false);
 
-  // Refs điều khiển modal phụ
+  // Refs điều khiển modal phụ và scroll
+  const scrollViewRef = useRef(null);
+  const cardLayoutRefs = useRef({});
   const imagePreviewModalRef = useRef(null);
+  const detailModalRef = useRef(null);
   const popupModalRef = useRef(null);
 
   // Tải danh sách khách hàng và sản phẩm
@@ -72,24 +1446,34 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         api.get('/customers?isBadDebt=false'),
         api.get('/products'),
       ]);
-      if (custRes.data.success) setCustomers(custRes.data.data || []);
-      if (prodRes.data.success) {
-        setProducts(
-          (prodRes.data.data || []).filter(
+      const custList = custRes.data.success ? (custRes.data.data || []) : [];
+      const prodList = prodRes.data.success
+        ? (prodRes.data.data || []).filter(
             (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
           )
-        );
-      }
+        : [];
+      if (custRes.data.success) setCustomers(custList);
+      if (prodRes.data.success) setProducts(prodList);
+      return { custList, prodList };
     } catch (err) {
       console.warn('Lỗi khi tải danh bạ:', err);
+      return { custList: [], prodList: [] };
     }
   };
 
-  // Tải danh sách hóa đơn nhân viên nộp
-  const fetchSubmissions = async () => {
+  // Quản lý giá thịt riêng theo từng khách hàng { [customerId]: productListWithCustomPrices }
+  const [custProductsMap, setCustProductsMap] = useState({});
+
+  // Tải danh sách hóa đơn nhân viên nộp và nạp xong toàn bộ bảng giá riêng mới hiển thị cho chỉnh sửa
+  const fetchSubmissions = async (overrideCustList, overrideProdList) => {
     try {
       setLoading(true);
-      const params = { status: filterStatus };
+      const params = {};
+      if (filterStatus === 'APPROVED') {
+        params.status = 'APPROVED';
+      } else if (filterStatus === 'UNPROCESSED') {
+        params.status = 'READY_FOR_REVIEW';
+      }
       if (filterDate) {
         const [d, m, y] = filterDate.split('/');
         params.date = `${y}-${m}-${d}`;
@@ -98,12 +1482,46 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       if (res.data.success) {
         const list = res.data.data || [];
         setSubmissions(list);
-        if (list.length > 0) {
-          // Tự động chọn hóa đơn đầu tiên để đối soát
-          loadSubmissionToEdit(list[0]);
-        } else {
-          setSelectedSub(null);
+        const effectiveCustList = (overrideCustList && overrideCustList.length > 0) ? overrideCustList : customers;
+        const effectiveProdList = (overrideProdList && overrideProdList.length > 0) ? overrideProdList : products;
+
+        // 1. Nhận diện khách hàng cho toàn bộ danh sách hóa đơn
+        const allCustIds = [
+          ...new Set(
+            list
+              .map((s) => resolveCustomerForSub(s, effectiveCustList)?.id)
+              .filter(Boolean)
+          ),
+        ];
+
+        // 2. BẮT BUỘC TẢI XONG BẢNG GIÁ RIÊNG CỦA TẤT CẢ KHÁCH HÀNG TRƯỚC KHI MỞ KHÓA CHO PHÉP CHỈNH SỬA
+        const latestCustMap = { ...custProductsMap };
+        const missingCustIds = allCustIds.filter((id) => !latestCustMap[id] || latestCustMap[id].length === 0);
+
+        if (missingCustIds.length > 0) {
+          const fetchResults = await Promise.all(
+            missingCustIds.map(async (cId) => {
+              try {
+                const pRes = await api.get(`/products?customerId=${cId}`);
+                const custProds = (pRes.data?.data || []).filter(
+                  (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+                );
+                return [cId, custProds];
+              } catch {
+                return [cId, []];
+              }
+            })
+          );
+          fetchResults.forEach(([cId, prods]) => {
+            if (prods && prods.length > 0) {
+              latestCustMap[cId] = prods;
+            }
+          });
+          setCustProductsMap(latestCustMap);
         }
+
+        // 3. Khởi tạo dữ liệu form với đầy đủ giá riêng đã được tải xong
+        initCardDataMap(list, effectiveCustList, effectiveProdList, latestCustMap);
       }
     } catch (err) {
       console.error('Lỗi khi tải hóa đơn nhân viên:', err);
@@ -113,64 +1531,982 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Tải danh mục thịt kèm giá riêng cho khách hàng
-  const fetchCustomerPrices = async (customerId) => {
-    if (!customerId) return;
+  // Helper tìm kiếm sản phẩm phù hợp nhất trong danh mục món của khách hàng
+  const findBestMatchingProduct = (it, prodList) => {
+    if (!Array.isArray(prodList) || prodList.length === 0) return null;
+
+    // 1. Khớp theo ID chính xác đã có
+    if (it.matchedProductId) {
+      const found = prodList.find((p) => p.id === it.matchedProductId);
+      if (found) return found;
+    }
+    if (it.selectedProduct?.id && it.selectedProduct.id !== '__manual__') {
+      const found = prodList.find((p) => p.id === it.selectedProduct.id);
+      if (found) return found;
+    }
+
+    // 2. Lấy tên thô của món thịt
+    const raw = (it.rawName || it.selectedProduct?.name || '').trim();
+    if (!raw) return null;
+    const cleanRaw = removeDiacritics(raw.toLowerCase());
+    const cleanRawNoSpace = cleanRaw.replace(/[\s\(\)\-_,.]+/g, '');
+
+    // 3. So khớp chính xác theo tên không dấu
+    let match = prodList.find((p) => {
+      const pClean = removeDiacritics(p.name.toLowerCase().trim());
+      const pCleanNoSpace = pClean.replace(/[\s\(\)\-_,.]+/g, '');
+      return pClean === cleanRaw || pCleanNoSpace === cleanRawNoSpace;
+    });
+    if (match) return match;
+
+    // 4. So khớp theo các loại thịt phổ biến
+    // Tái / Tái bò
+    if (cleanRaw.includes('tai') || cleanRawNoSpace.includes('tai')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('tai');
+      });
+      if (match) return match;
+    }
+
+    // Bắp / Bắp bò
+    if (cleanRaw.includes('bap') || cleanRawNoSpace.includes('bap')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('bap');
+      });
+      if (match) return match;
+    }
+
+    // Gầu / Gầu bò
+    if (cleanRaw.includes('gau') || cleanRawNoSpace.includes('gau')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('gau');
+      });
+      if (match) return match;
+    }
+
+    // Nạm / Nạm bò / Lạm
+    if (cleanRaw.includes('nam') || cleanRaw.includes('lam') || cleanRawNoSpace.includes('nam') || cleanRawNoSpace.includes('lam')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('nam') || pClean.includes('lam');
+      });
+      if (match) return match;
+    }
+
+    // Quả bằng / Bằng
+    if (cleanRaw.includes('bang') || cleanRawNoSpace.includes('bang')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('bang') || pClean.includes('qua bang');
+      });
+      if (match) return match;
+    }
+
+    // Quả trắng / Trắng
+    if (cleanRaw.includes('trang') || cleanRawNoSpace.includes('trang')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('trang') || pClean.includes('qua trang');
+      });
+      if (match) return match;
+    }
+
+    // Quạt / Xương quạt
+    if (cleanRaw.includes('quat') || cleanRawNoSpace.includes('quat')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('quat');
+      });
+      if (match) return match;
+    }
+
+    // Xg / X / Xg bò / Xương
+    if (
+      cleanRaw === 'xg' ||
+      cleanRaw === 'x' ||
+      cleanRawNoSpace === 'xg' ||
+      cleanRawNoSpace === 'x' ||
+      cleanRaw.includes('xg') ||
+      cleanRaw.includes('xuong')
+    ) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('xg') || pClean.includes('xuong') || pClean === 'x';
+      });
+      if (match) return match;
+    }
+
+    // Thăn / Thăn bò
+    if (cleanRaw.includes('than') || cleanRawNoSpace.includes('than')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('than');
+      });
+      if (match) return match;
+    }
+
+    // Gân
+    if (cleanRaw.includes('gan') || cleanRawNoSpace.includes('gan')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('gan');
+      });
+      if (match) return match;
+    }
+
+    // Sườn / Sườn bò / Sườn vai
+    if (cleanRaw.includes('suon') || cleanRawNoSpace.includes('suon')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('suon');
+      });
+      if (match) return match;
+    }
+
+    // Lá / Lá vai / Thịt la vai / La / Sách
+    if (
+      cleanRaw === 'la' || cleanRaw === 'la vai' || cleanRaw === 'thit la vai' || cleanRaw === 'thit la' ||
+      cleanRaw.includes('la vai') || cleanRaw.includes('la xach') || cleanRaw.includes('sach') ||
+      cleanRawNoSpace.includes('lavai') || cleanRawNoSpace === 'la' || cleanRawNoSpace === 'thitla'
+    ) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('la vai') || pClean.includes('la') || pClean.includes('sach');
+      });
+      if (match) return match;
+    }
+
+    // Vai xay / Bò xay / Xay
+    if (cleanRaw.includes('xay') || cleanRawNoSpace.includes('xay')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('xay') || pClean.includes('vai xay') || pClean.includes('bo xay');
+      });
+      if (match) return match;
+    }
+
+    // Lạm gầu
+    if ((cleanRaw.includes('lam') && cleanRaw.includes('gau')) || (cleanRaw.includes('nam') && cleanRaw.includes('gau'))) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return (pClean.includes('lam') || pClean.includes('nam')) && pClean.includes('gau');
+      });
+      if (match) return match;
+    }
+
+    // Dẻ sườn
+    if (cleanRaw.includes('de suon') || cleanRawNoSpace.includes('desuon')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('de suon');
+      });
+      if (match) return match;
+    }
+
+    // Bò / Thịt bò
+    if (cleanRaw === 'bo' || cleanRaw === 'thit bo' || cleanRawNoSpace === 'bo' || cleanRawNoSpace === 'thitbo') {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase().trim());
+        return pClean === 'bo' || pClean === 'thit bo';
+      });
+      if (match) return match;
+    }
+
+    // Tiết / Tiết bò
+    if (cleanRaw.includes('tiet') || cleanRawNoSpace.includes('tiet')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('tiet');
+      });
+      if (match) return match;
+    }
+
+    // Bê / Bê ba chỉ
+    if (cleanRaw.includes('be') || cleanRawNoSpace.includes('be')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return (pClean.includes('be') && pClean.includes('ba chi')) || pClean.includes('be');
+      });
+      if (match) return match;
+    }
+
+    // Thịt chín / chí / chín
+    if (cleanRaw.includes('chin') || cleanRaw === 'chi' || cleanRawNoSpace.includes('chin')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('chin') || pClean.includes('thit chin');
+      });
+      if (match) return match;
+    }
+
+    // Xô / Thịt xô
+    if (cleanRaw.includes('xo') || cleanRawNoSpace.includes('xo')) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('xo');
+      });
+      if (match) return match;
+    }
+
+    // Tim, Cật, Đuôi
+    if (cleanRaw.includes('tim')) {
+      match = prodList.find((p) => removeDiacritics(p.name.toLowerCase()).includes('tim'));
+      if (match) return match;
+    }
+    if (cleanRaw.includes('cat')) {
+      match = prodList.find((p) => removeDiacritics(p.name.toLowerCase()).includes('cat'));
+      if (match) return match;
+    }
+    if (cleanRaw.includes('duoi')) {
+      match = prodList.find((p) => removeDiacritics(p.name.toLowerCase()).includes('duoi'));
+      if (match) return match;
+    }
+
+    // 5. So khớp chứa chuỗi (nếu chuỗi >= 3 ký tự)
+    match = prodList.find((p) => {
+      const pClean = removeDiacritics(p.name.toLowerCase().trim());
+      return (cleanRaw.length >= 3 && pClean.includes(cleanRaw)) ||
+             (pClean.length >= 3 && cleanRaw.includes(pClean));
+    });
+
+    return match || null;
+  };
+
+  // Cập nhật giá riêng của khách hàng vào danh sách các món trong thẻ
+  const applyCustPricesToItems = (items, custProds) => {
+    if (!Array.isArray(items) || !Array.isArray(custProds)) return items;
+
+    return items.map((it) => {
+      const pData = findBestMatchingProduct(it, custProds);
+      if (!pData) return it;
+
+      // Ưu tiên giá riêng của khách nếu có, không thì lấy giá mặc định
+      const hasCustPrice = pData.customPrice !== undefined && pData.customPrice !== null && !isNaN(Number(pData.customPrice)) && Number(pData.customPrice) > 0;
+      const effectivePrice = hasCustPrice
+        ? Number(pData.customPrice)
+        : (pData.defaultPrice !== undefined && pData.defaultPrice !== null ? Number(pData.defaultPrice) : (pData.baseDefaultPrice ? Number(pData.baseDefaultPrice) : null));
+
+      if (effectivePrice != null && !isNaN(effectivePrice) && effectivePrice > 0) {
+        const cleanQtyStr = String(it.quantity || '').trim().replace(',', '.');
+        const qty = parseFloat(cleanQtyStr) || 0;
+
+        // BẮT BUỘC: RESET ĐƠN GIÁ VỀ ĐÚNG GIÁ RIÊNG CỦA KHÁCH ĐÓ
+        const newPriceStr = String(Math.round(effectivePrice));
+        // Thành tiền tự động tính lại = Số kg * Đơn giá riêng mới (nếu có số kg)
+        const newAmountStr = qty > 0 ? String(Math.round(qty * effectivePrice)) : (it.amount || '');
+
+        return {
+          ...it,
+          selectedProduct: pData,
+          matchedProductId: pData.id,
+          rawName: pData.name || it.rawName,
+          price: newPriceStr,
+          amount: newAmountStr,
+        };
+      }
+      return {
+        ...it,
+        selectedProduct: pData,
+        matchedProductId: pData.id,
+        rawName: pData.name || it.rawName,
+      };
+    });
+  };
+
+  // Tải danh sách sản phẩm kèm giá riêng của khách hàng
+  const fetchProductsForCustomer = async (customerId) => {
+    if (!customerId) return [];
+    if (custProductsMap[customerId]) {
+      syncCardPricesWithCustomer(customerId, custProductsMap[customerId]);
+      return custProductsMap[customerId];
+    }
     try {
       const res = await api.get(`/products?customerId=${customerId}`);
-      if (res.data?.success) {
-        const custProds = (res.data.data || []).filter(
-          (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
-        );
-        setProducts(custProds);
-      }
+      const custProds = (res.data?.data || []).filter(
+        (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+      );
+      setCustProductsMap((prev) => ({ ...prev, [customerId]: custProds }));
+      syncCardPricesWithCustomer(customerId, custProds);
+      return custProds;
     } catch (e) {
-      console.warn('Lỗi tải giá riêng khách:', e);
+      console.warn('[FETCH CUST PRODUCTS ERROR]', e);
+      return [];
     }
   };
 
-  // Nạp 1 hóa đơn vào form chỉnh sửa
-  const loadSubmissionToEdit = (sub) => {
-    setSelectedSub(sub);
-    const subDate = new Date(sub.date);
-    const d = String(subDate.getDate()).padStart(2, '0');
-    const m = String(subDate.getMonth() + 1).padStart(2, '0');
-    const y = subDate.getFullYear();
-    setEditDate(`${d}/${m}/${y}`);
-    setEditNote(sub.note || '');
+  // Đồng bộ lại giá riêng của khách hàng cho các thẻ đang chọn khách hàng này
+  const syncCardPricesWithCustomer = (customerId, custProds) => {
+    if (!Array.isArray(custProds) || custProds.length === 0) return;
 
-    // Khách hàng
-    let matchedCust = null;
-    if (sub.matchedCustomer) {
-      matchedCust = sub.matchedCustomer;
-      setEditCustomer(sub.matchedCustomer);
-    } else if (sub.matchedCustomerId) {
-      const found = customers.find((c) => c.id === sub.matchedCustomerId);
-      matchedCust = found || null;
-      setEditCustomer(found || null);
-    } else {
-      setEditCustomer(null);
-    }
+    setCardDataMap((prev) => {
+      let hasChange = false;
+      const nextMap = { ...prev };
 
-    if (matchedCust?.id) {
-      fetchCustomerPrices(matchedCust.id);
-    }
+      Object.keys(nextMap).forEach((subId) => {
+        const card = nextMap[subId];
+        if (card.customer?.id !== customerId || !Array.isArray(card.items)) return;
 
-    // Danh sách món thịt
-    const rawItems = (sub.items || []).map((it, idx) => {
-      const matchedP = products.find((p) => p.id === it.matchedProductId);
+        const newItems = applyCustPricesToItems(card.items, custProds);
+        hasChange = true;
+        nextMap[subId] = {
+          ...card,
+          items: newItems,
+        };
+      });
+
+      return hasChange ? nextMap : prev;
+    });
+  };
+
+  // Chọn 1 món thịt cho dòng dữ liệu: TỰ ĐỘNG CẬP NHẬT ĐƠN GIÁ và TÍNH LẠI THÀNH TIỀN
+  const selectProductForCardItem = (subId, itemIdx, p) => {
+    if (!p) return;
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      const nextItems = [...card.items];
+      const currentItem = nextItems[itemIdx] || {};
+
+      // Ưu tiên giá riêng (customPrice) của khách, nếu không có thì lấy giá mặc định (defaultPrice)
+      const effectivePrice = p.customPrice !== undefined && p.customPrice !== null && !isNaN(Number(p.customPrice)) && Number(p.customPrice) > 0
+        ? Number(p.customPrice)
+        : (p.defaultPrice !== undefined && p.defaultPrice !== null ? Number(p.defaultPrice) : null);
+
+      const qty = parseFloat(currentItem.quantity) || 0;
+      let newPriceStr = currentItem.price || '';
+      let newAmountStr = currentItem.amount || '';
+
+      if (effectivePrice != null && !isNaN(effectivePrice) && effectivePrice > 0) {
+        newPriceStr = String(Math.round(effectivePrice));
+        // Tự động tính lại thành tiền: amount = qty * effectivePrice
+        if (qty > 0) {
+          newAmountStr = String(Math.round(qty * effectivePrice));
+        }
+      }
+
+      nextItems[itemIdx] = {
+        ...currentItem,
+        selectedProduct: p,
+        matchedProductId: p.id,
+        rawName: p.name,
+        price: newPriceStr,
+        amount: newAmountStr,
+      };
+
       return {
-        id: it.id || `temp_${idx}`,
-        rawName: it.rawName,
-        selectedProduct: matchedP || (it.rawName ? { id: '__manual__', name: it.rawName, unit: 'kg' } : null),
-        matchedProductId: it.matchedProductId || null,
-        quantity: it.quantity != null ? String(it.quantity) : '',
-        price: it.price != null ? String(Math.round(it.price)) : '',
-        amount: it.amount != null ? String(Math.round(it.amount)) : '',
+        ...prev,
+        [subId]: {
+          ...card,
+          items: nextItems,
+        },
+      };
+    });
+  };
+
+  // Xử lý khi người dùng chủ động chọn khách hàng cho một thẻ hóa đơn
+  const handleCustomerChange = async (subId, selectedCustomer) => {
+    if (!selectedCustomer) {
+      updateCardField(subId, 'customer', null);
+      return;
+    }
+
+    // 1. Cập nhật ngay tên khách vào thẻ và bật cờ isLoadingPrice = true để khóa ô nhập
+    setCardDataMap((prev) => {
+      const card = prev[subId] || {};
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          customer: selectedCustomer,
+          isLoadingPrice: true,
+        },
       };
     });
 
-    setEditItems(rawItems);
+    try {
+      // 2. BẮT BUỘC luôn lấy bảng giá sản phẩm (kèm giá riêng mới nhất) của khách hàng từ server
+      let custProds = null;
+      try {
+        const res = await api.get(`/products?customerId=${selectedCustomer.id}`);
+        custProds = (res.data?.data || []).filter(
+          (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+        );
+        setCustProductsMap((prev) => ({ ...prev, [selectedCustomer.id]: custProds }));
+      } catch (err) {
+        console.warn('[HANDLE_CUST_CHANGE_FETCH_ERROR]', err);
+        custProds = custProductsMap[selectedCustomer.id] || [];
+      }
+
+      // 3. Áp dụng giá riêng của khách hàng đó vào TẤT CẢ các dòng món thịt của thẻ này
+      let customPriceCount = 0;
+      setCardDataMap((prev) => {
+        const card = prev[subId];
+        if (!card) return prev;
+
+        const updatedItems = (custProds && custProds.length > 0)
+          ? applyCustPricesToItems(card.items, custProds)
+          : card.items;
+
+        customPriceCount = updatedItems.filter((it) => it.selectedProduct?.hasCustomPrice || it.selectedProduct?.customPrice != null).length;
+
+        // Xử lý đặc thù video khách Hương nếu có
+        const isHuong = removeDiacritics(selectedCustomer.name.toLowerCase()).includes('huong');
+        const sub = submissions.find((s) => s.id === subId);
+        const isVideo = sub?.fileType === 'VIDEO';
+        if (isHuong && isVideo && updatedItems.length > 0 && custProds && custProds.length > 0) {
+          const xoProduct = custProds.find((p) => removeDiacritics(p.name.toLowerCase().trim()) === 'xo') || null;
+          updatedItems.forEach((it, idx) => {
+            const cleanRaw = removeDiacritics((it.rawName || '').toLowerCase().trim());
+            if (!it.selectedProduct || !cleanRaw || ['thit', 'thit le', 'thit bo', 'mon le', 'xo', 'thit xo'].includes(cleanRaw) || cleanRaw.includes('xo')) {
+              const qty = parseFloat(it.quantity) || 0;
+              updatedItems[idx] = {
+                ...it,
+                rawName: 'xô',
+                selectedProduct: xoProduct || it.selectedProduct,
+                matchedProductId: xoProduct?.id || it.matchedProductId,
+                price: it.price || '230000',
+                amount: it.amount || (qty > 0 ? String(Math.round(qty * 230000)) : ''),
+              };
+            }
+          });
+        }
+
+        return {
+          ...prev,
+          [subId]: {
+            ...card,
+            customer: selectedCustomer,
+            items: updatedItems,
+            isLoadingPrice: false,
+          },
+        };
+      });
+
+      if (customPriceCount > 0) {
+        showGlobalToast(`Đã áp dụng giá riêng của ${selectedCustomer.name} cho ${customPriceCount} món!`, 'info');
+      }
+    } catch (e) {
+      console.warn('Lỗi khi cập nhật giá riêng:', e);
+      setCardDataMap((prev) => {
+        const card = prev[subId];
+        if (!card) return prev;
+        return {
+          ...prev,
+          [subId]: {
+            ...card,
+            isLoadingPrice: false,
+          },
+        };
+      });
+    }
+  };
+
+  // ─── CÁC THAO TÁC CHẾ ĐỘ NHẬP NHANH (TIỀN HÀNG) ───
+  const toggleOrderMode = (subId) => {
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      const newMode = card.orderMode === 'quick' ? 'detail' : 'quick';
+      let quickAmt = card.quickAmount;
+      let subAmounts = card.quickSubAmounts || [];
+      if (newMode === 'quick') {
+        if (!quickAmt || parseFloat(quickAmt) === 0) {
+          const sum = (card.items || []).reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
+          quickAmt = sum > 0 ? String(sum) : '';
+        }
+        if (subAmounts.length === 0 && Array.isArray(card.items) && card.items.length > 1) {
+          subAmounts = card.items.map((it) => parseFloat(it.amount) || 0).filter((v) => v > 0);
+        }
+      }
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          orderMode: newMode,
+          quickAmount: quickAmt,
+          quickSubAmounts: subAmounts,
+        },
+      };
+    });
+  };
+
+  const updateQuickAmount = (subId, amount) => {
+    updateCardField(subId, 'quickAmount', amount);
+  };
+
+  const addQuickSubAmount = (subId) => {
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      const subAmounts = [...(card.quickSubAmounts || []), 0];
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          quickSubAmounts: subAmounts,
+        },
+      };
+    });
+  };
+
+  const updateQuickSubAmount = (subId, idx, val) => {
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      const subAmounts = [...(card.quickSubAmounts || [])];
+      subAmounts[idx] = parseFloat(val) || 0;
+      const newTotal = subAmounts.reduce((s, v) => s + v, 0);
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          quickSubAmounts: subAmounts,
+          quickAmount: newTotal > 0 ? String(newTotal) : card.quickAmount,
+        },
+      };
+    });
+  };
+
+  const removeQuickSubAmount = (subId, idx) => {
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      const subAmounts = (card.quickSubAmounts || []).filter((_, i) => i !== idx);
+      const newTotal = subAmounts.reduce((s, v) => s + v, 0);
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          quickSubAmounts: subAmounts,
+          quickAmount: newTotal > 0 ? String(newTotal) : '',
+        },
+      };
+    });
+  };
+
+  // Khởi tạo trạng thái form cho tất cả các hóa đơn hiển thị (Đã nạp sẵn bảng giá riêng)
+  const initCardDataMap = (subList, custList, prodList, preloadedCustMap = custProductsMap) => {
+    setCardDataMap((prev) => {
+      const newMap = { ...prev };
+      subList.forEach((sub, idx) => {
+        // Nếu đã có dữ liệu đang nhập dở của sub này: kiểm tra xem có cần cập nhật khách hàng không
+        if (newMap[sub.id]) {
+          const existingCard = newMap[sub.id];
+          const existingHasRealItems = existingCard.items && existingCard.items.some((it) => (it.rawName && it.rawName.trim()) || (it.quantity && parseFloat(it.quantity) > 0));
+          const serverHasRealItems = sub.items && sub.items.length > 0 && sub.items.some((it) => (it.rawName && it.rawName.trim()) || (it.quantity && parseFloat(it.quantity) > 0));
+          if (existingHasRealItems || !serverHasRealItems) {
+            const autoFixedCust = resolveCustomerForSub(sub, custList);
+            if (autoFixedCust && (!existingCard.customer || existingCard.customer.id !== autoFixedCust.id)) {
+              newMap[sub.id] = { ...existingCard, customer: autoFixedCust };
+            }
+            return;
+          }
+        }
+
+        // Ngày áp dụng cho đơn nợ: Ưu tiên ngày hiện tại đang hiển thị trên giao diện (filterDate hoặc hôm nay)
+        // để toàn bộ danh sách hóa đơn (kể cả ảnh chụp ngày khác) đều được hiển thị và lên nợ chung ở giao diện ngày hiện tại
+        const applyDateStr = filterDate || (() => {
+          const today = new Date();
+          const dNow = String(today.getDate()).padStart(2, '0');
+          const mNow = String(today.getMonth() + 1).padStart(2, '0');
+          const yNow = today.getFullYear();
+          return `${dNow}/${mNow}/${yNow}`;
+        })();
+        const dateStr = applyDateStr;
+
+        // Khách hàng đã được nhận diện và so khớp chính xác
+        const matchedCust = resolveCustomerForSub(sub, custList);
+
+        // BẢNG GIÁ ĐÃ NẠP SẴN CỦA KHÁCH HÀNG NÀY (Ưu tiên giá riêng cao nhất)
+        const cardProdList = (matchedCust?.id && preloadedCustMap && preloadedCustMap[matchedCust.id]) || prodList;
+
+        const isHuongSub = matchedCust && removeDiacritics(matchedCust.name.toLowerCase()).includes('huong');
+        const xoProduct = cardProdList.find((p) => removeDiacritics(p.name.toLowerCase().trim()) === 'xo') || null;
+
+        // Danh sách items từ AI
+        const rawItems = (sub.items || [])
+          .filter((it) => it.rawName || it.quantity || it.price || it.amount)
+          .map((it, itemIdx) => {
+            let matchedP = cardProdList.find((p) => p.id === it.matchedProductId);
+            let rawName = it.rawName;
+
+            // Làm sạch các từ khóa trả hàng nếu vô tình lẫn vào tên món thịt
+            if (rawName) {
+              const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
+              const cleanedMeat = rawName.replace(returnKeywordsRegex, '').replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
+              if (cleanedMeat) {
+                rawName = cleanedMeat;
+              }
+            }
+
+            let priceStr = it.price != null ? String(Math.round(it.price)) : '';
+            let amountStr = it.amount != null ? String(Math.round(it.amount)) : '';
+
+            // Nếu video khách Hương: quy tắc đặc thù thịt xô 230k
+            if (sub.fileType === 'VIDEO' && isHuongSub) {
+              const cleanRaw = removeDiacritics((rawName || '').toLowerCase().trim());
+              if (!cleanRaw || ['thit', 'thit le', 'thit bo', 'mon le', 'xo', 'thit xo'].includes(cleanRaw) || cleanRaw.includes('xo')) {
+                rawName = 'xô';
+                if (xoProduct) matchedP = xoProduct;
+                if (!priceStr) priceStr = '230000';
+                if (!amountStr && it.quantity) {
+                  amountStr = String(Math.round(parseFloat(it.quantity) * 230000));
+                }
+              }
+            }
+
+            const cleanRawMeat = removeDiacritics((rawName || '').toLowerCase().trim());
+
+            // Quy tắc: Nếu đọc là bê hoặc ở hóa đơn chỉ viết là bê -> Bê ba chỉ
+            if (cleanRawMeat === 'be' || cleanRawMeat === 'thit be' || cleanRawMeat === 'bc' || cleanRawMeat === 'b.' || cleanRawMeat === 'be ba chi') {
+              rawName = 'Bê ba chỉ';
+            } else if (cleanRawMeat === 'chi' || cleanRawMeat === 'chin' || cleanRawMeat === 'thit chi' || cleanRawMeat === 'thit chin') {
+              // Quy tắc: chí, chín -> Thịt chín
+              rawName = 'Thịt chín';
+            } else if (cleanRawMeat === 'bang' || cleanRawMeat === 'qua bang' || cleanRawMeat === 'thit bang' || cleanRawMeat === 'bong' || cleanRawMeat === 'bọng') {
+              // Quy tắc: bằng, bọng (AI đọc nhầm từ bằng) -> Quả bằng
+              rawName = 'quả bằng';
+            } else if (cleanRawMeat === 'trang' || cleanRawMeat === 'qua trang' || cleanRawMeat === 'thit trang' || cleanRawMeat === 'trang bo' || cleanRawMeat === 'trắng bò' || cleanRawMeat === 'tráng bò') {
+              // Quy tắc: trắng, tráng bò (AI đọc nhầm từ trắng) -> Quả trắng
+              rawName = 'quả trắng';
+            } else if (cleanRawMeat === 'quat' || cleanRawMeat === 'thit quat' || cleanRawMeat === 'xuong quat') {
+              // Quy tắc: quạt -> Quạt
+              rawName = 'quạt';
+            } else if (cleanRawMeat === 'suon vai' || cleanRawMeat === 'suon vay' || cleanRawMeat === 'sườn vai' || cleanRawMeat === 'sườn vay') {
+              // Quy tắc: sườn vai -> Sườn bò / Sườn
+              rawName = 'Sườn';
+            } else if (cleanRawMeat === 'than' || cleanRawMeat === 'than bo' || cleanRawMeat === 'thit than') {
+              // Quy tắc: thăn -> Thăn
+              rawName = 'Thăn';
+            } else if (cleanRawMeat === 'xg' || cleanRawMeat === 'x' || cleanRawMeat === 'xg bo' || cleanRawMeat === 'xuong' || cleanRawMeat === 'xuong bo') {
+              // Quy tắc: xg, x -> Xg Bò
+              rawName = 'Xg Bò';
+            } else if (cleanRawMeat === 'nam' || cleanRawMeat === 'lam') {
+              // Quy tắc: nạm, lạm -> Nam
+              rawName = 'Nam';
+            } else if (cleanRawMeat === 'gau' || cleanRawMeat === 'gau bo') {
+              // Quy tắc: gầu -> Gầu Bò
+              rawName = 'Gầu Bò';
+            } else if (cleanRawMeat === 'tai' || cleanRawMeat === 'tái' || cleanRawMeat === 'thit tai' || cleanRawMeat === 'thịt tái' || cleanRawMeat === 'bo tai' || cleanRawMeat === 'bò tái') {
+              // Quy tắc: tái -> Tái
+              rawName = 'Tái';
+            } else if (cleanRawMeat === 'la' || cleanRawMeat === 'lá' || cleanRawMeat === 'la vai' || cleanRawMeat === 'lá vai' || cleanRawMeat === 'thit la' || cleanRawMeat === 'thịt lá' || cleanRawMeat === 'thit la vai' || cleanRawMeat === 'thịt la vai' || cleanRawMeat === 'thịt lá vai' || cleanRawMeat === 'la bo' || cleanRawMeat === 'lá bò' || cleanRawMeat === 'la xach' || cleanRawMeat === 'lá xách' || cleanRawMeat === 'sach' || cleanRawMeat === 'sách') {
+              // Quy tắc: lá, la -> thịt la vai
+              rawName = 'thịt la vai';
+            } else if (cleanRawMeat === 'suon' || cleanRawMeat === 'sườn' || cleanRawMeat === 'suon bo' || cleanRawMeat === 'sườn bò') {
+              // Quy tắc: sườn -> Sườn
+              rawName = 'Sườn';
+            } else if (cleanRawMeat === 'bap' || cleanRawMeat === 'bắp' || cleanRawMeat === 'bap bo' || cleanRawMeat === 'bắp bò') {
+              // Quy tắc: bắp -> Bắp Bò
+              rawName = 'Bắp Bò';
+            } else if (cleanRawMeat === 'bo xay' || cleanRawMeat === 'bò xay' || cleanRawMeat === 'thit bo xay' || cleanRawMeat === 'thịt bò xay' || cleanRawMeat === 'vai xay' || cleanRawMeat === 'thit vai xay' || cleanRawMeat === 'thịt vai xay' || cleanRawMeat === 'xay') {
+              // Quy tắc: bò xay -> Vai xay
+              rawName = 'Vai xay';
+            }
+
+            // Chuẩn hóa số kg nếu rơi vào trường hợp đọc 3 hoặc 4 chữ số liên tiếp trên cân điện tử (1 9 5 -> 1.95, 1 6 9 2 -> 16.92) - CHỈ ÁP DỤNG CHO VIDEO CHƯA DUYỆT
+            let rawQty = it.quantity != null ? String(it.quantity).trim() : '';
+            if (sub.status !== 'APPROVED') {
+              if (rawQty && sub.fileType === 'VIDEO') {
+                const cleanDigits = rawQty.replace(/\s+/g, '').replace(',', '.');
+                if (/^\d+$/.test(cleanDigits)) {
+                  if (cleanDigits.length === 3) {
+                    rawQty = `${cleanDigits.slice(0, 1)}.${cleanDigits.slice(1)}`;
+                  } else if (cleanDigits.length === 4) {
+                    rawQty = `${cleanDigits.slice(0, 2)}.${cleanDigits.slice(2)}`;
+                  }
+                }
+              } else if (rawQty && sub.fileType !== 'VIDEO') {
+                // Trên hóa đơn ảnh: Các con số nguyên hàng trăm (>= 100) không có dấu phẩy là TIỀN (ĐƠN NỢ NHANH), không phải số cân
+                const cleanDigits = rawQty.replace(/\s+/g, '').replace(',', '.');
+                const numVal = parseFloat(cleanDigits);
+                if (!isNaN(numVal) && numVal >= 100) {
+                  if (!amountStr || parseFloat(amountStr) === 0) {
+                    const amtVal = numVal < 10000 ? numVal * 1000 : numVal;
+                    amountStr = String(Math.round(amtVal));
+                    priceStr = amountStr;
+                  }
+                  rawQty = '';
+                }
+              }
+
+              // Chuẩn hóa amountStr/priceStr nếu ghi dưới 10000 (đơn vị nghìn đồng)
+              if (sub.fileType !== 'VIDEO') {
+                const numAmt = parseFloat(amountStr);
+                if (!isNaN(numAmt) && numAmt > 0 && numAmt < 10000) {
+                  amountStr = String(Math.round(numAmt * 1000));
+                }
+                const numPrice = parseFloat(priceStr);
+                if (!isNaN(numPrice) && numPrice > 0 && numPrice < 10000) {
+                  priceStr = String(Math.round(numPrice * 1000));
+                }
+              }
+
+              // Nếu số kg được chuẩn hóa lại và có đơn giá, tự động sửa lại thành tiền hợp lý (chỉ khi chưa có số tiền chốt)
+              const parsedQty = parseFloat(rawQty);
+              const parsedPrice = parseFloat(priceStr);
+              if (parsedQty > 0 && parsedPrice > 0 && (!amountStr || parseFloat(amountStr) === 0)) {
+                amountStr = String(Math.round(parsedQty * parsedPrice));
+              }
+            }
+
+            // Tự động tìm kiếm sản phẩm phù hợp nhất trong danh mục món thịt của khách
+            if (!matchedP) {
+              matchedP = findBestMatchingProduct({ rawName, matchedProductId: it.matchedProductId }, cardProdList);
+            }
+
+            // NẾU HÓA ĐƠN CHƯA DUYỆT VÀ SẢN PHẨM CÓ GIÁ RIÊNG ĐÃ THIẾT LẬP: BẮT BUỘC ƯU TIÊN ÁP GIÁ RIÊNG CỦA KHÁCH
+            if (sub.status !== 'APPROVED' && matchedP) {
+              const hasCustPrice = matchedP.customPrice !== undefined && matchedP.customPrice !== null && !isNaN(Number(matchedP.customPrice)) && Number(matchedP.customPrice) > 0;
+              if (hasCustPrice) {
+                const custPriceNum = Number(matchedP.customPrice);
+                const parsedQty = parseFloat(rawQty);
+                // Nếu không phải đơn nợ nhanh (có số kg hoặc chưa có amount), cập nhật giá theo giá riêng
+                const isQuickDebt = (!parsedQty || parsedQty <= 0) && amountStr && parseFloat(amountStr) > 0;
+                if (!isQuickDebt) {
+                  priceStr = String(Math.round(custPriceNum));
+                  if (parsedQty > 0) {
+                    amountStr = String(Math.round(parsedQty * custPriceNum));
+                  }
+                }
+              }
+            }
+
+            return {
+              id: it.id || `temp_${sub.id}_${itemIdx}`,
+              rawName: rawName,
+              selectedProduct: matchedP || (rawName ? { id: '__manual__', name: rawName, unit: 'kg' } : null),
+              matchedProductId: matchedP ? matchedP.id : (it.matchedProductId || null),
+              quantity: rawQty,
+              price: priceStr,
+              amount: amountStr,
+            };
+          });
+
+        // Luôn luôn có sẵn ít nhất 1 dòng để chủ buôn nhập
+        if (rawItems.length === 0) {
+          const isVideoHuong = sub.fileType === 'VIDEO' && isHuongSub;
+          rawItems.push({
+            id: `temp_${Date.now()}_${sub.id}`,
+            rawName: isVideoHuong ? 'xô' : '',
+            selectedProduct: isVideoHuong && xoProduct ? xoProduct : null,
+            matchedProductId: isVideoHuong && xoProduct ? xoProduct.id : null,
+            quantity: '',
+            price: isVideoHuong ? '230000' : '',
+            amount: '',
+          });
+        }
+
+        const returnRegex = /(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang)/i;
+        const isReturn = Boolean(
+          (sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]') || returnRegex.test(sub.note))) ||
+          (sub.rawAiResponse && (sub.rawAiResponse.includes('"is_return": true') || sub.rawAiResponse.includes('"is_return":true') || returnRegex.test(sub.rawAiResponse))) ||
+          (sub.detectedCustomerName && returnRegex.test(sub.detectedCustomerName)) ||
+          rawItems.some((it) => returnRegex.test(it.rawName || '')) ||
+          ((sub.items || []).some((it) => returnRegex.test(it.rawName || '')))
+        );
+
+        let cardNote = '';
+        if (sub.note !== null && sub.note !== undefined && sub.note !== '') {
+          cardNote = sub.note;
+        } else if (sub.status !== 'APPROVED' && isReturn) {
+          cardNote = buildReturnNoteFromItems(rawItems) || '';
+        }
+
+        // Tự động nhận diện chế độ Nhập Nhanh:
+        // 1) AI trả về is_quick_debt: true hoặc có danh sách sub_amounts
+        // 2) Toàn bộ các dòng món thịt là 'Thịt lẻ', 'Tiền hàng', hoặc tên rỗng VÀ không có số kg hợp lệ (> 0)
+        let parsedAiData = null;
+        try {
+          if (sub.rawAiResponse) {
+            parsedAiData = JSON.parse(sub.rawAiResponse);
+          }
+        } catch {}
+
+        const isQuickDebtFromAi = Boolean(
+          parsedAiData?.is_quick_debt === true ||
+          (Array.isArray(parsedAiData?.sub_amounts) && parsedAiData.sub_amounts.length > 0)
+        );
+
+        const isQuickFromItems = rawItems.length > 0 && rawItems.every((it) => {
+          const cName = removeDiacritics((it.rawName || '').toLowerCase().trim());
+          const isGenericMeat = !cName || cName === 'thit le' || cName === 'thịt lẻ' || cName === 'tien hang' || cName === 'tiền hàng' || cName === 'mon le';
+          const qty = parseFloat(it.quantity);
+          return isGenericMeat && (!qty || qty <= 0);
+        });
+
+        const isQuickMode = isQuickDebtFromAi || isQuickFromItems;
+
+        let quickSubAmounts = [];
+        if (Array.isArray(parsedAiData?.sub_amounts) && parsedAiData.sub_amounts.length > 0) {
+          quickSubAmounts = parsedAiData.sub_amounts.map((v) => Number(v) || 0).filter((v) => v > 0);
+        } else if (rawItems.length > 0) {
+          quickSubAmounts = rawItems
+            .map((it) => parseFloat(it.amount) || parseFloat(it.price) || 0)
+            .filter((v) => v > 0);
+        }
+
+        const quickTotalAmount = quickSubAmounts.length > 0
+          ? quickSubAmounts.reduce((sum, v) => sum + v, 0)
+          : rawItems.reduce((sum, it) => sum + (parseFloat(it.amount) || 0), 0);
+
+        newMap[sub.id] = {
+          customer: matchedCust,
+          date: dateStr,
+          note: cardNote,
+          isReturn,
+          orderMode: isQuickMode ? 'quick' : 'detail',
+          quickAmount: quickTotalAmount > 0 ? String(quickTotalAmount) : '',
+          quickSubAmounts,
+          items: rawItems,
+          isSaving: false,
+          isLoadingPrice: false,
+        };
+      });
+      return newMap;
+    });
+  };
+
+  // Cập nhật thông tin trên 1 thẻ hóa đơn
+  const updateCardField = (subId, field, value) => {
+    if (field === 'customer') {
+      handleCustomerChange(subId, value);
+      return;
+    }
+
+    setCardDataMap((prev) => {
+      const card = prev[subId] || {};
+      const nextCard = { ...card, [field]: value };
+
+      return {
+        ...prev,
+        [subId]: nextCard,
+      };
+    });
+  };
+
+
+  // Chuyển đổi loại đơn giữa Đơn xuất nợ và Đơn trả hàng (trừ nợ)
+  const toggleCardReturnType = (subId) => {
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      const nextIsReturn = !card.isReturn;
+      let nextNote = (card.note || '').trim();
+      if (nextIsReturn) {
+        // Tự động tạo ghi chú từ danh sách items nếu có
+        const autoNote = buildReturnNoteFromItems(card.items);
+        nextNote = autoNote || nextNote || '';
+      } else {
+        // Xóa ghi chú tự động khi chuyển về đơn xuất
+        nextNote = '';
+      }
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          isReturn: nextIsReturn,
+          note: nextNote,
+        },
+      };
+    });
+  };
+
+  // Cập nhật 1 dòng món thịt trong 1 thẻ hóa đơn
+  const updateCardItem = (subId, itemIdx, field, value) => {
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      const nextItems = [...card.items];
+      const item = { ...nextItems[itemIdx], [field]: value };
+
+      const cleanQtyStr = String(item.quantity || '').trim().replace(',', '.');
+      const qty = parseFloat(cleanQtyStr) || 0;
+      const price = parseFloat(item.price) || 0;
+
+      if (field === 'quantity' || field === 'price') {
+        if (qty > 0 && price > 0) {
+          item.amount = String(Math.round(qty * price));
+        }
+      } else if (field === 'amount') {
+        const amt = parseFloat(value) || 0;
+        if (amt > 0 && qty > 0) {
+          item.price = String(Math.round(amt / qty));
+        }
+      }
+
+      nextItems[itemIdx] = item;
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          items: nextItems,
+        },
+      };
+    });
+  };
+
+  // Thêm dòng món thịt vào 1 thẻ
+  const addCardItem = (subId) => {
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          items: [
+            ...card.items,
+            {
+              id: `temp_${Date.now()}_${Math.random()}`,
+              rawName: '',
+              selectedProduct: null,
+              matchedProductId: null,
+              quantity: '',
+              price: '',
+              amount: '',
+            },
+          ],
+        },
+      };
+    });
+  };
+
+  // Xóa 1 dòng món thịt khỏi 1 thẻ (luôn giữ lại 1 dòng)
+  const removeCardItem = (subId, itemIdx) => {
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      const nextItems = card.items.filter((_, idx) => idx !== itemIdx);
+      if (nextItems.length === 0) {
+        nextItems.push({
+          id: `temp_${Date.now()}`,
+          rawName: '',
+          selectedProduct: null,
+          matchedProductId: null,
+          quantity: '',
+          price: '',
+          amount: '',
+        });
+      }
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          items: nextItems,
+        },
+      };
+    });
+  };
+
+  // Tính tổng tiền của 1 thẻ
+  const getCardTotal = (subId) => {
+    const card = cardDataMap[subId];
+    if (!card || !card.items) return 0;
+    return card.items.reduce((sum, it) => sum + (parseFloat(it.amount) || 0), 0);
   };
 
   // Tải danh sách link nhân viên
@@ -189,11 +2525,12 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   useImperativeHandle(ref, () => ({
-    open: (initialStatus) => {
+    open: async (initialStatus) => {
       setVisible(true);
-      if (initialStatus) setFilterStatus(initialStatus);
-      fetchMasterData();
-      fetchSubmissions();
+      setFilterStatus(initialStatus || 'ALL');
+      setCardDataMap({});
+      const { custList, prodList } = await fetchMasterData();
+      await fetchSubmissions(custList, prodList);
     },
     close: () => setVisible(false),
   }));
@@ -204,134 +2541,274 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     }
   }, [filterStatus, filterDate]);
 
-  // Thêm 1 dòng món thịt mới
-  const handleAddItem = () => {
-    setEditItems((prev) => [
-      ...prev,
-      {
-        id: `temp_${Date.now()}_${Math.random()}`,
-        rawName: '',
-        selectedProduct: null,
-        matchedProductId: null,
-        quantity: '',
-        price: '',
-        amount: '',
-      },
-    ]);
+  // Cuộn nhanh đến 1 hóa đơn khi bấm tab thumbnail
+  const scrollToCard = (subId) => {
+    const node = cardLayoutRefs.current[subId];
+    if (node && scrollViewRef.current) {
+      node.measureLayout(
+        scrollViewRef.current,
+        (x, y) => {
+          scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
+        },
+        () => {}
+      );
+    }
   };
 
-  // Cập nhật 1 dòng món thịt
-  const handleUpdateItem = (index, field, value) => {
-    setEditItems((prev) => {
-      const next = [...prev];
-      const item = { ...next[index], [field]: value };
-
-      const qty = parseFloat(item.quantity) || 0;
-      const price = parseFloat(item.price) || 0;
-
-      if (field === 'quantity' || field === 'price') {
-        if (qty > 0 && price > 0) {
-          item.amount = String(Math.round(qty * price));
-        }
-      } else if (field === 'amount') {
-        const amt = parseFloat(value) || 0;
-        if (amt > 0 && qty > 0) {
-          item.price = String(Math.round(amt / qty));
-        }
-      }
-
-      next[index] = item;
-      return next;
-    });
-  };
-
-  // Xóa 1 dòng món thịt
-  const handleRemoveItem = (index) => {
-    setEditItems((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  // Tính tổng tiền hóa đơn đang sửa
-  const totalAmount = editItems.reduce((sum, it) => sum + (parseFloat(it.amount) || 0), 0);
-
-  // Phê duyệt và lên đơn nợ
-  const handleApprove = async () => {
-    if (!selectedSub) return;
-    if (!editCustomer) {
+  // Lưu nợ cho 1 hóa đơn riêng lẻ
+  const handleSaveCard = async (subId) => {
+    const card = cardDataMap[subId];
+    if (!card) return;
+    if (!card.customer) {
       showGlobalToast('Vui lòng chọn khách hàng để ghi nợ.', 'warning');
       return;
     }
-    if (editItems.length === 0) {
-      showGlobalToast('Vui lòng nhập ít nhất một mặt hàng thịt.', 'warning');
-      return;
+    let payloadItems = [];
+    if (card.orderMode === 'quick') {
+      const quickAmtNum = parseFloat(card.quickAmount) || 0;
+      if (quickAmtNum <= 0) {
+        showGlobalToast('Vui lòng nhập số tiền nợ lớn hơn 0đ.', 'warning');
+        return;
+      }
+      payloadItems = [
+        {
+          matchedProductId: null,
+          rawName: 'Tiền hàng',
+          quantity: 1,
+          price: quickAmtNum,
+          amount: quickAmtNum,
+        },
+      ];
+    } else {
+      const validItems = (card.items || []).filter(
+        (it) => (it.selectedProduct?.name || it.rawName) && parseFloat(it.amount || 0) > 0
+      );
+      if (validItems.length === 0) {
+        showGlobalToast('Vui lòng nhập ít nhất một mặt hàng thịt có thành tiền.', 'warning');
+        return;
+      }
+      payloadItems = validItems.map((it) => ({
+        matchedProductId: it.selectedProduct?.id !== '__manual__' ? it.selectedProduct?.id : it.matchedProductId,
+        rawName: it.selectedProduct?.name || it.rawName || 'Thịt',
+        quantity: parseFloat(it.quantity) || 0,
+        price: parseFloat(it.price) || 0,
+        amount: parseFloat(it.amount) || Math.round((parseFloat(it.quantity) || 0) * (parseFloat(it.price) || 0)),
+      }));
     }
 
     try {
-      setSubmittingApprove(true);
-      const [d, m, y] = editDate.split('/');
+      updateCardField(subId, 'isSaving', true);
+      const [d, m, y] = card.date.split('/');
       const isoDate = `${y}-${m}-${d}`;
 
+      let finalNote = card.note || '';
+      if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
+        const breakdownStr = card.quickSubAmounts.map((amt) => `${Math.round(amt / 1000)}k`).join(' + ');
+        if (!finalNote) {
+          finalNote = `Tiền hàng (${breakdownStr})`;
+        } else if (!finalNote.includes(breakdownStr)) {
+          finalNote = `${finalNote} (${breakdownStr})`;
+        }
+      }
+
       const payload = {
-        customerId: editCustomer.id,
+        customerId: card.customer.id,
         date: isoDate,
-        note: editNote,
-        items: editItems.map((it) => ({
-          matchedProductId: it.selectedProduct?.id !== '__manual__' ? it.selectedProduct?.id : it.matchedProductId,
-          rawName: it.selectedProduct?.name || it.rawName || 'Thịt',
-          quantity: parseFloat(it.quantity) || 0,
-          price: parseFloat(it.price) || 0,
-          amount: parseFloat(it.amount) || Math.round((parseFloat(it.quantity) || 0) * (parseFloat(it.price) || 0)),
-        })),
+        note: finalNote,
+        isReturn: Boolean(card.isReturn),
+        items: payloadItems,
       };
 
-      const res = await api.post(`/staff-submissions/${selectedSub.id}/approve`, payload);
+      const res = await api.post(`/staff-submissions/${subId}/approve`, payload);
       if (res.data.success) {
-        showGlobalToast(`🎉 Đã duyệt và lên đơn nợ cho ${editCustomer.name} thành công!`, 'success');
+        if (card.isReturn) {
+          showGlobalToast(`🎉 Đã trừ nợ trả hàng cho ${card.customer.name} thành công!`, 'success');
+        } else {
+          showGlobalToast(`🎉 Đã nhập nợ cho ${card.customer.name} thành công!`, 'success');
+        }
+        const updatedSub = res.data?.data?.submission;
+        setSubmissions((prev) =>
+          prev.map((s) => {
+            if (s.id === subId) {
+              return updatedSub || {
+                ...s,
+                status: 'APPROVED',
+                note: payload.note,
+                date: payload.date,
+                matchedCustomerId: card.customer.id,
+                matchedCustomer: card.customer,
+                items: payload.items,
+              };
+            }
+            return s;
+          })
+        );
         if (onRefresh) onRefresh();
-
-        // Xóa hóa đơn đã duyệt khỏi danh sách chờ duyệt hiện tại
-        setSubmissions((prev) => {
-          const nextList = prev.filter((s) => s.id !== selectedSub.id);
-          if (nextList.length > 0) {
-            loadSubmissionToEdit(nextList[0]);
-          } else {
-            setSelectedSub(null);
-          }
-          return nextList;
-        });
       }
     } catch (err) {
-      console.error('Lỗi duyệt hóa đơn:', err);
-      showGlobalToast(err.response?.data?.message || 'Không thể duyệt hóa đơn.', 'error');
+      console.error('Lỗi khi nhập nợ:', err);
+      showGlobalToast(err.response?.data?.message || 'Không thể nhập nợ.', 'error');
     } finally {
-      setSubmittingApprove(false);
+      updateCardField(subId, 'isSaving', false);
     }
   };
 
-  // Bác bỏ / xóa hóa đơn
-  const handleReject = () => {
-    if (!selectedSub) return;
+  // Bác bỏ / bỏ qua 1 hóa đơn
+  const handleRejectCard = (subId) => {
+    popupModalRef.current?.show({
+      type: 'confirm',
+      title: 'Bỏ qua hóa đơn này?',
+      message: 'Hóa đơn này sẽ bị bỏ qua và không lên đơn nợ. Bạn có chắc chắn không?',
+      onConfirm: async () => {
+        try {
+          const res = await api.post(`/staff-submissions/${subId}/reject`);
+          if (res.data.success) {
+            showGlobalToast('Đã bỏ qua hóa đơn.', 'info');
+            setSubmissions((prev) => prev.filter((s) => s.id !== subId));
+          }
+        } catch (err) {
+          showGlobalToast('Không thể bỏ qua hóa đơn.', 'error');
+        }
+      },
+    });
+  };
+
+  // Đếm số đơn hợp lệ sẵn sàng lưu hàng loạt
+  const validBatchCount = useMemo(() => {
+    const unapprovedSubs = submissions.filter((s) => s.status !== 'APPROVED');
+    return unapprovedSubs.filter((s) => {
+      const card = cardDataMap[s.id];
+      if (!card || !card.customer) return false;
+      return card.items.some((it) => parseFloat(it.amount || 0) > 0);
+    }).length;
+  }, [submissions, cardDataMap]);
+
+  // Lưu hàng loạt tất cả các đơn đã điền đầy đủ
+  const handleSaveAllValid = async () => {
+    const unapprovedSubs = submissions.filter((s) => s.status !== 'APPROVED');
+    const validSubs = unapprovedSubs.filter((s) => {
+      const card = cardDataMap[s.id];
+      if (!card || !card.customer) return false;
+      return card.items.some((it) => parseFloat(it.amount || 0) > 0);
+    });
+
+    if (validSubs.length === 0) {
+      showGlobalToast('Chưa có hóa đơn nào đủ điều kiện (cần chọn khách hàng & có thành tiền).', 'warning');
+      return;
+    }
 
     popupModalRef.current?.show({
       type: 'confirm',
-      title: 'Bác bỏ hóa đơn này?',
-      message: 'Hóa đơn này sẽ bị bỏ qua và không được lên đơn nợ. Bạn có chắc chắn không?',
+      title: `Nhập nợ hàng loạt ${validSubs.length} hóa đơn?`,
+      message: `Hệ thống sẽ tự động tạo đơn nợ cho ${validSubs.length} hóa đơn đã điền thông tin. Bạn có chắc chắn muốn tiếp tục?`,
+      onConfirm: async () => {
+        setSubmittingBatch(true);
+        let successCount = 0;
+        for (const sub of validSubs) {
+          try {
+            const card = cardDataMap[sub.id];
+            const [d, m, y] = card.date.split('/');
+            const isoDate = `${y}-${m}-${d}`;
+            let payloadItems = [];
+            if (card.orderMode === 'quick') {
+              const quickAmtNum = parseFloat(card.quickAmount) || 0;
+              if (quickAmtNum <= 0) continue;
+              payloadItems = [
+                {
+                  matchedProductId: null,
+                  rawName: 'Tiền hàng',
+                  quantity: 1,
+                  price: quickAmtNum,
+                  amount: quickAmtNum,
+                },
+              ];
+            } else {
+              const validItems = (card.items || []).filter(
+                (it) => (it.selectedProduct?.name || it.rawName) && parseFloat(it.amount || 0) > 0
+              );
+              if (validItems.length === 0) continue;
+              payloadItems = validItems.map((it) => ({
+                matchedProductId: it.selectedProduct?.id !== '__manual__' ? it.selectedProduct?.id : it.matchedProductId,
+                rawName: it.selectedProduct?.name || it.rawName || 'Thịt',
+                quantity: parseFloat(it.quantity) || 0,
+                price: parseFloat(it.price) || 0,
+                amount: parseFloat(it.amount) || Math.round((parseFloat(it.quantity) || 0) * (parseFloat(it.price) || 0)),
+              }));
+            }
+
+            let finalNote = card.note || '';
+            if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
+              const breakdownStr = card.quickSubAmounts.map((amt) => `${Math.round(amt / 1000)}k`).join(' + ');
+              if (!finalNote) {
+                finalNote = `Tiền hàng (${breakdownStr})`;
+              } else if (!finalNote.includes(breakdownStr)) {
+                finalNote = `${finalNote} (${breakdownStr})`;
+              }
+            }
+
+            const payload = {
+              customerId: card.customer.id,
+              date: isoDate,
+              note: finalNote,
+              isReturn: Boolean(card.isReturn),
+              items: payloadItems,
+            };
+
+            const res = await api.post(`/staff-submissions/${sub.id}/approve`, payload);
+            if (res.data.success) {
+              successCount++;
+              const updatedSub = res.data?.data?.submission;
+              setSubmissions((prev) =>
+                prev.map((s) => {
+                  if (s.id === sub.id) {
+                    return updatedSub || {
+                      ...s,
+                      status: 'APPROVED',
+                      note: payload.note,
+                      date: payload.date,
+                      matchedCustomerId: card.customer.id,
+                      matchedCustomer: card.customer,
+                      items: payload.items,
+                    };
+                  }
+                  return s;
+                })
+              );
+            }
+          } catch (e) {
+            console.error(`Lỗi khi nhập đơn ${sub.id}:`, e);
+          }
+        }
+        setSubmittingBatch(false);
+        showGlobalToast(`🎉 Đã nhập nợ thành công ${successCount}/${validSubs.length} hóa đơn!`, 'success');
+        if (onRefresh) onRefresh();
+      },
+    });
+  };
+
+  // Xóa / Bác bỏ toàn bộ hóa đơn đang hiển thị
+  const handleRejectAll = () => {
+    if (submissions.length === 0) return;
+    popupModalRef.current?.show({
+      type: 'confirm',
+      title: `Xóa tất cả ${submissions.length} hóa đơn?`,
+      message: `Bạn có chắc chắn muốn xóa/bỏ qua toàn bộ ${submissions.length} hóa đơn này không? Thao tác này sẽ dọn sạch danh sách hóa đơn gửi về.`,
       onConfirm: async () => {
         try {
-          const res = await api.post(`/staff-submissions/${selectedSub.id}/reject`);
+          setSubmittingBatch(true);
+          const ids = submissions.map((s) => s.id);
+          const res = await api.post('/staff-submissions/batch-reject', { ids });
           if (res.data.success) {
-            showGlobalToast('Đã bác bỏ hóa đơn.', 'info');
-            setSubmissions((prev) => {
-              const nextList = prev.filter((s) => s.id !== selectedSub.id);
-              if (nextList.length > 0) {
-                loadSubmissionToEdit(nextList[0]);
-              } else {
-                setSelectedSub(null);
-              }
-              return nextList;
-            });
+            showGlobalToast(`Đã xóa tất cả ${ids.length} hóa đơn thành công!`, 'info');
+            setSubmissions([]);
+            setCardDataMap({});
+            if (onRefresh) onRefresh();
           }
         } catch (err) {
-          showGlobalToast('Không thể bác bỏ hóa đơn.', 'error');
+          console.error('Lỗi khi xóa hàng loạt:', err);
+          showGlobalToast(err.response?.data?.message || 'Không thể xóa hóa đơn.', 'error');
+        } finally {
+          setSubmittingBatch(false);
         }
       },
     });
@@ -357,16 +2834,21 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           {/* ─── HEADER ─── */}
           <View style={[styles.headerRow, isMobile && styles.headerRowMobile]}>
             <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <Text style={[styles.modalTitle, isMobile && styles.modalTitleMobile]} numberOfLines={1}>
-                  {isMobile ? '🤖 Duyệt hóa đơn' : '🤖 DUYỆT HÓA ĐƠN NHÂN VIÊN GỬI VỀ'}
+                  {isMobile ? '🤖 Phân tích & Nhập công nợ' : '🤖 PHÂN TÍCH HÓA ĐƠN & NHẬP CÔNG NỢ'}
                 </Text>
                 <View style={styles.badgePending}>
-                  <Text style={styles.badgePendingText}>{submissions.length} đơn</Text>
+                  <Text style={styles.badgePendingText}>{submissions.length} hóa đơn</Text>
                 </View>
+                {validBatchCount > 0 && (
+                  <View style={styles.badgeReadyBatch}>
+                    <Text style={styles.badgeReadyBatchText}>{validBatchCount} đơn sẵn sàng lưu</Text>
+                  </View>
+                )}
               </View>
               <Text style={[styles.modalSubtitle, isMobile && styles.modalSubtitleMobile]} numberOfLines={1}>
-                {isMobile ? 'Đối chiếu ảnh gốc và xác nhận lên đơn nợ' : 'Đối chiếu ảnh/video gốc và xác nhận dữ liệu AI phân tích để lên đơn nợ'}
+                Xem & nhập công nợ trực tiếp cho nhiều hóa đơn cùng lúc
               </Text>
             </View>
 
@@ -429,26 +2911,51 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             </View>
           )}
 
-          {/* ─── THANH BỘ LỌC ─── */}
+          {/* ─── THANH BỘ LỌC & NÚT LƯU HÀNG LOẠT ─── */}
           <View style={[styles.filterBar, isMobile && styles.filterBarMobile]}>
-            <View style={[styles.statusTabs, isMobile && styles.statusTabsMobile]}>
+            {/* Tabs lọc trạng thái: Cho phép cuộn ngang mượt mà trên Mobile */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={[styles.statusTabs, isMobile && styles.statusTabsMobile]}
+            >
               <TouchableOpacity
                 style={[
                   styles.statusTab,
                   isMobile && styles.statusTabMobile,
-                  filterStatus === 'READY_FOR_REVIEW' && styles.statusTabActive,
+                  filterStatus === 'ALL' && styles.statusTabActive,
                 ]}
-                onPress={() => setFilterStatus('READY_FOR_REVIEW')}
+                onPress={() => setFilterStatus('ALL')}
               >
                 <Text
                   style={[
                     styles.statusTabText,
                     isMobile && styles.statusTabTextMobile,
-                    filterStatus === 'READY_FOR_REVIEW' && styles.statusTabTextActive,
+                    filterStatus === 'ALL' && styles.statusTabTextActive,
                   ]}
                   numberOfLines={1}
                 >
-                  ⏳ Chờ duyệt ({submissions.filter((s) => s.status === 'READY_FOR_REVIEW' || s.status === 'PENDING' || s.status === 'ANALYZING').length})
+                  Tất cả ({submissions.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.statusTab,
+                  isMobile && styles.statusTabMobile,
+                  filterStatus === 'UNPROCESSED' && styles.statusTabActive,
+                ]}
+                onPress={() => setFilterStatus('UNPROCESSED')}
+              >
+                <Text
+                  style={[
+                    styles.statusTabText,
+                    isMobile && styles.statusTabTextMobile,
+                    filterStatus === 'UNPROCESSED' && styles.statusTabTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  ⚡ Chưa lên nợ ({submissions.filter((s) => s.status !== 'APPROVED').length})
                 </Text>
               </TouchableOpacity>
 
@@ -468,58 +2975,125 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   ]}
                   numberOfLines={1}
                 >
-                  ✅ Đã lên đơn
+                  ✅ Đã lên nợ ({submissions.filter((s) => s.status === 'APPROVED').length})
                 </Text>
               </TouchableOpacity>
+            </ScrollView>
 
-              <TouchableOpacity
-                style={[
-                  styles.statusTab,
-                  isMobile && styles.statusTabMobile,
-                  filterStatus === 'ALL' && styles.statusTabActive,
-                ]}
-                onPress={() => setFilterStatus('ALL')}
-              >
-                <Text
+            {/* Ngày lọc & Cụm nút hành động lưu/xóa hàng loạt */}
+            <View style={[styles.filterActionsContainer, isMobile && styles.filterActionsContainerMobile]}>
+              <View style={[styles.dateFilterWrap, isMobile && styles.dateFilterWrapMobile]}>
+                {/* Button xem danh sách TỔNG CÁC ĐƠN PHÂN TÍCH */}
+                <TouchableOpacity
                   style={[
-                    styles.statusTabText,
-                    isMobile && styles.statusTabTextMobile,
-                    filterStatus === 'ALL' && styles.statusTabTextActive,
+                    styles.btnAllSubmissions,
+                    !filterDate && styles.btnAllSubmissionsActive,
+                    isMobile && styles.btnAllSubmissionsMobile,
                   ]}
-                  numberOfLines={1}
+                  onPress={() => setFilterDate('')}
+                  activeOpacity={0.8}
+                  title="Xem toàn bộ danh sách tất cả các đơn phân tích từ trước đến nay"
                 >
-                  Tất cả
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.btnAllSubmissionsText,
+                      !filterDate && styles.btnAllSubmissionsTextActive,
+                      isMobile && { fontSize: 11 },
+                    ]}
+                  >
+                    {!filterDate ? '🌐 TẤT CẢ ĐƠN' : '🌐 TỔNG CÁC ĐƠN'}
+                  </Text>
+                </TouchableOpacity>
+
+                {filterDate ? (
+                  <View style={styles.datePickerHolder}>
+                    <View style={{ width: isMobile ? 116 : 132 }}>
+                      <DatePickerInput
+                        value={filterDate}
+                        onChange={setFilterDate}
+                        compact={true}
+                        showIcon={true}
+                        alignRight={!isMobile}
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={styles.btnClearFilterDate}
+                      onPress={() => setFilterDate('')}
+                      activeOpacity={0.7}
+                      title="Xóa lọc ngày (Xem tổng tất cả đơn)"
+                    >
+                      <Text style={styles.btnClearFilterDateText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.btnPickDateAll, isMobile && styles.btnPickDateAllMobile]}
+                    onPress={() => {
+                      const today = new Date();
+                      const d = String(today.getDate()).padStart(2, '0');
+                      const m = String(today.getMonth() + 1).padStart(2, '0');
+                      const y = today.getFullYear();
+                      setFilterDate(`${d}/${m}/${y}`);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.btnPickDateAllText, isMobile && { fontSize: 11 }]}>
+                      📅 Lọc theo ngày
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Nhóm nút hành động: Tự động co giãn vừa vặn trên Mobile, không bị tràn mép */}
+              <View style={[styles.batchActionsWrap, isMobile && styles.batchActionsWrapMobile]}>
+                {validBatchCount > 0 && (
+                  <TouchableOpacity
+                    style={[
+                      styles.btnBatchSaveAll,
+                      isMobile && styles.btnBatchSaveAllMobile,
+                      submittingBatch && { opacity: 0.6 },
+                    ]}
+                    onPress={handleSaveAllValid}
+                    disabled={submittingBatch}
+                    activeOpacity={0.85}
+                  >
+                    {submittingBatch ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={[styles.btnBatchSaveAllText, isMobile && styles.btnBatchSaveAllTextMobile]}>
+                        {isMobile ? `🚀 LƯU (${validBatchCount})` : `🚀 LƯU TẤT CẢ (${validBatchCount} ĐƠN)`}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                {submissions.length > 0 && (
+                  <TouchableOpacity
+                    style={[
+                      styles.btnBatchRejectAll,
+                      isMobile && styles.btnBatchRejectAllMobile,
+                      submittingBatch && { opacity: 0.6 },
+                    ]}
+                    onPress={handleRejectAll}
+                    disabled={submittingBatch}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.btnBatchRejectAllText, isMobile && styles.btnBatchRejectAllTextMobile]}>
+                      {isMobile ? '🗑️ Xóa hết' : `🗑️ Xóa tất cả (${submissions.length})`}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
 
-            <View style={[styles.dateFilterWrap, isMobile && styles.dateFilterWrapMobile]}>
-              {isMobile && (
-                <Text style={styles.mobileDateLabel}>📅 Ngày xem:</Text>
-              )}
-              {filterDate ? (
-                <View style={styles.datePickerHolder}>
-                  <View style={{ width: isMobile ? 122 : 132 }}>
-                    <DatePickerInput
-                      value={filterDate}
-                      onChange={setFilterDate}
-                      compact={true}
-                      showIcon={true}
-                      alignRight={!isMobile}
-                    />
-                  </View>
-                  <TouchableOpacity
-                    style={styles.btnClearFilterDate}
-                    onPress={() => setFilterDate('')}
-                    activeOpacity={0.7}
-                    title="Xóa lọc ngày (Xem tất cả)"
-                  >
-                    <Text style={styles.btnClearFilterDateText}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
+            {/* Banner thông báo khi đang xem TỔNG CÁC ĐƠN PHÂN TÍCH */}
+            {!filterDate && (
+              <View style={[styles.allSubsNoticeBanner, isMobile && styles.allSubsNoticeBannerMobile]}>
+                <Text style={styles.allSubsNoticeText}>
+                  🌐 <Text style={{ fontWeight: 'bold' }}>Danh sách tổng tất cả đơn phân tích</Text> (Mọi ngày • {submissions.length} đơn)
+                </Text>
                 <TouchableOpacity
-                  style={[styles.btnPickDateAll, isMobile && styles.btnPickDateAllMobile]}
+                  style={styles.btnBackToToday}
                   onPress={() => {
                     const today = new Date();
                     const d = String(today.getDate()).padStart(2, '0');
@@ -529,15 +3103,37 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   }}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.btnPickDateAllText, isMobile && { fontSize: 11.5 }]}>
-                    📅 Tất cả ngày (Bấm lọc)
-                  </Text>
+                  <Text style={styles.btnBackToTodayText}>📅 Về ngày hôm nay</Text>
                 </TouchableOpacity>
-              )}
-            </View>
+              </View>
+            )}
           </View>
 
-          {/* ─── THÂN ĐỐI SOÁT (2 CỘT HOẶC STACK DỌC TRÊN MOBILE) ─── */}
+          {/* ─── THANH ĐIỀU HƯỚNG NHANH CÁC HÓA ĐƠN (QUICK JUMP THUMBNAILS) ─── */}
+          {submissions.length > 1 && (
+            <View style={styles.quickNavStrip}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 8, alignItems: 'center' }}>
+                <Text style={styles.quickNavLabel}>Chuyển nhanh:</Text>
+                {submissions.map((sub, idx) => {
+                  const isApproved = sub.status === 'APPROVED';
+                  const card = cardDataMap[sub.id];
+                  return (
+                    <QuickNavPill
+                      key={sub.id}
+                      sub={sub}
+                      idx={idx}
+                      isApproved={isApproved}
+                      hasCustomer={Boolean(card?.customer)}
+                      customerName={card?.customer?.name}
+                      onScroll={() => scrollToCard(sub.id)}
+                    />
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* ─── THÂN CUỘN CHÍNH: HIỂN THỊ HÀNG LOẠT THẺ HÓA ĐƠN ĐỐI SOÁT ─── */}
           {loading ? (
             <View style={styles.centerLoading}>
               <ActivityIndicator size="large" color="#10B981" />
@@ -545,372 +3141,120 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             </View>
           ) : submissions.length === 0 ? (
             <View style={[styles.centerEmpty, isMobile && { padding: 16 }]}>
-              <Text style={{ fontSize: isMobile ? 32 : 40, marginBottom: 8 }}>🎉</Text>
-              <Text style={[styles.emptyTitle, isMobile && { fontSize: 15 }]}>Không có hóa đơn nào cần duyệt</Text>
-              <Text style={[styles.emptyDesc, isMobile && { fontSize: 12 }]}>Toàn bộ hóa đơn do nhân viên gửi trong khoảng thời gian này đã được xử lý xong.</Text>
+              <Text style={{ fontSize: isMobile ? 32 : 40, marginBottom: 8 }}>📋</Text>
+              <Text style={[styles.emptyTitle, isMobile && { fontSize: 15 }]}>Không có hóa đơn nào</Text>
+              <Text style={[styles.emptyDesc, isMobile && { fontSize: 12 }]}>
+                Chưa có hóa đơn hoặc video nào được gửi về trong ngày đã chọn.
+              </Text>
             </View>
           ) : (
-            <View style={[styles.reviewBodyContainer, isMobile && styles.reviewBodyContainerMobile]}>
-              {/* CỘT TRÁI: DANH SÁCH HÓA ĐƠN & ẢNH GỐC */}
-              <View style={[styles.leftCol, isMobile && styles.leftColMobile]}>
-                {/* Thanh chọn nhanh các hóa đơn */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subListBar}>
-                  {submissions.map((sub, idx) => {
-                    const isSelected = selectedSub?.id === sub.id;
-                    return (
-                      <TouchableOpacity
-                        key={sub.id}
-                        style={[styles.subTabItem, isSelected && styles.subTabItemActive]}
-                        onPress={() => loadSubmissionToEdit(sub)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.subTabItemText, isSelected && styles.subTabItemTextActive]}>
-                          #{idx + 1} {sub.detectedCustomerName || sub.matchedCustomer?.name || sub.senderName || 'Hóa đơn'}
-                        </Text>
-                        {sub.status === 'APPROVED' && <Text style={{ fontSize: 10 }}>✅</Text>}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.cardsScrollArea}
+              contentContainerStyle={[
+                styles.cardsScrollContent,
+                !isMobile && styles.cardsScrollContentPC,
+              ]}
+              showsVerticalScrollIndicator={true}
+            >
+              <View style={[styles.cardsGrid, !isMobile && styles.cardsGridPC]}>
+                {submissions.map((sub, idx) => {
+                  const card = cardDataMap[sub.id] || {
+                    customer: null,
+                    date: '',
+                    note: '',
+                    items: [],
+                    isSaving: false,
+                  };
+                  const isApproved = sub.status === 'APPROVED';
+                  const isDropdownActive = activeDropdownSubId === sub.id;
+                  const custProds = (card.customer?.id && custProductsMap[card.customer.id]) || products;
 
-                {/* Khung xem ảnh / video gốc */}
-                {selectedSub && (
-                  <View style={styles.mediaBox}>
-                    <View style={styles.mediaHeader}>
-                      <Text style={styles.mediaInfoText} numberOfLines={1}>
-                        Người gửi: <Text style={{ fontWeight: 'bold' }}>{selectedSub.senderName || 'Nhân viên'}</Text>
-                        {selectedSub.note ? ` • Ghi chú: ${selectedSub.note}` : ''}
-                      </Text>
-
-                      <View style={{ flexDirection: 'row', gap: 6 }}>
-                        <TouchableOpacity
-                          style={styles.btnZoomMedia}
-                          onPress={() => imagePreviewModalRef.current?.open(selectedSub.fileUrl)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.btnZoomMediaText}>🔍 Phóng to</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    <View style={styles.imageContainer}>
-                      {selectedSub.fileType === 'VIDEO' ? (
-                        <View style={styles.videoPlayerBox}>
-                          {typeof window !== 'undefined' && selectedSub.fileUrl ? (
-                            <video
-                              key={selectedSub.fileUrl}
-                              src={selectedSub.fileUrl}
-                              controls
-                              playsInline
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                maxHeight: isMobile ? 180 : 480,
-                                backgroundColor: '#000000',
-                                borderRadius: 8,
-                                objectFit: 'contain',
-                              }}
-                            />
-                          ) : (
-                            <View style={{ alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-                              <Text style={{ fontSize: 36 }}>🎬</Text>
-                              <Text style={styles.videoPlayerTitle}>Video số kg thịt</Text>
-                              <TouchableOpacity
-                                style={styles.btnOpenVideoLink}
-                                onPress={() => window.open(selectedSub.fileUrl, '_blank')}
-                              >
-                                <Text style={styles.btnOpenVideoLinkText}>▶️ Mở phát video trong tab mới</Text>
-                              </TouchableOpacity>
-                            </View>
-                          )}
-                        </View>
-                      ) : (
-                        <TouchableOpacity
-                          activeOpacity={0.9}
-                          style={{ width: '100%', height: '100%' }}
-                          onPress={() => imagePreviewModalRef.current?.open(selectedSub.fileUrl)}
-                        >
-                          <Image
-                            source={{ uri: selectedSub.fileUrl }}
-                            style={styles.mainMediaImg}
-                            resizeMode="contain"
-                          />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-
-                    {selectedSub.aiError ? (
-                      <View style={styles.aiErrorBanner}>
-                        <Text style={styles.aiErrorText}>⚠️ AI không đọc được rõ tích kê: {selectedSub.aiError}. Vui lòng nhập tay bên phải.</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                )}
-              </View>
-
-              {/* CỘT PHẢI: BẢNG DỮ LIỆU ĐỐI SOÁT & SỬA LỖI */}
-              <View style={[styles.rightCol, isMobile && styles.rightColMobile]}>
-                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }}>
-                  <Text style={styles.sectionHeaderTitle}>BẢNG DỮ LIỆU BÓC TÁCH (AI):</Text>
-
-                  {/* Chọn khách hàng */}
-                  <View style={styles.formRow}>
-                    <Text style={styles.fieldLabel}>
-                      Khách hàng ghi nợ <Text style={{ color: '#EF4444' }}>*</Text>
-                      {selectedSub?.detectedCustomerName ? (
-                        <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 12 }}>
-                          {' '}(AI đọc: "{selectedSub.detectedCustomerName}")
-                        </Text>
-                      ) : null}
-                    </Text>
-                    <CustomSelect
-                      value={editCustomer}
-                      placeholder="Chọn khách hàng từ danh bạ..."
-                      options={customers}
-                      onSelect={(c) => {
-                        setEditCustomer(c);
-                        if (c?.id) {
-                          fetchCustomerPrices(c.id);
-                        }
+                  return (
+                    <InvoiceReviewCard
+                      key={sub.id}
+                      sub={sub}
+                      idx={idx}
+                      card={card}
+                      isApproved={isApproved}
+                      isDropdownActive={isDropdownActive}
+                      isMobile={isMobile}
+                      isTablet={isTablet}
+                      customers={customers}
+                      customerProducts={custProds}
+                      cardRef={(el) => {
+                        if (el) cardLayoutRefs.current[sub.id] = el;
                       }}
-                      renderSelected={(c) => c?.name || ''}
-                      renderOption={(c) => (
-                        <View style={styles.custOptionRow}>
-                          <Text style={styles.custOptionName}>{c.name}</Text>
-                          {c.phone ? <Text style={styles.custOptionPhone}>📞 {c.phone}</Text> : null}
-                        </View>
-                      )}
+                      onOpenDetail={(subId) => detailModalRef.current?.open(subId)}
+                      onOpenDropdown={(isOpen) => setActiveDropdownSubId(isOpen ? sub.id : null)}
+                      onCustomerChange={handleCustomerChange}
+                      onUpdateField={updateCardField}
+                      onToggleReturnType={toggleCardReturnType}
+                      onAddItem={addCardItem}
+                      onRemoveItem={removeCardItem}
+                      onSelectProduct={selectProductForCardItem}
+                      onUpdateItem={updateCardItem}
+                      onFetchCustomerProducts={fetchProductsForCustomer}
+                      onToggleOrderMode={toggleOrderMode}
+                      onUpdateQuickAmount={updateQuickAmount}
+                      onAddQuickSubAmount={addQuickSubAmount}
+                      onUpdateQuickSubAmount={updateQuickSubAmount}
+                      onRemoveQuickSubAmount={removeQuickSubAmount}
+                      onSave={handleSaveCard}
+                      onReject={handleRejectCard}
                     />
-                  </View>
-
-                  {/* Ngày giao hàng */}
-                  <View style={styles.formRow}>
-                    <Text style={styles.fieldLabel}>Ngày giao hàng</Text>
-                    <DatePickerInput
-                      value={editDate}
-                      onChange={setEditDate}
-                      placeholder="DD/MM/YYYY"
-                    />
-                  </View>
-
-                  {/* Ghi chú đơn nợ */}
-                  <View style={styles.formRow}>
-                    <Text style={styles.fieldLabel}>Ghi chú đơn nợ</Text>
-                    <TextInput
-                      style={styles.inputNote}
-                      value={editNote}
-                      onChangeText={setEditNote}
-                      placeholder="Ghi chú đơn hàng..."
-                      placeholderTextColor="#94A3B8"
-                    />
-                  </View>
-
-                  {/* Danh sách các mặt hàng thịt */}
-                  <View style={styles.itemsSection}>
-                    <View style={styles.itemsSectionHeader}>
-                      <Text style={styles.itemsSectionTitle}>DANH SÁCH MÓN THỊT ({editItems.length})</Text>
-                      <TouchableOpacity style={styles.btnAddRow} onPress={handleAddItem} activeOpacity={0.8}>
-                        <Text style={styles.btnAddRowText}>+ Thêm món</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {editItems.map((item, idx) => (
-                      isMobile ? (
-                        /* Giao diện dạng thẻ 2 tầng trên Mobile */
-                        <View key={item.id} style={styles.itemCardMobile}>
-                          {/* Hàng 1: Tên món thịt + Nút xóa */}
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                            <View style={{ flex: 1 }}>
-                              <CustomSelect
-                                value={item.selectedProduct}
-                                placeholder="Tên thịt..."
-                                options={products}
-                                onSelect={(p) => {
-                                  handleUpdateItem(idx, 'selectedProduct', p);
-                                  handleUpdateItem(idx, 'matchedProductId', p.id);
-                                  const effectiveP = p.customPrice !== undefined && p.customPrice !== null ? p.customPrice : p.defaultPrice;
-                                  if (effectiveP && !item.price) {
-                                    handleUpdateItem(idx, 'price', String(Math.round(effectiveP)));
-                                  }
-                                }}
-                                onInputChange={(txt) => handleUpdateItem(idx, 'rawName', txt)}
-                                renderSelected={(p) => p?.name || item.rawName || ''}
-                                renderOption={(p) => {
-                                  const effectiveP = p.customPrice !== undefined && p.customPrice !== null ? p.customPrice : p.defaultPrice;
-                                  return (
-                                    <View style={styles.productOptionRow}>
-                                      <Text style={styles.productOptionName}>{p.name}</Text>
-                                      <Text style={styles.productOptionPrice}>{formatCurrency(effectiveP)}/{p.unit}</Text>
-                                    </View>
-                                  );
-                                }}
-                              />
-                            </View>
-                            <TouchableOpacity
-                              style={styles.btnDeleteRow}
-                              onPress={() => handleRemoveItem(idx)}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 16 }}>✕</Text>
-                            </TouchableOpacity>
-                          </View>
-
-                          {/* Hàng 2: Số kg - Đơn giá - Thành tiền */}
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <View style={{ flex: 1 }}>
-                              <TextInput
-                                style={styles.inputCell}
-                                value={item.quantity}
-                                onChangeText={(val) => handleUpdateItem(idx, 'quantity', val)}
-                                placeholder="Số kg"
-                                placeholderTextColor="#94A3B8"
-                                keyboardType="numeric"
-                              />
-                            </View>
-                            <View style={{ flex: 1.2 }}>
-                              <TextInput
-                                style={styles.inputCell}
-                                value={item.price}
-                                onChangeText={(val) => handleUpdateItem(idx, 'price', val)}
-                                placeholder="Đơn giá"
-                                placeholderTextColor="#94A3B8"
-                                keyboardType="numeric"
-                              />
-                            </View>
-                            <View style={{ flex: 1.4 }}>
-                              <TextInput
-                                style={[styles.inputCell, { fontWeight: 'bold', color: '#10B981' }]}
-                                value={item.amount}
-                                onChangeText={(val) => handleUpdateItem(idx, 'amount', val)}
-                                placeholder="Thành tiền"
-                                placeholderTextColor="#94A3B8"
-                                keyboardType="numeric"
-                              />
-                            </View>
-                          </View>
-                        </View>
-                      ) : (
-                        /* Giao diện 1 hàng ngang trên Desktop */
-                        <View key={item.id} style={styles.itemRow}>
-                          {/* Cột Tên thịt */}
-                          <View style={{ flex: 3 }}>
-                            <CustomSelect
-                              value={item.selectedProduct}
-                              placeholder="Tên thịt..."
-                              options={products}
-                              onSelect={(p) => {
-                                handleUpdateItem(idx, 'selectedProduct', p);
-                                handleUpdateItem(idx, 'matchedProductId', p.id);
-                                const effectiveP = p.customPrice !== undefined && p.customPrice !== null ? p.customPrice : p.defaultPrice;
-                                if (effectiveP && !item.price) {
-                                  handleUpdateItem(idx, 'price', String(Math.round(effectiveP)));
-                                }
-                              }}
-                              onInputChange={(txt) => handleUpdateItem(idx, 'rawName', txt)}
-                              renderSelected={(p) => p?.name || item.rawName || ''}
-                              renderOption={(p) => {
-                                const effectiveP = p.customPrice !== undefined && p.customPrice !== null ? p.customPrice : p.defaultPrice;
-                                return (
-                                  <View style={styles.productOptionRow}>
-                                    <Text style={styles.productOptionName}>{p.name}</Text>
-                                    <Text style={styles.productOptionPrice}>{formatCurrency(effectiveP)}/{p.unit}</Text>
-                                  </View>
-                                );
-                              }}
-                            />
-                          </View>
-
-                          {/* Cột Số kg */}
-                          <View style={{ flex: 1.6 }}>
-                            <TextInput
-                              style={styles.inputCell}
-                              value={item.quantity}
-                              onChangeText={(val) => handleUpdateItem(idx, 'quantity', val)}
-                              placeholder="Số kg"
-                              placeholderTextColor="#94A3B8"
-                              keyboardType="numeric"
-                            />
-                          </View>
-
-                          {/* Cột Đơn giá */}
-                          <View style={{ flex: 2 }}>
-                            <TextInput
-                              style={styles.inputCell}
-                              value={item.price}
-                              onChangeText={(val) => handleUpdateItem(idx, 'price', val)}
-                              placeholder="Đơn giá"
-                              placeholderTextColor="#94A3B8"
-                              keyboardType="numeric"
-                            />
-                          </View>
-
-                          {/* Cột Thành tiền */}
-                          <View style={{ flex: 2.2 }}>
-                            <TextInput
-                              style={[styles.inputCell, { fontWeight: 'bold', color: '#10B981' }]}
-                              value={item.amount}
-                              onChangeText={(val) => handleUpdateItem(idx, 'amount', val)}
-                              placeholder="Thành tiền"
-                              placeholderTextColor="#94A3B8"
-                              keyboardType="numeric"
-                            />
-                          </View>
-
-                          {/* Nút xóa */}
-                          <TouchableOpacity
-                            style={styles.btnDeleteRow}
-                            onPress={() => handleRemoveItem(idx)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={{ color: '#EF4444', fontWeight: 'bold' }}>✕</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )
-                    ))}
-                  </View>
-                </ScrollView>
-
-                {/* Footer tổng tiền và các nút duyệt */}
-                <View style={[styles.reviewFooter, isMobile && styles.reviewFooterMobile]}>
-                  <View style={styles.totalRow}>
-                    <Text style={[styles.totalLabel, isMobile && { fontSize: 13 }]}>TỔNG CỘNG ĐƠN HÀNG:</Text>
-                    <Text style={[styles.totalValue, isMobile && { fontSize: 17 }]}>{formatCurrency(totalAmount)} đ</Text>
-                  </View>
-
-                  <View style={styles.actionBtnRow}>
-                    <TouchableOpacity
-                      style={[styles.btnReject, isMobile && { height: 40 }]}
-                      onPress={handleReject}
-                      disabled={submittingApprove}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.btnRejectText, isMobile && { fontSize: 12.5 }]}>🗑️ Bác bỏ</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.btnApprove, submittingApprove && { opacity: 0.7 }, isMobile && { height: 40 }]}
-                      onPress={handleApprove}
-                      disabled={submittingApprove}
-                      activeOpacity={0.85}
-                    >
-                      {submittingApprove ? (
-                        <ActivityIndicator color="#FFFFFF" size="small" />
-                      ) : (
-                        <Text style={[styles.btnApproveText, isMobile && { fontSize: 12.5 }]}>
-                          {isMobile ? '✅ LÊN ĐƠN NỢ' : '✅ XÁC NHẬN & LÊN ĐƠN NỢ'}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                  );
+                })}
               </View>
-            </View>
+            </ScrollView>
           )}
+
+          {/* ─── FOOTER MODAL ─── */}
+          <View style={styles.modalFooterBar}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={styles.footerSummaryText}>
+                Đã lên nợ: <Text style={{ fontWeight: 'bold', color: '#059669' }}>{submissions.filter((s) => s.status === 'APPROVED').length}</Text> / {submissions.length} hóa đơn
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.btnCloseFooter}
+              onPress={() => setVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.btnCloseFooterText}>ĐÓNG LẠI</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SmoothModal>
 
-      {/* Modal phóng to ảnh đối chiếu */}
+      {/* Modal phóng to ảnh xem thường */}
       <ImagePreviewModal ref={imagePreviewModalRef} />
+
+      {/* Modal xem to đối chiếu song song Split-View (Ảnh/Video 1 bên, Form 1 bên, nút Next/Prev) */}
+      <StaffSubmissionDetailModal
+        ref={detailModalRef}
+        submissions={submissions}
+        cardDataMap={cardDataMap}
+        customers={customers}
+        products={products}
+        custProductsMap={custProductsMap}
+        fetchProductsForCustomer={fetchProductsForCustomer}
+        handleCustomerChange={handleCustomerChange}
+        updateCardField={updateCardField}
+        updateCardItem={updateCardItem}
+        addCardItem={addCardItem}
+        removeCardItem={removeCardItem}
+        selectProductForCardItem={selectProductForCardItem}
+        toggleCardReturnType={toggleCardReturnType}
+        toggleOrderMode={toggleOrderMode}
+        updateQuickAmount={updateQuickAmount}
+        addQuickSubAmount={addQuickSubAmount}
+        updateQuickSubAmount={updateQuickSubAmount}
+        removeQuickSubAmount={removeQuickSubAmount}
+        handleSaveCard={handleSaveCard}
+        handleRejectCard={handleRejectCard}
+      />
 
       {/* Popup Modal xác nhận */}
       <PopupModal ref={popupModalRef} />
@@ -922,51 +3266,81 @@ export default StaffSubmissionReviewModal;
 
 const styles = StyleSheet.create({
   modalView: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    height: '94%',
+    backgroundColor: '#F8FAFC',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '95%',
+    maxHeight: '95%',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
+  },
+  modalViewMobile: {
+    height: '98%',
+    maxHeight: '98%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
+  },
+  headerRowMobile: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   modalTitle: {
-    fontSize: 17,
+    fontSize: 16.5,
     fontWeight: 'bold',
     color: '#0F172A',
   },
+  modalTitleMobile: {
+    fontSize: 15,
+  },
   badgePending: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: '#EFF6FF',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#FCD34D',
+    borderColor: '#BFDBFE',
   },
   badgePendingText: {
-    color: '#D97706',
+    color: '#1D4ED8',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  badgeReadyBatch: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  badgeReadyBatchText: {
+    color: '#059669',
     fontSize: 12,
     fontWeight: 'bold',
   },
   modalSubtitle: {
     color: '#64748B',
-    fontSize: 12.5,
+    fontSize: 12,
     marginTop: 2,
+  },
+  modalSubtitleMobile: {
+    fontSize: 11,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   btnLinkManager: {
     backgroundColor: '#EEF2FF',
@@ -976,28 +3350,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#C7D2FE',
   },
+  btnLinkManagerMobile: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
   btnLinkManagerText: {
     color: '#4F46E5',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: 'bold',
+  },
+  btnLinkManagerTextMobile: {
+    fontSize: 11.5,
   },
   btnClose: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
   btnCloseText: {
     color: '#475569',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
   },
   linkManagerBox: {
     backgroundColor: '#F8FAFC',
     paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
@@ -1006,7 +3387,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
-    paddingVertical: 7,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 1,
@@ -1014,36 +3395,36 @@ const styles = StyleSheet.create({
   },
   linkItemName: {
     color: '#0F172A',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
   },
   linkItemToken: {
     color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 11,
     marginTop: 1,
   },
   btnCopyLink: {
     backgroundColor: '#10B981',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 6,
   },
   btnCopyLinkText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
   },
   btnCloseLinkBar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
   btnCloseLinkBarText: {
     color: '#64748B',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
   },
   filterBar: {
@@ -1055,24 +3436,37 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterBarMobile: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   statusTabs: {
     flexDirection: 'row',
     gap: 6,
   },
   statusTab: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     borderRadius: 7,
     backgroundColor: '#F1F5F9',
   },
+  statusTabMobile: {
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
   statusTabActive: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#0F172A',
   },
   statusTabText: {
     color: '#475569',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '600',
+  },
+  statusTabTextMobile: {
+    fontSize: 11,
   },
   statusTabTextActive: {
     color: '#FFFFFF',
@@ -1088,9 +3482,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   btnClearFilterDate: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1098,22 +3492,225 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
   },
   btnClearFilterDateText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#64748B',
   },
   btnPickDateAll: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#CBD5E1',
   },
   btnPickDateAllText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
     color: '#334155',
+  },
+  btnAllSubmissions: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 7,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#6366F1',
+    marginRight: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  btnAllSubmissionsActive: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4338CA',
+  },
+  btnAllSubmissionsMobile: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginRight: 4,
+  },
+  btnAllSubmissionsText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  btnAllSubmissionsTextActive: {
+    color: '#FFFFFF',
+  },
+  allSubsNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginTop: 6,
+    marginBottom: 4,
+    gap: 8,
+  },
+  allSubsNoticeBannerMobile: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  allSubsNoticeText: {
+    fontSize: 12,
+    color: '#1E40AF',
+    flex: 1,
+  },
+  btnBackToToday: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 5,
+  },
+  btnBackToTodayText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  cardDateBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  cardDateBadgeText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  filterActionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  filterActionsContainerMobile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 6,
+  },
+  batchActionsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  batchActionsWrapMobile: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    gap: 6,
+  },
+  btnBatchSaveAll: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 7,
+    ...SHADOWS.sm,
+  },
+  btnBatchSaveAllMobile: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  btnBatchSaveAllText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  btnBatchSaveAllTextMobile: {
+    fontSize: 11.5,
+  },
+  btnBatchRejectAll: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  btnBatchRejectAllMobile: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  btnBatchRejectAllText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  btnBatchRejectAllTextMobile: {
+    fontSize: 11,
+  },
+  quickNavStrip: {
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  quickNavLabel: {
+    color: '#64748B',
+    fontSize: 11.5,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  quickNavPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  quickNavPillApproved: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  quickNavPillFilled: {
+    borderColor: '#38BDF8',
+    backgroundColor: '#F0F9FF',
+  },
+  quickNavPillText: {
+    fontSize: 11.5,
+    color: '#334155',
+    fontWeight: '600',
+  },
+  dotFilled: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#0284C7',
+  },
+  cardsScrollArea: {
+    flex: 1,
+  },
+  cardsScrollContent: {
+    padding: 10,
+    paddingBottom: 60,
+  },
+  cardsScrollContentPC: {
+    padding: 12,
+    paddingBottom: 60,
+  },
+  cardsGrid: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 14,
+  },
+  cardsGridPC: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    alignItems: 'stretch',
   },
   centerLoading: {
     flex: 1,
@@ -1128,276 +3725,466 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: '#0F172A',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   emptyDesc: {
     color: '#64748B',
-    fontSize: 13,
+    fontSize: 12.5,
     textAlign: 'center',
-    maxWidth: 380,
+    maxWidth: 360,
   },
-  reviewBodyContainer: {
-    flex: 1,
+
+  /* ═══ THẺ HÓA ĐƠN (INVOICE CARD) ═══ */
+  invoiceCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    width: '100%',
+    ...SHADOWS.sm,
+  },
+  invoiceCardPC: {
+    width: 'calc((100% - 60px) / 6)',
+    flexBasis: 'calc((100% - 60px) / 6)',
+    flexGrow: 0,
+    flexShrink: 0,
+    maxWidth: 'calc((100% - 60px) / 6)',
+  },
+  invoiceCardTablet: {
+    width: 'calc((100% - 12px) / 2)',
+    flexBasis: 'calc((100% - 12px) / 2)',
+    flexGrow: 0,
+    flexShrink: 0,
+    maxWidth: 'calc((100% - 12px) / 2)',
+  },
+  invoiceCardMobile: {
+    width: '100%',
+  },
+  invoiceCardApproved: {
+    borderColor: '#86EFAC',
+    backgroundColor: '#FAFCFA',
+  },
+  cardMediaCol: {
+    width: '100%',
+    backgroundColor: '#0F172A',
+    borderRightWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    padding: 10,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  cardMediaColMobile: {
+    padding: 8,
+  },
+  cardHeaderTop: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  cardIndexBadge: {
+    backgroundColor: '#1E293B',
+    color: '#38BDF8',
+    fontSize: 12,
+    fontWeight: 'bold',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
     overflow: 'hidden',
   },
-  leftCol: {
-    flex: 1,
-    borderRightWidth: 1,
-    borderRightColor: '#E2E8F0',
-    backgroundColor: '#0F172A',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  subListBar: {
-    maxHeight: 46,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 8,
-  },
-  subTabItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginRight: 6,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  subTabItemActive: {
-    borderBottomColor: '#10B981',
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-  },
-  subTabItemText: {
-    color: '#94A3B8',
+  cardSenderText: {
+    color: '#CBD5E1',
     fontSize: 12,
     fontWeight: '600',
+    maxWidth: 90,
   },
-  subTabItemTextActive: {
-    color: '#FFFFFF',
+  badgeApprovedPill: {
+    backgroundColor: '#064E3B',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  badgeApprovedPillText: {
+    color: '#34D399',
+    fontSize: 10,
     fontWeight: 'bold',
   },
-  mediaBox: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
+  badgePendingPill: {
+    backgroundColor: '#78350F',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  mediaHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#1E293B',
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  mediaInfoText: {
-    color: '#E2E8F0',
-    fontSize: 12,
-    flex: 1,
-  },
-  btnZoomMedia: {
-    backgroundColor: '#0EA5E9',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  btnZoomMediaText: {
-    color: '#FFFFFF',
-    fontSize: 11.5,
+  badgePendingPillText: {
+    color: '#FBBF24',
+    fontSize: 10,
     fontWeight: 'bold',
   },
-  imageContainer: {
-    flex: 1,
+  badgeReturnPill: {
+    backgroundColor: '#581C87',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  badgeReturnPillText: {
+    color: '#D8B4FE',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  cardMediaBox: {
+    height: 145,
     backgroundColor: '#020617',
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  mainMediaImg: {
+  cardMediaBoxMobile: {
+    height: 140,
+  },
+  cardVideoWrap: {
     width: '100%',
     height: '100%',
   },
-  videoPlayerBox: {
+  videoFallbackBox: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
   },
-  videoPlayerTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginTop: 8,
-    marginBottom: 12,
+  cardImageTouch: {
+    width: '100%',
+    height: '100%',
   },
-  btnOpenVideoLink: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+  cardImage: {
+    width: '100%',
+    height: '100%',
   },
-  btnOpenVideoLinkText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  aiErrorBanner: {
-    backgroundColor: '#FEF2F2',
-    padding: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#FCA5A5',
-  },
-  aiErrorText: {
-    color: '#DC2626',
-    fontSize: 12,
-  },
-  rightCol: {
-    flex: 1.25,
-    backgroundColor: '#FFFFFF',
-    display: 'flex',
-    flexDirection: 'column',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  sectionHeaderTitle: {
-    color: '#0F172A',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  formRow: {
-    marginBottom: 10,
-  },
-  fieldLabel: {
-    color: '#334155',
-    fontSize: 12.5,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  inputNote: {
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  itemsSection: {
-    marginTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingTop: 10,
-  },
-  itemsSectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  itemsSectionTitle: {
-    color: '#0F172A',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  btnAddRow: {
-    backgroundColor: '#ECFDF5',
+  zoomOverlayBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+  },
+  zoomOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  cardAiErrorBanner: {
+    backgroundColor: '#450A0A',
+    borderRadius: 6,
+    padding: 6,
+    marginTop: 6,
+  },
+  cardAiErrorText: {
+    color: '#F87171',
+    fontSize: 11,
+  },
+  cardLoadingPriceBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F0F9FF',
+    borderColor: '#BAE6FD',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 8,
+  },
+  cardLoadingPriceText: {
+    color: '#0369A1',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  /* Form bên phải của Thẻ */
+  cardFormCol: {
+    flex: 1,
+    padding: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+  },
+  cardFormColMobile: {
+    padding: 8,
+  },
+  cardFormHeaderRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
+  cardFormHeaderRowMobile: {
+    gap: 6,
+    marginBottom: 6,
+  },
+  mobileDateNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    width: '100%',
+  },
+  cardFieldLabel: {
+    color: '#334155',
+    fontSize: 11.5,
+    fontWeight: '600',
+    marginBottom: 3,
+  },
+  cardInputNote: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    fontSize: 12,
+    color: '#0F172A',
+    height: 36,
+  },
+
+  /* Bảng món thịt trong Thẻ */
+  cardItemsTable: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 8,
+    marginBottom: 8,
+  },
+  cardItemsTableHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  cardItemsTableTitle: {
+    color: '#0F172A',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  cardBtnAddItem: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#A7F3D0',
   },
-  btnAddRowText: {
+  cardBtnAddItemText: {
     color: '#059669',
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: 'bold',
   },
-  itemRow: {
+  tableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 4,
+    marginBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  colHeadText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  desktopItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginBottom: 6,
   },
-  inputCell: {
+  mobileItemCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 6,
+    padding: 6,
+    marginBottom: 6,
+  },
+  mobileItemCardCompact: {
+    padding: 6,
+    borderRadius: 8,
+    marginBottom: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  compactInputCell: {
     borderWidth: 1,
     borderColor: '#CBD5E1',
     borderRadius: 6,
     paddingHorizontal: 6,
-    paddingVertical: 6,
-    fontSize: 13,
+    paddingVertical: 4,
+    fontSize: 12,
     color: '#0F172A',
-    textAlign: 'right',
+    backgroundColor: '#FFFFFF',
+    height: 34,
   },
-  btnDeleteRow: {
+  compactInputCellMobile: {
+    height: 33,
+    paddingHorizontal: 3,
+    fontSize: 11.5,
+  },
+  btnRowDelete: {
     width: 24,
     height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  reviewFooter: {
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  totalLabel: {
-    color: '#0F172A',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  totalValue: {
-    color: '#10B981',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  actionBtnRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  btnReject: {
-    flex: 1,
-    height: 44,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: '#FEE2E2',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
   },
-  btnRejectText: {
-    color: '#DC2626',
-    fontSize: 13.5,
+  btnRowDeleteMobile: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+
+  /* Footer của Thẻ */
+  cardFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  cardFooterRowMobile: {
+    flexDirection: 'column',
+    gap: 8,
+    alignItems: 'stretch',
+  },
+  cardTotalWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cardTotalLabel: {
+    fontSize: 12,
     fontWeight: 'bold',
+    color: '#475569',
   },
-  btnApprove: {
-    flex: 2.2,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: '#10B981',
+  cardTotalValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#059669',
+  },
+  cardActionsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardActionsWrapMobile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    gap: 8,
+  },
+  btnCardReject: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  btnCardRejectMobile: {
+    flex: 1,
+    height: 38,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingHorizontal: 6,
   },
-  btnApproveText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+  btnCardRejectText: {
+    color: '#64748B',
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  btnCardSave: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 6,
+    ...SHADOWS.sm,
+  },
+  btnCardSaveMobile: {
+    flex: 2,
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  btnCardSaveApproved: {
+    backgroundColor: '#0284C7',
+  },
+  btnCardSaveReturn: {
+    backgroundColor: '#F97316',
+  },
+  btnToggleOrderType: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+  },
+  btnToggleOrderTypeReturn: {
+    borderColor: '#FB923C',
+    backgroundColor: '#FFF7ED',
+  },
+  btnToggleOrderTypeText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  btnToggleOrderTypeTextReturn: {
+    color: '#C2410C',
     fontWeight: 'bold',
   },
+  btnCardSaveText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
+  /* Footer đáy modal */
+  modalFooterBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  footerSummaryText: {
+    color: '#475569',
+    fontSize: 12.5,
+  },
+  btnCloseFooter: {
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  btnCloseFooterText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
+  /* Dropdown Select Option Rows */
   custOptionRow: {
     paddingVertical: 4,
   },
@@ -1409,6 +4196,7 @@ const styles = StyleSheet.create({
   custOptionPhone: {
     color: '#64748B',
     fontSize: 11,
+    marginTop: 2,
   },
   productOptionRow: {
     flexDirection: 'row',
@@ -1422,92 +4210,93 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   productOptionPrice: {
-    color: '#10B981',
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  productOptionCustomPrice: {
+    color: '#7C3AED',
     fontSize: 12,
     fontWeight: 'bold',
   },
-
-  // ─── CÁC STYLE TỐI ƯU MOBILE ───
-  modalViewMobile: {
-    height: '96%',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+  customPriceBadge: {
+    backgroundColor: '#F3E8FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
   },
-  headerRowMobile: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  customPriceBadgeText: {
+    color: '#7C3AED',
+    fontSize: 10,
+    fontWeight: '700',
   },
-  modalTitleMobile: {
-    fontSize: 15,
+  tableMoneyContainer: {
+    height: 34,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 6,
+    justifyContent: 'center',
   },
-  modalSubtitleMobile: {
+  tableMoneyContainerMobile: {
+    height: 33,
+    paddingHorizontal: 4,
+  },
+  tableMoneyInput: {
+    fontSize: 12,
+    color: '#0F172A',
+    fontWeight: '500',
+  },
+  tableMoneyInputMobile: {
     fontSize: 11.5,
-    marginTop: 1,
+    paddingHorizontal: 0,
   },
-  btnLinkManagerMobile: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+  tableMoneyInputAmount: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#059669',
   },
-  btnLinkManagerTextMobile: {
+  tableMoneyInputAmountMobile: {
     fontSize: 11.5,
+    fontWeight: 'bold',
+    color: '#059669',
+    paddingHorizontal: 0,
   },
-  filterBarMobile: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  statusTabsMobile: {
+  cardModeToggleRow: {
     flexDirection: 'row',
-    width: '100%',
-    gap: 6,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 2,
+    marginBottom: 8,
   },
-  statusTabMobile: {
+  cardModeBtn: {
     flex: 1,
+    paddingVertical: 5,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
-    paddingVertical: 6,
+    borderRadius: 6,
   },
-  statusTabTextMobile: {
+  cardModeBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  cardModeBtnText: {
     fontSize: 11.5,
-  },
-  dateFilterWrapMobile: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-  },
-  mobileDateLabel: {
-    fontSize: 12,
-    color: '#64748B',
     fontWeight: '600',
+    color: '#64748B',
   },
-  btnPickDateAllMobile: {
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    width: '100%',
-    alignItems: 'center',
+  cardModeBtnTextActive: {
+    color: '#0F172A',
+    fontWeight: 'bold',
   },
-  reviewBodyContainerMobile: {
-    flexDirection: 'column',
-  },
-  leftColMobile: {
-    height: 220,
-    flex: 0,
-    flexGrow: 0,
-    flexShrink: 0,
-    borderRightWidth: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  rightColMobile: {
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-  },
-  itemCardMobile: {
+  cardQuickDebtBox: {
     backgroundColor: '#F8FAFC',
     borderRadius: 8,
     borderWidth: 1,
@@ -1515,8 +4304,67 @@ const styles = StyleSheet.create({
     padding: 8,
     marginBottom: 8,
   },
-  reviewFooterMobile: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+  cardQuickMoneyContainer: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    borderRadius: 8,
+    paddingVertical: 4,
+    marginBottom: 6,
+  },
+  cardQuickMoneyInput: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#059669',
+    textAlign: 'center',
+  },
+  cardQuickSubWrap: {
+    marginTop: 4,
+  },
+  cardQuickSubTitle: {
+    fontSize: 10.5,
+    color: '#64748B',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  cardQuickSubChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    alignItems: 'center',
+  },
+  cardQuickSubChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    gap: 4,
+  },
+  cardQuickSubChipText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1E293B',
+  },
+  cardQuickSubChipDelete: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  cardQuickAddChipBtn: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  cardQuickAddChipText: {
+    fontSize: 10.5,
+    fontWeight: 'bold',
+    color: '#2563EB',
   },
 });

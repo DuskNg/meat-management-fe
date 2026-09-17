@@ -71,6 +71,14 @@ const TransactionDetailModal = forwardRef(({
   const internalUploadRef = useRef(null);
   const isSubmittingRef = useRef(false);
 
+  // Kiểm tra URL có phải là định dạng Video hay không
+  const checkIsVideoUrl = (url) => {
+    if (!url || typeof url !== 'string') return false;
+    if (url.startsWith('data:video/')) return true;
+    if (url.includes('/video/upload/')) return true;
+    return /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(url);
+  };
+
   // Chuẩn hóa đường dẫn đầy đủ của ảnh
   const getFullImageUrl = (path) => {
     if (!path) return '';
@@ -620,7 +628,11 @@ const TransactionDetailModal = forwardRef(({
                           title="Xem ảnh hóa đơn của công nợ này"
                           activeOpacity={0.7}
                         >
-                          <Text style={styles.viewInvoiceBtnText}>👁️ Xem ảnh ({t.invoices.length})</Text>
+                          <Text style={styles.viewInvoiceBtnText}>
+                            {t.invoices.some((inv) => checkIsVideoUrl(inv.imageUrl))
+                              ? `👁️ Xem ảnh / video (${t.invoices.length})`
+                              : `👁️ Xem ảnh (${t.invoices.length})`}
+                          </Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -692,28 +704,44 @@ const TransactionDetailModal = forwardRef(({
                     </View>
                   )}
 
-                  {/* Danh sách ảnh hóa đơn đính kèm trực tiếp dưới đơn */}
+                  {/* Danh sách ảnh & video hóa đơn đính kèm trực tiếp dưới đơn */}
                   {t.invoices && t.invoices.length > 0 && (
                     <View style={styles.invoiceThumbnailsBox}>
-                      <Text style={styles.invoiceThumbnailsTitle}>🧾 Ảnh hóa đơn ({t.invoices.length}):</Text>
+                      <Text style={styles.invoiceThumbnailsTitle}>
+                        {t.invoices.some((inv) => checkIsVideoUrl(inv.imageUrl))
+                          ? `🧾 Ảnh & Video hóa đơn (${t.invoices.length}):`
+                          : `🧾 Ảnh hóa đơn (${t.invoices.length}):`}
+                      </Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.invoiceThumbScroll}>
-                        {t.invoices.map((inv, invIdx) => (
-                          <TouchableOpacity
-                            key={inv.id || invIdx}
-                            style={styles.invoiceThumbCard}
-                            onPress={() => handleViewInvoices(t, invIdx)}
-                            activeOpacity={0.8}
-                          >
-                            <Image
-                              source={{ uri: getFullImageUrl(inv.imageUrl) }}
-                              style={styles.invoiceThumbImg}
-                              resizeMode="cover"
-                            />
-                            <View style={styles.invoiceThumbBadge}>
-                              <Text style={styles.invoiceThumbBadgeText}>#{invIdx + 1}</Text>
-                            </View>
-                          </TouchableOpacity>
-                        ))}
+                        {t.invoices.map((inv, invIdx) => {
+                          const isVid = checkIsVideoUrl(inv.imageUrl);
+                          return (
+                            <TouchableOpacity
+                              key={inv.id || invIdx}
+                              style={styles.invoiceThumbCard}
+                              onPress={() => handleViewInvoices(t, invIdx)}
+                              activeOpacity={0.8}
+                            >
+                              {isVid ? (
+                                <View style={[styles.invoiceThumbImg, styles.invoiceThumbVideoBox]}>
+                                  <Text style={styles.invoiceThumbVideoIcon}>🎬</Text>
+                                  <Text style={styles.invoiceThumbVideoText}>VIDEO</Text>
+                                </View>
+                              ) : (
+                                <Image
+                                  source={{ uri: getFullImageUrl(inv.imageUrl) }}
+                                  style={styles.invoiceThumbImg}
+                                  resizeMode="cover"
+                                />
+                              )}
+                              <View style={[styles.invoiceThumbBadge, isVid && styles.invoiceThumbVideoBadge]}>
+                                <Text style={styles.invoiceThumbBadgeText}>
+                                  {isVid ? `🎬 #${invIdx + 1}` : `#${invIdx + 1}`}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
                       </ScrollView>
                     </View>
                   )}
@@ -1273,5 +1301,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: 'bold',
+  },
+  invoiceThumbVideoBox: {
+    backgroundColor: '#0F172A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  invoiceThumbVideoIcon: {
+    fontSize: 22,
+    marginBottom: 2,
+  },
+  invoiceThumbVideoText: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#38BDF8',
+    letterSpacing: 0.5,
+  },
+  invoiceThumbVideoBadge: {
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
   },
 });
