@@ -438,7 +438,7 @@ const InvoiceReviewCard = React.memo(
                   <Text style={[styles.cardItemColText, { flex: 0.85, textAlign: 'center' }]}>Số kg</Text>
                   <Text style={[styles.cardItemColText, { flex: 1.15, textAlign: 'right' }]}>Đơn giá</Text>
                   <Text style={[styles.cardItemColText, { flex: 1.45, textAlign: 'right' }]}>Thành tiền</Text>
-                  <View style={{ width: 26 }} />
+                  <View style={{ width: 20 }} />
                 </View>
               )}
 
@@ -537,7 +537,7 @@ const InvoiceReviewCard = React.memo(
                     disabled={card.isLoadingPrice}
                     activeOpacity={0.7}
                   >
-                    <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 13 }}>✕</Text>
+                    <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 10, lineHeight: 12 }}>✕</Text>
                   </TouchableOpacity>
                 </View>
               ))}
@@ -4222,9 +4222,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   btnRowDeleteSingleRow: {
-    width: 26,
-    height: 33,
-    borderRadius: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: '#FEE2E2',
     justifyContent: 'center',
     alignItems: 'center',
