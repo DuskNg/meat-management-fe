@@ -683,6 +683,10 @@ export default function StaffSubmitScreen() {
             </View>
           </View>
 
+          <Text style={styles.pickMediaTip}>
+            💡 Mẹo: Nên chọn 5-15 ảnh mỗi đợt để điện thoại không bị quá tải bộ nhớ
+          </Text>
+
           {/* Banner thông báo trạng thái hàng đợi đang tải ngầm nếu có */}
           {uploadQueue.length > 0 && (
             <View style={styles.uploadQueueStatusBanner}>
@@ -1090,6 +1094,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#059669',
     textAlign: 'center',
+  },
+  pickMediaTip: {
+    fontSize: 11.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   // Banner thông báo tiến trình tải ngầm
   uploadQueueStatusBanner: {
