@@ -266,13 +266,15 @@ const InvoiceReviewCard = React.memo(
 
         {/* ═══ PHẦN DƯỚI: FORM BÓC TÁCH & NHẬP NỢ ═══ */}
         <View style={[styles.cardFormCol, isMobile && styles.cardFormColMobile]}>
-          {/* BANNER THÔNG BÁO ĐANG NẠP BẢNG GIÁ RIÊNG */}
-          {card.isLoadingPrice ? (
-            <View style={styles.cardLoadingPriceBanner}>
-              <ActivityIndicator size="small" color="#0284C7" />
-              <Text style={styles.cardLoadingPriceText}>Đang cập nhật giá riêng khách hàng...</Text>
-            </View>
-          ) : null}
+          {/* KHỐI NỘI DUNG NHẬP LIỆU: LIỀN MẠCH, TINH GỌN Ở TRÊN */}
+          <View style={styles.cardFormBody}>
+            {/* BANNER THÔNG BÁO ĐANG NẠP BẢNG GIÁ RIÊNG */}
+            {card.isLoadingPrice ? (
+              <View style={styles.cardLoadingPriceBanner}>
+                <ActivityIndicator size="small" color="#0284C7" />
+                <Text style={styles.cardLoadingPriceText}>Đang cập nhật giá riêng khách hàng...</Text>
+              </View>
+            ) : null}
 
           {/* HÀNG 1: KHÁCH HÀNG */}
           <View style={{ marginBottom: 8, width: '100%' }}>
@@ -319,18 +321,16 @@ const InvoiceReviewCard = React.memo(
             <View style={{ flex: 1.6 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 22, marginBottom: 3 }}>
                 <Text style={[styles.cardFieldLabel, { marginBottom: 0 }]}>Ghi chú</Text>
-                {!isApproved && (
-                  <TouchableOpacity
-                    style={[styles.btnToggleOrderType, card.isReturn && styles.btnToggleOrderTypeReturn, card.isLoadingPrice && { opacity: 0.5 }]}
-                    onPress={() => onToggleReturnType(sub.id)}
-                    disabled={card.isLoadingPrice}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.btnToggleOrderTypeText, card.isReturn && styles.btnToggleOrderTypeTextReturn]}>
-                      {card.isReturn ? '↩️ Trả' : '🥩 Xuất'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                  style={[styles.btnToggleOrderType, card.isReturn && styles.btnToggleOrderTypeReturn, card.isLoadingPrice && { opacity: 0.5 }]}
+                  onPress={() => onToggleReturnType(sub.id)}
+                  disabled={card.isLoadingPrice}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.btnToggleOrderTypeText, card.isReturn && styles.btnToggleOrderTypeTextReturn]}>
+                    {card.isReturn ? '↩️ Trả' : '🥩 Xuất'}
+                  </Text>
+                </TouchableOpacity>
               </View>
               <TextInput
                 style={[
@@ -352,7 +352,7 @@ const InvoiceReviewCard = React.memo(
             <TouchableOpacity
               style={[styles.cardModeBtn, card.orderMode === 'quick' && styles.cardModeBtnActive]}
               onPress={() => onToggleOrderMode && onToggleOrderMode(sub.id)}
-              disabled={isApproved || card.isLoadingPrice}
+              disabled={card.isLoadingPrice}
               activeOpacity={0.8}
             >
               <Text style={[styles.cardModeBtnText, card.orderMode === 'quick' && styles.cardModeBtnTextActive]}>
@@ -362,7 +362,7 @@ const InvoiceReviewCard = React.memo(
             <TouchableOpacity
               style={[styles.cardModeBtn, card.orderMode !== 'quick' && styles.cardModeBtnActive]}
               onPress={() => onToggleOrderMode && onToggleOrderMode(sub.id)}
-              disabled={isApproved || card.isLoadingPrice}
+              disabled={card.isLoadingPrice}
               activeOpacity={0.8}
             >
               <Text style={[styles.cardModeBtnText, card.orderMode !== 'quick' && styles.cardModeBtnTextActive]}>
@@ -380,7 +380,7 @@ const InvoiceReviewCard = React.memo(
                 style={styles.cardQuickMoneyContainer}
                 inputStyle={styles.cardQuickMoneyInput}
                 value={card.quickAmount}
-                disabled={isApproved || card.isLoadingPrice}
+                disabled={card.isLoadingPrice}
                 onChangeValue={(val) => {
                   onUpdateQuickAmount && onUpdateQuickAmount(sub.id, val > 0 ? String(val) : '');
                 }}
@@ -396,24 +396,20 @@ const InvoiceReviewCard = React.memo(
                     {(card.quickSubAmounts || []).map((subAmt, sIdx) => (
                       <View key={sIdx} style={styles.cardQuickSubChip}>
                         <Text style={styles.cardQuickSubChipText}>{formatCurrency(subAmt)}đ</Text>
-                        {!isApproved && (
-                          <TouchableOpacity
-                            onPress={() => onRemoveQuickSubAmount && onRemoveQuickSubAmount(sub.id, sIdx)}
-                            hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-                          >
-                            <Text style={styles.cardQuickSubChipDelete}>✕</Text>
-                          </TouchableOpacity>
-                        )}
+                        <TouchableOpacity
+                          onPress={() => onRemoveQuickSubAmount && onRemoveQuickSubAmount(sub.id, sIdx)}
+                          hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                        >
+                          <Text style={styles.cardQuickSubChipDelete}>✕</Text>
+                        </TouchableOpacity>
                       </View>
                     ))}
-                    {!isApproved && (
-                      <TouchableOpacity
-                        style={styles.cardQuickAddChipBtn}
-                        onPress={() => onAddQuickSubAmount && onAddQuickSubAmount(sub.id)}
-                      >
-                        <Text style={styles.cardQuickAddChipText}>+ Thêm</Text>
-                      </TouchableOpacity>
-                    )}
+                    <TouchableOpacity
+                      style={styles.cardQuickAddChipBtn}
+                      onPress={() => onAddQuickSubAmount && onAddQuickSubAmount(sub.id)}
+                    >
+                      <Text style={styles.cardQuickAddChipText}>+ Thêm</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               )}
@@ -435,13 +431,26 @@ const InvoiceReviewCard = React.memo(
                 </TouchableOpacity>
               </View>
 
-            {(card.items || []).map((item, itemIdx) => (
-              <View key={item.id} style={[styles.mobileItemCard, styles.mobileItemCardCompact]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                  <View style={{ flex: 1 }}>
+              {/* Tiêu đề các cột món thịt trên 1 dòng */}
+              {(card.items && card.items.length > 0) && (
+                <View style={styles.cardItemColumnsHeader}>
+                  <Text style={[styles.cardItemColText, { flex: 1.8 }]}>Tên thịt</Text>
+                  <Text style={[styles.cardItemColText, { flex: 0.85, textAlign: 'center' }]}>Số kg</Text>
+                  <Text style={[styles.cardItemColText, { flex: 1.15, textAlign: 'right' }]}>Đơn giá</Text>
+                  <Text style={[styles.cardItemColText, { flex: 1.45, textAlign: 'right' }]}>Thành tiền</Text>
+                  <View style={{ width: 26 }} />
+                </View>
+              )}
+
+              {/* Từng dòng món thịt (xếp chung toàn bộ trên 1 dòng duy nhất) */}
+              {(card.items || []).map((item, itemIdx) => (
+                <View key={item.id || itemIdx} style={styles.cardItemRowSingle}>
+                  {/* 1. Chọn món thịt */}
+                  <View style={{ flex: 1.8, minWidth: 70 }}>
                     <CustomSelect
                       value={item.selectedProduct}
                       placeholder="Tên thịt..."
+                      compact={true}
                       options={customerProducts}
                       disabled={card.isLoadingPrice}
                       onOpenChange={(isOpen) => {
@@ -474,19 +483,9 @@ const InvoiceReviewCard = React.memo(
                       }}
                     />
                   </View>
-                  <TouchableOpacity
-                    style={[styles.btnRowDelete, styles.btnRowDeleteMobile, card.isLoadingPrice && { opacity: 0.4 }]}
-                    onPress={() => onRemoveItem(sub.id, itemIdx)}
-                    disabled={card.isLoadingPrice}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 14 }}>✕</Text>
-                  </TouchableOpacity>
-                </View>
 
-                {/* Hàng 3 ô số liệu: Số kg | Đơn giá | Thành tiền */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <View style={{ flex: 0.9 }}>
+                  {/* 2. Số kg */}
+                  <View style={{ flex: 0.85, minWidth: 40 }}>
                     <TextInput
                       style={[styles.compactInputCell, styles.compactInputCellMobile, card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
                       value={item.quantity}
@@ -498,7 +497,9 @@ const InvoiceReviewCard = React.memo(
                       textAlign="center"
                     />
                   </View>
-                  <View style={{ flex: 1.15 }}>
+
+                  {/* 3. Đơn giá */}
+                  <View style={{ flex: 1.15, minWidth: 55 }}>
                     <MoneyInput
                       style={[styles.tableMoneyContainer, styles.tableMoneyContainerMobile]}
                       inputStyle={[styles.tableMoneyInput, styles.tableMoneyInputMobile]}
@@ -512,7 +513,9 @@ const InvoiceReviewCard = React.memo(
                       textAlign="right"
                     />
                   </View>
-                  <View style={{ flex: 1.45 }}>
+
+                  {/* 4. Thành tiền */}
+                  <View style={{ flex: 1.45, minWidth: 65 }}>
                     <MoneyInput
                       style={[styles.tableMoneyContainer, styles.tableMoneyContainerMobile]}
                       inputStyle={[styles.tableMoneyInputAmount, styles.tableMoneyInputAmountMobile]}
@@ -526,11 +529,21 @@ const InvoiceReviewCard = React.memo(
                       textAlign="right"
                     />
                   </View>
+
+                  {/* 5. Nút xóa món */}
+                  <TouchableOpacity
+                    style={[styles.btnRowDelete, styles.btnRowDeleteSingleRow, card.isLoadingPrice && { opacity: 0.4 }]}
+                    onPress={() => onRemoveItem(sub.id, itemIdx)}
+                    disabled={card.isLoadingPrice}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 13 }}>✕</Text>
+                  </TouchableOpacity>
                 </View>
-              </View>
-            ))}
+              ))}
             </View>
           )}
+          </View>
 
           {/* HÀNG 4: TỔNG TIỀN & NÚT HÀNH ĐỘNG */}
           <View style={[styles.cardFooterRow, styles.cardFooterRowMobile]}>
@@ -601,13 +614,19 @@ const InvoiceReviewCard = React.memo(
 const resolveCustomerForSub = (sub, custList) => {
   if (!sub) return null;
   // Khách hàng
-let matchedCust = sub.matchedCustomer || null;
-if (!matchedCust && sub.matchedCustomerId) {
-  matchedCust = custList.find((c) => c.id === sub.matchedCustomerId) || null;
-}
+  let matchedCust = sub.matchedCustomer || null;
+  if (!matchedCust && sub.matchedCustomerId) {
+    matchedCust = custList.find((c) => c.id === sub.matchedCustomerId) || null;
+  }
 
-// Kiểm tra và sửa lỗi nếu AI nhận diện có thông tin rõ ràng
-if (sub.detectedCustomerName) {
+  // ĐẶC BIỆT QUAN TRỌNG: Nếu hóa đơn đã được duyệt (APPROVED), khách hàng đã được lưu chính thức trong CSDL
+  // -> TUYỆT ĐỐI KHÔNG để các quy tắc regex nhận diện sơ bộ của AI ghi đè lại khách hàng khác!
+  if (sub.status === 'APPROVED') {
+    return matchedCust;
+  }
+
+  // Kiểm tra và sửa lỗi nếu AI nhận diện có thông tin rõ ràng
+  if (sub.detectedCustomerName) {
   // Làm sạch từ khóa trả hàng nếu có lẫn vào tên khách hàng (ví dụ "Thái Hà trả về", "Gửi lại Cô Thảo"...)
   const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
   const rawCustNameClean = sub.detectedCustomerName.replace(returnKeywordsRegex, '').replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1485,11 +1504,16 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         const effectiveCustList = (overrideCustList && overrideCustList.length > 0) ? overrideCustList : customers;
         const effectiveProdList = (overrideProdList && overrideProdList.length > 0) ? overrideProdList : products;
 
-        // 1. Nhận diện khách hàng cho toàn bộ danh sách hóa đơn
+        // 1. Nhận diện khách hàng cho toàn bộ danh sách hóa đơn (lấy cả đơn đã duyệt và chưa duyệt)
         const allCustIds = [
           ...new Set(
             list
-              .map((s) => resolveCustomerForSub(s, effectiveCustList)?.id)
+              .map((s) => {
+                if (s.status === 'APPROVED') {
+                  return s.matchedCustomerId || s.matchedCustomer?.id || resolveCustomerForSub(s, effectiveCustList)?.id;
+                }
+                return resolveCustomerForSub(s, effectiveCustList)?.id;
+              })
               .filter(Boolean)
           ),
         ];
@@ -1816,10 +1840,10 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     });
   };
 
-  // Tải danh sách sản phẩm kèm giá riêng của khách hàng
-  const fetchProductsForCustomer = async (customerId) => {
+  // Tải danh sách sản phẩm kèm giá riêng của khách hàng (hỗ trợ forceRefresh khi vừa cập nhật giá)
+  const fetchProductsForCustomer = async (customerId, forceRefresh = false) => {
     if (!customerId) return [];
-    if (custProductsMap[customerId]) {
+    if (!forceRefresh && custProductsMap[customerId]) {
       syncCardPricesWithCustomer(customerId, custProductsMap[customerId]);
       return custProductsMap[customerId];
     }
@@ -2092,36 +2116,143 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     setCardDataMap((prev) => {
       const newMap = { ...prev };
       subList.forEach((sub, idx) => {
-        // Nếu đã có dữ liệu đang nhập dở của sub này: kiểm tra xem có cần cập nhật khách hàng không
+        const isApproved = sub.status === 'APPROVED';
+
+        // Nếu đã có dữ liệu đang nhập dở của sub này:
+        // CHỈ giữ lại card cũ nếu đơn CHƯA DUYỆT (đang gõ dở tay).
+        // Nếu đơn ĐÃ DUYỆT (APPROVED), luôn cập nhật lại dữ liệu chuẩn từ server!
         if (newMap[sub.id]) {
-          const existingCard = newMap[sub.id];
-          const existingHasRealItems = existingCard.items && existingCard.items.some((it) => (it.rawName && it.rawName.trim()) || (it.quantity && parseFloat(it.quantity) > 0));
-          const serverHasRealItems = sub.items && sub.items.length > 0 && sub.items.some((it) => (it.rawName && it.rawName.trim()) || (it.quantity && parseFloat(it.quantity) > 0));
-          if (existingHasRealItems || !serverHasRealItems) {
-            const autoFixedCust = resolveCustomerForSub(sub, custList);
-            if (autoFixedCust && (!existingCard.customer || existingCard.customer.id !== autoFixedCust.id)) {
-              newMap[sub.id] = { ...existingCard, customer: autoFixedCust };
+          if (!isApproved) {
+            const existingCard = newMap[sub.id];
+            const existingHasRealItems = existingCard.items && existingCard.items.some((it) => (it.rawName && it.rawName.trim()) || (it.quantity && parseFloat(it.quantity) > 0));
+            const serverHasRealItems = sub.items && sub.items.length > 0 && sub.items.some((it) => (it.rawName && it.rawName.trim()) || (it.quantity && parseFloat(it.quantity) > 0));
+            if (existingHasRealItems || !serverHasRealItems) {
+              const autoFixedCust = resolveCustomerForSub(sub, custList);
+              if (autoFixedCust && (!existingCard.customer || existingCard.customer.id !== autoFixedCust.id)) {
+                newMap[sub.id] = { ...existingCard, customer: autoFixedCust };
+              }
+              return;
             }
-            return;
           }
         }
 
-        // Ngày áp dụng cho đơn nợ: Ưu tiên ngày hiện tại đang hiển thị trên giao diện (filterDate hoặc hôm nay)
-        // để toàn bộ danh sách hóa đơn (kể cả ảnh chụp ngày khác) đều được hiển thị và lên nợ chung ở giao diện ngày hiện tại
-        const applyDateStr = filterDate || (() => {
-          const today = new Date();
-          const dNow = String(today.getDate()).padStart(2, '0');
-          const mNow = String(today.getMonth() + 1).padStart(2, '0');
-          const yNow = today.getFullYear();
-          return `${dNow}/${mNow}/${yNow}`;
-        })();
+        // Ngày áp dụng cho đơn nợ:
+        // Đối với đơn ĐÃ DUYỆT (APPROVED): Lấy chính xác ngày đã được lưu trong CSDL (sub.date)
+        // Đối với đơn chưa duyệt: Ưu tiên ngày đang lọc (filterDate) hoặc hôm nay
+        const applyDateStr = (isApproved && sub.date)
+          ? formatDateOnly(sub.date)
+          : (filterDate || (() => {
+              const today = new Date();
+              const dNow = String(today.getDate()).padStart(2, '0');
+              const mNow = String(today.getMonth() + 1).padStart(2, '0');
+              const yNow = today.getFullYear();
+              return `${dNow}/${mNow}/${yNow}`;
+            })());
         const dateStr = applyDateStr;
 
-        // Khách hàng đã được nhận diện và so khớp chính xác
-        const matchedCust = resolveCustomerForSub(sub, custList);
+        // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp khách hàng đã lưu, không chạy lại regex AI
+        const matchedCust = isApproved
+          ? (sub.matchedCustomer || (sub.matchedCustomerId ? custList.find((c) => c.id === sub.matchedCustomerId) : null))
+          : resolveCustomerForSub(sub, custList);
 
         // BẢNG GIÁ ĐÃ NẠP SẴN CỦA KHÁCH HÀNG NÀY (Ưu tiên giá riêng cao nhất)
         const cardProdList = (matchedCust?.id && preloadedCustMap && preloadedCustMap[matchedCust.id]) || prodList;
+
+        if (isApproved) {
+          // ─── ĐỐI VỚI HÓA ĐƠN ĐÃ DUYỆT: TẢI NGUYÊN BẢN CHÍNH XÁC NHỮNG GÌ CHỦ BUÔN ĐÃ LƯU ───
+          const isReturn = Boolean(
+            sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]'))
+          );
+          const cardNote = sub.note || '';
+
+          const rawItems = (sub.items || [])
+            .filter((it) => it.rawName || it.quantity || it.price || it.amount)
+            .map((it, itemIdx) => {
+              let matchedP = cardProdList.find((p) => p.id === it.matchedProductId) || null;
+              if (!matchedP && it.rawName) {
+                matchedP = cardProdList.find((p) => p.name.toLowerCase().trim() === it.rawName.toLowerCase().trim()) || null;
+              }
+              if (!matchedP && it.rawName) {
+                matchedP = findBestMatchingProduct({ rawName: it.rawName, matchedProductId: it.matchedProductId }, cardProdList);
+              }
+              const rawName = it.rawName || (matchedP ? matchedP.name : 'Thịt');
+              let qtyStr = it.quantity != null ? String(it.quantity).trim() : '';
+              let priceStr = it.price != null ? String(Math.round(it.price)) : '';
+              let amountStr = it.amount != null ? String(Math.round(it.amount)) : '';
+
+              // ƯU TIÊN GIÁ RIÊNG CỦA KHÁCH HÀNG:
+              if (matchedP) {
+                const hasCustPrice = matchedP.customPrice !== undefined && matchedP.customPrice !== null && !isNaN(Number(matchedP.customPrice)) && Number(matchedP.customPrice) > 0;
+                if (hasCustPrice) {
+                  const custPriceNum = Number(matchedP.customPrice);
+                  const parsedQty = parseFloat(qtyStr);
+                  const isQuickDebt = (it.rawName === 'Tiền hàng' || !it.rawName) && (!parsedQty || parsedQty <= 0);
+                  if (!isQuickDebt) {
+                    priceStr = String(Math.round(custPriceNum));
+                    if (parsedQty > 0) {
+                      amountStr = String(Math.round(parsedQty * custPriceNum));
+                    }
+                  }
+                }
+              }
+
+              return {
+                id: it.id || `saved_${sub.id}_${itemIdx}`,
+                rawName,
+                selectedProduct: matchedP || (rawName ? { id: '__manual__', name: rawName, unit: 'kg' } : null),
+                matchedProductId: matchedP ? matchedP.id : (it.matchedProductId || null),
+                quantity: qtyStr,
+                price: priceStr,
+                amount: amountStr,
+              };
+            });
+
+          if (rawItems.length === 0) {
+            rawItems.push({
+              id: `temp_${Date.now()}_${sub.id}`,
+              rawName: '',
+              selectedProduct: null,
+              matchedProductId: null,
+              quantity: '',
+              price: '',
+              amount: '',
+            });
+          }
+
+          const isGenericMeatItem = (it) => {
+            const cName = removeDiacritics((it.rawName || '').toLowerCase().trim());
+            return !cName || cName.includes('tien hang') || cName.includes('thit le') || cName === 'mon le' || cName === 'tien';
+          };
+
+          const isQuickMode = rawItems.length > 0 && rawItems.every(isGenericMeatItem);
+
+          let quickSubAmounts = [];
+          let quickAmount = '';
+          if (isQuickMode && rawItems.length > 0) {
+            if (rawItems.length === 1) {
+              quickAmount = rawItems[0].amount || rawItems[0].price || '';
+              quickSubAmounts = [];
+            } else {
+              quickSubAmounts = rawItems.map((it) => parseFloat(it.amount || it.price) || 0).filter((v) => v > 0);
+              const totalSum = quickSubAmounts.reduce((sum, v) => sum + v, 0);
+              quickAmount = totalSum > 0 ? String(totalSum) : '';
+            }
+          }
+
+          newMap[sub.id] = {
+            customer: matchedCust,
+            date: dateStr,
+            note: cardNote,
+            isReturn,
+            orderMode: isQuickMode ? 'quick' : 'detail',
+            quickAmount: quickAmount,
+            quickSubAmounts,
+            items: rawItems,
+            isSaving: false,
+            isLoadingPrice: false,
+          };
+          return;
+        }
 
         const isHuongSub = matchedCust && removeDiacritics(matchedCust.name.toLowerCase()).includes('huong');
         const xoProduct = cardProdList.find((p) => removeDiacritics(p.name.toLowerCase().trim()) === 'xo') || null;
@@ -2258,8 +2389,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               matchedP = findBestMatchingProduct({ rawName, matchedProductId: it.matchedProductId }, cardProdList);
             }
 
-            // NẾU HÓA ĐƠN CHƯA DUYỆT VÀ SẢN PHẨM CÓ GIÁ RIÊNG ĐÃ THIẾT LẬP: BẮT BUỘC ƯU TIÊN ÁP GIÁ RIÊNG CỦA KHÁCH
-            if (sub.status !== 'APPROVED' && matchedP) {
+            // BẮT BUỘC ƯU TIÊN ÁP GIÁ RIÊNG CỦA KHÁCH HÀNG
+            if (matchedP) {
               const hasCustPrice = matchedP.customPrice !== undefined && matchedP.customPrice !== null && !isNaN(Number(matchedP.customPrice)) && Number(matchedP.customPrice) > 0;
               if (hasCustPrice) {
                 const custPriceNum = Number(matchedP.customPrice);
@@ -2331,27 +2462,36 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           (Array.isArray(parsedAiData?.sub_amounts) && parsedAiData.sub_amounts.length > 0)
         );
 
-        const isQuickFromItems = rawItems.length > 0 && rawItems.every((it) => {
+        const isGenericMeatItem = (it) => {
           const cName = removeDiacritics((it.rawName || '').toLowerCase().trim());
-          const isGenericMeat = !cName || cName === 'thit le' || cName === 'thịt lẻ' || cName === 'tien hang' || cName === 'tiền hàng' || cName === 'mon le';
+          const isTienHang = cName.includes('tien hang') || cName.includes('thit le') || cName === 'mon le' || cName === 'tien';
+          const isBlank = !cName;
           const qty = parseFloat(it.quantity);
-          return isGenericMeat && (!qty || qty <= 0);
-        });
+          return isTienHang || (isBlank && (!qty || qty <= 0));
+        };
 
+        const isQuickFromItems = rawItems.length > 0 && rawItems.every(isGenericMeatItem);
         const isQuickMode = isQuickDebtFromAi || isQuickFromItems;
 
         let quickSubAmounts = [];
+        let quickAmount = '';
         if (Array.isArray(parsedAiData?.sub_amounts) && parsedAiData.sub_amounts.length > 0) {
           quickSubAmounts = parsedAiData.sub_amounts.map((v) => Number(v) || 0).filter((v) => v > 0);
-        } else if (rawItems.length > 0) {
+          const totalSum = quickSubAmounts.reduce((sum, v) => sum + v, 0);
+          quickAmount = totalSum > 0 ? String(totalSum) : '';
+        } else if (rawItems.length > 1 && isQuickMode) {
           quickSubAmounts = rawItems
             .map((it) => parseFloat(it.amount) || parseFloat(it.price) || 0)
             .filter((v) => v > 0);
+          const totalSum = quickSubAmounts.reduce((sum, v) => sum + v, 0);
+          quickAmount = totalSum > 0 ? String(totalSum) : '';
+        } else if (rawItems.length === 1 && isQuickMode) {
+          quickAmount = String(parseFloat(rawItems[0].amount || rawItems[0].price || 0) || '');
+          quickSubAmounts = [];
+        } else {
+          const totalSum = rawItems.reduce((sum, it) => sum + (parseFloat(it.amount) || 0), 0);
+          quickAmount = totalSum > 0 ? String(totalSum) : '';
         }
-
-        const quickTotalAmount = quickSubAmounts.length > 0
-          ? quickSubAmounts.reduce((sum, v) => sum + v, 0)
-          : rawItems.reduce((sum, it) => sum + (parseFloat(it.amount) || 0), 0);
 
         newMap[sub.id] = {
           customer: matchedCust,
@@ -2359,7 +2499,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           note: cardNote,
           isReturn,
           orderMode: isQuickMode ? 'quick' : 'detail',
-          quickAmount: quickTotalAmount > 0 ? String(quickTotalAmount) : '',
+          quickAmount: quickAmount,
           quickSubAmounts,
           items: rawItems,
           isSaving: false,
@@ -2524,6 +2664,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
+  const handleCloseModal = () => {
+    setVisible(false);
+    setCardDataMap({});
+  };
+
   useImperativeHandle(ref, () => ({
     open: async (initialStatus) => {
       setVisible(true);
@@ -2532,7 +2677,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       const { custList, prodList } = await fetchMasterData();
       await fetchSubmissions(custList, prodList);
     },
-    close: () => setVisible(false),
+    close: handleCloseModal,
   }));
 
   useEffect(() => {
@@ -2643,6 +2788,27 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             return s;
           })
         );
+        // Đồng bộ cập nhật ngay lập tức vào cardDataMap
+        setCardDataMap((prev) => {
+          const currentCard = prev[subId] || card;
+          return {
+            ...prev,
+            [subId]: {
+              ...currentCard,
+              customer: card.customer,
+              date: card.date,
+              note: finalNote,
+              isReturn: Boolean(card.isReturn),
+              orderMode: card.orderMode,
+              items: card.items,
+              isSaving: false,
+            },
+          };
+        });
+        // Cập nhật lại cache bảng giá riêng của khách hàng này ngay lập tức
+        if (card.customer?.id) {
+          fetchProductsForCustomer(card.customer.id, true);
+        }
         if (onRefresh) onRefresh();
       }
     } catch (err) {
@@ -2781,6 +2947,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         }
         setSubmittingBatch(false);
         showGlobalToast(`🎉 Đã nhập nợ thành công ${successCount}/${validSubs.length} hóa đơn!`, 'success');
+        const savedCustomerIds = [...new Set(validSubs.map((s) => cardDataMap[s.id]?.customer?.id).filter(Boolean))];
+        savedCustomerIds.forEach((cId) => fetchProductsForCustomer(cId, true));
         if (onRefresh) onRefresh();
       },
     });
@@ -2829,7 +2997,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
   return (
     <>
-      <SmoothModal visible={visible} onClose={() => setVisible(false)} centered={false}>
+      <SmoothModal visible={visible} onClose={handleCloseModal} centered={false}>
         <View style={[styles.modalView, isMobile && styles.modalViewMobile]}>
           {/* ─── HEADER ─── */}
           <View style={[styles.headerRow, isMobile && styles.headerRowMobile]}>
@@ -2866,7 +3034,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.btnClose} onPress={() => setVisible(false)}>
+              <TouchableOpacity style={styles.btnClose} onPress={handleCloseModal}>
                 <Text style={styles.btnCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -3219,7 +3387,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
             <TouchableOpacity
               style={styles.btnCloseFooter}
-              onPress={() => setVisible(false)}
+              onPress={handleCloseModal}
               activeOpacity={0.8}
             >
               <Text style={styles.btnCloseFooterText}>ĐÓNG LẠI</Text>
@@ -3710,7 +3878,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    alignItems: 'stretch',
+    alignItems: 'flex-start',
   },
   centerLoading: {
     flex: 1,
@@ -3909,10 +4077,15 @@ const styles = StyleSheet.create({
   /* Form bên phải của Thẻ */
   cardFormCol: {
     flex: 1,
-    padding: 12,
+    padding: 10,
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+  },
+  cardFormBody: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
   },
   cardFormColMobile: {
     padding: 8,
@@ -3932,6 +4105,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 8,
     width: '100%',
+    marginBottom: 8,
   },
   cardFieldLabel: {
     color: '#334155',
@@ -4047,12 +4221,39 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
   },
+  btnRowDeleteSingleRow: {
+    width: 26,
+    height: 33,
+    borderRadius: 6,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardItemColumnsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 2,
+    marginBottom: 4,
+  },
+  cardItemColText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  cardItemRowSingle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 5,
+  },
 
   /* Footer của Thẻ */
   cardFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: 6,
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',

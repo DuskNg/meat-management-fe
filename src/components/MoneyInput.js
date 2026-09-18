@@ -22,28 +22,39 @@ const MoneyInput = ({
   textAlign = 'left',
   ...props
 }) => {
-  // Chuyển đổi bất kỳ input value nào thành chuỗi số hàng nghìn được format (VD: 130000 -> "130")
-  const parseToThousandsStr = (val) => {
-    if (val === undefined || val === null || val === '') return '';
+  // Chuyển đổi input value thành thông tin hiển thị (hỗ trợ cả tròn nghìn và số lẻ chính xác)
+  const parseValue = (val) => {
+    if (val === undefined || val === null || val === '') return { thousandsText: '', isOdd: false, fullText: '' };
     const clean = String(val).replace(/[^0-9]/g, '');
-    if (!clean) return '';
+    if (!clean) return { thousandsText: '', isOdd: false, fullText: '' };
     const num = parseInt(clean, 10);
-    if (isNaN(num) || num === 0) return '';
+    if (isNaN(num) || num === 0) return { thousandsText: '', isOdd: false, fullText: '' };
+    if (num % 1000 !== 0) {
+      return {
+        thousandsText: '',
+        isOdd: true,
+        fullText: new Intl.NumberFormat('vi-VN').format(num),
+      };
+    }
     const thousands = num >= 1000 ? Math.floor(num / 1000) : num;
-    return new Intl.NumberFormat('vi-VN').format(thousands);
+    return {
+      thousandsText: new Intl.NumberFormat('vi-VN').format(thousands),
+      isOdd: false,
+      fullText: '',
+    };
   };
 
-  const [thousandsText, setThousandsText] = useState(() => parseToThousandsStr(value));
+  const [parsed, setParsed] = useState(() => parseValue(value));
   const [selection, setSelection] = useState(undefined);
 
   useEffect(() => {
-    setThousandsText(parseToThousandsStr(value));
+    setParsed(parseValue(value));
   }, [value]);
 
   const handleChangeText = (text) => {
     const cleanDigits = text.replace(/[^0-9]/g, '');
     if (!cleanDigits) {
-      setThousandsText('');
+      setParsed({ thousandsText: '', isOdd: false, fullText: '' });
       setSelection(undefined);
       if (onChangeValue) onChangeValue(0);
       if (onChangeText) onChangeText('');
@@ -59,7 +70,7 @@ const MoneyInput = ({
     }
 
     if (numThousands <= 0) {
-      setThousandsText('');
+      setParsed({ thousandsText: '', isOdd: false, fullText: '' });
       setSelection(undefined);
       if (onChangeValue) onChangeValue(0);
       if (onChangeText) onChangeText('');
@@ -70,7 +81,11 @@ const MoneyInput = ({
     const numericVND = numThousands * 1000;
     const formattedVND = new Intl.NumberFormat('vi-VN').format(numericVND);
 
-    setThousandsText(formattedThousands);
+    setParsed({
+      thousandsText: formattedThousands,
+      isOdd: false,
+      fullText: '',
+    });
     // Đặt con trỏ chuột nằm ngay sau chữ số đã gõ (trước đuôi .000)
     const newPos = formattedThousands.length;
     setSelection({ start: newPos, end: newPos });
@@ -79,8 +94,9 @@ const MoneyInput = ({
     if (onChangeText) onChangeText(formattedVND);
   };
 
-  const hasValue = thousandsText.length > 0;
-  const displayValue = hasValue ? `${thousandsText}.000` : '';
+  const displayValue = parsed.isOdd
+    ? parsed.fullText
+    : (parsed.thousandsText ? `${parsed.thousandsText}.000` : '');
 
   // Lấy thuộc tính kiểu dáng để tách riêng cho Container và TextInput
   const flatStyle = StyleSheet.flatten(style) || {};

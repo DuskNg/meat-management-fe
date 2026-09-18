@@ -55,6 +55,11 @@ const ACTION_TRANSLATIONS = {
   'CREATE_SALARY_ADVANCE': 'Tạm ứng lương',
   'UPDATE_PERMISSIONS': 'Cập nhật phân quyền',
   'UPDATE_INVENTORY_PRODUCT': 'Sửa sản phẩm kho',
+  'AUTO_RECURRING_TRANSACTION': 'Tự động nợ cố định',
+  'APPROVE_STAFF_SUBMISSION': 'Duyệt đơn nhân viên',
+  'APPROVE_STAFF_SUBMISSION_RETURN': 'Duyệt trả hàng nhân viên',
+  'REJECT_STAFF_SUBMISSION': 'Bác bỏ đơn nhân viên',
+  'UPLOAD_INVOICE_IMAGES': 'Tải ảnh hóa đơn',
 };
 
 const WebDateInput = (props) => {

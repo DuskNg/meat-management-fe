@@ -595,18 +595,16 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                       <View style={{ flex: 2 }}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                           <Text style={styles.formFieldLabel}>Ghi chú đơn</Text>
-                          {!isApproved && (
-                            <TouchableOpacity
-                              style={[styles.btnToggleOrderType, currentCard.isReturn && styles.btnToggleOrderTypeReturn, currentCard.isLoadingPrice && { opacity: 0.5 }]}
-                              onPress={() => toggleCardReturnType(currentSub.id)}
-                              disabled={currentCard.isLoadingPrice}
-                              activeOpacity={0.8}
-                            >
-                              <Text style={[styles.btnToggleOrderTypeText, currentCard.isReturn && styles.btnToggleOrderTypeTextReturn]}>
-                                {currentCard.isReturn ? '↩️ Trả hàng' : '🥩 Xuất hàng'}
-                              </Text>
-                            </TouchableOpacity>
-                          )}
+                          <TouchableOpacity
+                            style={[styles.btnToggleOrderType, currentCard.isReturn && styles.btnToggleOrderTypeReturn, currentCard.isLoadingPrice && { opacity: 0.5 }]}
+                            onPress={() => toggleCardReturnType(currentSub.id)}
+                            disabled={currentCard.isLoadingPrice}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={[styles.btnToggleOrderTypeText, currentCard.isReturn && styles.btnToggleOrderTypeTextReturn]}>
+                              {currentCard.isReturn ? '↩️ Trả hàng' : '🥩 Xuất hàng'}
+                            </Text>
+                          </TouchableOpacity>
                         </View>
                         <TextInput
                           style={[styles.textInputCompact, currentCard.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
@@ -625,7 +623,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     <TouchableOpacity
                       style={[styles.orderModeTabBtn, isQuickMode && styles.orderModeTabBtnActive]}
                       onPress={() => toggleOrderMode && toggleOrderMode(currentSub.id)}
-                      disabled={isApproved || currentCard.isLoadingPrice}
+                      disabled={currentCard.isLoadingPrice}
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.orderModeTabText, isQuickMode && styles.orderModeTabTextActive]}>
@@ -635,7 +633,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     <TouchableOpacity
                       style={[styles.orderModeTabBtn, !isQuickMode && styles.orderModeTabBtnActive]}
                       onPress={() => toggleOrderMode && toggleOrderMode(currentSub.id)}
-                      disabled={isApproved || currentCard.isLoadingPrice}
+                      disabled={currentCard.isLoadingPrice}
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.orderModeTabText, !isQuickMode && styles.orderModeTabTextActive]}>
@@ -652,7 +650,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                           style={styles.quickDebtMoneyContainer}
                           inputStyle={styles.quickDebtMoneyInput}
                           value={currentCard.quickAmount}
-                          disabled={isApproved || currentCard.isLoadingPrice}
+                          disabled={currentCard.isLoadingPrice}
                           onChangeValue={(val) => {
                             updateQuickAmount && updateQuickAmount(currentSub.id, val > 0 ? String(val) : '');
                           }}
@@ -667,15 +665,13 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                           <Text style={styles.quickSubAmountsTitle}>
                             🧾 Các khoản tiền cộng gộp ({(currentCard.quickSubAmounts || []).length}):
                           </Text>
-                          {!isApproved && (
-                            <TouchableOpacity
-                              style={styles.btnAddSubAmount}
-                              onPress={() => addQuickSubAmount && addQuickSubAmount(currentSub.id)}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={styles.btnAddSubAmountText}>+ Thêm khoản</Text>
-                            </TouchableOpacity>
-                          )}
+                          <TouchableOpacity
+                            style={styles.btnAddSubAmount}
+                            onPress={() => addQuickSubAmount && addQuickSubAmount(currentSub.id)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.btnAddSubAmountText}>+ Thêm khoản</Text>
+                          </TouchableOpacity>
                         </View>
 
                         {(currentCard.quickSubAmounts || []).length > 0 ? (
@@ -686,7 +682,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                                   style={styles.subAmountMoneyContainer}
                                   inputStyle={styles.subAmountMoneyInput}
                                   value={subAmt}
-                                  disabled={isApproved || currentCard.isLoadingPrice}
+                                  disabled={currentCard.isLoadingPrice}
                                   onChangeValue={(val) => {
                                     updateQuickSubAmount && updateQuickSubAmount(currentSub.id, sIdx, val > 0 ? val : 0);
                                   }}
@@ -694,15 +690,13 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                                   textAlign="right"
                                 />
                                 <Text style={styles.subAmountCurrency}>đ</Text>
-                                {!isApproved && (
-                                  <TouchableOpacity
-                                    style={styles.btnRemoveSubAmount}
-                                    onPress={() => removeQuickSubAmount && removeQuickSubAmount(currentSub.id, sIdx)}
-                                    activeOpacity={0.7}
-                                  >
-                                    <Text style={styles.btnRemoveSubAmountText}>✕</Text>
-                                  </TouchableOpacity>
-                                )}
+                                <TouchableOpacity
+                                  style={styles.btnRemoveSubAmount}
+                                  onPress={() => removeQuickSubAmount && removeQuickSubAmount(currentSub.id, sIdx)}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text style={styles.btnRemoveSubAmountText}>✕</Text>
+                                </TouchableOpacity>
                               </View>
                             ))}
                           </View>
@@ -720,16 +714,14 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                         <Text style={styles.itemsSectionTitle}>
                           DANH SÁCH MÓN THỊT ({currentCard.items?.length || 0})
                         </Text>
-                        {!isApproved && (
-                          <TouchableOpacity
-                            style={[styles.btnAddItemBtn, currentCard.isLoadingPrice && { opacity: 0.5 }]}
-                            onPress={() => addCardItem(currentSub.id)}
-                            disabled={currentCard.isLoadingPrice}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.btnAddItemText}>+ Thêm món</Text>
-                          </TouchableOpacity>
-                        )}
+                        <TouchableOpacity
+                          style={[styles.btnAddItemBtn, currentCard.isLoadingPrice && { opacity: 0.5 }]}
+                          onPress={() => addCardItem(currentSub.id)}
+                          disabled={currentCard.isLoadingPrice}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.btnAddItemText}>+ Thêm món</Text>
+                        </TouchableOpacity>
                       </View>
 
                       {/* Tiêu đề các cột */}
@@ -876,7 +868,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                         <ActivityIndicator color="#FFFFFF" size="small" />
                       ) : (
                         <Text style={styles.btnSaveActionText}>
-                          {isApproved ? '✓ ĐÃ LÊN NỢ' : currentCard.isReturn ? '↩️ TRẢ HÀNG (TRỪ NỢ)' : '💾 NHẬP CÔNG NỢ'}
+                          {isApproved ? '🔄 CẬP NHẬT LẠI' : currentCard.isReturn ? '↩️ TRẢ HÀNG (TRỪ NỢ)' : '💾 NHẬP CÔNG NỢ'}
                         </Text>
                       )}
                     </TouchableOpacity>
