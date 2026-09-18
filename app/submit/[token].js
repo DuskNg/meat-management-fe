@@ -27,11 +27,26 @@ const resolveMediaUrl = (url) => {
   return `${API_HOST}${url}`;
 };
 
-// Helper nén ảnh siêu tốc bằng HTML5 Canvas + createImageBitmap / Blob URL (Tối ưu tuyệt đối cho hóa đơn giấy)
+// Helper kiểm tra an toàn tệp là ảnh hay video (hoạt động 100% trên cả iPhone khi file.type bị rỗng hoặc HEIC)
+const getFileCategory = (file) => {
+  if (!file) return { isVideo: false, isImage: true };
+  const type = (file.type || '').toLowerCase();
+  const name = (file.name || '').toLowerCase();
+
+  const isVideo = type.startsWith('video/') || /\.(mp4|mov|avi|webm|m4v|3gp|mkv)$/i.test(name);
+  const isImage = type.startsWith('image/') || /\.(jpg|jpeg|png|heic|heif|webp|gif|bmp)$/i.test(name) || !isVideo;
+
+  return {
+    isVideo,
+    isImage,
+  };
+};
+
+// Helper nén ảnh siêu tốc bằng HTML5 Canvas + createImageBitmap / Blob URL (Tương thích cả iPhone HEIC & iOS Safari)
 const compressImageClient = async (file, maxWidth = 1280, quality = 0.70) => {
-  if (!file || !file.type?.startsWith('image/')) {
-    return null;
-  }
+  if (!file) return null;
+  const { isImage } = getFileCategory(file);
+  if (!isImage) return null;
 
   try {
     // 1. Ưu tiên giải mã phần cứng bằng createImageBitmap (cực nhanh, đa luồng off-thread, không tốn RAM)
@@ -58,11 +73,11 @@ const compressImageClient = async (file, maxWidth = 1280, quality = 0.70) => {
           return compressedDataUrl;
         }
       } catch (bitmapErr) {
-        console.warn('createImageBitmap lỗi, chuyển sang fallback Blob URL:', bitmapErr);
+        console.warn('createImageBitmap lỗi (đặc biệt trên Safari/HEIC), chuyển sang fallback Image Blob:', bitmapErr);
       }
     }
 
-    // 2. Fallback sử dụng URL.createObjectURL (nhanh hơn gấp nhiều lần FileReader thông thường)
+    // 2. Fallback sử dụng URL.createObjectURL
     return await new Promise((resolve) => {
       if (typeof URL === 'undefined' || !URL.createObjectURL) {
         const reader = new FileReader();
@@ -72,35 +87,55 @@ const compressImageClient = async (file, maxWidth = 1280, quality = 0.70) => {
         return;
       }
 
-      const blobUrl = URL.createObjectURL(file);
+      let blobUrl = null;
+      try {
+        blobUrl = URL.createObjectURL(file);
+      } catch (err) {
+        // Nếu không thể tạo blobUrl, fallback qua FileReader
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => resolve(event.target.result);
+        reader.onerror = () => resolve(null);
+        return;
+      }
+
       const img = new window.Image();
       img.onload = () => {
-        let width = img.width;
-        let height = img.height;
+        try {
+          let width = img.naturalWidth || img.width;
+          let height = img.naturalHeight || img.height;
 
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d', { alpha: false });
-        if (ctx) {
-          ctx.imageSmoothingQuality = 'medium';
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-          URL.revokeObjectURL(blobUrl);
-          resolve(compressedDataUrl);
-        } else {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d', { alpha: false });
+          if (ctx) {
+            ctx.imageSmoothingQuality = 'medium';
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            URL.revokeObjectURL(blobUrl);
+            resolve(compressedDataUrl);
+          } else {
+            URL.revokeObjectURL(blobUrl);
+            resolve(null);
+          }
+        } catch {
           URL.revokeObjectURL(blobUrl);
           resolve(null);
         }
       };
       img.onerror = () => {
         URL.revokeObjectURL(blobUrl);
-        resolve(null);
+        // Nếu img.onerror (ví dụ HEIC thô không render được trên browser này), fallback đọc trực tiếp qua FileReader
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => resolve(event.target.result);
+        reader.onerror = () => resolve(null);
       };
       img.src = blobUrl;
     });
@@ -375,35 +410,39 @@ export default function StaffSubmitScreen() {
 
   // Xử lý chọn nhiều ảnh và video từ thư viện máy: Đưa ngay lên giao diện tức thì (phong cách Zalo)
   const handleMediaChange = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+    try {
+      const files = Array.from(e.target.files || []);
+      if (files.length === 0) return;
 
-    // Reset giá trị input ngay lập tức để người dùng có thể chọn thêm bất cứ lúc nào
-    if (mediaInputRef.current) {
-      mediaInputRef.current.value = '';
+      // TUYỆT ĐỐI KHÔNG gán mediaInputRef.current.value = '' tại đây vì iOS Safari sẽ giải phóng con trỏ File ngay lập tức!
+      // Việc reset value được thực hiện ở sự kiện onClick khi người dùng bắt đầu mở chọn tệp tiếp theo.
+
+      const newItems = files.map((file) => {
+        const { isVideo } = getFileCategory(file);
+        let blobUrl = '';
+        if (typeof URL !== 'undefined' && URL.createObjectURL) {
+          try {
+            blobUrl = URL.createObjectURL(file);
+          } catch (blobErr) {
+            console.warn('Không thể tạo blob URL cho tệp:', blobErr);
+          }
+        }
+
+        return {
+          id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          file,
+          blobUrl,
+          fileType: isVideo ? 'VIDEO' : 'IMAGE',
+          name: file.name || (isVideo ? 'video.mp4' : 'image.jpg'),
+          status: 'QUEUED', // 'QUEUED' | 'UPLOADING' | 'ERROR'
+          errorMsg: '',
+        };
+      });
+
+      setUploadQueue((prev) => [...prev, ...newItems]);
+    } catch (err) {
+      console.error('Lỗi trong handleMediaChange:', err);
     }
-
-    const newItems = files.map((file) => {
-      const isVideo = file.type.startsWith('video/');
-      let blobUrl = '';
-      if (typeof URL !== 'undefined' && URL.createObjectURL) {
-        try {
-          blobUrl = URL.createObjectURL(file);
-        } catch {}
-      }
-
-      return {
-        id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        file,
-        blobUrl,
-        fileType: isVideo ? 'VIDEO' : 'IMAGE',
-        name: file.name,
-        status: 'QUEUED', // 'QUEUED' | 'UPLOADING' | 'ERROR'
-        errorMsg: '',
-      };
-    });
-
-    setUploadQueue((prev) => [...prev, ...newItems]);
   };
 
   // Tự động điều phối hàng đợi upload ngầm (tối đa 2 luồng song song để máy chạy mượt, không nghẽn mạng)
@@ -609,31 +648,40 @@ export default function StaffSubmitScreen() {
             />
           </View>
 
-          {/* Thẻ input ẩn cho Web */}
-          {Platform.OS === 'web' && (
-            <input
-              type="file"
-              accept="image/*,video/*"
-              multiple
-              ref={mediaInputRef}
-              style={{ display: 'none' }}
-              onChange={handleMediaChange}
-            />
-          )}
+          {/* Vùng chọn ảnh/video: Thẻ input native phủ kín toàn bộ nút bấm với opacity: 0 */}
+          <View style={styles.pickMediaWrap}>
+            {Platform.OS === 'web' && (
+              <input
+                type="file"
+                accept="image/*,video/*,.heic,.heif,.jpg,.jpeg,.png,.mp4,.mov"
+                multiple
+                ref={mediaInputRef}
+                onClick={(e) => {
+                  // Chỉ dọn dẹp value cũ khi người dùng bắt đầu CHẠM để chọn đợt mới
+                  try {
+                    e.target.value = '';
+                  } catch {}
+                }}
+                onChange={handleMediaChange}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  opacity: 0,
+                  zIndex: 20,
+                  cursor: 'pointer',
+                }}
+              />
+            )}
 
-          <TouchableOpacity
-            style={styles.btnPickMediaMain}
-            onPress={() => {
-              if (Platform.OS === 'web' && mediaInputRef.current) {
-                mediaInputRef.current.click();
-              }
-            }}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.pickMediaIcon}>📸 🎬</Text>
-            <Text style={styles.pickMediaTitle}>GỬI HÓA ĐƠN / VIDEO HÓA ĐƠN</Text>
-            <Text style={styles.pickMediaSub}>Chạm để chọn nhiều ảnh hoặc video từ thư viện máy</Text>
-          </TouchableOpacity>
+            <View style={styles.btnPickMediaMain}>
+              <Text style={styles.pickMediaIcon}>📸 🎬</Text>
+              <Text style={styles.pickMediaTitle}>GỬI HÓA ĐƠN / VIDEO HÓA ĐƠN</Text>
+              <Text style={styles.pickMediaSub}>Chạm để chọn nhiều ảnh hoặc video từ thư viện máy</Text>
+            </View>
+          </View>
 
           {/* Banner thông báo trạng thái hàng đợi đang tải ngầm nếu có */}
           {uploadQueue.length > 0 && (
@@ -1008,6 +1056,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
 
+  pickMediaWrap: {
+    position: 'relative',
+    width: '100%',
+    overflow: 'hidden',
+    borderRadius: 10,
+  },
   // Nút chính: ĐĂNG ẢNH / VIDEO (Một nút duy nhất, rõ ràng, chiều cao vừa vặn)
   btnPickMediaMain: {
     backgroundColor: '#F0FDF4',
