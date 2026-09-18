@@ -3916,11 +3916,11 @@ const styles = StyleSheet.create({
     ...SHADOWS.sm,
   },
   invoiceCardPC: {
-    width: 'calc((100% - 60px) / 6)',
-    flexBasis: 'calc((100% - 60px) / 6)',
+    width: 'calc((100% - 48px) / 5)',
+    flexBasis: 'calc((100% - 48px) / 5)',
     flexGrow: 0,
     flexShrink: 0,
-    maxWidth: 'calc((100% - 60px) / 6)',
+    maxWidth: 'calc((100% - 48px) / 5)',
   },
   invoiceCardTablet: {
     width: 'calc((100% - 12px) / 2)',
