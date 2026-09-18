@@ -43,7 +43,7 @@ const getFileCategory = (file) => {
 };
 
 // Helper nén ảnh siêu tốc bằng HTML5 Canvas + createImageBitmap / Blob URL (Tương thích cả iPhone HEIC & iOS Safari)
-const compressImageClient = async (file, maxWidth = 1280, quality = 0.70) => {
+const compressImageClient = async (file, maxWidth = 1200, quality = 0.65) => {
   if (!file) return null;
   const { isImage } = getFileCategory(file);
   if (!isImage) return null;
@@ -70,6 +70,10 @@ const compressImageClient = async (file, maxWidth = 1280, quality = 0.70) => {
           ctx.drawImage(bitmap, 0, 0, width, height);
           const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
           if (typeof bitmap.close === 'function') bitmap.close();
+          // Giải phóng ngay bộ nhớ đồ họa Canvas trên iOS
+          canvas.width = 1;
+          canvas.height = 1;
+          ctx.clearRect(0, 0, 1, 1);
           return compressedDataUrl;
         }
       } catch (bitmapErr) {
@@ -118,6 +122,10 @@ const compressImageClient = async (file, maxWidth = 1280, quality = 0.70) => {
             ctx.imageSmoothingQuality = 'medium';
             ctx.drawImage(img, 0, 0, width, height);
             const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            // Dọn sạch VRAM Canvas & thu hồi Blob URL
+            canvas.width = 1;
+            canvas.height = 1;
+            ctx.clearRect(0, 0, 1, 1);
             URL.revokeObjectURL(blobUrl);
             resolve(compressedDataUrl);
           } else {
@@ -445,9 +453,9 @@ export default function StaffSubmitScreen() {
     }
   };
 
-  // Tự động điều phối hàng đợi upload ngầm (tối đa 2 luồng song song để máy chạy mượt, không nghẽn mạng)
+  // Tự động điều phối hàng đợi upload ngầm (chế độ Băng chuyền 1 luồng: giải phóng RAM ngay sau mỗi ảnh, không lo tràn bộ nhớ)
   const processUploadQueue = async () => {
-    const MAX_CONCURRENT = 2;
+    const MAX_CONCURRENT = 1;
     if (activeUploadsRef.current >= MAX_CONCURRENT) return;
 
     const currentQueue = uploadQueueRef.current;
@@ -653,7 +661,7 @@ export default function StaffSubmitScreen() {
             {Platform.OS === 'web' && (
               <input
                 type="file"
-                accept="image/*,video/*,.heic,.heif,.jpg,.jpeg,.png,.mp4,.mov"
+                accept="image/*,video/*"
                 multiple
                 ref={mediaInputRef}
                 onClick={(e) => {
@@ -684,7 +692,7 @@ export default function StaffSubmitScreen() {
           </View>
 
           <Text style={styles.pickMediaTip}>
-            💡 Mẹo: Nên chọn 5-15 ảnh mỗi đợt để điện thoại không bị quá tải bộ nhớ
+            ⚡ Hệ thống tự động nén nhẹ và tải ngầm siêu tốc, không lo đầy bộ nhớ máy
           </Text>
 
           {/* Banner thông báo trạng thái hàng đợi đang tải ngầm nếu có */}
