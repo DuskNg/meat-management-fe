@@ -434,23 +434,25 @@ const InvoiceReviewCard = React.memo(
               {/* Tiêu đề các cột món thịt trên 1 dòng */}
               {(card.items && card.items.length > 0) && (
                 <View style={styles.cardItemColumnsHeader}>
-                  <Text style={[styles.cardItemColText, { flex: 1.8 }]}>Tên thịt</Text>
+                  <Text style={[styles.cardItemColText, { flex: 1.75 }]}>Tên thịt</Text>
                   <Text style={[styles.cardItemColText, { flex: 0.85, textAlign: 'center' }]}>Số kg</Text>
                   <Text style={[styles.cardItemColText, { flex: 1.15, textAlign: 'right' }]}>Đơn giá</Text>
-                  <Text style={[styles.cardItemColText, { flex: 1.45, textAlign: 'right' }]}>Thành tiền</Text>
+                  <Text style={[styles.cardItemColText, { flex: 1.5, textAlign: 'right' }]}>Thành tiền</Text>
                   <View style={{ width: 20 }} />
                 </View>
               )}
 
-              {/* Từng dòng món thịt (xếp chung toàn bộ trên 1 dòng duy nhất) */}
+              {/* Từng dòng món thịt (xếp chung toàn bộ trên 1 dòng duy nhất, size chữ nhỏ gọn riêng cho bảng này) */}
               {(card.items || []).map((item, itemIdx) => (
                 <View key={item.id || itemIdx} style={styles.cardItemRowSingle}>
                   {/* 1. Chọn món thịt */}
-                  <View style={{ flex: 1.8, minWidth: 70 }}>
+                  <View style={{ flex: 1.75, minWidth: 68 }}>
                     <CustomSelect
                       value={item.selectedProduct}
                       placeholder="Tên thịt..."
                       compact={true}
+                      triggerStyle={styles.cardItemSelectTrigger}
+                      inputStyle={styles.cardItemSelectInput}
                       options={customerProducts}
                       disabled={card.isLoadingPrice}
                       onOpenChange={(isOpen) => {
@@ -485,9 +487,9 @@ const InvoiceReviewCard = React.memo(
                   </View>
 
                   {/* 2. Số kg */}
-                  <View style={{ flex: 0.85, minWidth: 40 }}>
+                  <View style={{ flex: 0.85, minWidth: 38 }}>
                     <TextInput
-                      style={[styles.compactInputCell, styles.compactInputCellMobile, card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
+                      style={[styles.cardItemCell, card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
                       value={item.quantity}
                       onChangeText={(val) => onUpdateItem(sub.id, itemIdx, 'quantity', val)}
                       editable={!card.isLoadingPrice}
@@ -499,10 +501,10 @@ const InvoiceReviewCard = React.memo(
                   </View>
 
                   {/* 3. Đơn giá */}
-                  <View style={{ flex: 1.15, minWidth: 55 }}>
+                  <View style={{ flex: 1.15, minWidth: 52 }}>
                     <MoneyInput
-                      style={[styles.tableMoneyContainer, styles.tableMoneyContainerMobile]}
-                      inputStyle={[styles.tableMoneyInput, styles.tableMoneyInputMobile]}
+                      style={styles.cardItemMoneyContainer}
+                      inputStyle={styles.cardItemMoneyInput}
                       value={item.price}
                       disabled={card.isLoadingPrice}
                       onChangeValue={(val) => {
@@ -515,10 +517,10 @@ const InvoiceReviewCard = React.memo(
                   </View>
 
                   {/* 4. Thành tiền */}
-                  <View style={{ flex: 1.45, minWidth: 65 }}>
+                  <View style={{ flex: 1.5, minWidth: 68 }}>
                     <MoneyInput
-                      style={[styles.tableMoneyContainer, styles.tableMoneyContainerMobile]}
-                      inputStyle={[styles.tableMoneyInputAmount, styles.tableMoneyInputAmountMobile]}
+                      style={styles.cardItemMoneyContainer}
+                      inputStyle={styles.cardItemAmountInput}
                       value={item.amount}
                       disabled={card.isLoadingPrice}
                       onChangeValue={(val) => {
@@ -4234,10 +4236,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 2,
-    marginBottom: 4,
+    marginBottom: 3,
   },
   cardItemColText: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -4245,7 +4247,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginBottom: 5,
+    marginBottom: 4,
+  },
+  cardItemSelectTrigger: {
+    height: 30,
+    paddingLeft: 6,
+    paddingRight: 2,
+    borderRadius: 6,
+  },
+  cardItemSelectInput: {
+    fontSize: 11,
+    color: '#0F172A',
+    fontWeight: '500',
+  },
+  cardItemCell: {
+    height: 30,
+    paddingHorizontal: 3,
+    fontSize: 11,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+    color: '#0F172A',
+  },
+  cardItemMoneyContainer: {
+    height: 30,
+    paddingHorizontal: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+  },
+  cardItemMoneyInput: {
+    fontSize: 11,
+    color: '#0F172A',
+    fontWeight: '500',
+    paddingHorizontal: 0,
+  },
+  cardItemAmountInput: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#059669',
+    paddingHorizontal: 0,
   },
 
   /* Footer của Thẻ */

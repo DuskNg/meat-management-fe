@@ -41,7 +41,9 @@ const CustomSelect = ({
   renderSelected,
   getOptionLabel = (opt) => (typeof opt === 'string' ? opt : opt?.name || ''),
   style,
+  triggerStyle,
   dropdownStyle,
+  inputStyle,
   compact = false,
   hasError = false,
   disabled = false,
@@ -329,6 +331,7 @@ const CustomSelect = ({
           open && styles.selectTriggerOpen,
           hasError && styles.selectTriggerError,
           disabled && styles.selectTriggerDisabled,
+          triggerStyle,
         ]}
         {...(Platform.OS === 'web'
           ? {
@@ -347,6 +350,7 @@ const CustomSelect = ({
             styles.selectTriggerInput,
             compact && styles.selectTriggerTextCompact,
             !valueLabel && styles.selectPlaceholder,
+            inputStyle,
           ]}
           value={open ? search : valueLabel}
           placeholder={placeholder}
