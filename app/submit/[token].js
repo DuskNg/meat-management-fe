@@ -577,7 +577,8 @@ export default function StaffSubmitScreen() {
         files.map(async (file) => {
           const { isVideo } = await detectMediaCategoryFromFile(file);
           let blobUrl = '';
-          if (typeof URL !== 'undefined' && URL.createObjectURL) {
+          // Chỉ tạo blob URL cho ảnh tĩnh để render preview; Với Video tuyệt đối không tạo blobUrl để tránh chiếm dụng RAM gây crash tab trên iPhone
+          if (!isVideo && typeof URL !== 'undefined' && URL.createObjectURL) {
             try {
               blobUrl = URL.createObjectURL(file);
             } catch (blobErr) {
@@ -919,25 +920,10 @@ export default function StaffSubmitScreen() {
                   <View key={item.id} style={styles.historyGridBox}>
                     {isVideo ? (
                       <View style={styles.historyVideoWrap}>
-                        {typeof window !== 'undefined' && item.blobUrl ? (
-                          <video
-                            src={item.blobUrl}
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                              pointerEvents: 'none',
-                              backgroundColor: '#0F172A',
-                            }}
-                            muted
-                            playsInline
-                            preload="metadata"
-                          />
-                        ) : (
-                          <View style={styles.historyVideoFallback}>
-                            <Text style={{ fontSize: 22 }}>🎬</Text>
-                          </View>
-                        )}
+                        <View style={styles.historyVideoFallback}>
+                          <Text style={{ fontSize: 26 }}>🎬</Text>
+                          <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 2, fontWeight: '600' }}>Video</Text>
+                        </View>
                         <View style={styles.videoBadgeTag}>
                           <Text style={styles.videoBadgeTagText}>VIDEO</Text>
                         </View>
@@ -994,31 +980,16 @@ export default function StaffSubmitScreen() {
                   >
                     {isVideo ? (
                       <View style={styles.historyVideoWrap}>
-                        {typeof window !== 'undefined' && mediaUrl ? (
-                          <video
-                            src={mediaUrl}
-                            poster={mediaUrl?.replace(/\.(mp4|mov|avi|webm)$/i, '.jpg')}
-                            onError={(e) => {
-                              try {
-                                e.target.style.display = 'none';
-                                e.target.removeAttribute('src');
-                                e.target.load();
-                              } catch {}
-                            }}
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                              pointerEvents: 'none',
-                              backgroundColor: '#0F172A',
-                            }}
-                            muted
-                            playsInline
-                            preload="metadata"
+                        {mediaUrl && mediaUrl.includes('res.cloudinary.com') ? (
+                          <Image
+                            source={{ uri: mediaUrl.replace(/\.(mp4|mov|avi|webm)$/i, '.jpg') }}
+                            style={styles.historyGridImg}
+                            resizeMode="cover"
                           />
                         ) : (
                           <View style={styles.historyVideoFallback}>
-                            <Text style={{ fontSize: 22 }}>🎬</Text>
+                            <Text style={{ fontSize: 26 }}>🎬</Text>
+                            <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 2, fontWeight: '600' }}>Video</Text>
                           </View>
                         )}
                         <View style={styles.videoPlayOverlay}>
