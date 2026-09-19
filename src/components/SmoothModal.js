@@ -28,6 +28,15 @@ let modalIdCounter = 0;
 const getDomElement = (target) => {
   if (!target) return null;
   if (typeof target.nodeType === 'number') return target;
+  if (target.getScrollableNode && typeof target.getScrollableNode().nodeType === 'number') {
+    return target.getScrollableNode();
+  }
+  if (target._touchableNode && typeof target._touchableNode.nodeType === 'number') {
+    return target._touchableNode;
+  }
+  if (target._node && typeof target._node.nodeType === 'number') {
+    return target._node;
+  }
   if (target._reactInternals?.stateNode && typeof target._reactInternals.stateNode.nodeType === 'number') {
     return target._reactInternals.stateNode;
   }
@@ -82,19 +91,19 @@ const SmoothModal = ({ visible, onClose, children, isToast, centered, animationT
       return;
     }
 
-    // Thiết lập zIndex cho portal container của Modal trên Web
+    // Thiết lập zIndex cho portal container của Modal trên Web (không di chuyển DOM, giữ nguyên position gốc)
     const applyPortalZ = (target, zVal) => {
       const elNode = getDomElement(target);
       if (!elNode) return;
       let el = elNode;
-      // Đi ngược lên cho đến khi gặp phần tử con trực tiếp của document.body (chính là portal container của modal)
+      // Đi ngược lên cho đến khi gặp phần tử con trực tiếp của document.body (portal container của modal)
       while (el && el.parentElement && el.parentElement !== document.body) {
         el = el.parentElement;
       }
       if (el && el.parentElement === document.body) {
-        el.style.zIndex = String(zVal);
+        el.style.setProperty('z-index', String(zVal), 'important');
         if (el.firstElementChild) {
-          el.firstElementChild.style.zIndex = String(zVal);
+          el.firstElementChild.style.setProperty('z-index', String(zVal), 'important');
         }
       }
     };
@@ -112,14 +121,10 @@ const SmoothModal = ({ visible, onClose, children, isToast, centered, animationT
     };
 
     updateZ();
-    const t1 = setTimeout(updateZ, 0);
-    const t2 = setTimeout(updateZ, 30);
-    const t3 = setTimeout(updateZ, 100);
+    const timer = setTimeout(updateZ, 0);
 
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+      clearTimeout(timer);
       activeModalStack = activeModalStack.filter((id) => id !== modalId);
       if (activeModalStack.length === 0) {
         currentGlobalTopZ = 10000;

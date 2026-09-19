@@ -63,6 +63,7 @@ import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewM
 import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
 import { showGlobalToast } from '../src/store/toastStore';
 import { isMobileDevice } from '../src/utils/imageShareHelper';
+import { exportDailyReportBundle } from '../src/utils/dailyBundleExportHelper';
 import AnimatedPressable from '../src/components/AnimatedPressable';
 import { useLockStore } from '../src/store/lockStore';
 import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
@@ -3376,6 +3377,29 @@ export default function DashboardScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.smartDebtMenuTitle}>Ghi chú cần nhớ</Text>
                     <Text style={styles.smartDebtMenuSub}>Lưu ghi chú, mẹo công việc, giá riêng từng quán</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={async () => {
+                    setShowDebtToolsMenu(false);
+                    try {
+                      await exportDailyReportBundle({
+                        onProgress: (msg) => showGlobalToast(msg, 'info'),
+                      });
+                    } catch (err) {
+                      console.error('Lỗi khi xuất trọn bộ ảnh báo cáo:', err);
+                      showGlobalToast('Lỗi khi tải bộ ảnh: ' + (err.message || ''), 'error');
+                    }
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>📦</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Tải trọn bộ 3 ảnh báo cáo</Text>
+                    <Text style={styles.smartDebtMenuSub}>Công nợ ngày, khách chưa lên đơn & đơn trùng</Text>
                   </View>
                 </TouchableOpacity>
 

@@ -21,6 +21,7 @@ import InvoiceImageUploadModal from './InvoiceImageUploadModal';
 import { showGlobalToast } from '../store/toastStore';
 import { matchSearch } from '../utils/searchHelper';
 import { downloadOrShareImage } from '../utils/imageShareHelper';
+import { exportDailyReportBundle } from '../utils/dailyBundleExportHelper';
 
 // Bảng màu đa dạng, tương phản cao, dễ phân biệt cho các nhóm khách hàng trùng đơn
 // Mỗi khách hàng 1 màu riêng biệt, màu sắc phân bố đều trên vòng tròn màu sắc để tránh bị na ná nhau
@@ -148,6 +149,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   // Bộ lọc loại giao dịch đang chọn: 'all' (tất cả), 'debt' (nợ phát sinh), 'payment' (tiền đã thu)
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
+  const [bundleExporting, setBundleExporting] = useState(false);
 
   // 1. Phơi bày hàm open/close ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -1789,6 +1791,27 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     }
   };
 
+  // Xử lý tự động xuất trọn bộ 3 ảnh: Báo cáo công nợ ngày, Khách quen sót đơn, Đơn nợ trùng
+  const handleExportDailyBundle = async () => {
+    if (bundleExporting) return;
+    setBundleExporting(true);
+    try {
+      showGlobalToast('Đang tạo và chuẩn bị 3 ảnh báo cáo ngày...', 'info', 'Đang xử lý', 2500);
+      await exportDailyReportBundle({
+        selectedDate,
+        transactions: rawTransactions,
+        payments: rawPayments,
+        customers: rawCustomers,
+        onProgress: (msg) => showGlobalToast(msg, 'info', 'Tiến trình xuất ảnh', 1800),
+      });
+    } catch (err) {
+      console.error('Lỗi khi xuất trọn bộ ảnh báo cáo:', err);
+      showGlobalToast('Không thể tạo trọn bộ ảnh báo cáo. Vui lòng thử lại.', 'error');
+    } finally {
+      setBundleExporting(false);
+    }
+  };
+
   // Xử lý chuyển đổi bộ lọc trạng thái và tự động xóa từ khóa tìm kiếm trong ô search
   const handleFilterToggle = (filterType) => {
     setSearchText('');
@@ -2229,11 +2252,27 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         {/* Nhóm nút hành động dưới đáy */}
         <View style={styles.footerButtons}>
           {activeReportTab === 'day' && (
-            <TouchableOpacity
-              style={styles.exportReportBtn}
-              onPress={handleExportDailyReportImage}
-              activeOpacity={0.7}
-            >
+            <>
+              <TouchableOpacity
+                style={styles.exportBundleBtn}
+                onPress={handleExportDailyBundle}
+                disabled={bundleExporting}
+                activeOpacity={0.7}
+              >
+                {bundleExporting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.exportBundleBtnText} numberOfLines={1}>
+                    📦 TẢI TRỌN BỘ 3 ẢNH
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.exportReportBtn}
+                onPress={handleExportDailyReportImage}
+                activeOpacity={0.7}
+              >
               <Text style={styles.exportReportBtnText} numberOfLines={1}>
                 {activeFilter === 'duplicate'
                   ? '📸 XUẤT BÁO CÁO ĐƠN TRÙNG'
@@ -2250,7 +2289,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                             : '📸 XUẤT BÁO CÁO NGÀY'}
               </Text>
             </TouchableOpacity>
-          )}
+          </>
+        )}
           <TouchableOpacity
             style={styles.closeButtonNew}
             onPress={() => setVisible(false)}
@@ -2920,6 +2960,24 @@ const styles = StyleSheet.create({
     ...SHADOWS.card,
   },
   exportReportBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 15,
+  },
+  exportBundleBtn: {
+    flex: 1.6,
+    minHeight: 40,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#4338CA', // Indigo đậm sang trọng
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  exportBundleBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: 'bold',

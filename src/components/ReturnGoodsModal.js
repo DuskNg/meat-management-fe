@@ -357,8 +357,9 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   const cartTotal = cartItems.reduce((sum, item) => sum + item.amount, 0);
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.modalView}>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+        <View style={styles.modalView}>
         {/* Header Modal */}
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>↩️ TRẢ HÀNG KHÁCH HÀNG</Text>
@@ -655,12 +656,14 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
       </View>
-
-      <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
-      <PinInputModal ref={pinInputRef} />
-      <PinSetupModal ref={pinSetupRef} />
     </SmoothModal>
-  );
+
+    {/* Sub-modals phụ trợ nằm ĐỘC LẬP bên ngoài theo chuẩn quy tắc stacking context */}
+    <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
+    <PinInputModal ref={pinInputRef} />
+    <PinSetupModal ref={pinSetupRef} />
+  </>
+);
 });
 
 export default ReturnGoodsModal;

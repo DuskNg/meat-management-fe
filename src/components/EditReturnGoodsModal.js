@@ -550,8 +550,9 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   const displayCustomer = customer || customerData;
 
   return (
-    <SmoothModal zIndex={25000} visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.modalView}>
+    <>
+      <SmoothModal zIndex={25000} visible={visible} onClose={() => setVisible(false)}>
+        <View style={styles.modalView}>
         {/* Header Modal */}
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>↩️ SỬA ĐƠN TRẢ LẠI HÀNG</Text>
@@ -786,8 +787,10 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
               />
             </View>
           )}
+        </ScrollView>
 
-          {/* Nút gửi dữ liệu Cập nhật Trả Hàng */}
+        {/* Footer hành động neo cố định ở đáy modal */}
+        <View style={styles.footerContainer}>
           <TouchableOpacity
             style={[styles.submitButton, loading && styles.submitButtonDisabled]}
             onPress={() => requirePin(handleSubmit)}
@@ -813,15 +816,16 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
           >
             <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </View>
       </View>
-
-      {/* Sub-modals phụ trợ */}
-      <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
-      <PinInputModal ref={pinInputRef} />
-      <PinSetupModal ref={pinSetupRef} />
     </SmoothModal>
-  );
+
+    {/* Sub-modals phụ trợ nằm ĐỘC LẬP bên ngoài theo chuẩn quy tắc stacking context */}
+    <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
+    <PinInputModal ref={pinInputRef} />
+    <PinSetupModal ref={pinSetupRef} />
+  </>
+);
 });
 
 export default EditReturnGoodsModal;
@@ -831,8 +835,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '90%',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+    height: '92%',
+    maxHeight: '92%',
+    display: 'flex',
+    flexDirection: 'column',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -922,7 +931,7 @@ const styles = StyleSheet.create({
     borderColor: '#FECACA',
   },
   mainScroll: {
-    maxHeight: 520,
+    flex: 1,
   },
   mainScrollContent: {
     paddingBottom: 20,
@@ -1099,12 +1108,19 @@ const styles = StyleSheet.create({
   quickContainer: {
     paddingVertical: 6,
   },
+  footerContainer: {
+    paddingTop: 10,
+    paddingBottom: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    backgroundColor: COLORS.card,
+  },
   submitButton: {
     backgroundColor: '#059669',
     borderRadius: 12,
-    paddingVertical: 14,
+    height: 48,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
     ...SHADOWS.medium,
   },
   submitButtonDisabled: {
@@ -1118,7 +1134,8 @@ const styles = StyleSheet.create({
   cancelButton: {
     backgroundColor: '#F1F5F9',
     borderRadius: 12,
-    paddingVertical: 12,
+    height: 44,
+    justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
   },

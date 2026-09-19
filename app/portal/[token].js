@@ -1856,10 +1856,22 @@ export default function PortalScreen() {
       {/* HEADER TOP BAR */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.groupNameText}>{portalInfo?.name}</Text>
+          <Text style={styles.groupNameText} numberOfLines={1}>{portalInfo?.name}</Text>
         </View>
 
         <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.exportDebtBtn}
+            onPress={handleExportCanvasImage}
+            disabled={exportingImage}
+            activeOpacity={0.8}
+          >
+            {exportingImage ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.exportDebtBtnText}>📊 Xuất công nợ</Text>
+            )}
+          </TouchableOpacity>
           <TouchableOpacity style={styles.priceCheckBtn} onPress={handleOpenPriceCheck} activeOpacity={0.8}>
             <Text style={styles.priceCheckBtnText}>🥩 Giá thịt</Text>
           </TouchableOpacity>
@@ -2549,6 +2561,23 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  exportDebtBtn: {
+    backgroundColor: '#0284C7',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportDebtBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   priceCheckBtn: {
     backgroundColor: '#047857',

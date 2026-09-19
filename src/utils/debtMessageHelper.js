@@ -156,6 +156,7 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
   };
 
   let totalPayment = 0;
+  const unallocatedReturns = [];
 
   // 1. Gom các món từ đơn hàng trong ngày
   dayTrans.forEach((t) => {
@@ -195,58 +196,101 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
     }
   });
 
-  // 2. Gom các khoản trả lại hàng từ danh sách thanh toán trong ngày
+  // 2. Phân loại và khử trùng lặp các khoản trả lại hàng trong ngày
+  const returnPays = [];
+  const normalPays = [];
+
   dayPays.forEach((p) => {
-    const amt = parseFloat(p.amount || 0);
     if (isReturnPaymentRecord(p)) {
-      const note = p.note || '';
-      const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+      returnPays.push(p);
+    } else {
+      normalPays.push(p);
+    }
+  });
 
-      // Tách theo các món nếu ghi chú có nhiều món phân tách bằng dấu phẩy
-      const parts = clean ? clean.split(/,\s*(?=[a-zA-Z\d\u00C0-\u1EF9])/) : [];
-      let parsedAny = false;
+  // Lọc de-duplicate: nếu có 2 khoản trả hàng cùng số tiền, ưu tiên khoản có ghi rõ chi tiết số kg/tên thịt
+  const deduplicatedReturnPays = [];
+  returnPays.forEach((p) => {
+    const pAmt = Math.round(parseFloat(p.amount || 0));
+    const pNote = (p.note || '').trim();
+    const cleanNote = pNote.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+    const hasDetail = /[\d]+[.,]?[\d]*\s*(?:kg|kilo)?/i.test(cleanNote);
 
-      parts.forEach((part) => {
-        // 1. Tìm số lượng kg trong chuỗi (ví dụ: "6.69kg", "4.59kg", hoặc số ở đầu chuỗi)
-        let qty = null;
-        const explicitKgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*kg/i);
-        const startQtyMatch = part.match(/^([\d]+[.,][\d]+|[\d]+)/);
-        const kgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*(?:kg|kilo)?/i);
-
-        if (explicitKgMatch) {
-          qty = parseFloat(explicitKgMatch[1].replace(',', '.'));
-        } else if (startQtyMatch) {
-          qty = parseFloat(startQtyMatch[1].replace(',', '.'));
-        } else if (kgMatch) {
-          qty = parseFloat(kgMatch[1].replace(',', '.'));
-        }
-
-        // 2. Lấy thành tiền ở dấu ngoặc đơn cuối cùng (ví dụ: "(665.550 đ)")
-        const amtMatch = part.match(/\(\s*([\d.,]+)\s*(?:đ|₫|VND)?\s*\)\s*$/i);
-        const itemAmt = amtMatch
-          ? parseFloat(amtMatch[1].replace(/\./g, '').replace(/,/g, ''))
-          : (parts.length === 1 ? amt : 0);
-
-        // 3. Xác định nhóm sản phẩm từ nội dung part
-        const groupKey = getChiTuyetProductGroup(part);
-        if (!groups[groupKey]) {
-          groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0, prices: [] };
-        }
-
-        if (qty && qty > 0) {
-          groups[groupKey].retQuantities.push(qty);
-        }
-        groups[groupKey].amount -= itemAmt;
-        parsedAny = true;
+    if (!hasDetail) {
+      const hasBetterDuplicate = returnPays.some((other) => {
+        if (other === p) return false;
+        const otherAmt = Math.round(parseFloat(other.amount || 0));
+        if (Math.abs(otherAmt - pAmt) > 100) return false;
+        const otherClean = (other.note || '').replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+        return /[\d]+[.,]?[\d]*\s*(?:kg|kilo)?/i.test(otherClean);
       });
 
-      if (!parsedAny) {
-        // Nếu không tách được số cân từ ghi chú, trừ thẳng vào tiền nhóm bò
-        groups['bò'].amount -= amt;
+      if (hasBetterDuplicate) {
+        return; // Bỏ qua bản ghi chung chung vì đã có bản ghi chi tiết số kg
       }
-    } else {
-      totalPayment += amt;
     }
+
+    const isExactDup = deduplicatedReturnPays.some((existing) => {
+      if (existing.id && p.id && existing.id === p.id) return true;
+      const exAmt = Math.round(parseFloat(existing.amount || 0));
+      return Math.abs(exAmt - pAmt) < 100 && (existing.note || '').trim() === pNote;
+    });
+
+    if (!isExactDup) {
+      deduplicatedReturnPays.push(p);
+    }
+  });
+
+  // Gom các khoản trả lại hàng đã khử trùng lặp
+  deduplicatedReturnPays.forEach((p) => {
+    const amt = parseFloat(p.amount || 0);
+    const note = p.note || '';
+    const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+
+    // Tách theo các món nếu ghi chú có nhiều món phân tách bằng dấu phẩy
+    const parts = clean ? clean.split(/,\s*(?=[a-zA-Z\d\u00C0-\u1EF9])/) : [];
+    let parsedAny = false;
+
+    parts.forEach((part) => {
+      let qty = null;
+      const explicitKgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*kg/i);
+      const startQtyMatch = part.match(/^([\d]+[.,][\d]+|[\d]+)/);
+      const kgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*(?:kg|kilo)?/i);
+
+      if (explicitKgMatch) {
+        qty = parseFloat(explicitKgMatch[1].replace(',', '.'));
+      } else if (startQtyMatch) {
+        qty = parseFloat(startQtyMatch[1].replace(',', '.'));
+      } else if (kgMatch) {
+        qty = parseFloat(kgMatch[1].replace(',', '.'));
+      }
+
+      const amtMatch = part.match(/\(\s*([\d.,]+)\s*(?:đ|₫|VND)?\s*\)\s*$/i);
+      const itemAmt = amtMatch
+        ? parseFloat(amtMatch[1].replace(/\./g, '').replace(/,/g, ''))
+        : (parts.length === 1 ? amt : 0);
+
+      const groupKey = getChiTuyetProductGroup(part);
+      if (!groups[groupKey]) {
+        groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0, prices: [] };
+      }
+
+      if (qty && qty > 0) {
+        groups[groupKey].retQuantities.push(qty);
+        parsedAny = true;
+      }
+      groups[groupKey].amount -= itemAmt;
+    });
+
+    if (!parsedAny) {
+      // Nếu hoàn toàn không có số cân, tách thành dòng giảm trừ riêng chứ KHÔNG trừ ngầm vào nhóm bò
+      unallocatedReturns.push({ amount: amt, note: clean || 'Trả lại hàng' });
+    }
+  });
+
+  // Gom các khoản thanh toán bình thường (tiền mặt, chuyển khoản...)
+  normalPays.forEach((p) => {
+    totalPayment += parseFloat(p.amount || 0);
   });
 
   const lines = [];
@@ -280,9 +324,6 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
       formula = retStr;
     }
 
-    const groupAmountK = Math.round(g.amount / 1000);
-    sumDisplayedK += groupAmountK;
-
     // Xác định đơn giá riêng hiển thị trong ngoặc: bò(145), thăn(255), gân(100)...
     let priceK = null;
     if (key === 'bò') {
@@ -302,15 +343,41 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
     const label = priceK ? `${key}(${priceK})` : key;
 
     if (formula) {
-      lines.push(`${label}: ${formula}=${groupAmountK}`);
-    } else if (groupAmountK !== 0) {
+      // ── QUY TẮC BẢO ĐẢM NHẤT QUÁN TOÁN HỌC (MATHEMATICAL CONSISTENCY) ──
+      // Vế trái (công thức số cân) và Vế phải (thành tiền sau dấu =) BẮT BUỘC PHẢI KHỚP NHAU 100%
+      const totalPos = g.posQuantities.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+      const totalRet = g.retQuantities.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+      const netQty = totalPos - totalRet;
+
+      let calculatedAmountK = 0;
+      if (priceK > 0) {
+        calculatedAmountK = Math.round(netQty * priceK);
+      } else {
+        calculatedAmountK = Math.round(g.amount / 1000);
+      }
+
+      sumDisplayedK += calculatedAmountK;
+      lines.push(`${label}: ${formula}=${calculatedAmountK}`);
+    } else if (g.amount !== 0) {
+      const groupAmountK = Math.round(g.amount / 1000);
+      sumDisplayedK += groupAmountK;
       lines.push(`${label}: ${groupAmountK}`);
+    }
+  });
+
+  // Hiển thị các khoản trả lại hàng không có số cân (nếu có) thành dòng riêng biệt, minh bạch
+  let unallocatedReturnKTotal = 0;
+  unallocatedReturns.forEach((ret) => {
+    const retK = Math.round(ret.amount / 1000);
+    if (retK > 0) {
+      unallocatedReturnKTotal += retK;
+      lines.push(`- Trả hàng: -${retK}`);
     }
   });
 
   // Hàng tổng tiền: 'tổng [tiền_nghìn_đồng]'
   const paymentK = Math.round(totalPayment / 1000);
-  const totalK = sumDisplayedK - paymentK;
+  const totalK = sumDisplayedK - unallocatedReturnKTotal - paymentK;
   lines.push(`tổng ${totalK}`);
 
   return lines.join('\n');

@@ -46,14 +46,14 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // 1. Phơi bày các hàm điều khiển Modal ra ngoài component cha (Customer Detail)
   useImperativeHandle(ref, () => ({
-    open: (defaultAmount = '', monthKey = null) => {
+    open: (defaultAmount = '', monthKey = null, defaultNote = '') => {
       setVisible(true);
       // Làm tròn số nợ đề xuất để tránh lỗi phần thập phân (float) của tiền VNĐ
       const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
       setAmountVND(numericAmount);
       setMaxAmount((monthKey && defaultAmount) ? numericAmount : null);
       setTargetMonthKey(monthKey);
-      setNote('');
+      setNote(defaultNote || '');
       setError('');
     },
     close: () => {
@@ -136,6 +136,15 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
         if (tM && tY) {
           const lastDay = new Date(tY, tM, 0).getDate();
           finalPaidAt = new Date(Date.UTC(tY, tM - 1, lastDay, 5, 0, 0, 0)).toISOString();
+        }
+      } else if (finalNote) {
+        // Nếu ghi chú dạng khoảng ngày: "Thanh toán nợ từ ngày DD/MM/YYYY đến ngày DD/MM/YYYY"
+        const rangeMatch = finalNote.match(/Thanh toán nợ từ ngày (\d{2})\/(\d{2})\/(\d{4}) đến ngày (\d{2})\/(\d{2})\/(\d{4})/);
+        if (rangeMatch) {
+          const [, , , , toD, toM, toY] = rangeMatch;
+          if (toD && toM && toY) {
+            finalPaidAt = new Date(Date.UTC(Number(toY), Number(toM) - 1, Number(toD), 12, 0, 0, 0)).toISOString();
+          }
         }
       }
 

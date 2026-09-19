@@ -15,16 +15,22 @@ import {
 import { useLocalSearchParams } from 'expo-router';
 import { api, API_HOST } from '../../src/api/client';
 import { showGlobalToast } from '../../src/store/toastStore';
+import GlobalToast from '../../src/components/GlobalToast';
 import DatePickerInput from '../../src/components/DatePickerInput';
 import ImagePreviewModal from '../../src/components/ImagePreviewModal';
 
 // Helper chuẩn hóa URL hình ảnh/video (hỗ trợ cả link Cloudinary lẫn link cục bộ máy chủ)
 const resolveMediaUrl = (url) => {
   if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
-    return url;
+  let finalUrl = url;
+  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+    finalUrl = `${API_HOST}${url}`;
   }
-  return `${API_HOST}${url}`;
+  // Với video Cloudinary có đuôi .mov từ iPhone, tự động chuyển sang .mp4 để trình duyệt máy tính Windows xem mượt mà
+  if (finalUrl && finalUrl.includes('res.cloudinary.com') && /\.mov(\?.*)?$/i.test(finalUrl)) {
+    finalUrl = finalUrl.replace(/\.mov(\?.*)?$/i, '.mp4$1');
+  }
+  return finalUrl;
 };
 
 // Helper kiểm tra an toàn tệp là ảnh hay video (hoạt động 100% trên cả iPhone khi file.type bị rỗng hoặc HEIC)
@@ -527,8 +533,28 @@ export default function StaffSubmitScreen() {
         // Đưa trực tiếp vào danh sách Đã gửi hôm nay
         setHistorySubmissions((prev) => [savedSubmission, ...prev]);
 
-        // Xóa khỏi hàng đợi đang tải
-        setUploadQueue((prev) => prev.filter((it) => it.id !== nextItem.id));
+        // Xóa khỏi hàng đợi đang tải + kiểm tra hoàn thành toàn bộ
+        setUploadQueue((prev) => {
+          const updated = prev.filter((it) => it.id !== nextItem.id);
+          // Kiểm tra nếu không còn file nào đang chờ/đang gửi → toast tổng kết
+          const stillActive = updated.some((it) => it.status === 'QUEUED' || it.status === 'UPLOADING');
+          if (!stillActive) {
+            const errorCount = updated.filter((it) => it.status === 'ERROR').length;
+            const isVideo = nextItem.fileType === 'VIDEO';
+            if (errorCount === 0) {
+              showGlobalToast(
+                `✅ Đã gửi ${isVideo ? 'video' : 'ảnh'} hóa đơn thành công! Chủ buôn sẽ xem và duyệt sớm nhé.`,
+                'success'
+              );
+            } else {
+              showGlobalToast(
+                `⚠️ Đã gửi xong, nhưng ${errorCount} tệp bị lỗi. Vui lòng kiểm tra lại!`,
+                'warning'
+              );
+            }
+          }
+          return updated;
+        });
       } else {
         throw new Error(res.data?.message || 'Không thể lưu hóa đơn.');
       }
@@ -637,7 +663,9 @@ export default function StaffSubmitScreen() {
   }
 
   return (
+  <>
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+
       <View style={styles.innerWrapper}>
         {/* ─── TIÊU ĐỀ GỌN GÀNG ─── */}
         <View style={styles.header}>
@@ -920,6 +948,8 @@ export default function StaffSubmitScreen() {
         </View>
       </Modal>
     </ScrollView>
+    <GlobalToast />
+  </>
   );
 }
 

@@ -27,10 +27,15 @@ import { removeDiacritics } from '../utils/searchHelper';
 // Helper chuẩn hóa URL hình ảnh/video
 const resolveMediaUrl = (url) => {
   if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
-    return url;
+  let finalUrl = url;
+  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+    finalUrl = `${API_HOST}${url}`;
   }
-  return `${API_HOST}${url}`;
+  // Với video Cloudinary có đuôi .mov từ iPhone, tự động chuyển sang .mp4 để trình duyệt máy tính Windows xem mượt mà
+  if (finalUrl && finalUrl.includes('res.cloudinary.com') && /\.mov(\?.*)?$/i.test(finalUrl)) {
+    finalUrl = finalUrl.replace(/\.mov(\?.*)?$/i, '.mp4$1');
+  }
+  return finalUrl;
 };
 
 // Helper định dạng tiền VNĐ
@@ -131,6 +136,8 @@ const InvoiceReviewCard = React.memo(
     customers,
     customerProducts,
     cardRef,
+    isReparsing,
+    onReparse,
     onOpenDetail,
     onOpenDropdown,
     onCustomerChange,
@@ -149,6 +156,10 @@ const InvoiceReviewCard = React.memo(
     onSave,
     onReject,
   }) => {
+    // Trạng thái theo dõi lỗi tải video để hiện khung fallback thay vì màn hình đen 0:00
+    const [videoError, setVideoError] = useState(false);
+    const [videoRetryKey, setVideoRetryKey] = useState(0);
+
     // Tính tổng tiền của thẻ này một cách độc lập
     const cardTotal = useMemo(() => {
       if (!card) return 0;
@@ -184,7 +195,12 @@ const InvoiceReviewCard = React.memo(
                 </Text>
               </View>
             </View>
-            {isApproved ? (
+            {sub.status === 'ANALYZING' ? (
+              <View style={styles.badgeAnalyzingPill}>
+                <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 4, transform: [{ scale: 0.7 }] }} />
+                <Text style={styles.badgeAnalyzingPillText}>🤖 ĐANG QUÉT AI...</Text>
+              </View>
+            ) : isApproved ? (
               <View style={styles.badgeApprovedPill}>
                 <Text style={styles.badgeApprovedPillText}>✅ ĐÃ LÊN NỢ</Text>
               </View>
@@ -203,16 +219,32 @@ const InvoiceReviewCard = React.memo(
           <View style={[styles.cardMediaBox, isMobile && styles.cardMediaBoxMobile]}>
             {sub.fileType === 'VIDEO' ? (
               <View style={styles.cardVideoWrap}>
-                {typeof window !== 'undefined' && sub.fileUrl ? (
+                {videoError ? (
+                  <View style={styles.videoErrorBox}>
+                    <Text style={{ fontSize: 24 }}>⏳</Text>
+                    <Text style={{ color: '#F1F5F9', fontSize: 11, fontWeight: '600', marginTop: 4, textAlign: 'center' }}>
+                      Đang đồng bộ video lên đám mây...
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.btnRetryVideo}
+                      onPress={() => {
+                        setVideoError(false);
+                        setVideoRetryKey((k) => k + 1);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={{ color: '#38BDF8', fontSize: 10.5, fontWeight: 'bold' }}>🔄 Thử tải lại</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : typeof window !== 'undefined' && sub.fileUrl ? (
                   <video
+                    key={`${sub.id}_${videoRetryKey}`}
                     src={resolveMediaUrl(sub.fileUrl)}
                     controls
+                    preload="metadata"
                     playsInline
-                    onError={(e) => {
-                      try {
-                        e.target.removeAttribute('src');
-                        e.target.load();
-                      } catch {}
+                    onError={() => {
+                      setVideoError(true);
                     }}
                     style={{
                       width: '100%',
@@ -228,6 +260,22 @@ const InvoiceReviewCard = React.memo(
                     <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>Video hóa đơn</Text>
                   </View>
                 )}
+
+                {/* Nút Quét lại AI ở góc dưới bên trái */}
+                <TouchableOpacity
+                  style={[styles.reparseOverlayBadge, (isReparsing || sub.status === 'ANALYZING') && { opacity: 0.6 }]}
+                  onPress={() => onReparse && onReparse(sub.id)}
+                  disabled={isReparsing || sub.status === 'ANALYZING'}
+                  activeOpacity={0.8}
+                >
+                  {isReparsing || sub.status === 'ANALYZING' ? (
+                    <ActivityIndicator size="small" color="#38BDF8" style={{ transform: [{ scale: 0.7 }] }} />
+                  ) : (
+                    <Text style={styles.reparseOverlayText}>🔄 Quét lại AI</Text>
+                  )}
+                </TouchableOpacity>
+
+                {/* Nút Xem to ở góc dưới bên phải */}
                 <TouchableOpacity
                   style={styles.zoomOverlayBadge}
                   onPress={() => onOpenDetail(sub.id)}
@@ -247,6 +295,23 @@ const InvoiceReviewCard = React.memo(
                   style={styles.cardImage}
                   resizeMode="contain"
                 />
+                {/* Nút Quét lại AI ở góc dưới bên trái của ảnh */}
+                <TouchableOpacity
+                  style={[styles.reparseOverlayBadge, (isReparsing || sub.status === 'ANALYZING') && { opacity: 0.6 }]}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    onReparse && onReparse(sub.id);
+                  }}
+                  disabled={isReparsing || sub.status === 'ANALYZING'}
+                  activeOpacity={0.8}
+                >
+                  {isReparsing || sub.status === 'ANALYZING' ? (
+                    <ActivityIndicator size="small" color="#38BDF8" style={{ transform: [{ scale: 0.7 }] }} />
+                  ) : (
+                    <Text style={styles.reparseOverlayText}>🔄 Quét lại AI</Text>
+                  )}
+                </TouchableOpacity>
+
                 <View style={styles.zoomOverlayBadge}>
                   <Text style={styles.zoomOverlayText}>🔍 Xem to</Text>
                 </View>
@@ -547,7 +612,7 @@ const InvoiceReviewCard = React.memo(
           )}
           </View>
 
-          {/* HÀNG 4: TỔNG TIỀN & NÚT HÀNH ĐỘNG */}
+          {/* HÀNG 4: TỔNG TIỀN */}
           <View style={[styles.cardFooterRow, styles.cardFooterRowMobile]}>
             <View style={styles.cardTotalWrap}>
               <Text style={[styles.cardTotalLabel, card.isReturn && { color: '#EA580C' }]}>
@@ -557,8 +622,28 @@ const InvoiceReviewCard = React.memo(
                 {card.isReturn ? `-${formatCurrency(cardTotal)}` : formatCurrency(cardTotal)} đ
               </Text>
             </View>
+          </View>
 
-            <View style={[styles.cardActionsWrap, styles.cardActionsWrapMobile]}>
+          {/* HÀNG 5: CÁC NÚT HÀNH ĐỘNG — 1 hàng ngang, gọn */}
+          <View style={styles.cardActionsRow}>
+            {/* Nút icon-only Quét AI — nhỏ gọn, không chiếm space */}
+            <TouchableOpacity
+              style={[
+                styles.btnIconReparse,
+                (isReparsing || sub.status === 'ANALYZING') && { opacity: 0.55 },
+              ]}
+              onPress={() => onReparse && onReparse(sub.id)}
+              disabled={isReparsing || sub.status === 'ANALYZING'}
+              activeOpacity={0.75}
+            >
+              {isReparsing || sub.status === 'ANALYZING' ? (
+                <ActivityIndicator size="small" color="#38BDF8" style={{ transform: [{ scale: 0.65 }] }} />
+              ) : (
+                <Text style={styles.btnIconReparseText}>🔄</Text>
+              )}
+            </TouchableOpacity>
+
+            {!isApproved && (
               <TouchableOpacity
                 style={[styles.btnCardReject, styles.btnCardRejectMobile]}
                 onPress={() => onReject(sub.id)}
@@ -566,31 +651,32 @@ const InvoiceReviewCard = React.memo(
               >
                 <Text style={styles.btnCardRejectText}>🗑️ Bỏ qua</Text>
               </TouchableOpacity>
+            )}
 
-              <TouchableOpacity
-                style={[
-                  styles.btnCardSave,
-                  card.isReturn && styles.btnCardSaveReturn,
-                  isApproved && styles.btnCardSaveApproved,
-                  styles.btnCardSaveMobile,
-                  (card.isSaving || card.isLoadingPrice) && { opacity: 0.7 },
-                ]}
-                onPress={() => onSave(sub.id)}
-                disabled={card.isSaving || card.isLoadingPrice}
-                activeOpacity={0.85}
-              >
-                {card.isSaving || card.isLoadingPrice ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.btnCardSaveText}>
-                    {isApproved
-                      ? '🔄 CẬP NHẬT LẠI'
-                      : (card.isReturn ? '↩️ TRỪ NỢ TRẢ HÀNG' : '💾 NHẬP CÔNG NỢ')}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={[
+                styles.btnCardSave,
+                card.isReturn && styles.btnCardSaveReturn,
+                isApproved && styles.btnCardSaveApproved,
+                styles.btnCardSaveMobile,
+                (card.isSaving || card.isLoadingPrice) && { opacity: 0.7 },
+              ]}
+              onPress={() => onSave(sub.id)}
+              disabled={card.isSaving || card.isLoadingPrice}
+              activeOpacity={0.85}
+            >
+              {card.isSaving || card.isLoadingPrice ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.btnCardSaveText}>
+                  {isApproved
+                    ? '🔄 CẬP NHẬT LẠI'
+                    : (card.isReturn ? '↩️ TRỪ NỢ TRẢ HÀNG' : '💾 NHẬP CÔNG NỢ')}
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
+
         </View>
       </View>
     );
@@ -606,6 +692,7 @@ const InvoiceReviewCard = React.memo(
     if (prev.isTablet !== next.isTablet) return false;
     if (prev.customers !== next.customers) return false;
     if (prev.customerProducts !== next.customerProducts) return false;
+    if (prev.isReparsing !== next.isReparsing) return false;
     return true;
   }
 );
@@ -740,29 +827,55 @@ const resolveCustomerForSub = (sub, custList) => {
     }
   }
 
-  // 1e. ĐẶC BIỆT: Khớp ưu tiên khách "Hà Trì" nếu AI nhận diện là ha tri, ha li, ha lu...
+  // 1e. ĐẶC BIỆT: Khớp ưu tiên khách "Hà Trì" nếu AI nhận diện là ha tri, ha li, ha lu, co ha tri, co hai...
   if (
     cleanDetected.includes('ha tri') ||
     cleanDetected.includes('ha li') ||
     cleanDetected.includes('ha lu') ||
     cleanDetected.includes('ha thi') ||
+    cleanDetected.includes('co ha tri') ||    // "cô hà trì" AI đọc thành "co ha tri"
+    cleanDetected.includes('co ha ti') ||     // biến thể nuốt âm
+    cleanDetected.includes('ha ti') ||        // "hà trì" nuốt âm "tr"
+    cleanDetected === 'co hai' ||             // "cồ hải" = bị đọc nhầm từ "cô hà trì"
+    cleanDetected === 'co ha' ||              // "cô hà" rút gọn
     cleanDetectedNoSpace === 'hatri' ||
     cleanDetectedNoSpace === 'hali' ||
     cleanDetectedNoSpace === 'halu' ||
     cleanDetectedNoSpace === 'hathi' ||
+    cleanDetectedNoSpace === 'cohati' ||
+    cleanDetectedNoSpace === 'cohatri' ||
+    cleanDetectedNoSpace === 'cohai' ||
     cleanDetectedNoSpace.includes('hatri')
   ) {
     if (!currentCustClean.includes('ha tri') && !currentCustClean.includes('tri')) {
-      const haTriCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
-      }) || null;
+      const isHanh = cleanDetected.includes('hanh');
+      let targetCust = null;
+      if (isHanh) {
+        // Nếu người nói đọc là chị Hạnh -> Khớp khách chị hạnh sân bóng hà trì
+        targetCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('hanh');
+        }) || null;
+      } else {
+        // Đọc là Hà Trì -> 100% là khách Hà Trì, TUYỆT ĐỐI KHÔNG chọn nhầm sang "Chị hạnh sân bóng hà trì"
+        targetCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase()).trim();
+          return cClean === 'ha tri';
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'))) && !cClean.includes('hanh');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
+        }) || null;
+      }
 
-      if (haTriCust) {
-        matchedCust = haTriCust;
+      if (targetCust) {
+        matchedCust = targetCust;
       }
     }
   }
+
 
   // 1f. ĐẶC BIỆT: Khớp ưu tiên khách "Thăn bình đà(anh Nghĩa)" nếu AI nhận diện là anh nghĩa, anh ngĩa, nghĩa, ngĩa, bình đà...
   if (
@@ -973,10 +1086,19 @@ const resolveCustomerForSub = (sub, custList) => {
   ) {
     const custThaiHa = custList.find((c) => {
       const cClean = removeDiacritics(c.name.toLowerCase());
-      return cClean === 'thai ha' || (cClean.includes('thai') && cClean.includes('ha') && !cClean.includes('ngoc lam'));
+      // BẮT BUỘC tìm cụm từ "thai ha" LIỀN NHAU (có khoảng trắng giữa thai và ha)
+      // TUYỆT ĐỐI KHÔNG dùng includes('thai') && includes('ha') riêng lẻ
+      // vì "tran thai tong" → "thai" chứa chuỗi con "ha" → khớp sai!
+      return (
+        cClean === 'thai ha' ||
+        cClean.includes('thai ha') ||      // cụm "thai ha" liền nhau có space
+        cClean.startsWith('thai ha') ||
+        (cleanDetectedNoSpace.includes('thaiha') && cClean.replace(/\s+/g, '').includes('thaiha'))
+      ) && !cClean.includes('ngoc lam');
     }) || null;
     if (custThaiHa) matchedCust = custThaiHa;
   }
+
 
   // 1m. ĐẶC BIỆT: Khớp ưu tiên khách "Anh thắng phố cổ" nếu là A Thang, A Thắng, ATHang, thang pho co...
   if (
@@ -1074,12 +1196,22 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace === 'b1' ||
       cleanDetectedNoSpace === 'bep1' ||
       cleanDetectedNoSpace === 'bephangxom1' ||
+      cleanDetectedNoSpace === 'bl' ||
+      cleanDetectedNoSpace === 'bi' ||
+      cleanDetectedNoSpace === 'b/' ||
+      cleanDetectedNoSpace === 'ba' ||
+      cleanDetectedNoSpace === 'ba1' ||
+      cleanDetectedNoSpace === 'b-1' ||
+      cleanDetectedNoSpace === 'b.1' ||
       cleanDetected.includes('bep hang xom 1') ||
       cleanDetected.includes('truong bo 1')
     ) {
       matchedCust = custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase());
-        return (cClean.includes('bep hang xom') && cClean.includes('1')) || cClean.includes('b1') || cClean.includes('bep 1');
+        return (cClean.includes('bep hang xom') && cClean.includes('1')) || (cClean.includes('hang xom') && cClean.includes('1'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean === 'b1' || cClean.includes('bep 1');
       }) || null;
     } else if (
       cleanDetectedNoSpace === 'b2' ||
@@ -1195,10 +1327,26 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace === 'hathi' ||
       cleanDetectedNoSpace.includes('hatri')
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
-      }) || null;
+      const isHanh = cleanDetected.includes('hanh');
+      if (isHanh) {
+        // Nếu người nói đọc là chị Hạnh -> Khớp khách chị hạnh sân bóng hà trì
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('hanh');
+        }) || null;
+      } else {
+        // Đọc là Hà Trì -> 100% là khách Hà Trì, TUYỆT ĐỐI KHÔNG chọn nhầm sang "Chị hạnh sân bóng hà trì"
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase()).trim();
+          return cClean === 'ha tri';
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'))) && !cClean.includes('hanh');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
+        }) || null;
+      }
     }
   }
 
@@ -1459,6 +1607,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const imagePreviewModalRef = useRef(null);
   const detailModalRef = useRef(null);
   const popupModalRef = useRef(null);
+  const isOpenActionRef = useRef(false);
 
   // Tải danh sách khách hàng và sản phẩm
   const fetchMasterData = async () => {
@@ -2673,17 +2822,22 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
   useImperativeHandle(ref, () => ({
     open: async (initialStatus) => {
+      isOpenActionRef.current = true;
       setVisible(true);
       setFilterStatus(initialStatus || 'ALL');
       setCardDataMap({});
-      const { custList, prodList } = await fetchMasterData();
-      await fetchSubmissions(custList, prodList);
+      try {
+        const { custList, prodList } = await fetchMasterData();
+        await fetchSubmissions(custList, prodList);
+      } finally {
+        isOpenActionRef.current = false;
+      }
     },
     close: handleCloseModal,
   }));
 
   useEffect(() => {
-    if (visible) {
+    if (visible && !isOpenActionRef.current) {
       fetchSubmissions();
     }
   }, [filterStatus, filterDate]);
@@ -2705,17 +2859,17 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   // Lưu nợ cho 1 hóa đơn riêng lẻ
   const handleSaveCard = async (subId) => {
     const card = cardDataMap[subId];
-    if (!card) return;
+    if (!card) return false;
     if (!card.customer) {
       showGlobalToast('Vui lòng chọn khách hàng để ghi nợ.', 'warning');
-      return;
+      return false;
     }
     let payloadItems = [];
     if (card.orderMode === 'quick') {
       const quickAmtNum = parseFloat(card.quickAmount) || 0;
       if (quickAmtNum <= 0) {
         showGlobalToast('Vui lòng nhập số tiền nợ lớn hơn 0đ.', 'warning');
-        return;
+        return false;
       }
       payloadItems = [
         {
@@ -2732,7 +2886,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       );
       if (validItems.length === 0) {
         showGlobalToast('Vui lòng nhập ít nhất một mặt hàng thịt có thành tiền.', 'warning');
-        return;
+        return false;
       }
       payloadItems = validItems.map((it) => ({
         matchedProductId: it.selectedProduct?.id !== '__manual__' ? it.selectedProduct?.id : it.matchedProductId,
@@ -2812,17 +2966,20 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           fetchProductsForCustomer(card.customer.id, true);
         }
         if (onRefresh) onRefresh();
+        return true;
       }
+      return false;
     } catch (err) {
       console.error('Lỗi khi nhập nợ:', err);
       showGlobalToast(err.response?.data?.message || 'Không thể nhập nợ.', 'error');
+      return false;
     } finally {
       updateCardField(subId, 'isSaving', false);
     }
   };
 
   // Bác bỏ / bỏ qua 1 hóa đơn
-  const handleRejectCard = (subId) => {
+  const handleRejectCard = (subId, onRejectedSuccess) => {
     popupModalRef.current?.show({
       type: 'confirm',
       title: 'Bỏ qua hóa đơn này?',
@@ -2833,12 +2990,63 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           if (res.data.success) {
             showGlobalToast('Đã bỏ qua hóa đơn.', 'info');
             setSubmissions((prev) => prev.filter((s) => s.id !== subId));
+            if (typeof onRejectedSuccess === 'function') {
+              onRejectedSuccess();
+            }
           }
         } catch (err) {
           showGlobalToast('Không thể bỏ qua hóa đơn.', 'error');
         }
       },
     });
+  };
+
+  // Trạng thái theo dõi các thẻ đang được kích hoạt quét lại AI
+  const [reparsingMap, setReparsingMap] = useState({});
+
+  // Chủ buôn kích hoạt AI quét lại một hóa đơn / video
+  const handleReparseCard = async (subId) => {
+    try {
+      setReparsingMap((prev) => ({ ...prev, [subId]: true }));
+      showGlobalToast('Đang gửi yêu cầu AI quét lại...', 'info');
+
+      const res = await api.post(`/staff-submissions/${subId}/reparse`);
+      if (res.data?.success) {
+        showGlobalToast('AI đang bắt đầu quét lại, kết quả sẽ tự cập nhật!', 'success');
+        // Đánh dấu thẻ sang trạng thái ANALYZING trên giao diện
+        setSubmissions((prev) =>
+          prev.map((s) => (s.id === subId ? { ...s, status: 'ANALYZING', aiError: null } : s))
+        );
+
+        // Polling kiểm tra kết quả sau 2.5s, 5s, 7.5s, 10s, 12.5s
+        let attempts = 0;
+        const intervalId = setInterval(async () => {
+          attempts += 1;
+          try {
+            const checkRes = await api.get(`/staff-submissions/${subId}`);
+            if (checkRes.data?.success) {
+              const latestSub = checkRes.data.data;
+              if (latestSub.status !== 'ANALYZING' && latestSub.status !== 'PENDING') {
+                clearInterval(intervalId);
+                setReparsingMap((prev) => ({ ...prev, [subId]: false }));
+                fetchSubmissions();
+                showGlobalToast('🎉 AI đã hoàn tất quét lại hóa đơn!', 'success');
+              }
+            }
+          } catch {}
+
+          if (attempts >= 6) {
+            clearInterval(intervalId);
+            setReparsingMap((prev) => ({ ...prev, [subId]: false }));
+            fetchSubmissions();
+          }
+        }, 2500);
+      }
+    } catch (err) {
+      console.error('Lỗi khi kích hoạt AI quét lại:', err);
+      showGlobalToast(err.response?.data?.message || 'Không thể quét lại AI lúc này.', 'error');
+      setReparsingMap((prev) => ({ ...prev, [subId]: false }));
+    }
   };
 
   // Đếm số đơn hợp lệ sẵn sàng lưu hàng loạt
@@ -3355,6 +3563,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       cardRef={(el) => {
                         if (el) cardLayoutRefs.current[sub.id] = el;
                       }}
+                      isReparsing={Boolean(reparsingMap[sub.id])}
+                      onReparse={handleReparseCard}
                       onOpenDetail={(subId) => detailModalRef.current?.open(subId)}
                       onOpenDropdown={(isOpen) => setActiveDropdownSubId(isOpen ? sub.id : null)}
                       onCustomerChange={handleCustomerChange}
@@ -3426,8 +3636,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         handleRejectCard={handleRejectCard}
       />
 
-      {/* Popup Modal xác nhận */}
-      <PopupModal ref={popupModalRef} />
+      {/* Popup Modal xác nhận - zIndex 9999999 để đè lên StaffSubmissionDetailModal (999999) */}
+      <PopupModal ref={popupModalRef} zIndex={9999999} />
     </>
   );
 });
@@ -4006,6 +4216,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
   },
+  badgeAnalyzingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  badgeAnalyzingPillText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   cardMediaBox: {
     height: 145,
     backgroundColor: '#020617',
@@ -4026,6 +4249,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  videoErrorBox: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#0F172A',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+  },
+  btnRetryVideo: {
+    marginTop: 6,
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    borderColor: '#38BDF8',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
   cardImageTouch: {
     width: '100%',
     height: '100%',
@@ -4038,7 +4279,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 6,
     right: 6,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -4046,6 +4287,25 @@ const styles = StyleSheet.create({
   zoomOverlayText: {
     color: '#FFFFFF',
     fontSize: 11,
+    fontWeight: 'bold',
+  },
+  reparseOverlayBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  reparseOverlayText: {
+    color: '#38BDF8',
+    fontSize: 10.5,
     fontWeight: 'bold',
   },
   cardAiErrorBanner: {
@@ -4302,14 +4562,17 @@ const styles = StyleSheet.create({
     borderTopColor: '#E2E8F0',
   },
   cardFooterRowMobile: {
-    flexDirection: 'column',
-    gap: 8,
-    alignItems: 'stretch',
+    flexDirection: 'row',       // Luôn ngang: tổng tiền bên trái, chip Quét AI bên phải
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
   },
   cardTotalWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+    flexWrap: 'wrap',
   },
   cardTotalLabel: {
     fontSize: 12,
@@ -4325,6 +4588,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginTop: 6,
   },
   cardActionsWrapMobile: {
     flexDirection: 'row',
@@ -4332,6 +4596,71 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: 8,
   },
+  // 1 hàng ngang chứa toàn bộ nút hành động
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    width: '100%',
+  },
+  // Nút icon tròn nhỏ Quét AI (chỉ icon, không text)
+  btnIconReparse: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#38BDF8',
+    backgroundColor: 'rgba(56,189,248,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  btnIconReparseText: {
+    fontSize: 15,
+  },
+
+
+  // Chip "Quét AI" nhỏ gọn nằm cạnh tổng tiền (hàng trên)
+  btnCardReparseChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    backgroundColor: 'rgba(56,189,248,0.08)',
+    minWidth: 70,
+    height: 28,
+  },
+  btnCardReparseChipText: {
+    color: '#0EA5E9',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  // (legacy — giữ lại để không lỗi nếu còn ref)
+  btnCardReparse: {
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    flex: 1,
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 72,
+    maxWidth: 90,
+  },
+  btnCardReparseText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
   btnCardReject: {
     backgroundColor: '#F1F5F9',
     paddingHorizontal: 10,

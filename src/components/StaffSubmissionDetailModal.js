@@ -18,6 +18,7 @@ import DatePickerInput from './DatePickerInput';
 import MoneyInput from './MoneyInput';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import { API_HOST } from '../api/client';
+import { showGlobalToast } from '../store/toastStore';
 
 // Helper định dạng tiền VNĐ
 const formatCurrency = (amount) =>
@@ -26,16 +27,30 @@ const formatCurrency = (amount) =>
 // Helper chuẩn hóa URL hình ảnh/video
 const resolveMediaUrl = (url) => {
   if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
-    return url;
+  let finalUrl = url;
+  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+    finalUrl = `${API_HOST}${url}`;
   }
-  return `${API_HOST}${url}`;
+  // Với video Cloudinary có đuôi .mov từ iPhone, tự động chuyển sang .mp4 để trình duyệt máy tính Windows xem mượt mà
+  if (finalUrl && finalUrl.includes('res.cloudinary.com') && /\.mov(\?.*)?$/i.test(finalUrl)) {
+    finalUrl = finalUrl.replace(/\.mov(\?.*)?$/i, '.mp4$1');
+  }
+  return finalUrl;
 };
 
 // Helper lấy phần tử DOM thực tế từ ref
 const getDomElement = (target) => {
   if (!target) return null;
   if (typeof target.nodeType === 'number') return target;
+  if (target.getScrollableNode && typeof target.getScrollableNode().nodeType === 'number') {
+    return target.getScrollableNode();
+  }
+  if (target._touchableNode && typeof target._touchableNode.nodeType === 'number') {
+    return target._touchableNode;
+  }
+  if (target._node && typeof target._node.nodeType === 'number') {
+    return target._node;
+  }
   if (target._reactInternals?.stateNode && typeof target._reactInternals.stateNode.nodeType === 'number') {
     return target._reactInternals.stateNode;
   }
@@ -82,6 +97,9 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   const containerRef = useRef(null);
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const modalRootRef = useRef(null);
+  const formScrollRef = useRef(null);
+  const submissionsRef = useRef(submissions);
+  submissionsRef.current = submissions;
 
   // Tìm vị trí của submission hiện tại trong danh sách
   const currentIndex = useMemo(() => {
@@ -99,6 +117,23 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     return cardDataMap[activeSubId] || null;
   }, [activeSubId, cardDataMap]);
 
+  // Nếu hóa đơn hiện tại bị xóa/bác bỏ khỏi danh sách submissions, tự động chuyển sang hóa đơn kế tiếp hoặc đóng modal
+  useEffect(() => {
+    if (!visible || !activeSubId) return;
+    const exists = submissions.some((s) => s.id === activeSubId);
+    if (!exists) {
+      if (submissions.length > 0) {
+        // Tự động chọn hóa đơn ở cùng vị trí index (chính là hóa đơn tiếp theo) hoặc hóa đơn liền trước nếu đang ở cuối danh sách
+        const targetIdx = Math.min(currentIndex >= 0 ? currentIndex : 0, submissions.length - 1);
+        setActiveSubId(submissions[targetIdx].id);
+        resetZoom();
+        formScrollRef.current?.scrollTo?.({ y: 0, animated: false });
+      } else {
+        setVisible(false);
+      }
+    }
+  }, [submissions, activeSubId, visible, currentIndex]);
+
   // Đặt lại zoom & vị trí ảnh
   const resetZoom = () => {
     setScale(1);
@@ -107,7 +142,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     setIsDragging(false);
   };
 
-  // Đảm bảo Modal nằm ở tầng zIndex cao nhất trên Web
+  // Đảm bảo Modal nằm ở tầng zIndex (999999) trên Web
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     if (!visible) return;
@@ -115,23 +150,22 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     const applyPortalZ = () => {
       const elNode = getDomElement(modalRootRef.current);
       if (!elNode) return;
-      elNode.style.zIndex = '999999';
       let el = elNode;
       while (el && el.parentElement && el.parentElement !== document.body) {
         el = el.parentElement;
       }
       if (el && el.parentElement === document.body) {
-        el.style.zIndex = '999999';
+        el.style.setProperty('z-index', '999999', 'important');
         if (el.firstElementChild) {
-          el.firstElementChild.style.zIndex = '999999';
+          el.firstElementChild.style.setProperty('z-index', '999999', 'important');
         }
       }
     };
 
     applyPortalZ();
     const t1 = setTimeout(applyPortalZ, 0);
-    const t2 = setTimeout(applyPortalZ, 30);
-    const t3 = setTimeout(applyPortalZ, 100);
+    const t2 = setTimeout(applyPortalZ, 50);
+    const t3 = setTimeout(applyPortalZ, 150);
 
     return () => {
       clearTimeout(t1);
@@ -142,23 +176,29 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
 
   // Điều hướng chuyển sang thẻ tiếp theo hoặc trước đó
   const goToIndex = (targetIdx) => {
-    if (targetIdx < 0 || targetIdx >= submissions.length) return;
-    const targetSub = submissions[targetIdx];
+    const list = submissionsRef.current || submissions;
+    if (targetIdx < 0 || targetIdx >= list.length) return;
+    const targetSub = list[targetIdx];
     if (targetSub) {
       setActiveSubId(targetSub.id);
       resetZoom();
+      formScrollRef.current?.scrollTo?.({ y: 0, animated: false });
     }
   };
 
   const handlePrev = () => {
-    if (currentIndex > 0) {
-      goToIndex(currentIndex - 1);
+    const list = submissionsRef.current || submissions;
+    const curIdx = list.findIndex((s) => s.id === activeSubId);
+    if (curIdx > 0) {
+      goToIndex(curIdx - 1);
     }
   };
 
   const handleNext = () => {
-    if (currentIndex < submissions.length - 1) {
-      goToIndex(currentIndex + 1);
+    const list = submissionsRef.current || submissions;
+    const curIdx = list.findIndex((s) => s.id === activeSubId);
+    if (curIdx >= 0 && curIdx < list.length - 1) {
+      goToIndex(curIdx + 1);
     }
   };
 
@@ -297,10 +337,40 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   const handleSaveAndAutoNext = async (subId) => {
     if (!handleSaveCard) return;
     const success = await handleSaveCard(subId);
-    // Nếu thành công và còn hóa đơn tiếp theo chưa duyệt, tự động chuyển tiếp!
-    if (success && currentIndex < submissions.length - 1) {
-      handleNext();
+    // Nếu thành công và còn hóa đơn tiếp theo, tự động chuyển tiếp!
+    if (success) {
+      const list = submissionsRef.current || submissions;
+      const curIdx = list.findIndex((s) => s.id === subId);
+      if (curIdx >= 0 && curIdx < list.length - 1) {
+        goToIndex(curIdx + 1);
+      } else if (curIdx >= list.length - 1) {
+        showGlobalToast('Đã đến hóa đơn cuối cùng trong danh sách!', 'info');
+      }
     }
+  };
+
+  // Xử lý khi nhấn nút Bỏ qua / Xóa trong modal xem to: Tự động chuyển tiếp sang hóa đơn kế tiếp
+  const handleRejectAndAutoNext = (subId) => {
+    if (!handleRejectCard) return;
+
+    const list = submissionsRef.current || submissions;
+    const curIdx = list.findIndex((s) => s.id === subId);
+    let nextSubId = null;
+    if (curIdx >= 0 && curIdx < list.length - 1) {
+      nextSubId = list[curIdx + 1].id;
+    } else if (curIdx > 0) {
+      nextSubId = list[curIdx - 1].id;
+    }
+
+    handleRejectCard(subId, () => {
+      if (nextSubId) {
+        setActiveSubId(nextSubId);
+        resetZoom();
+        formScrollRef.current?.scrollTo?.({ y: 0, animated: false });
+      } else {
+        setVisible(false);
+      }
+    });
   };
 
   if (!visible || !currentSub || !currentCard) return null;
@@ -310,9 +380,9 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   const cardTotal = isQuickMode
     ? (parseFloat(currentCard.quickAmount) || 0)
     : (currentCard.items || []).reduce((sum, it) => {
-        const amt = parseFloat(it.amount) || 0;
-        return sum + amt;
-      }, 0);
+      const amt = parseFloat(it.amount) || 0;
+      return sum + amt;
+    }, 0);
 
   const isApproved = currentSub.status === 'APPROVED';
   const isVideo = currentSub.fileType === 'VIDEO';
@@ -320,14 +390,13 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
 
   return (
     <Modal
-      ref={modalRootRef}
       visible={visible}
       transparent={true}
       animationType="fade"
       onRequestClose={handleClose}
       statusBarTranslucent={true}
     >
-      <View style={styles.modalOverlay}>
+      <View ref={modalRootRef} style={styles.modalOverlay}>
         {/* Khung chứa chính toàn màn hình đối chiếu */}
         <View style={[styles.mainDialogContainer, isMobile && styles.mainDialogContainerMobile]}>
           {/* ═══ 1. THANH HEADER ĐIỀU HƯỚNG TỔNG ═══ */}
@@ -428,11 +497,11 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   style={styles.imageCanvasWrap}
                   {...(Platform.OS === 'web'
                     ? {
-                        onMouseDown: handleMouseDown,
-                        onMouseMove: handleMouseMove,
-                        onMouseUp: handleMouseUp,
-                        onMouseLeave: handleMouseUp,
-                      }
+                      onMouseDown: handleMouseDown,
+                      onMouseMove: handleMouseMove,
+                      onMouseUp: handleMouseUp,
+                      onMouseLeave: handleMouseUp,
+                    }
                     : {})}
                 >
                   {isVideo ? (
@@ -446,7 +515,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                           try {
                             e.target.removeAttribute('src');
                             e.target.load();
-                          } catch {}
+                          } catch { }
                         }}
                         style={{
                           width: '100%',
@@ -536,7 +605,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   isMobile && mobileTab === 'form' && { flex: 1 },
                 ]}
               >
-                <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={styles.formScrollContent}>
+                <ScrollView ref={formScrollRef} showsVerticalScrollIndicator={true} contentContainerStyle={styles.formScrollContent}>
                   {/* Báo lỗi / nhắc nhở AI nếu có */}
                   {currentSub.aiError ? (
                     <View style={styles.alertBannerWrap}>
@@ -847,7 +916,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   <View style={styles.actionButtonsWrap}>
                     <TouchableOpacity
                       style={styles.btnSkipAction}
-                      onPress={() => handleRejectCard(currentSub.id)}
+                      onPress={() => handleRejectAndAutoNext(currentSub.id)}
                       activeOpacity={0.8}
                     >
                       <Text style={styles.btnSkipActionText}>🗑️ Bỏ qua</Text>

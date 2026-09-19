@@ -20,7 +20,9 @@ const { width: screenWidth } = Dimensions.get('window');
  * Hỗ trợ các kiểu thông báo: 'success', 'error', 'warning', 'confirm'.
  * Sử dụng forwardRef để phơi bày hàm show() và close() ra bên ngoài.
  */
-const PopupModal = forwardRef((props, ref) => {
+const PopupModal = forwardRef(({ zIndex: zIndexProp } = {}, ref) => {
+  // Mặc định luôn ở tầng zIndex cao nhất tuyệt đối (9999999) theo quy chuẩn bảo mật và popup xác nhận
+  const resolvedZIndex = zIndexProp || 9999999;
   const [visible, setVisible] = useState(false);
   const [textValue, setTextValue] = useState('');
   const timerRef = useRef(null);
@@ -36,6 +38,7 @@ const PopupModal = forwardRef((props, ref) => {
     showTextInput: false,
     textInputPlaceholder: 'Nhập nội dung...',
     textInputDefaultValue: '',
+    zIndex: resolvedZIndex,
   });
 
   // Xuất các phương thức ra component cha qua ref
@@ -61,6 +64,7 @@ const PopupModal = forwardRef((props, ref) => {
         showTextInput: config.showTextInput || false,
         textInputPlaceholder: config.textInputPlaceholder || 'Nhập nội dung...',
         textInputDefaultValue: config.textInputDefaultValue || '',
+        zIndex: config.zIndex || resolvedZIndex,
       });
       setTextValue(config.textInputDefaultValue || '');
       setVisible(true);
@@ -260,7 +264,7 @@ const PopupModal = forwardRef((props, ref) => {
   return (
     <>
       {/* SmoothModal cho dạng Toast (success/error) - isToast=true cố định, portal không bao giờ remount */}
-      <SmoothModal visible={visible && isToast} onClose={handleCancel} isToast={true} zIndex={200000}>
+      <SmoothModal visible={visible && isToast} onClose={handleCancel} isToast={true} zIndex={resolvedZIndex}>
         <View style={styles.toastWrapper}>
           <View style={[styles.toastContent, { backgroundColor: toastBgColor }]}>
             <Text style={styles.toastIcon}>{icon}</Text>
@@ -276,7 +280,7 @@ const PopupModal = forwardRef((props, ref) => {
 
       {/* SmoothModal cho dạng Dialog (confirm/warning/info/error) - isToast=false cố định,
           portal Modal fade backdrop luôn ở trong React tree, không bao giờ unmount/remount */}
-      <SmoothModal visible={visible && !isToast} onClose={handleCancel} isToast={false} zIndex={200000}>
+      <SmoothModal visible={visible && !isToast} onClose={handleCancel} isToast={false} zIndex={options.zIndex || resolvedZIndex}>
         <View style={styles.modalWrapper}>
           <View style={[styles.modalContent, options.maxWidth ? { maxWidth: options.maxWidth } : null]}>
             {/* Vùng hiển thị Icon trang nhã, hiện đại */}

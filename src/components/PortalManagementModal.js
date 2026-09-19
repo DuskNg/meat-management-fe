@@ -30,6 +30,41 @@ const formatDateTime = (isoStr) => {
   return `${hh}:${min} ${dd}/${mm}/${yyyy}`;
 };
 
+// Định dạng thời gian truy cập gần nhất kèm khoảng thời gian tương đối
+const formatLastViewedText = (isoStr) => {
+  if (!isoStr) return null;
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return null;
+
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  const timeStr = `${hh}:${min} ${dd}/${mm}/${yyyy}`;
+
+  let relative = '';
+  if (diffMins < 1) {
+    relative = 'vừa xong';
+  } else if (diffMins < 60) {
+    relative = `${diffMins} phút trước`;
+  } else if (diffHours < 24) {
+    relative = `${diffHours} giờ trước`;
+  } else if (diffDays === 1) {
+    relative = 'hôm qua';
+  } else if (diffDays < 30) {
+    relative = `${diffDays} ngày trước`;
+  }
+
+  return relative ? `${timeStr} (${relative})` : timeStr;
+};
+
 const PortalManagementModal = forwardRef((props, ref) => {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -654,6 +689,25 @@ const PortalManagementModal = forwardRef((props, ref) => {
 
                         <View style={styles.metaChip}>
                           <Text style={styles.metaChipText}>👁️ {link.viewCount || 0} lượt xem</Text>
+                        </View>
+
+                        {/* HIỂN THỊ LẦN TRUY CẬP MỚI NHẤT */}
+                        <View
+                          style={[
+                            styles.metaChip,
+                            link.lastViewedAt
+                              ? { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }
+                              : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.metaChipText,
+                              link.lastViewedAt ? { color: '#15803D', fontWeight: '600' } : { color: '#94A3B8' }
+                            ]}
+                          >
+                            🕒 {link.lastViewedAt ? `Xem gần nhất: ${formatLastViewedText(link.lastViewedAt)}` : 'Chưa có lượt truy cập'}
+                          </Text>
                         </View>
 
                         {link.pendingFeedbacksCount > 0 && (
