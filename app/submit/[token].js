@@ -1,5 +1,5 @@
 // meat-management-fe/app/submit/[token].js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -330,6 +330,15 @@ export default function StaffSubmitScreen() {
   const [historySubmissions, setHistorySubmissions] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Kiểm tra ngày đang chọn có phải là ngày hôm nay không
+  const isToday = useMemo(() => {
+    const now = new Date();
+    const d = String(now.getDate()).padStart(2, '0');
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const y = now.getFullYear();
+    return selectedDate === `${d}/${m}/${y}`;
+  }, [selectedDate]);
+
   // Modal phóng to / thu nhỏ / xoay ảnh chuyên dụng
   const imagePreviewModalRef = useRef(null);
 
@@ -369,12 +378,23 @@ export default function StaffSubmitScreen() {
     }
   };
 
-  // Tải lịch sử gửi trong ngày
-  const fetchHistory = async () => {
+  // Tải lịch sử gửi theo ngày được chọn
+  const fetchHistory = async (dateStr = selectedDate) => {
     if (!token) return;
     try {
       setLoadingHistory(true);
-      const res = await api.get(`/staff-submissions/public/history/${token}`);
+      let queryDate = '';
+      if (dateStr) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          queryDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        } else {
+          queryDate = dateStr;
+        }
+      }
+      const res = await api.get(`/staff-submissions/public/history/${token}`, {
+        params: queryDate ? { date: queryDate } : {},
+      });
       if (res.data.success) {
         setHistorySubmissions(res.data.data || []);
       }
@@ -396,11 +416,12 @@ export default function StaffSubmitScreen() {
     fetchLinkInfo();
   }, [token]);
 
+  // Tự động tải lại lịch sử khi xác thực PIN hoặc khi đổi sang ngày khác
   useEffect(() => {
     if (isPinVerified) {
-      fetchHistory();
+      fetchHistory(selectedDate);
     }
-  }, [isPinVerified]);
+  }, [isPinVerified, selectedDate]);
 
   // Xử lý xác thực mã PIN nếu có
   const handleVerifyPin = async () => {
@@ -734,24 +755,30 @@ export default function StaffSubmitScreen() {
           )}
         </View>
 
-        {/* ─── 3. LỊCH SỬ HÓA ĐƠN ĐÃ GỬI HÔM NAY ─── */}
+        {/* ─── 3. LỊCH SỬ HÓA ĐƠN ĐÃ GỬI THEO NGÀY ─── */}
         <View style={styles.card}>
           <View style={styles.historyHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={styles.historyTitle}>📋 Đã gửi hôm nay ({historySubmissions.length})</Text>
+              <Text style={styles.historyTitle}>
+                📋 {isToday ? 'Đã gửi hôm nay' : `Đã gửi ngày ${selectedDate}`} ({historySubmissions.length})
+              </Text>
               {uploadQueue.length > 0 && (
                 <View style={styles.uploadQueueBadge}>
                   <Text style={styles.uploadQueueBadgeText}>+{uploadQueue.length} đang tải</Text>
                 </View>
               )}
             </View>
-            <TouchableOpacity onPress={fetchHistory} disabled={loadingHistory}>
+            <TouchableOpacity onPress={() => fetchHistory(selectedDate)} disabled={loadingHistory}>
               <Text style={styles.btnReloadHistory}>{loadingHistory ? 'Đang tải...' : '🔄 Làm mới'}</Text>
             </TouchableOpacity>
           </View>
 
           {uploadQueue.length === 0 && historySubmissions.length === 0 ? (
-            <Text style={styles.historyEmptyText}>Chưa có hóa đơn nào được gửi trong ngày hôm nay.</Text>
+            <Text style={styles.historyEmptyText}>
+              {isToday
+                ? 'Chưa có hóa đơn nào được gửi trong ngày hôm nay.'
+                : `Chưa có hóa đơn nào được gửi trong ngày ${selectedDate}.`}
+            </Text>
           ) : (
             <View style={styles.historyGrid}>
               {/* CÁC TỆP ĐANG TẢI (HIỂN THỊ TỨC THÌ PHONG CÁCH ZALO) */}
