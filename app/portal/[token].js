@@ -1860,18 +1860,6 @@ export default function PortalScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={styles.exportDebtBtn}
-            onPress={handleExportCanvasImage}
-            disabled={exportingImage}
-            activeOpacity={0.8}
-          >
-            {exportingImage ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.exportDebtBtnText}>📊 Xuất công nợ</Text>
-            )}
-          </TouchableOpacity>
           <TouchableOpacity style={styles.priceCheckBtn} onPress={handleOpenPriceCheck} activeOpacity={0.8}>
             <Text style={styles.priceCheckBtnText}>🥩 Giá thịt</Text>
           </TouchableOpacity>
@@ -2042,33 +2030,49 @@ export default function PortalScreen() {
                 </View>
               </View>
 
-              {/* THANH TÌM KIẾM NHỎ XINH BÊN DƯỚI BỘ LỌC NGÀY */}
-              <View style={[styles.searchBarContainer, isSearchFocused && styles.searchBarContainerFocused]}>
-                <Text style={[styles.searchBarIcon, isSearchFocused && styles.searchBarIconFocused]}>🔍</Text>
-                <TextInput
-                  style={styles.searchBarInput}
-                  placeholder="Tìm kiếm theo ngày, tên thịt..."
-                  placeholderTextColor="#94A3B8"
-                  value={searchKeyword}
-                  onChangeText={setSearchKeyword}
-                  onFocus={() => setIsSearchFocused(true)}
-                  onBlur={() => setIsSearchFocused(false)}
-                  returnKeyType="search"
-                />
-                {searchKeyword.trim() ? (
-                  <View style={styles.searchActionWrap}>
-                    <View style={styles.searchCountBadge}>
-                      <Text style={styles.searchCountText}>{totalMatchedItems} món</Text>
+              {/* THANH TÌM KIẾM CÙNG HÀNG VỚI NÚT XUẤT CÔNG NỢ */}
+              <View style={styles.searchRow}>
+                <View style={[styles.searchBarContainer, isSearchFocused && styles.searchBarContainerFocused]}>
+                  <Text style={[styles.searchBarIcon, isSearchFocused && styles.searchBarIconFocused]}>🔍</Text>
+                  <TextInput
+                    style={styles.searchBarInput}
+                    placeholder="Tìm kiếm theo ngày, tên thịt..."
+                    placeholderTextColor="#94A3B8"
+                    value={searchKeyword}
+                    onChangeText={setSearchKeyword}
+                    onFocus={() => setIsSearchFocused(true)}
+                    onBlur={() => setIsSearchFocused(false)}
+                    returnKeyType="search"
+                  />
+                  {searchKeyword.trim() ? (
+                    <View style={styles.searchActionWrap}>
+                      <View style={styles.searchCountBadge}>
+                        <Text style={styles.searchCountText}>{totalMatchedItems} món</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.searchClearBtn}
+                        onPress={() => setSearchKeyword('')}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.searchClearText}>✕</Text>
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                      style={styles.searchClearBtn}
-                      onPress={() => setSearchKeyword('')}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.searchClearText}>✕</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
+                  ) : null}
+                </View>
+
+                {/* NÚT XUẤT CÔNG NỢ CÙNG HÀNG VỚI THANH TÌM KIẾM */}
+                <TouchableOpacity
+                  style={styles.exportDebtBtn}
+                  onPress={handleExportCanvasImage}
+                  disabled={exportingImage}
+                  activeOpacity={0.8}
+                >
+                  {exportingImage ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.exportDebtBtnText}>📊 Xuất công nợ</Text>
+                  )}
+                </TouchableOpacity>
               </View>
 
               {/* BẢNG DỮ LIỆU INVOICE */}
@@ -2562,23 +2566,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  exportDebtBtn: {
-    backgroundColor: '#0284C7',
-    borderWidth: 1,
-    borderColor: '#38BDF8',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginRight: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  exportDebtBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
   priceCheckBtn: {
     backgroundColor: '#047857',
     borderWidth: 1,
@@ -2944,8 +2931,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ─── THANH TÌM KIẾM NHỎ XINH BÊN DƯỚI BỘ LỌC NGÀY ───
+  // ─── THANH TÌM KIẾM CÙNG HÀNG VỚI NÚT XUẤT CÔNG NỢ ───
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 7,
+  },
   searchBarContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -2954,11 +2948,30 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
     paddingHorizontal: 9,
     height: 34,
-    marginBottom: 7,
     shadowColor: '#000',
     shadowOpacity: 0.03,
     shadowRadius: 2,
     elevation: 1,
+  },
+  exportDebtBtn: {
+    height: 34,
+    backgroundColor: '#0284C7',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0284C7',
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  exportDebtBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   searchBarContainerFocused: {
     borderColor: '#059669',
