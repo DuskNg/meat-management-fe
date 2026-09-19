@@ -2075,14 +2075,9 @@ export default function PortalScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* BẢNG DỮ LIỆU INVOICE */}
+              {/* BẢNG DỮ LIỆU INVOICE - VỪA KHÍT 100% CHIỀU RỘNG, KHÔNG SCROLL NGANG */}
               {displayInvoiceData?.sortedDays && displayInvoiceData.sortedDays.length > 0 ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.tableScrollWrapper}
-                  contentContainerStyle={styles.tableScrollContent}
-                >
+                <View style={styles.tableScrollWrapper}>
                   <View style={styles.invoiceTableContainer}>
                     {/* Tiêu đề các cột - Cố định ở trên cùng, không bị cuộn hay hở viền trên */}
                     <View style={styles.tableHeaderRowStyle}>
@@ -2361,7 +2356,7 @@ export default function PortalScreen() {
                       </View>
                     </ScrollView>
                   </View>
-                </ScrollView>
+                </View>
               ) : (
                 <View style={styles.emptyCard}>
                   <Text style={styles.emptyText}>
@@ -3217,9 +3212,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     width: '100%',
   },
-  tableScrollContent: {
-    minWidth: '100%',
-    flexGrow: 1,
+  tableScrollWrapper: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
   },
   tableVerticalScroll: {
     flex: 1,
@@ -3227,107 +3223,91 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   tableVerticalContent: {
-    minWidth: '100%',
+    width: '100%',
   },
   invoiceTableContainer: {
     flex: 1,
     minHeight: 0,
     width: '100%',
     backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 9,
+    borderTopRightRadius: 9,
+    overflow: 'hidden',
   },
   tableHeaderRowStyle: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#F8FAFC',
     borderBottomWidth: 1.2,
     borderBottomColor: '#94A3B8',
     paddingVertical: 5,
     borderTopLeftRadius: 9,
     borderTopRightRadius: 9,
+    width: '100%',
   },
   thCell: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: 'bold',
     color: '#334155',
   },
   thDate: {
-    width: 42,
+    width: 38,
     textAlign: 'center',
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
   },
   thName: {
-    width: 170,
-    paddingLeft: 6,
-    paddingRight: 4,
+    flex: 1,
+    minWidth: 0,
+    paddingLeft: 5,
+    paddingRight: 3,
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
   },
   thQty: {
-    width: 44,
+    width: 36,
     textAlign: 'right',
-    paddingRight: 4,
+    paddingRight: 3,
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
   },
   thPrice: {
-    width: 66,
+    width: 58,
     textAlign: 'right',
-    paddingRight: 4,
+    paddingRight: 3,
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
   },
   thAmount: {
-    flex: 1,
-    minWidth: 80,
+    width: 82,
     textAlign: 'right',
-    paddingRight: 6,
+    paddingRight: 4,
   },
   tableDayRowGroup: {
     flexDirection: 'row',
     borderBottomWidth: 2.5,
     borderBottomColor: '#0F172A',
+    width: '100%',
   },
   tdDateCol: {
-    width: 42,
+    width: 38,
     alignItems: 'center',
     justifyContent: 'center',
     borderRightWidth: 1,
     paddingVertical: 3,
     paddingHorizontal: 1,
   },
-  tdDateColPaid: {
-    backgroundColor: '#F0FDF4',
-    borderRightColor: '#BBF7D0',
-  },
-  tdDateColUnpaid: {
-    backgroundColor: '#FEF2F2',
-    borderRightColor: '#FECACA',
-  },
-  // Trạng thái thanh toán 1 phần (màu cam)
-  tdDateColPartial: {
-    backgroundColor: '#FFF7ED',
-    borderRightColor: '#FED7AA',
-  },
   tdDateText: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '700',
     textAlign: 'center',
   },
-  tdDateTextPaid: {
-    color: '#047857',
-  },
-  tdDateTextUnpaid: {
-    color: '#B91C1C',
-  },
-  tdDateTextPartial: {
-    color: '#C2410C',
-  },
   tdDateStatusText: {
-    fontSize: 8,
+    fontSize: 7.5,
     fontWeight: 'bold',
     textAlign: 'center',
     marginTop: 2,
-    lineHeight: 9.5,
+    lineHeight: 9,
   },
   tdDateStatusPaid: {
     color: '#059669',
@@ -3335,17 +3315,27 @@ const styles = StyleSheet.create({
   tdDateStatusUnpaid: {
     color: '#DC2626',
   },
+  // Trạng thái thanh toán 1 phần (màu cam)
+  tdDateColPartial: {
+    backgroundColor: '#FFF7ED',
+    borderRightColor: '#FED7AA',
+  },
+  tdDateTextPartial: {
+    color: '#C2410C',
+  },
   tdDateStatusPartial: {
     color: '#C2410C',
   },
   tdItemsCol: {
     flex: 1,
+    minWidth: 0,
   },
   itemSubRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 2.5,
     backgroundColor: '#FFFFFF',
+    width: '100%',
   },
   itemSubRowBorder: {
     borderBottomWidth: 1,
@@ -3370,30 +3360,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FDF4',
   },
   tdCell: {
-    fontSize: 11.5,
+    fontSize: 11,
     color: '#0F172A',
   },
   tdName: {
-    width: 170,
-    paddingLeft: 6,
-    paddingRight: 4,
+    flex: 1,
+    minWidth: 0,
+    paddingLeft: 5,
+    paddingRight: 3,
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
   },
   tdTotalCellWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
+    flexWrap: 'wrap',
   },
   tdTotalTitleText: {
     fontWeight: 'bold',
     color: '#0F172A',
-    fontSize: 11.5,
+    fontSize: 11,
   },
   dayTotalInvoiceBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 5,
+    paddingHorizontal: 4,
     paddingVertical: 1,
     borderRadius: 4,
     borderWidth: 1,
@@ -3407,7 +3399,7 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
   },
   dayTotalInvoiceBtnText: {
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '600',
   },
   dayTotalInvoiceBtnTextActive: {
@@ -3417,26 +3409,28 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   tdQty: {
-    width: 44,
+    width: 36,
     textAlign: 'right',
-    paddingRight: 4,
+    paddingRight: 3,
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
+    fontSize: 10.5,
   },
   tdPrice: {
-    width: 66,
+    width: 58,
     textAlign: 'right',
-    paddingRight: 4,
+    paddingRight: 3,
     fontWeight: '600',
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
+    fontSize: 10.5,
   },
   tdAmount: {
-    flex: 1,
-    minWidth: 80,
+    width: 82,
     textAlign: 'right',
-    paddingRight: 6,
+    paddingRight: 4,
     fontWeight: 'bold',
+    fontSize: 11,
   },
   textRed: {
     color: '#DC2626',
