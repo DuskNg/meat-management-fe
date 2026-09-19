@@ -385,7 +385,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     }, 0);
 
   const isApproved = currentSub.status === 'APPROVED';
-  const isVideo = currentSub.fileType === 'VIDEO';
+  const isVideo = currentSub.fileType === 'VIDEO' || /\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i.test(currentSub.fileUrl || '');
   const mediaUrl = resolveMediaUrl(currentSub.fileUrl);
 
   return (

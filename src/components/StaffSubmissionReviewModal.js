@@ -38,6 +38,14 @@ const resolveMediaUrl = (url) => {
   return finalUrl;
 };
 
+// Helper kiểm tra tệp là video an toàn (kể cả khi DB chưa kịp cập nhật fileType)
+const isVideoSubmission = (sub) => {
+  if (!sub) return false;
+  if (sub.fileType === 'VIDEO') return true;
+  const url = (sub.fileUrl || '').toLowerCase();
+  return /\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i.test(url);
+};
+
 // Helper định dạng tiền VNĐ
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('vi-VN').format(Math.round(amount || 0));
@@ -217,7 +225,7 @@ const InvoiceReviewCard = React.memo(
 
           {/* Khung ảnh / video xem trước */}
           <View style={[styles.cardMediaBox, isMobile && styles.cardMediaBoxMobile]}>
-            {sub.fileType === 'VIDEO' ? (
+            {isVideoSubmission(sub) ? (
               <View style={styles.cardVideoWrap}>
                 {videoError ? (
                   <View style={styles.videoErrorBox}>

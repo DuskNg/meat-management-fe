@@ -33,19 +33,98 @@ const resolveMediaUrl = (url) => {
   return finalUrl;
 };
 
-// Helper kiểm tra an toàn tệp là ảnh hay video (hoạt động 100% trên cả iPhone khi file.type bị rỗng hoặc HEIC)
+// Helper kiểm tra an toàn tệp là ảnh hay video dựa vào cả MIME, tên file và Magic Bytes nhị phân (Đặc biệt cho iPhone 11 Pro Max / iOS Safari)
+const detectMediaCategoryFromFile = async (file) => {
+  if (!file) return { isVideo: false, isImage: true };
+  const type = (file.type || '').toLowerCase();
+  const name = (file.name || '').toLowerCase();
+
+  // 1. Kiểm tra nhanh qua mime type hoặc đuôi tên tệp
+  if (
+    type.includes('video') ||
+    type.includes('quicktime') ||
+    type.includes('mp4') ||
+    type.includes('mov') ||
+    /\.(mp4|mov|qt|avi|webm|m4v|3gp|mkv|flv|ts|mts)$/i.test(name)
+  ) {
+    return { isVideo: true, isImage: false };
+  }
+
+  // 2. Đọc 16 bytes đầu của file để nhận diện Magic Bytes (Tránh Safari trên iPhone gán nhầm name="image.jpg" hoặc type="")
+  try {
+    if (typeof file.slice === 'function') {
+      const slice = file.slice(0, 16);
+      const buffer = await slice.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+
+      // ISO Base Media format (QuickTime MOV của Apple, MP4, M4V, 3GP)
+      // 4 bytes ở offset 4..7 là 'ftyp', 'moov', 'mdat', 'wide'
+      if (bytes.length >= 8) {
+        const tag = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
+        if (tag === 'ftyp' || tag === 'moov' || tag === 'mdat' || tag === 'wide') {
+          // Kiểm tra xem có phải ảnh tĩnh HEIC/HEIF không
+          if (bytes.length >= 12) {
+            const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]).toLowerCase();
+            if (['heic', 'heix', 'heim', 'heis', 'mif1', 'msf1'].includes(brand)) {
+              return { isVideo: false, isImage: true };
+            }
+          }
+          // Tất cả major brand còn lại (qt  , mp41, mp42, isom, avc1...) đều là VIDEO trên iPhone
+          return { isVideo: true, isImage: false };
+        }
+      }
+
+      // WebM / MKV: 1A 45 DF A3
+      if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
+        return { isVideo: true, isImage: false };
+      }
+
+      // AVI: RIFF....AVI 
+      if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+        if (bytes.length >= 12) {
+          const aviTag = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+          if (aviTag === 'AVI ') {
+            return { isVideo: true, isImage: false };
+          }
+        }
+      }
+
+      // Ảnh chuẩn JPEG: FF D8
+      if (bytes[0] === 0xff && bytes[1] === 0xd8) {
+        return { isVideo: false, isImage: true };
+      }
+      // Ảnh PNG: 89 50 4E 47
+      if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+        return { isVideo: false, isImage: true };
+      }
+      // Ảnh GIF: GIF8
+      if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+        return { isVideo: false, isImage: true };
+      }
+    }
+  } catch (e) {
+    console.warn('Không thể đọc magic bytes, fallback logic thường:', e);
+  }
+
+  const isVid = type.startsWith('video/') || /\.(mp4|mov|avi|webm|m4v|3gp|mkv)$/i.test(name);
+  return { isVideo: isVid, isImage: !isVid };
+};
+
+// Helper đồng bộ kiểm tra an toàn tệp
 const getFileCategory = (file) => {
   if (!file) return { isVideo: false, isImage: true };
   const type = (file.type || '').toLowerCase();
   const name = (file.name || '').toLowerCase();
 
-  const isVideo = type.startsWith('video/') || /\.(mp4|mov|avi|webm|m4v|3gp|mkv)$/i.test(name);
-  const isImage = type.startsWith('image/') || /\.(jpg|jpeg|png|heic|heif|webp|gif|bmp)$/i.test(name) || !isVideo;
+  const isVideo =
+    type.includes('video') ||
+    type.includes('quicktime') ||
+    type.includes('mp4') ||
+    type.includes('mov') ||
+    /\.(mp4|mov|qt|avi|webm|m4v|3gp|mkv|flv|ts|mts)$/i.test(name);
 
-  return {
-    isVideo,
-    isImage,
-  };
+  const isImage = !isVideo;
+  return { isVideo, isImage };
 };
 
 // Helper nén ảnh siêu tốc bằng HTML5 Canvas + createImageBitmap / Blob URL (Tương thích cả iPhone HEIC & iOS Safari)
@@ -447,7 +526,7 @@ export default function StaffSubmitScreen() {
   };
 
   // Xử lý chọn nhiều ảnh và video từ thư viện máy: Đưa ngay lên giao diện tức thì (phong cách Zalo)
-  const handleMediaChange = (e) => {
+  const handleMediaChange = async (e) => {
     try {
       const files = Array.from(e.target.files || []);
       if (files.length === 0) return;
@@ -455,27 +534,30 @@ export default function StaffSubmitScreen() {
       // TUYỆT ĐỐI KHÔNG gán mediaInputRef.current.value = '' tại đây vì iOS Safari sẽ giải phóng con trỏ File ngay lập tức!
       // Việc reset value được thực hiện ở sự kiện onClick khi người dùng bắt đầu mở chọn tệp tiếp theo.
 
-      const newItems = files.map((file) => {
-        const { isVideo } = getFileCategory(file);
-        let blobUrl = '';
-        if (typeof URL !== 'undefined' && URL.createObjectURL) {
-          try {
-            blobUrl = URL.createObjectURL(file);
-          } catch (blobErr) {
-            console.warn('Không thể tạo blob URL cho tệp:', blobErr);
+      // Nhận diện đồng thời tệp bằng cả MIME và Magic Bytes nhị phân (chống lỗi video bị nhận nhầm thành ảnh trên iPhone)
+      const newItems = await Promise.all(
+        files.map(async (file) => {
+          const { isVideo } = await detectMediaCategoryFromFile(file);
+          let blobUrl = '';
+          if (typeof URL !== 'undefined' && URL.createObjectURL) {
+            try {
+              blobUrl = URL.createObjectURL(file);
+            } catch (blobErr) {
+              console.warn('Không thể tạo blob URL cho tệp:', blobErr);
+            }
           }
-        }
 
-        return {
-          id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          file,
-          blobUrl,
-          fileType: isVideo ? 'VIDEO' : 'IMAGE',
-          name: file.name || (isVideo ? 'video.mp4' : 'image.jpg'),
-          status: 'QUEUED', // 'QUEUED' | 'UPLOADING' | 'ERROR'
-          errorMsg: '',
-        };
-      });
+          return {
+            id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            file,
+            blobUrl,
+            fileType: isVideo ? 'VIDEO' : 'IMAGE',
+            name: file.name || (isVideo ? 'video.mp4' : 'image.jpg'),
+            status: 'QUEUED', // 'QUEUED' | 'UPLOADING' | 'ERROR'
+            errorMsg: '',
+          };
+        })
+      );
 
       setUploadQueue((prev) => [...prev, ...newItems]);
     } catch (err) {
@@ -500,9 +582,13 @@ export default function StaffSubmitScreen() {
     );
 
     try {
-      // 1. Đọc và nén dữ liệu tệp
+      // 1. Kiểm tra lại một lần nữa bằng Magic Bytes để đảm bảo tuyệt đối không nén nhầm Video thành Canvas Image
+      const checkCategory = await detectMediaCategoryFromFile(nextItem.file);
+      const isActuallyVideo = checkCategory.isVideo || nextItem.fileType === 'VIDEO';
+      const actualFileType = isActuallyVideo ? 'VIDEO' : 'IMAGE';
+
       let fileData = null;
-      if (nextItem.fileType === 'IMAGE') {
+      if (actualFileType === 'IMAGE') {
         fileData = await compressImageClient(nextItem.file);
         if (!fileData) {
           fileData = await new Promise((resolve) => {
@@ -513,6 +599,7 @@ export default function StaffSubmitScreen() {
           });
         }
       } else {
+        // Đối với Video: Đọc trực tiếp nhị phân bằng FileReader, TUYỆT ĐỐI KHÔNG nén bằng Canvas ảnh
         fileData = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.readAsDataURL(nextItem.file);
@@ -523,6 +610,17 @@ export default function StaffSubmitScreen() {
 
       if (!fileData) {
         throw new Error('Không thể đọc dữ liệu tệp.');
+      }
+
+      // Chuẩn hóa MIME header cho Video nếu DataURL sinh ra bị thiếu hoặc sai (đặc biệt trên iOS Safari)
+      if (actualFileType === 'VIDEO' && typeof fileData === 'string' && fileData.startsWith('data:')) {
+        const commaIdx = fileData.indexOf(',');
+        if (commaIdx !== -1) {
+          const header = fileData.substring(0, commaIdx);
+          if (!header.includes('video')) {
+            fileData = 'data:video/mp4;base64,' + fileData.substring(commaIdx + 1);
+          }
+        }
       }
 
       // 2. Gửi API lên máy chủ
@@ -536,8 +634,8 @@ export default function StaffSubmitScreen() {
         files: [
           {
             fileData,
-            fileType: nextItem.fileType,
-            fileName: nextItem.name,
+            fileType: actualFileType,
+            fileName: nextItem.name || (actualFileType === 'VIDEO' ? 'video.mp4' : 'image.jpg'),
           },
         ],
       };
