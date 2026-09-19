@@ -393,7 +393,10 @@ export default function StaffSubmitScreen() {
         }
       }
       const res = await api.get(`/staff-submissions/public/history/${token}`, {
-        params: queryDate ? { date: queryDate } : {},
+        params: {
+          date: queryDate,
+          _t: Date.now(),
+        },
       });
       if (res.data.success) {
         setHistorySubmissions(res.data.data || []);
