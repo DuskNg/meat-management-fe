@@ -380,14 +380,37 @@ const VideoThumbPreview = ({ file }) => {
 export default function StaffSubmitScreen() {
   const { token } = useLocalSearchParams();
 
-  // State thông tin link
-  const [linkInfo, setLinkInfo] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // State thông tin link (Tải ngay từ cache nếu đã mở trước đó để hiển thị trong 0ms)
+  const [linkInfo, setLinkInfo] = useState(() => {
+    if (typeof window !== 'undefined' && window.localStorage && token) {
+      try {
+        const cached = localStorage.getItem(`staff_link_info_${token}`);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return null;
+  });
   const [error, setError] = useState(null);
 
-  // State mã PIN (nếu link yêu cầu)
+  // Cờ báo link có yêu cầu mã PIN bảo mật
+  const [hasPinRequired, setHasPinRequired] = useState(() => {
+    if (typeof window !== 'undefined' && window.localStorage && token) {
+      try {
+        const cached = localStorage.getItem(`staff_link_info_${token}`);
+        if (cached) return JSON.parse(cached)?.hasPin === true;
+      } catch {}
+    }
+    return false;
+  });
+
+  // State mã PIN (Nếu đã xác thực trước đó trên máy này, tự động ghi nhớ không bắt nhập lại)
   const [pin, setPin] = useState('');
-  const [isPinVerified, setIsPinVerified] = useState(false);
+  const [isPinVerified, setIsPinVerified] = useState(() => {
+    if (typeof window !== 'undefined' && window.localStorage && token) {
+      return localStorage.getItem(`staff_pin_verified_${token}`) === 'true';
+    }
+    return false;
+  });
   const [verifyingPin, setVerifyingPin] = useState(false);
 
   // Ngày trên hóa đơn (Mặc định hôm nay)
@@ -436,24 +459,34 @@ export default function StaffSubmitScreen() {
     }
   };
 
-  // Tải thông tin link từ Backend
+  // Tải thông tin link ngầm từ Backend (Không chặn màn hình người dùng)
   const fetchLinkInfo = async () => {
     if (!token) return;
     try {
-      setLoading(true);
       setError(null);
       const res = await api.get(`/staff-submissions/public/info/${token}`);
       if (res.data.success) {
-        setLinkInfo(res.data.data);
-        if (!res.data.data.hasPin) {
+        const info = res.data.data;
+        setLinkInfo(info);
+        if (typeof window !== 'undefined' && window.localStorage) {
+          try {
+            localStorage.setItem(`staff_link_info_${token}`, JSON.stringify(info));
+          } catch {}
+        }
+        if (info.hasPin) {
+          setHasPinRequired(true);
+          const cachedVerified = typeof window !== 'undefined' && localStorage.getItem(`staff_pin_verified_${token}`) === 'true';
+          if (cachedVerified) {
+            setIsPinVerified(true);
+          }
+        } else {
+          setHasPinRequired(false);
           setIsPinVerified(true);
         }
       }
     } catch (err) {
       console.error('Lỗi khi tải thông tin link nhân viên:', err);
       setError(err.response?.data?.message || 'Đường dẫn không tồn tại hoặc đã hết hiệu lực.');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -516,6 +549,11 @@ export default function StaffSubmitScreen() {
       const res = await api.post(`/staff-submissions/public/verify-pin/${token}`, { pin: pin.trim() });
       if (res.data.success) {
         setIsPinVerified(true);
+        if (typeof window !== 'undefined' && window.localStorage) {
+          try {
+            localStorage.setItem(`staff_pin_verified_${token}`, 'true');
+          } catch {}
+        }
         showGlobalToast('Xác thực mã PIN thành công.', 'success');
       }
     } catch (err) {
@@ -724,35 +762,25 @@ export default function StaffSubmitScreen() {
     );
   };
 
-  // Màn hình đang tải thông tin link
-  if (loading) {
-    return (
-      <View style={styles.centerBox}>
-        <ActivityIndicator size="large" color="#10B981" />
-        <Text style={styles.loadingText}>Đang tải trang gửi hóa đơn...</Text>
-      </View>
-    );
-  }
-
   // Màn hình lỗi link không tồn tại hoặc bị khóa
-  if (error || !linkInfo) {
+  if (error) {
     return (
       <View style={styles.centerBox}>
         <Text style={styles.errorIcon}>⚠️</Text>
         <Text style={styles.errorTitle}>Không thể truy cập</Text>
-        <Text style={styles.errorDesc}>{error || 'Đường dẫn gửi hóa đơn không hợp lệ.'}</Text>
+        <Text style={styles.errorDesc}>{error}</Text>
       </View>
     );
   }
 
-  // Màn hình nhập mã PIN nếu có
-  if (!isPinVerified) {
+  // Màn hình nhập mã PIN nếu link yêu cầu và thiết bị chưa xác thực
+  if (hasPinRequired && !isPinVerified) {
     return (
       <View style={styles.centerBox}>
         <View style={styles.pinCard}>
           <Text style={styles.pinCardIcon}>🔒</Text>
-          <Text style={styles.pinCardTitle}>{linkInfo.name}</Text>
-          <Text style={styles.pinCardSub}>Cửa hàng: {linkInfo.ownerName}</Text>
+          <Text style={styles.pinCardTitle}>{linkInfo?.name || 'Gửi hóa đơn'}</Text>
+          <Text style={styles.pinCardSub}>Cửa hàng: {linkInfo?.ownerName || 'Chủ buôn'}</Text>
           <Text style={styles.pinCardDesc}>Vui lòng nhập mã PIN do chủ buôn cung cấp:</Text>
 
           <TextInput
