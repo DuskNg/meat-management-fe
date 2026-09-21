@@ -955,8 +955,11 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
   ctx.font = 'bold 16.5px Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  const headerTitle = customerName
+    ? `${customerName} (${rangeLabel})`
+    : `(${rangeLabel})`;
   ctx.fillText(
-    `BẢNG KÊ CÔNG NỢ: ${customerName || ''} (${rangeLabel})`,
+    headerTitle,
     canvasWidth / 2,
     headerCardY + headerCardHeight / 2
   );
@@ -1064,12 +1067,12 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         } else if (entry.type === 'RETURN') {
           ctx.fillStyle = '#DC2626';
           ctx.font = '13.5px Arial, sans-serif';
-          const displayName = entry.customerName ? `[${entry.customerName}] ${entry.name}` : entry.name;
+          const displayName = entry.name;
           ctx.fillText(displayName, pColX[1] + 8, midY);
         } else {
           ctx.fillStyle = '#0F172A';
           ctx.font = '13.5px Arial, sans-serif';
-          const displayName = entry.customerName ? `[${entry.customerName}] ${entry.name}` : entry.name;
+          const displayName = entry.name;
           ctx.fillText(displayName, pColX[1] + 8, midY);
         }
 
@@ -1135,48 +1138,18 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         ctx.stroke();
       }
 
-      // Ô ngày gộp chung
-      let dateCellBg, dateCellBorder, dateCellTextColor;
-      if (isChainViewAll) {
-        // Xem toàn bộ chuỗi (chưa lọc): Cột ngày nền trắng sạch sẽ, không hiển thị logic nợ
-        dateCellBg = '#FFFFFF'; dateCellBorder = '#CBD5E1'; dateCellTextColor = '#0F172A';
-      } else if (day.isPaid) {
-        dateCellBg = '#F0FDF4'; dateCellBorder = '#BBF7D0'; dateCellTextColor = '#047857';
-      } else if (day.isPartialPaid) {
-        dateCellBg = '#FFF7ED'; dateCellBorder = '#FED7AA'; dateCellTextColor = '#C2410C';
-      } else {
-        dateCellBg = '#FEF2F2'; dateCellBorder = '#FECACA'; dateCellTextColor = '#B91C1C';
-      }
-      ctx.fillStyle = dateCellBg;
+      // Ô ngày gộp chung: khi xuất ảnh bỏ hoàn toàn logic Còn nợ / Đã thanh toán, giữ nền trắng sạch sẽ
+      ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(pColX[0], dayStartY, colWidths[0], dayHeight);
-      ctx.strokeStyle = dateCellBorder;
+      ctx.strokeStyle = '#CBD5E1';
       ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
       const dayMidY = dayStartY + dayHeight / 2;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = dateCellTextColor;
-
-      if (isChainViewAll) {
-        // Xem full chuỗi: Căn giữa ngày to rõ, không hiện Còn nợ / Đã thanh toán
-        ctx.font = 'bold 13.5px Arial, sans-serif';
-        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY);
-      } else {
-        ctx.font = 'bold 12.5px Arial, sans-serif';
-        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
-
-        ctx.font = 'bold 9px Arial, sans-serif';
-        if (day.isPaid) {
-          ctx.fillStyle = '#059669';
-          ctx.fillText('Đã thanh toán', pColX[0] + colWidths[0] / 2, dayMidY + 8);
-        } else if (day.isPartialPaid) {
-          ctx.fillStyle = '#C2410C';
-          ctx.fillText('Trả 1 phần', pColX[0] + colWidths[0] / 2, dayMidY + 8);
-        } else {
-          ctx.fillStyle = '#DC2626';
-          ctx.fillText('Còn nợ', pColX[0] + colWidths[0] / 2, dayMidY + 8);
-        }
-      }
+      ctx.fillStyle = '#0F172A';
+      ctx.font = 'bold 13.5px Arial, sans-serif';
+      ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY);
 
       // Kẻ ngang phân cách ngày (ĐẬM NHẤT)
       ctx.strokeStyle = '#0F172A';
