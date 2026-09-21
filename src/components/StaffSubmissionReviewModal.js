@@ -1900,6 +1900,18 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       if (match) return match;
     }
 
+    // Tràng bò / Tràng (Ưu tiên nhận diện trước quả trắng)
+    if (cleanRaw.includes('trang bo') || cleanRawNoSpace.includes('trangbo') || (cleanRaw.includes('trang') && cleanRaw.includes('bo'))) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('trang bo') || (pClean.includes('trang') && pClean.includes('bo'));
+      }) || prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase());
+        return pClean.includes('trang') && !pClean.includes('qua trang');
+      });
+      if (match) return match;
+    }
+
     // Quả trắng / Trắng
     if (cleanRaw.includes('trang') || cleanRawNoSpace.includes('trang')) {
       match = prodList.find((p) => {
@@ -2625,8 +2637,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             } else if (cleanRawMeat === 'bang' || cleanRawMeat === 'qua bang' || cleanRawMeat === 'thit bang' || cleanRawMeat === 'bong' || cleanRawMeat === 'bọng') {
               // Quy tắc: bằng, bọng (AI đọc nhầm từ bằng) -> Quả bằng
               rawName = 'quả bằng';
-            } else if (cleanRawMeat === 'trang' || cleanRawMeat === 'qua trang' || cleanRawMeat === 'thit trang' || cleanRawMeat === 'trang bo' || cleanRawMeat === 'trắng bò' || cleanRawMeat === 'tráng bò') {
-              // Quy tắc: trắng, tráng bò (AI đọc nhầm từ trắng) -> Quả trắng
+            } else if (cleanRawMeat === 'trang bo' || cleanRawMeat === 'tràng bò' || cleanRawMeat === 'trangbo' || cleanRawMeat === 'thit trang bo' || cleanRawMeat === 'thịt tràng bò' || cleanRawMeat === 'long trang' || cleanRawMeat === 'lòng tràng') {
+              // Quy tắc: tràng bò -> Tràng bò (TUYỆT ĐỐI KHÔNG NHẦM VỚI QUẢ TRẮNG)
+              rawName = 'Tràng bò';
+            } else if (cleanRawMeat === 'trang' || cleanRawMeat === 'qua trang' || cleanRawMeat === 'thit trang' || cleanRawMeat === 'trắng' || cleanRawMeat === 'quả trắng') {
+              // Quy tắc: quả trắng -> Quả trắng
               rawName = 'quả trắng';
             } else if (cleanRawMeat === 'quat' || cleanRawMeat === 'thit quat' || cleanRawMeat === 'xuong quat') {
               // Quy tắc: quạt -> Quạt
