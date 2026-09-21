@@ -395,7 +395,10 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
                     setImageError(false);
                   }}
                   onError={(e) => {
-                    console.error('Lỗi khi tải video hóa đơn trên Web:', currentUrl, e);
+                    // Chỉ log thông tin an toàn, tránh circular structure từ HTMLVideoElement
+                    const errCode = e?.target?.error?.code;
+                    const errMsg = e?.target?.error?.message || 'Không xác định';
+                    console.error('Lỗi khi tải video hóa đơn trên Web:', currentUrl, `code=${errCode}`, errMsg);
                     setImageLoading(false);
                     setImageError(true);
                   }}

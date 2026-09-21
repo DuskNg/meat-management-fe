@@ -23,8 +23,16 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
     if (args.length > 0 && isExtensionPortError(args[0])) {
       return;
     }
-    originalConsoleError(...args);
+    // Chuyển đổi các DOM object/Event thành string an toàn để tránh lỗi circular structure to JSON
+    const safeArgs = args.map((arg) => {
+      if (arg && typeof arg === 'object' && (arg instanceof Event || arg?.target instanceof Element || arg?.nativeEvent)) {
+        return `[DOMEvent: ${arg?.type || 'unknown'}]`;
+      }
+      return arg;
+    });
+    originalConsoleError(...safeArgs);
   };
+
 
   // Ngăn chặn lỗi disconnected port của Extension làm ngắt quãng sự kiện click của ứng dụng
   window.addEventListener('error', (event) => {
