@@ -597,8 +597,8 @@ export default function StaffSubmitScreen() {
     }
   };
 
-  // Xử lý chọn nhiều ảnh và video từ thư viện máy: Đưa ngay lên giao diện tức thì (phong cách Zalo)
-  const handleMediaChange = async (e) => {
+  // Xử lý chọn nhiều ảnh và video từ thư viện máy: Đưa ngay lên giao diện tức thì trong 0ms (phong cách Zalo)
+  const handleMediaChange = (e) => {
     try {
       const files = Array.from(e.target.files || []);
       if (files.length === 0) return;
@@ -606,33 +606,35 @@ export default function StaffSubmitScreen() {
       // TUYỆT ĐỐI KHÔNG gán mediaInputRef.current.value = '' tại đây vì iOS Safari sẽ giải phóng con trỏ File ngay lập tức!
       // Việc reset value được thực hiện ở sự kiện onClick khi người dùng bắt đầu mở chọn tệp tiếp theo.
 
-      // Nhận diện đồng thời tệp bằng cả MIME và Magic Bytes nhị phân (chống lỗi video bị nhận nhầm thành ảnh trên iPhone)
-      const newItems = await Promise.all(
-        files.map(async (file) => {
-          const { isVideo } = await detectMediaCategoryFromFile(file);
-          let blobUrl = '';
-          // Chỉ tạo blob URL cho ảnh tĩnh để render preview; Với Video tuyệt đối không tạo blobUrl để tránh chiếm dụng RAM gây crash tab trên iPhone
-          if (!isVideo && typeof URL !== 'undefined' && URL.createObjectURL) {
-            try {
-              blobUrl = URL.createObjectURL(file);
-            } catch (blobErr) {
-              console.warn('Không thể tạo blob URL cho tệp:', blobErr);
-            }
+      // Nhận diện nhanh đồng bộ qua getFileCategory để đưa ngay toàn bộ tệp lên UI trong 0ms
+      // Tuyệt đối không chạy async đọc nhị phân 48 lần cùng lúc ở đây để tránh làm đơ main thread của iPhone
+      const newItems = files.map((file) => {
+        const { isVideo } = getFileCategory(file);
+        let blobUrl = '';
+        // Chỉ tạo blob URL cho ảnh tĩnh để render preview; Với Video không tạo blobUrl để tránh chiếm dụng RAM trên iPhone
+        if (!isVideo && typeof URL !== 'undefined' && URL.createObjectURL) {
+          try {
+            blobUrl = URL.createObjectURL(file);
+          } catch (blobErr) {
+            console.warn('Không thể tạo blob URL cho tệp:', blobErr);
           }
+        }
 
-          return {
-            id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            file,
-            blobUrl,
-            fileType: isVideo ? 'VIDEO' : 'IMAGE',
-            name: file.name || (isVideo ? 'video.mp4' : 'image.jpg'),
-            status: 'QUEUED', // 'QUEUED' | 'UPLOADING' | 'ERROR'
-            errorMsg: '',
-          };
-        })
-      );
+        return {
+          id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          file,
+          blobUrl,
+          fileType: isVideo ? 'VIDEO' : 'IMAGE',
+          name: file.name || (isVideo ? 'video.mp4' : 'image.jpg'),
+          status: 'QUEUED', // 'QUEUED' | 'UPLOADING' | 'ERROR'
+          errorMsg: '',
+        };
+      });
 
       setUploadQueue((prev) => [...prev, ...newItems]);
+      if (files.length >= 20) {
+        showGlobalToast(`Đang đưa ${files.length} tệp vào hàng đợi, hệ thống sẽ tự động tải lần lượt...`, 'info');
+      }
     } catch (err) {
       console.error('Lỗi trong handleMediaChange:', err);
     }
@@ -874,7 +876,7 @@ export default function StaffSubmitScreen() {
             {Platform.OS === 'web' && (
               <input
                 type="file"
-                accept="image/*,video/*"
+                accept="image/*,video/*,.heic,.heif,.mov,.mp4,image/heic,image/heif,video/quicktime"
                 multiple
                 ref={mediaInputRef}
                 onClick={(e) => {
@@ -905,7 +907,7 @@ export default function StaffSubmitScreen() {
           </View>
 
           <Text style={styles.pickMediaTip}>
-            ⚡ Hệ thống tự động nén nhẹ và tải ngầm siêu tốc, không lo đầy bộ nhớ máy
+            ⚡ Hệ thống tự động nén nhẹ và gửi ngầm siêu tốc (Mẹo: Chọn từ 15 – 25 ảnh/đợt để máy gửi nhanh tức thì)
           </Text>
 
           {/* Banner thông báo trạng thái hàng đợi đang tải ngầm nếu có */}
