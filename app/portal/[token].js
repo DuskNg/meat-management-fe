@@ -2497,11 +2497,12 @@ export default function PortalScreen() {
                                       : formatCurrency(entry.amount)}
                                   </Text>
                                 </View>
-                              );
+                               );
                             })}
                           </View>
                         </View>
-                      ))}
+                      );
+                    })}
 
                       {/* Khối tổng kết cuối bảng chuẩn đồ họa cao cấp */}
                       <View style={styles.invoiceSummaryCard}>
