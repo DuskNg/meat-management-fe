@@ -177,6 +177,7 @@ const InvoiceReviewCard = React.memo(
     // Trạng thái theo dõi lỗi tải video để hiện khung fallback thay vì màn hình đen 0:00
     const [videoError, setVideoError] = useState(false);
     const [videoRetryKey, setVideoRetryKey] = useState(0);
+    const [isSyncingVideo, setIsSyncingVideo] = useState(false);
 
     // Tính tổng tiền của thẻ này một cách độc lập
     const cardTotal = useMemo(() => {
@@ -245,13 +246,42 @@ const InvoiceReviewCard = React.memo(
                     </Text>
                     <TouchableOpacity
                       style={styles.btnRetryVideo}
-                      onPress={() => {
-                        setVideoError(false);
-                        setVideoRetryKey((k) => k + 1);
+                      disabled={isSyncingVideo}
+                      onPress={async () => {
+                        setIsSyncingVideo(true);
+                        try {
+                          const res = await api.post(`/staff-submissions/${sub.id}/sync-cloud`);
+                          if (res.data?.success && res.data?.data?.fileUrl) {
+                            const newUrl = res.data.data.fileUrl;
+                            sub.fileUrl = newUrl;
+                            setVideoError(false);
+                            setVideoRetryKey((k) => k + 1);
+                            showGlobalToast('Đã đồng bộ video lên đám mây thành công!', 'success');
+                          } else if (res.data?.isMissingFile) {
+                            showGlobalToast(res.data.message || 'Tệp video tạm không còn trên máy chủ.', 'info');
+                            setVideoError(false);
+                            setVideoRetryKey((k) => k + 1);
+                          } else {
+                            setVideoError(false);
+                            setVideoRetryKey((k) => k + 1);
+                          }
+                        } catch (err) {
+                          setVideoError(false);
+                          setVideoRetryKey((k) => k + 1);
+                        } finally {
+                          setIsSyncingVideo(false);
+                        }
                       }}
                       activeOpacity={0.7}
                     >
-                      <Text style={{ color: '#38BDF8', fontSize: 10.5, fontWeight: 'bold' }}>🔄 Thử tải lại</Text>
+                      {isSyncingVideo ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <ActivityIndicator size="small" color="#38BDF8" style={{ transform: [{ scale: 0.7 }] }} />
+                          <Text style={{ color: '#38BDF8', fontSize: 10.5, fontWeight: 'bold' }}>Đang đồng bộ...</Text>
+                        </View>
+                      ) : (
+                        <Text style={{ color: '#38BDF8', fontSize: 10.5, fontWeight: 'bold' }}>🔄 Thử tải lại / Đồng bộ</Text>
+                      )}
                     </TouchableOpacity>
                   </View>
                 ) : typeof window !== 'undefined' && sub.fileUrl ? (
