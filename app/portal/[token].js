@@ -19,6 +19,7 @@ import BranchDebtModal from '../../src/components/BranchDebtModal';
 import ImagePreviewModal from '../../src/components/ImagePreviewModal';
 import InvoiceImageViewerModal from '../../src/components/InvoiceImageViewerModal';
 import CustomerPriceCheckModal from '../../src/components/CustomerPriceCheckModal';
+import ExportChainDebtModal from '../../src/components/ExportChainDebtModal';
 import DatePickerInput from '../../src/components/DatePickerInput';
 import CustomSelect from '../../src/components/CustomSelect';
 import { showGlobalToast } from '../../src/store/toastStore';
@@ -1295,6 +1296,7 @@ export default function PortalScreen() {
   const branchDebtModalRef = useRef(null);
   const invoiceViewerRef = useRef(null);
   const customerPriceCheckModalRef = useRef(null);
+  const exportChainDebtModalRef = useRef(null);
 
   // Helper lấy ảnh hóa đơn cho từng quán trên ngày đó
   const getInvoicesForCustomer = (day, customerName) => {
@@ -1853,6 +1855,106 @@ export default function PortalScreen() {
     }
   };
 
+  // Xuất ảnh bảng kê của một nhà hàng cụ thể trong chuỗi
+  const handleExportSingleBranch = async (branch) => {
+    if (!branch) return;
+    const branchName = branch.name;
+    const branchId = branch.id;
+
+    // Lọc các giao dịch và thanh toán của riêng nhà hàng này
+    const branchTxs = (portalData?.transactions || []).filter(
+      (tx) => tx.customerId === branchId || tx.customerName === branchName
+    );
+    const branchPayments = (portalData?.payments || []).filter(
+      (p) => p.customerId === branchId || p.customerName === branchName
+    );
+
+    const branchDebt = branch.debt ?? null;
+
+    const branchInvoiceData = buildInvoiceRows(
+      branchTxs,
+      branchPayments,
+      fromDate,
+      toDate,
+      sortOrder,
+      [branch],
+      branchDebt
+    );
+
+    if (!branchInvoiceData?.sortedDays || branchInvoiceData.sortedDays.length === 0) {
+      showGlobalToast(`Không có dữ liệu giao dịch của quán [${branchName}] trong khoảng thời gian này.`, 'warning');
+      return;
+    }
+
+    try {
+      setExportingImage(true);
+      const presetObj = TIME_PRESETS.find((p) => p.key === timePreset);
+      const presetLabel = presetObj ? presetObj.label : 'Tùy chọn';
+
+      const dataUrl = drawInvoiceCanvas(
+        branchInvoiceData.sortedDays,
+        branchInvoiceData.totals,
+        branchName,
+        fromDate,
+        toDate,
+        presetLabel,
+        [branch],
+        false // isChainViewAll = false (bảng kê xuất riêng cho 1 cơ sở)
+      );
+
+      if (!dataUrl) {
+        showGlobalToast('Trình duyệt hiện tại không hỗ trợ vẽ ảnh tự động.', 'error');
+        return;
+      }
+
+      imagePreviewModalRef.current?.open(dataUrl);
+
+      const isMobileDevice =
+        typeof navigator !== 'undefined' &&
+        /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+      if (isMobileDevice && typeof navigator !== 'undefined' && navigator.share && typeof File !== 'undefined') {
+        try {
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          const file = new File([blob], `BangKeCongNo_${branchName}.png`, { type: 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: `Bảng kê công nợ ${branchName}`,
+              text: `Bảng kê công nợ ${branchName} (${presetLabel})`,
+            });
+          }
+        } catch (shareErr) {
+          // Bỏ qua nếu người dùng hủy chia sẻ
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi xuất ảnh bảng kê từng quán:', err);
+      showGlobalToast('Đã xảy ra lỗi khi tạo ảnh bảng kê.', 'error');
+    } finally {
+      setExportingImage(false);
+    }
+  };
+
+  // Xử lý khi nhấn nút "Xuất công nợ": nếu là chuỗi thì mở modal lựa chọn (tất cả quán hoặc từng quán)
+  const handleExportDebtPress = () => {
+    if (isChain) {
+      exportChainDebtModalRef.current?.open({
+        branches: portalData?.branches || portalInfo?.customers || [],
+        currentCustomerId: selectedCustomerId,
+        onExportAll: () => {
+          handleExportCanvasImage();
+        },
+        onExportBranch: (branch) => {
+          handleExportSingleBranch(branch);
+        },
+      });
+    } else {
+      handleExportCanvasImage();
+    }
+  };
+
   // ─── MÀN HÌNH CHỜ & LỖI ───
   if (loading) {
     return (
@@ -2133,7 +2235,7 @@ export default function PortalScreen() {
                 {/* NÚT XUẤT CÔNG NỢ CÙNG HÀNG VỚI THANH TÌM KIẾM */}
                 <TouchableOpacity
                   style={styles.exportDebtBtn}
-                  onPress={handleExportCanvasImage}
+                  onPress={handleExportDebtPress}
                   disabled={exportingImage}
                   activeOpacity={0.8}
                 >
@@ -2527,6 +2629,9 @@ export default function PortalScreen() {
         ref={customerPriceCheckModalRef}
         onOpenFeedback={handleOpenFeedback}
       />
+
+      {/* MODAL CHỌN HÌNH THỨC XUẤT CÔNG NỢ CHUỖI CỬA HÀNG */}
+      <ExportChainDebtModal ref={exportChainDebtModalRef} />
     </SafeAreaView>
   );
 }
