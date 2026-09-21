@@ -2208,10 +2208,10 @@ export default function PortalScreen() {
                                       )}
                                     </View>
                                   ) : (
-                                    <View style={[styles.tdCell, styles.tdName, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 4 }]}>
+                                    <View style={[styles.tdCell, styles.tdName, styles.tdTotalCellWrap, { paddingRight: 4 }]}>
                                       <Text
                                         style={[
-                                          { flex: 1 },
+                                          { flexShrink: 1 },
                                           isReturn && styles.textRed,
                                         ]}
                                         numberOfLines={3}

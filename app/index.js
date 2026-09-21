@@ -1176,6 +1176,25 @@ export default function DashboardScreen() {
     return `${month}/${year}`;
   };
 
+  // Helper rút gọn số tiền hiển thị cho không gian hẹp (Ví dụ: 1.5Tr, 200k)
+  const formatShortAmount = (val) => {
+    const num = parseFloat(val) || 0;
+    if (Math.abs(num) >= 1000000000) {
+      return `${(num / 1000000000).toFixed(1).replace('.0', '')}Tỷ`;
+    }
+    if (Math.abs(num) >= 1000000) {
+      return `${(num / 1000000).toFixed(1).replace('.0', '')}Tr`;
+    }
+    if (Math.abs(num) >= 1000) {
+      return `${(num / 1000).toFixed(0)}k`;
+    }
+    return `${Math.round(num)}`;
+  };
+
+  // Lấy số tháng đang chọn (ví dụ: 9) và tháng trước đó (ví dụ: 8)
+  const selectedMonthNum = parseInt(selectedRevenueMonth.split('-')[1], 10);
+  const priorMonthNum = selectedMonthNum === 1 ? 12 : selectedMonthNum - 1;
+
   // 2. Tính toán tổng nợ của toàn bộ khách hàng để hiển thị
   const totalDebt = customers.reduce((sum, c) => sum + (c.debt || 0), 0);
   const selectedMonthPayments = customerPayments.filter((payment) => {
@@ -1222,6 +1241,111 @@ export default function DashboardScreen() {
     }
     return sum;
   }, 0);
+
+  // Tính tổng công nợ chưa thanh toán của riêng tháng được chọn (chuẩn công nợ theo từng khách)
+  const totalDebtInSelectedMonth = useMemo(() => {
+    if (!customers || customers.length === 0) return 0;
+    const [targetYear, targetMonth] = selectedRevenueMonth.split('-').map(Number);
+
+    // Gom tiền mua hàng theo từng khách hàng trong tháng được chọn
+    const purchaseByCustomer = {};
+    selectedMonthTransactions.forEach((t) => {
+      const cId = t.customerId;
+      purchaseByCustomer[cId] = (purchaseByCustomer[cId] || 0) + parseFloat(t.totalAmount || 0);
+    });
+
+    // Gom tiền thanh toán theo từng khách hàng cho tháng được chọn
+    const paidByCustomer = {};
+    customerPayments.forEach((pm) => {
+      const amt = parseFloat(pm.amount) || 0;
+      const note = (pm.note || '').trim();
+      const monthMatch = note.match(/Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{2})\/(\d{4})/i);
+
+      if (monthMatch) {
+        const pM = parseInt(monthMatch[1], 10);
+        const pY = parseInt(monthMatch[2], 10);
+        if (pM === targetMonth && pY === targetYear) {
+          paidByCustomer[pm.customerId] = (paidByCustomer[pm.customerId] || 0) + amt;
+        }
+      } else if (pm.paidAt) {
+        const pDate = new Date(pm.paidAt);
+        if (!isNaN(pDate.getTime())) {
+          const monthKey = `${pDate.getFullYear()}-${(pDate.getMonth() + 1).toString().padStart(2, '0')}`;
+          if (monthKey === selectedRevenueMonth) {
+            paidByCustomer[pm.customerId] = (paidByCustomer[pm.customerId] || 0) + amt;
+          }
+        }
+      }
+    });
+
+    return customers.reduce((sum, c) => {
+      const mPurchase = Math.round(purchaseByCustomer[c.id] || 0);
+      const mPaid = Math.round(paidByCustomer[c.id] || 0);
+      let rawMDebt = Math.max(0, mPurchase - mPaid);
+      const cDebt = Math.max(0, c.debt || 0);
+      const mDebt = Math.min(rawMDebt, cDebt);
+      return sum + mDebt;
+    }, 0);
+  }, [customers, selectedRevenueMonth, selectedMonthTransactions, customerPayments]);
+
+  // Bóc tách số tiền đã thu trong tháng: phần trả cho đơn tháng này vs phần trả nợ tồn tháng trước
+  const { paidForSelectedMonth, paidForPriorMonth } = useMemo(() => {
+    let forSelectedMonth = 0;
+    let forPriorMonth = 0;
+
+    const [targetYear, targetMonth] = selectedRevenueMonth.split('-').map(Number);
+
+    // Tiền mua hàng trong tháng theo từng khách
+    const purchaseByCustomer = {};
+    selectedMonthTransactions.forEach((t) => {
+      purchaseByCustomer[t.customerId] = (purchaseByCustomer[t.customerId] || 0) + parseFloat(t.totalAmount || 0);
+    });
+
+    // Theo dõi số tiền đã trả của từng khách cho đơn tháng này
+    const customerMonthPaidTracking = {};
+
+    selectedMonthPayments.forEach((p) => {
+      const amt = parseFloat(p.amount || 0);
+      const note = (p.note || '').trim();
+      const monthMatch = note.match(/Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{1,2})\/(\d{4})/i) ||
+                         note.match(/Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{1,2})/i);
+
+      if (monthMatch) {
+        const pM = parseInt(monthMatch[1], 10);
+        const pY = monthMatch[2] ? parseInt(monthMatch[2], 10) : targetYear;
+        if (pM === targetMonth && pY === targetYear) {
+          // Khách ghi rõ trả cho tháng này
+          forSelectedMonth += amt;
+          customerMonthPaidTracking[p.customerId] = (customerMonthPaidTracking[p.customerId] || 0) + amt;
+        } else {
+          // Khách ghi rõ trả cho nợ tồn tháng trước (hoặc tháng khác)
+          forPriorMonth += amt;
+        }
+      } else {
+        // Khoản thu không ghi rõ tháng: ưu tiên đối trừ tiền hàng phát sinh trong tháng của khách
+        const custPurchase = purchaseByCustomer[p.customerId] || 0;
+        const alreadyPaid = customerMonthPaidTracking[p.customerId] || 0;
+        const remainingPurchase = Math.max(0, custPurchase - alreadyPaid);
+
+        if (remainingPurchase >= amt) {
+          forSelectedMonth += amt;
+          customerMonthPaidTracking[p.customerId] = alreadyPaid + amt;
+        } else if (remainingPurchase > 0) {
+          forSelectedMonth += remainingPurchase;
+          forPriorMonth += (amt - remainingPurchase);
+          customerMonthPaidTracking[p.customerId] = alreadyPaid + remainingPurchase;
+        } else {
+          // Khách không có đơn mới trong tháng này -> Toàn bộ tiền trả dùng để thu nợ tồn cũ
+          forPriorMonth += amt;
+        }
+      }
+    });
+
+    return {
+      paidForSelectedMonth: Math.round(forSelectedMonth),
+      paidForPriorMonth: Math.round(forPriorMonth),
+    };
+  }, [selectedMonthPayments, selectedMonthTransactions, selectedRevenueMonth]);
 
   const totalCollected = customerPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
   const totalOriginalDebt = totalDebt + totalCollected;
@@ -2994,28 +3118,54 @@ export default function DashboardScreen() {
 
           {/* Chia giao diện thành 3 ô thống kê con màu sắc trực quan */}
           <View style={styles.summaryColumnsRow}>
-            {/* 1. Tổng tiền nợ: Bấm vào để đóng/mở chi tiết */}
+            {/* 1. Tiền nợ: Dòng 1 là nợ tháng đang chọn, Dòng 2 là tổng nợ */}
             <TouchableOpacity
               style={[styles.summaryMicroBox, styles.summaryMicroBoxDebt]}
               onPress={() => setShowDebtSummary((prev) => !prev)}
               activeOpacity={0.8}
             >
-              <Text style={styles.summaryMicroBoxLabelDebt}>🔴 TỔNG NỢ</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueDebt}>
-                {formatCurrency(totalDebt)}
-              </Text>
+              <View style={styles.summaryMicroBoxDebtContent}>
+                {/* Dòng 1: Nợ tháng đang chọn */}
+                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroDebtRow}>
+                  <Text style={styles.summaryMicroDebtLabel}>Nợ T{selectedMonthNum}: </Text>
+                  <Text style={styles.summaryMicroDebtVal}>
+                    {isLoadingTransactions || isLoadingPayments ? '...' : formatCurrency(totalDebtInSelectedMonth)}
+                  </Text>
+                </Text>
+
+                {/* Dòng 2: Tổng nợ toàn bộ */}
+                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={[styles.summaryMicroDebtRow, { marginTop: 2 }]}>
+                  <Text style={styles.summaryMicroDebtLabel}>Tổng nợ: </Text>
+                  <Text style={styles.summaryMicroDebtVal}>
+                    {formatCurrency(totalDebt)}
+                  </Text>
+                </Text>
+              </View>
             </TouchableOpacity>
 
-            {/* 2. Doanh thu đã thu trong tháng: Bấm vào để đóng/mở chi tiết */}
+            {/* 2. Tiền đã trả trong tháng: Bấm vào để đóng/mở chi tiết */}
             <TouchableOpacity
               style={[styles.summaryMicroBox, styles.summaryMicroBoxRevenue]}
               onPress={() => setShowDebtSummary((prev) => !prev)}
               activeOpacity={0.8}
             >
-              <Text style={styles.summaryMicroBoxLabelRevenue}>🟢 DOANH THU</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueRevenue}>
-                {isLoadingPayments ? '...' : formatCurrency(totalCollectedInSelectedMonth)}
-              </Text>
+              <View style={styles.summaryMicroBoxDebtContent}>
+                {/* Dòng 1: Tổng tiền đã trả theo Cách 1 */}
+                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroDebtRow}>
+                  <Text style={styles.summaryMicroRevenueLabel}>Đã trả: </Text>
+                  <Text style={styles.summaryMicroRevenueVal}>
+                    {isLoadingPayments ? '...' : formatCurrency(totalCollectedInSelectedMonth)}
+                  </Text>
+                </Text>
+
+                {/* Dòng 2: Chi tiết đã trả tháng này & đã trả tồn tháng trước */}
+                <Text numberOfLines={1} adjustsFontSizeToFit={true} style={[styles.summaryMicroDebtRow, { marginTop: 2 }]}>
+                  <Text style={styles.summaryMicroRevenueSubLabel}>T{selectedMonthNum}: </Text>
+                  <Text style={styles.summaryMicroRevenueSubVal}>{formatShortAmount(paidForSelectedMonth)}</Text>
+                  <Text style={styles.summaryMicroRevenueSubLabel}> • Tồn T{priorMonthNum}: </Text>
+                  <Text style={styles.summaryMicroRevenueSubVal}>{formatShortAmount(paidForPriorMonth)}</Text>
+                </Text>
+              </View>
             </TouchableOpacity>
 
             {/* 3. Lợi nhuận trong tháng: Bấm vào để mở modal hướng dẫn tính lợi nhuận */}
@@ -3099,6 +3249,27 @@ export default function DashboardScreen() {
                       <Text style={[styles.monthTotalSalesLabel, { color: '#0369A1' }]}>💰 Lợi nhuận trong tháng:</Text>
                       <Text numberOfLines={1} adjustsFontSizeToFit={true} style={[styles.monthTotalSalesValue, { color: '#0369A1' }]}>
                         {formatCurrency(totalProfitInSelectedMonth)}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.monthTotalSalesBox, { marginTop: 4, paddingTop: 4 }]}>
+                      <Text style={[styles.monthTotalSalesLabel, { color: '#DC2626' }]}>🔴 Nợ chưa trả trong tháng:</Text>
+                      <Text numberOfLines={1} adjustsFontSizeToFit={true} style={[styles.monthTotalSalesValue, { color: '#DC2626' }]}>
+                        {isLoadingTransactions || isLoadingPayments ? '...' : formatCurrency(totalDebtInSelectedMonth)}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.monthTotalSalesBox, { marginTop: 4, paddingTop: 4 }]}>
+                      <Text style={[styles.monthTotalSalesLabel, { color: '#16A34A' }]}>🟢 Đã trả cho đơn Tháng {selectedMonthNum}:</Text>
+                      <Text numberOfLines={1} adjustsFontSizeToFit={true} style={[styles.monthTotalSalesValue, { color: '#16A34A' }]}>
+                        {isLoadingPayments ? '...' : formatCurrency(paidForSelectedMonth)}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.monthTotalSalesBox, { marginTop: 4, paddingTop: 4 }]}>
+                      <Text style={[styles.monthTotalSalesLabel, { color: '#059669' }]}>📦 Đã trả nợ tồn Tháng {priorMonthNum} (và cũ hơn):</Text>
+                      <Text numberOfLines={1} adjustsFontSizeToFit={true} style={[styles.monthTotalSalesValue, { color: '#059669' }]}>
+                        {isLoadingPayments ? '...' : formatCurrency(paidForPriorMonth)}
                       </Text>
                     </View>
                   </View>
@@ -3830,7 +4001,7 @@ const styles = StyleSheet.create({
   },
   summaryColumnsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     gap: 6,
   },
   summaryMicroBox: {
@@ -3846,9 +4017,49 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
     borderColor: '#FECACA',
   },
+  summaryMicroBoxDebtContent: {
+    width: '100%',
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryMicroDebtRow: {
+    textAlign: 'center',
+    width: '100%',
+  },
+  summaryMicroDebtLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#991B1B',
+  },
+  summaryMicroDebtVal: {
+    fontSize: 11.5,
+    fontWeight: '900',
+    color: '#DC2626',
+  },
   summaryMicroBoxRevenue: {
     backgroundColor: '#F0FDF4',
     borderColor: '#BBF7D0',
+  },
+  summaryMicroRevenueLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#166534',
+  },
+  summaryMicroRevenueVal: {
+    fontSize: 11.5,
+    fontWeight: '900',
+    color: '#16A34A',
+  },
+  summaryMicroRevenueSubLabel: {
+    fontSize: 9.5,
+    fontWeight: 'bold',
+    color: '#15803D',
+  },
+  summaryMicroRevenueSubVal: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#166534',
   },
   summaryMicroBoxProfit: {
     backgroundColor: '#F0F9FF',

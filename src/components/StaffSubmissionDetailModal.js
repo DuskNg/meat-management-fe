@@ -847,11 +847,12 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                             <TextInput
                               style={[styles.compactInputCell, currentCard.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
                               value={item.quantity}
-                              onChangeText={(val) => updateCardItem(currentSub.id, itemIdx, 'quantity', val)}
+                              onChangeText={(val) => updateCardItem(currentSub.id, itemIdx, 'quantity', val.replace(',', '.'))}
                               editable={!currentCard.isLoadingPrice}
                               placeholder="Số kg"
                               placeholderTextColor="#94A3B8"
-                              keyboardType="numeric"
+                              keyboardType="decimal-pad"
+                              inputMode="decimal"
                             />
                           </View>
 

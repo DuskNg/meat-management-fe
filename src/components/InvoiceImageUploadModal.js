@@ -140,6 +140,13 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
   // Bộ chọn hàng loạt (Batch apply) ở Tab Tải ảnh
   const [batchCustomer, setBatchCustomer] = useState(null);
   const [batchDateStr, setBatchDateStr] = useState(getTodayFormatted());
+  const [batchTransaction, setBatchTransaction] = useState(null);
+  const batchTransactionRef = useRef(null);
+
+  const updateBatchTransaction = useCallback((tx) => {
+    setBatchTransaction(tx);
+    batchTransactionRef.current = tx;
+  }, []);
   const [activeOpenRowId, setActiveOpenRowId] = useState(null);
 
   // Lấy tên khách hàng một cách an toàn và đầy đủ nhất: từ item -> từ customers -> từ batch
@@ -250,12 +257,15 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
 
   // Mở modal từ bên ngoài
   useImperativeHandle(ref, () => ({
-    open: async (initialCustomerId = null, initialDate = null, initialTab = 'upload') => {
+    open: async (initialCustomerId = null, initialDate = null, initialTab = 'upload', initialTransactionId = null, initialTransaction = null) => {
       setVisible(true);
       setActiveTab(initialTab);
       setSelectedDeleteIds([]);
       isLoadedDraftRef.current = false;
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+      const targetTx = initialTransaction || (initialTransactionId ? { id: initialTransactionId } : null);
+      updateBatchTransaction(targetTx);
 
       let customerList = (customers && customers.length > 0) ? customers : (propCustomers || []);
 
@@ -293,7 +303,8 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
 
       // Nếu mở Tab Đăng tải mới (upload): Kiểm tra và khôi phục bản nháp từ IndexedDB
       try {
-        const draft = await loadInvoiceDraft();
+        // Nếu mở trực tiếp từ một đơn nợ cụ thể, ưu tiên nhập mới cho đơn này thay vì khôi phục nháp cũ
+        const draft = !targetTx ? await loadInvoiceDraft() : null;
         if (draft && Array.isArray(draft.imageList) && draft.imageList.length > 0) {
           // Khôi phục danh sách ảnh & video đang nhập dở
           setImageList(draft.imageList);
@@ -318,7 +329,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
           setDraftSaveStatus('saved');
           showGlobalToast(`Đã khôi phục ${draft.imageList.length} tệp hóa đơn đang nhập dở!`, 'info');
         } else {
-          // Chưa có bản nháp nào
+          // Chưa có bản nháp nào hoặc mở trực tiếp cho một đơn cụ thể
           setImageList([]);
           if (initialCustomerId) {
             const found = customerList.find((c) => c.id === initialCustomerId);
@@ -344,6 +355,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
       }
     },
     close: () => {
+      updateBatchTransaction(null);
       setVisible(false);
     },
     fetchSaved: () => {
@@ -518,6 +530,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
             selectedCustomer: batchCustomer || null,
             customerId: batchCustomer?.id || null,
             customerName: batchCustomer?.name || '',
+            transactionId: batchTransactionRef.current?.id || null,
             dateStr: batchDateStr || getTodayFormatted(),
             note: '',
             scale: isVid ? 1.0 : (batchScale || 1.4), // Mặc định tự động phóng to 140% tập trung vào giữa hóa đơn để bỏ rìa thừa
@@ -1172,10 +1185,11 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
         const payload = {
           items: currentChunk.map((item) => ({
             customerId: item.customerId,
+            transactionId: item.transactionId || batchTransactionRef.current?.id || null,
             date: parseDateString(item.dateStr),
             imageBase64: item.imageBase64,
             mediaType: item.mediaType || (checkIsVideo(item.imageBase64) ? 'video' : 'image'),
-            note: null,
+            note: item.note || null,
           })),
         };
 
@@ -1210,6 +1224,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
       setDraftRestored(false);
       setDraftSaveStatus('idle');
       setImageList([]);
+      updateBatchTransaction(null);
       setVisible(false);
       if (onRefresh) onRefresh();
       if (onSuccess) onSuccess();
@@ -1288,6 +1303,45 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
           {/* ======================================================== */}
           {activeTab === 'upload' && (
             <View style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              {/* Banner đính kèm đích danh cho một đơn nợ cụ thể */}
+              {batchTransaction && (
+                <View style={{
+                  backgroundColor: '#EFF6FF',
+                  borderColor: '#93C5FD',
+                  borderWidth: 1,
+                  borderRadius: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  marginBottom: 10,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                    <Text style={{ fontSize: 16 }}>🎯</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, color: '#1E40AF', fontWeight: 'bold' }}>
+                        Đang đính kèm trực tiếp vào đơn:{' '}
+                        {formatCurrency(batchTransaction.amount || batchTransaction.totalAmount)}
+                      </Text>
+                      {batchTransaction.note ? (
+                        <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
+                          Ghi chú: {batchTransaction.note}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => updateBatchTransaction(null)}
+                    style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#DBEAFE', borderRadius: 6 }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ fontSize: 11, color: '#1D4ED8', fontWeight: '600' }}>Bỏ chọn đơn</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {/* Banner thông báo khôi phục bản nháp đang nhập dở */}
               {draftRestored && imageList.length > 0 && (
                 <View style={styles.draftNoticeBanner}>

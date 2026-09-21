@@ -97,25 +97,34 @@ const buildReturnNoteFromItems = (items) => {
 
 /**
  * Component nút chuyển nhanh hóa đơn ở thanh điều hướng trên cùng.
+/**
+ * Component nút chuyển nhanh hóa đơn ở thanh điều hướng trên cùng.
  * Được bọc React.memo để không bị re-render vô ích khi người dùng gõ phím bên dưới.
  */
 const QuickNavPill = React.memo(
-  ({ sub, idx, isApproved, hasCustomer, customerName, onScroll }) => (
+  ({ sub, idx, isApproved, hasCustomer, customerName, onScroll, isMobile }) => (
     <TouchableOpacity
       style={[
         styles.quickNavPill,
+        isMobile && styles.quickNavPillMobile,
         isApproved ? styles.quickNavPillApproved : hasCustomer ? styles.quickNavPillFilled : null,
       ]}
       onPress={onScroll}
       activeOpacity={0.8}
     >
-      <Text style={[styles.quickNavPillText, isApproved && { color: '#059669' }]}>
+      <Text
+        style={[
+          styles.quickNavPillText,
+          isMobile && styles.quickNavPillTextMobile,
+          isApproved && { color: '#059669' },
+        ]}
+      >
         #{idx + 1} {sub.detectedCustomerName || customerName || 'Đơn'}
       </Text>
       {isApproved ? (
-        <Text style={{ fontSize: 10 }}>✅</Text>
+        <Text style={{ fontSize: isMobile ? 9 : 10 }}>✅</Text>
       ) : hasCustomer ? (
-        <View style={styles.dotFilled} />
+        <View style={[styles.dotFilled, isMobile && { width: 5, height: 5, borderRadius: 2.5 }]} />
       ) : null}
     </TouchableOpacity>
   ),
@@ -124,7 +133,8 @@ const QuickNavPill = React.memo(
     prev.idx === next.idx &&
     prev.isApproved === next.isApproved &&
     prev.hasCustomer === next.hasCustomer &&
-    prev.customerName === next.customerName
+    prev.customerName === next.customerName &&
+    prev.isMobile === next.isMobile
 );
 
 /**
@@ -564,11 +574,12 @@ const InvoiceReviewCard = React.memo(
                     <TextInput
                       style={[styles.cardItemCell, card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
                       value={item.quantity}
-                      onChangeText={(val) => onUpdateItem(sub.id, itemIdx, 'quantity', val)}
+                      onChangeText={(val) => onUpdateItem(sub.id, itemIdx, 'quantity', val.replace(',', '.'))}
                       editable={!card.isLoadingPrice}
                       placeholder="Số kg"
                       placeholderTextColor="#94A3B8"
-                      keyboardType="numeric"
+                      keyboardType="decimal-pad"
+                      inputMode="decimal"
                       textAlign="center"
                     />
                   </View>
@@ -835,7 +846,32 @@ const resolveCustomerForSub = (sub, custList) => {
     }
   }
 
-  // 1e. ĐẶC BIỆT: Khớp ưu tiên khách "Hà Trì" nếu AI nhận diện là ha tri, ha li, ha lu, co ha tri, co hai...
+  // 1d2. ĐẶC BIỆT: Khớp ưu tiên khách "Cồ Hải" nếu AI nhận diện là cồ hải, cổ hải, co hai...
+  if (
+    cleanDetected.includes('co hai') ||
+    cleanDetectedNoSpace.includes('cohai') ||
+    cleanDetected === 'co hai' ||
+    cleanDetectedNoSpace === 'cohai'
+  ) {
+    if (!currentCustClean.includes('co hai')) {
+      const coHaiCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean === 'co hai' && c.isActive && !c.isBadDebt;
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean === 'co hai';
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('co hai');
+      }) || null;
+
+      if (coHaiCust) {
+        matchedCust = coHaiCust;
+      }
+    }
+  }
+
+  // 1e. ĐẶC BIỆT: Khớp ưu tiên khách "Hà Trì" nếu AI nhận diện là ha tri, ha li, ha lu, co ha tri...
   if (
     cleanDetected.includes('ha tri') ||
     cleanDetected.includes('ha li') ||
@@ -844,7 +880,6 @@ const resolveCustomerForSub = (sub, custList) => {
     cleanDetected.includes('co ha tri') ||    // "cô hà trì" AI đọc thành "co ha tri"
     cleanDetected.includes('co ha ti') ||     // biến thể nuốt âm
     cleanDetected.includes('ha ti') ||        // "hà trì" nuốt âm "tr"
-    cleanDetected === 'co hai' ||             // "cồ hải" = bị đọc nhầm từ "cô hà trì"
     cleanDetected === 'co ha' ||              // "cô hà" rút gọn
     cleanDetectedNoSpace === 'hatri' ||
     cleanDetectedNoSpace === 'hali' ||
@@ -852,7 +887,6 @@ const resolveCustomerForSub = (sub, custList) => {
     cleanDetectedNoSpace === 'hathi' ||
     cleanDetectedNoSpace === 'cohati' ||
     cleanDetectedNoSpace === 'cohatri' ||
-    cleanDetectedNoSpace === 'cohai' ||
     cleanDetectedNoSpace.includes('hatri')
   ) {
     if (!currentCustClean.includes('ha tri') && !currentCustClean.includes('tri')) {
@@ -1318,6 +1352,27 @@ const resolveCustomerForSub = (sub, custList) => {
       }) || custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase());
         return cClean.includes('nga');
+      }) || null;
+    }
+  }
+
+  // 5d2. Ưu tiên khớp khách Cồ Hải
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('co hai') ||
+      cleanDetectedNoSpace.includes('cohai') ||
+      cleanDetected === 'co hai' ||
+      cleanDetectedNoSpace === 'cohai'
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean === 'co hai' && c.isActive && !c.isBadDebt;
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean === 'co hai';
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('co hai');
       }) || null;
     }
   }
@@ -2720,7 +2775,10 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       const card = prev[subId];
       if (!card) return prev;
       const nextItems = [...card.items];
-      const item = { ...nextItems[itemIdx], [field]: value };
+      const normalizedValue = field === 'quantity' && typeof value === 'string'
+        ? value.replace(',', '.')
+        : value;
+      const item = { ...nextItems[itemIdx], [field]: normalizedValue };
 
       const cleanQtyStr = String(item.quantity || '').trim().replace(',', '.');
       const qty = parseFloat(cleanQtyStr) || 0;
@@ -3219,23 +3277,29 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         <View style={[styles.modalView, isMobile && styles.modalViewMobile]}>
           {/* ─── HEADER ─── */}
           <View style={[styles.headerRow, isMobile && styles.headerRowMobile]}>
-            <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <View style={{ flex: 1, minWidth: 0, marginRight: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
                 <Text style={[styles.modalTitle, isMobile && styles.modalTitleMobile]} numberOfLines={1}>
-                  {isMobile ? '🤖 Phân tích & Nhập công nợ' : '🤖 PHÂN TÍCH HÓA ĐƠN & NHẬP CÔNG NỢ'}
+                  {isMobile ? '🤖 Phân tích hóa đơn' : '🤖 PHÂN TÍCH HÓA ĐƠN & NHẬP CÔNG NỢ'}
                 </Text>
-                <View style={styles.badgePending}>
-                  <Text style={styles.badgePendingText}>{submissions.length} hóa đơn</Text>
+                <View style={[styles.badgePending, isMobile && styles.badgePendingMobile]}>
+                  <Text style={[styles.badgePendingText, isMobile && styles.badgePendingTextMobile]}>
+                    {submissions.length} {isMobile ? 'đơn' : 'hóa đơn'}
+                  </Text>
                 </View>
                 {validBatchCount > 0 && (
-                  <View style={styles.badgeReadyBatch}>
-                    <Text style={styles.badgeReadyBatchText}>{validBatchCount} đơn sẵn sàng lưu</Text>
+                  <View style={[styles.badgeReadyBatch, isMobile && styles.badgeReadyBatchMobile]}>
+                    <Text style={[styles.badgeReadyBatchText, isMobile && styles.badgeReadyBatchTextMobile]}>
+                      {validBatchCount} {isMobile ? 'sẵn sàng' : 'đơn sẵn sàng lưu'}
+                    </Text>
                   </View>
                 )}
               </View>
-              <Text style={[styles.modalSubtitle, isMobile && styles.modalSubtitleMobile]} numberOfLines={1}>
-                Xem & nhập công nợ trực tiếp cho nhiều hóa đơn cùng lúc
-              </Text>
+              {!isMobile && (
+                <Text style={styles.modalSubtitle} numberOfLines={1}>
+                  Xem & nhập công nợ trực tiếp cho nhiều hóa đơn cùng lúc
+                </Text>
+              )}
             </View>
 
             <View style={styles.headerActions}>
@@ -3248,12 +3312,15 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                 activeOpacity={0.8}
               >
                 <Text style={[styles.btnLinkManagerText, isMobile && styles.btnLinkManagerTextMobile]}>
-                  {isMobile ? '🔗 Link Zalo' : '🔗 Link gửi Zalo'}
+                  {isMobile ? '🔗 Zalo' : '🔗 Link gửi Zalo'}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.btnClose} onPress={handleCloseModal}>
-                <Text style={styles.btnCloseText}>✕</Text>
+              <TouchableOpacity
+                style={[styles.btnClose, isMobile && styles.btnCloseMobile]}
+                onPress={handleCloseModal}
+              >
+                <Text style={[styles.btnCloseText, isMobile && styles.btnCloseTextMobile]}>✕</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -3341,7 +3408,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   ]}
                   numberOfLines={1}
                 >
-                  ⚡ Chưa lên nợ ({submissions.filter((s) => s.status !== 'APPROVED').length})
+                  {isMobile ? '⚡ Chưa nợ' : '⚡ Chưa lên nợ'} ({submissions.filter((s) => s.status !== 'APPROVED').length})
                 </Text>
               </TouchableOpacity>
 
@@ -3361,7 +3428,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   ]}
                   numberOfLines={1}
                 >
-                  ✅ Đã lên nợ ({submissions.filter((s) => s.status === 'APPROVED').length})
+                  {isMobile ? '✅ Đã lên' : '✅ Đã lên nợ'} ({submissions.filter((s) => s.status === 'APPROVED').length})
                 </Text>
               </TouchableOpacity>
             </ScrollView>
@@ -3384,16 +3451,16 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                     style={[
                       styles.btnAllSubmissionsText,
                       !filterDate && styles.btnAllSubmissionsTextActive,
-                      isMobile && { fontSize: 11 },
+                      isMobile && { fontSize: 10.5 },
                     ]}
                   >
-                    {!filterDate ? '🌐 TẤT CẢ ĐƠN' : '🌐 TỔNG CÁC ĐƠN'}
+                    {!filterDate ? (isMobile ? '🌐 TẤT CẢ' : '🌐 TẤT CẢ ĐƠN') : (isMobile ? '🌐 TỔNG' : '🌐 TỔNG CÁC ĐƠN')}
                   </Text>
                 </TouchableOpacity>
 
                 {filterDate ? (
                   <View style={styles.datePickerHolder}>
-                    <View style={{ width: isMobile ? 116 : 132 }}>
+                    <View style={{ width: isMobile ? 112 : 132 }}>
                       <DatePickerInput
                         value={filterDate}
                         onChange={setFilterDate}
@@ -3403,12 +3470,12 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       />
                     </View>
                     <TouchableOpacity
-                      style={styles.btnClearFilterDate}
+                      style={[styles.btnClearFilterDate, isMobile && styles.btnClearFilterDateMobile]}
                       onPress={() => setFilterDate('')}
                       activeOpacity={0.7}
                       title="Xóa lọc ngày (Xem tổng tất cả đơn)"
                     >
-                      <Text style={styles.btnClearFilterDateText}>✕</Text>
+                      <Text style={[styles.btnClearFilterDateText, isMobile && { fontSize: 10 }]}>✕</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
@@ -3423,8 +3490,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                     }}
                     activeOpacity={0.8}
                   >
-                    <Text style={[styles.btnPickDateAllText, isMobile && { fontSize: 11 }]}>
-                      📅 Lọc theo ngày
+                    <Text style={[styles.btnPickDateAllText, isMobile && { fontSize: 10.5 }]}>
+                      📅 {isMobile ? 'Chọn ngày' : 'Lọc theo ngày'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -3475,11 +3542,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             {/* Banner thông báo khi đang xem TỔNG CÁC ĐƠN PHÂN TÍCH */}
             {!filterDate && (
               <View style={[styles.allSubsNoticeBanner, isMobile && styles.allSubsNoticeBannerMobile]}>
-                <Text style={styles.allSubsNoticeText}>
-                  🌐 <Text style={{ fontWeight: 'bold' }}>Danh sách tổng tất cả đơn phân tích</Text> (Mọi ngày • {submissions.length} đơn)
+                <Text style={[styles.allSubsNoticeText, isMobile && styles.allSubsNoticeTextMobile]} numberOfLines={1}>
+                  🌐 <Text style={{ fontWeight: 'bold' }}>Tất cả đơn</Text> ({submissions.length} đơn)
                 </Text>
                 <TouchableOpacity
-                  style={styles.btnBackToToday}
+                  style={[styles.btnBackToToday, isMobile && styles.btnBackToTodayMobile]}
                   onPress={() => {
                     const today = new Date();
                     const d = String(today.getDate()).padStart(2, '0');
@@ -3489,7 +3556,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   }}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.btnBackToTodayText}>📅 Về ngày hôm nay</Text>
+                  <Text style={[styles.btnBackToTodayText, isMobile && { fontSize: 10.5 }]}>📅 Hôm nay</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -3497,9 +3564,15 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
           {/* ─── THANH ĐIỀU HƯỚNG NHANH CÁC HÓA ĐƠN (QUICK JUMP THUMBNAILS) ─── */}
           {submissions.length > 1 && (
-            <View style={styles.quickNavStrip}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 8, alignItems: 'center' }}>
-                <Text style={styles.quickNavLabel}>Chuyển nhanh:</Text>
+            <View style={[styles.quickNavStrip, isMobile && styles.quickNavStripMobile]}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: isMobile ? 8 : 12, gap: isMobile ? 6 : 8, alignItems: 'center' }}
+              >
+                <Text style={[styles.quickNavLabel, isMobile && styles.quickNavLabelMobile]}>
+                  {isMobile ? '⚡' : 'Chuyển nhanh:'}
+                </Text>
                 {submissions.map((sub, idx) => {
                   const isApproved = sub.status === 'APPROVED';
                   const card = cardDataMap[sub.id];
@@ -3512,6 +3585,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       hasCustomer={Boolean(card?.customer)}
                       customerName={card?.customer?.name}
                       onScroll={() => scrollToCard(sub.id)}
+                      isMobile={isMobile}
                     />
                   );
                 })}
@@ -3598,19 +3672,19 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           )}
 
           {/* ─── FOOTER MODAL ─── */}
-          <View style={styles.modalFooterBar}>
+          <View style={[styles.modalFooterBar, isMobile && styles.modalFooterBarMobile]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Text style={styles.footerSummaryText}>
+              <Text style={[styles.footerSummaryText, isMobile && styles.footerSummaryTextMobile]}>
                 Đã lên nợ: <Text style={{ fontWeight: 'bold', color: '#059669' }}>{submissions.filter((s) => s.status === 'APPROVED').length}</Text> / {submissions.length} hóa đơn
               </Text>
             </View>
 
             <TouchableOpacity
-              style={styles.btnCloseFooter}
+              style={[styles.btnCloseFooter, isMobile && styles.btnCloseFooterMobile]}
               onPress={handleCloseModal}
               activeOpacity={0.8}
             >
-              <Text style={styles.btnCloseFooterText}>ĐÓNG LẠI</Text>
+              <Text style={[styles.btnCloseFooterText, isMobile && styles.btnCloseFooterTextMobile]}>ĐÓNG LẠI</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -3664,10 +3738,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   modalViewMobile: {
-    height: '98%',
-    maxHeight: '98%',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    height: '100%',
+    maxHeight: '100%',
+    width: '100%',
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderRadius: 0,
   },
   headerRow: {
     flexDirection: 'row',
@@ -3680,8 +3756,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   headerRowMobile: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
   modalTitle: {
     fontSize: 16.5,
@@ -3689,7 +3765,8 @@ const styles = StyleSheet.create({
     color: '#0F172A',
   },
   modalTitleMobile: {
-    fontSize: 15,
+    fontSize: 14.5,
+    fontWeight: '700',
   },
   badgePending: {
     backgroundColor: '#EFF6FF',
@@ -3699,10 +3776,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#BFDBFE',
   },
+  badgePendingMobile: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+  },
   badgePendingText: {
     color: '#1D4ED8',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  badgePendingTextMobile: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   badgeReadyBatch: {
     backgroundColor: '#ECFDF5',
@@ -3712,10 +3798,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#A7F3D0',
   },
+  badgeReadyBatchMobile: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+  },
   badgeReadyBatchText: {
     color: '#059669',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  badgeReadyBatchTextMobile: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   modalSubtitle: {
     color: '#64748B',
@@ -3728,7 +3823,7 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   btnLinkManager: {
     backgroundColor: '#EEF2FF',
@@ -3739,8 +3834,9 @@ const styles = StyleSheet.create({
     borderColor: '#C7D2FE',
   },
   btnLinkManagerMobile: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   btnLinkManagerText: {
     color: '#4F46E5',
@@ -3748,7 +3844,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   btnLinkManagerTextMobile: {
-    fontSize: 11.5,
+    fontSize: 11,
+    fontWeight: '600',
   },
   btnClose: {
     width: 32,
@@ -3758,10 +3855,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  btnCloseMobile: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
   btnCloseText: {
     color: '#475569',
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  btnCloseTextMobile: {
+    fontSize: 13,
   },
   linkManagerBox: {
     backgroundColor: '#F8FAFC',
@@ -3828,12 +3933,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterBarMobile: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 4,
   },
   statusTabs: {
     flexDirection: 'row',
     gap: 6,
+  },
+  statusTabsMobile: {
+    gap: 4,
   },
   statusTab: {
     paddingHorizontal: 9,
@@ -3843,7 +3952,8 @@ const styles = StyleSheet.create({
   },
   statusTabMobile: {
     paddingHorizontal: 7,
-    paddingVertical: 4,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   statusTabActive: {
     backgroundColor: '#0F172A',
@@ -3864,6 +3974,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  dateFilterWrapMobile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
   datePickerHolder: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3879,6 +3994,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#CBD5E1',
   },
+  btnClearFilterDateMobile: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+  },
   btnClearFilterDateText: {
     fontSize: 11,
     fontWeight: 'bold',
@@ -3891,6 +4011,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#CBD5E1',
+  },
+  btnPickDateAllMobile: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
   },
   btnPickDateAllText: {
     fontSize: 11.5,
@@ -3913,9 +4038,10 @@ const styles = StyleSheet.create({
     borderColor: '#4338CA',
   },
   btnAllSubmissionsMobile: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    marginRight: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+    marginRight: 3,
   },
   btnAllSubmissionsText: {
     fontSize: 12,
@@ -3940,20 +4066,34 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   allSubsNoticeBannerMobile: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 2,
+    marginBottom: 1,
+    gap: 4,
   },
   allSubsNoticeText: {
     fontSize: 12,
     color: '#1E40AF',
     flex: 1,
   },
+  allSubsNoticeTextMobile: {
+    fontSize: 10.5,
+  },
   btnBackToToday: {
     backgroundColor: '#2563EB',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 5,
+  },
+  btnBackToTodayMobile: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   btnBackToTodayText: {
     color: '#FFFFFF',
@@ -3984,7 +4124,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
-    gap: 6,
+    gap: 4,
+    marginTop: 2,
   },
   batchActionsWrap: {
     flexDirection: 'row',
@@ -3994,7 +4135,7 @@ const styles = StyleSheet.create({
   batchActionsWrapMobile: {
     flex: 1,
     justifyContent: 'flex-end',
-    gap: 6,
+    gap: 4,
   },
   btnBatchSaveAll: {
     backgroundColor: '#059669',
@@ -4004,8 +4145,9 @@ const styles = StyleSheet.create({
     ...SHADOWS.sm,
   },
   btnBatchSaveAllMobile: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 5,
   },
   btnBatchSaveAllText: {
     color: '#FFFFFF',
@@ -4013,7 +4155,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   btnBatchSaveAllTextMobile: {
-    fontSize: 11.5,
+    fontSize: 10.5,
+    fontWeight: 'bold',
   },
   btnBatchRejectAll: {
     backgroundColor: '#FEE2E2',
@@ -4024,8 +4167,9 @@ const styles = StyleSheet.create({
     borderColor: '#FECACA',
   },
   btnBatchRejectAllMobile: {
-    paddingHorizontal: 9,
-    paddingVertical: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 5,
   },
   btnBatchRejectAllText: {
     color: '#DC2626',
@@ -4033,19 +4177,28 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   btnBatchRejectAllTextMobile: {
-    fontSize: 11,
+    fontSize: 10.5,
   },
   quickNavStrip: {
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 6,
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 5,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
+  },
+  quickNavStripMobile: {
+    paddingVertical: 3,
+    backgroundColor: '#F8FAFC',
   },
   quickNavLabel: {
     color: '#64748B',
     fontSize: 11.5,
     fontWeight: '600',
     marginRight: 4,
+  },
+  quickNavLabelMobile: {
+    fontSize: 11,
+    marginRight: 2,
+    fontWeight: '700',
   },
   quickNavPill: {
     flexDirection: 'row',
@@ -4057,6 +4210,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#CBD5E1',
+  },
+  quickNavPillMobile: {
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    borderRadius: 7,
+    gap: 3,
   },
   quickNavPillApproved: {
     backgroundColor: '#ECFDF5',
@@ -4070,6 +4229,9 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: '#334155',
     fontWeight: '600',
+  },
+  quickNavPillTextMobile: {
+    fontSize: 10.5,
   },
   dotFilled: {
     width: 6,
@@ -4749,9 +4911,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
   },
+  modalFooterBarMobile: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
   footerSummaryText: {
     color: '#475569',
     fontSize: 12.5,
+  },
+  footerSummaryTextMobile: {
+    fontSize: 11.5,
   },
   btnCloseFooter: {
     backgroundColor: '#0F172A',
@@ -4759,10 +4928,18 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
   },
+  btnCloseFooterMobile: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
   btnCloseFooterText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  btnCloseFooterTextMobile: {
+    fontSize: 11.5,
   },
 
   /* Dropdown Select Option Rows */

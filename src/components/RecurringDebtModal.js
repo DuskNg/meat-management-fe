@@ -345,7 +345,7 @@ const RecurringDebtModal = forwardRef(({ onRefresh }, ref) => {
         await api.post('/recurring-debts', payload);
         showGlobalToast({
           title: 'Thành công',
-          message: 'Đã thêm đơn nợ cố định mới (tự động lên đơn lúc 0:30 mỗi ngày)!',
+          message: 'Đã thêm đơn nợ cố định và tự động ghi nợ cho ngày hôm nay!',
           type: 'success',
         });
       }
@@ -409,7 +409,7 @@ const RecurringDebtModal = forwardRef(({ onRefresh }, ref) => {
         await api.post('/recurring-debts', payload);
         showGlobalToast({
           title: 'Thành công',
-          message: 'Đã thêm đơn nợ cố định chi tiết (tự động lên đơn lúc 0:30 mỗi ngày)!',
+          message: 'Đã thêm đơn nợ cố định chi tiết và tự động ghi nợ cho ngày hôm nay!',
           type: 'success',
         });
       }
@@ -715,9 +715,10 @@ const RecurringDebtModal = forwardRef(({ onRefresh }, ref) => {
                       <TextInput
                         style={styles.textInput}
                         value={currentQuantity}
-                        onChangeText={setCurrentQuantity}
+                        onChangeText={(val) => setCurrentQuantity(val.replace(',', '.'))}
                         placeholder="Ví dụ: 2.5"
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
+                        inputMode="decimal"
                       />
                     </View>
                     <View style={{ flex: 1.3 }}>

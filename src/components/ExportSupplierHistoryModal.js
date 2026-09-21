@@ -355,6 +355,77 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
       const summaryBoxWidth = 380;
       const summaryX = width - paddingX - summaryBoxWidth;
 
+      // 1. Tính toán danh sách ngày không có tiền hàng nhập (DEBT) trong tháng
+      const [monthNum, yearNum] = (month || '').split('/').map(Number);
+      const totalDaysInMonth = new Date(yearNum, monthNum, 0).getDate();
+
+      let maxDay = 0;
+      if (yearNum < now.getFullYear() || (yearNum === now.getFullYear() && monthNum < (now.getMonth() + 1))) {
+        maxDay = totalDaysInMonth;
+      } else if (yearNum === now.getFullYear() && monthNum === (now.getMonth() + 1)) {
+        maxDay = now.getDate();
+      }
+
+      const daysWithDebt = new Set();
+      monthItems.forEach((it) => {
+        if (it.type === 'DEBT' && it.date) {
+          const d = new Date(it.date);
+          if (!isNaN(d.getTime())) {
+            daysWithDebt.add(d.getDate());
+          }
+        }
+      });
+
+      const missingDays = [];
+      for (let day = 1; day <= maxDay; day++) {
+        if (!daysWithDebt.has(day)) {
+          missingDays.push(day);
+        }
+      }
+
+      // Hộp chú thích các ngày không có tiền hàng nhập (bên trái hộp tổng kết)
+      const noteBoxX = paddingX;
+      const noteBoxWidth = summaryX - paddingX - 16;
+      const noteBoxHeight = 105;
+
+      ctx.fillStyle = '#FFFBEB';
+      ctx.fillRect(noteBoxX, curY, noteBoxWidth, noteBoxHeight);
+      ctx.strokeStyle = '#FDE68A';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(noteBoxX, curY, noteBoxWidth, noteBoxHeight);
+
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 13px Arial';
+      ctx.fillStyle = '#92400E';
+      ctx.fillText(`📌 Chú thích: Ngày không có tiền hàng (Tháng ${month}):`, noteBoxX + 12, curY + 22);
+
+      if (maxDay === 0) {
+        ctx.fillStyle = '#64748B';
+        ctx.font = 'italic 12px Arial';
+        ctx.fillText('Tháng trong tương lai chưa phát sinh giao dịch.', noteBoxX + 12, curY + 46);
+      } else if (missingDays.length === 0) {
+        ctx.fillStyle = '#166534';
+        ctx.font = '12px Arial';
+        ctx.fillText(`🎉 Tính đến ngày ${maxDay < 10 ? '0' + maxDay : maxDay}/${monthNum < 10 ? '0' + monthNum : monthNum}, tất cả các ngày đều có hàng nhập.`, noteBoxX + 12, curY + 48);
+      } else {
+        const daysStr = missingDays.map((d) => (d < 10 ? `0${d}` : `${d}`)).join(', ');
+        ctx.fillStyle = '#DC2626';
+        ctx.font = 'bold 12px Arial';
+        ctx.fillText(`Không có tiền hàng nhập (${missingDays.length} ngày):`, noteBoxX + 12, curY + 44);
+
+        ctx.fillStyle = '#1E293B';
+        ctx.font = '12px Arial';
+        const wrappedLines = wrapText(ctx, `Ngày: ${daysStr}`, noteBoxWidth - 24);
+        wrappedLines.slice(0, 2).forEach((line, lIdx) => {
+          ctx.fillText(line, noteBoxX + 12, curY + 62 + lIdx * 16);
+        });
+
+        ctx.fillStyle = '#78350F';
+        ctx.font = 'italic 10.5px Arial';
+        ctx.fillText(`* Tính đến ngày ${maxDay < 10 ? '0' + maxDay : maxDay}/${monthNum < 10 ? '0' + monthNum : monthNum} (không tính ngày tương lai)`, noteBoxX + 12, curY + 96);
+      }
+
+      // Hộp tổng kết tài chính (bên phải)
       ctx.fillStyle = '#F8FAFC';
       ctx.fillRect(summaryX, curY, summaryBoxWidth, 105);
       ctx.strokeStyle = '#E2E8F0';

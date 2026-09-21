@@ -170,6 +170,67 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     };
   }, [filteredHistory]);
 
+  // Tính toán danh sách các ngày trong tháng không có tiền hàng nhập (DEBT) tính đến ngày hiện tại
+  const { targetMonthKey, missingDays, maxEvaluatedDay } = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // 1 - 12
+    const currentDay = now.getDate();
+
+    let targetM = selectedMonth;
+    if (!targetM || targetM === 'ALL') {
+      const curM = `${String(currentMonth).padStart(2, '0')}/${currentYear}`;
+      targetM = availableMonths.includes(curM) ? curM : (availableMonths[0] || curM);
+    }
+
+    if (!targetM || !targetM.includes('/')) {
+      return { targetMonthKey: '', missingDays: [], maxEvaluatedDay: 0 };
+    }
+
+    const [monthNum, yearNum] = targetM.split('/').map(Number);
+    const totalDaysInMonth = new Date(yearNum, monthNum, 0).getDate();
+
+    let maxDay = 0;
+    if (yearNum < currentYear || (yearNum === currentYear && monthNum < currentMonth)) {
+      // Tháng trong quá khứ -> tính toàn bộ các ngày trong tháng
+      maxDay = totalDaysInMonth;
+    } else if (yearNum === currentYear && monthNum === currentMonth) {
+      // Tháng hiện tại -> chỉ tính đến ngày hôm nay (không liệt kê ngày tương lai)
+      maxDay = currentDay;
+    } else {
+      // Tháng trong tương lai -> không tính
+      maxDay = 0;
+    }
+
+    // Tập hợp các ngày có tiền hàng nhập (DEBT)
+    const daysWithDebt = new Set();
+    history.forEach((it) => {
+      if (it.type === 'DEBT' && it.date) {
+        const d = new Date(it.date);
+        if (!isNaN(d.getTime())) {
+          const itemMonth = d.getMonth() + 1;
+          const itemYear = d.getFullYear();
+          if (itemMonth === monthNum && itemYear === yearNum) {
+            daysWithDebt.add(d.getDate());
+          }
+        }
+      }
+    });
+
+    const missing = [];
+    for (let day = 1; day <= maxDay; day++) {
+      if (!daysWithDebt.has(day)) {
+        missing.push(day);
+      }
+    }
+
+    return {
+      targetMonthKey: targetM,
+      missingDays: missing,
+      maxEvaluatedDay: maxDay,
+    };
+  }, [selectedMonth, availableMonths, history]);
+
   const selectedMonthOption = monthOptions.find((opt) => opt.id === selectedMonth) || monthOptions[0];
 
   // Mở modal sửa giao dịch
@@ -267,101 +328,158 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     );
   };
 
-  return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.modalView}>
-        <Text style={styles.modalTitle}>👁️ LỊCH SỬ GIAO DỊCH</Text>
-        <Text style={styles.supplierName}>
-          Nhà cung cấp: {currentSupplier?.name || supplier?.name || ''}
-        </Text>
+  // Giao diện chú thích các ngày không có tiền hàng
+  const renderMissingDaysCard = () => {
+    if (!targetMonthKey || maxEvaluatedDay <= 0) return null;
 
-        {/* Thanh lọc tháng và nút xuất ảnh */}
-        <View style={[styles.filterBar, { zIndex: selectContainerZIndex }]}>
-          <View style={styles.selectWrapper}>
-            <CustomSelect
-              options={monthOptions}
-              value={selectedMonthOption}
-              placeholder="Lọc theo tháng..."
-              onSelect={(item) => setSelectedMonth(item.id)}
-              renderSelected={(m) => m?.name || ''}
-              zIndex={999999}
-              onOpenChange={(isOpen) => setSelectContainerZIndex(isOpen ? 999999 : 10)}
-            />
-          </View>
+    const [mNum] = targetMonthKey.split('/').map(Number);
+    const mStr = mNum < 10 ? `0${mNum}` : `${mNum}`;
+    const maxDayStr = maxEvaluatedDay < 10 ? `0${maxEvaluatedDay}` : `${maxEvaluatedDay}`;
 
-          <TouchableOpacity
-            style={styles.exportBtn}
-            onPress={() => {
-              const now = new Date();
-              const currentMonthStr = `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-              const targetMonth = selectedMonth === 'ALL'
-                ? (availableMonths[0] || currentMonthStr)
-                : selectedMonth;
-              exportSupplierHistoryModalRef.current?.open(currentSupplier || supplier, targetMonth, history);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.exportBtnText}>🖼️ Xuất ảnh</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Thanh thống kê nhanh theo tháng đang lọc */}
-        <View style={styles.summaryBar}>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Tiền hàng nhập (+)</Text>
-            <Text style={styles.summaryValueDebt}>+{formatCurrency(totalDebt)}</Text>
+    return (
+      <View style={styles.missingDaysCard}>
+        <View style={styles.missingDaysHeader}>
+          <View style={styles.missingDaysHeaderLeft}>
+            <Text style={styles.missingDaysIcon}>📌</Text>
+            <Text style={styles.missingDaysTitle} numberOfLines={1}>
+              Ngày không có tiền hàng (Tháng {targetMonthKey}):
+            </Text>
           </View>
-          <View style={styles.summaryDivider} />
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Đã trả (-)</Text>
-            <Text style={styles.summaryValuePayment}>-{formatCurrency(totalPayment)}</Text>
-          </View>
-          <View style={styles.summaryDivider} />
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Chênh lệch</Text>
+          <View style={[
+            styles.missingCountBadge,
+            missingDays.length > 0 ? styles.missingCountBadgeActive : styles.missingCountBadgeZero
+          ]}>
             <Text style={[
-              styles.summaryValueBalance,
-              balance > 0 ? styles.textDebt : (balance < 0 ? styles.textPayment : styles.textNeutral)
+              styles.missingCountText,
+              missingDays.length > 0 ? styles.missingCountTextActive : styles.missingCountTextZero
             ]}>
-              {balance > 0 ? '+' : ''}{formatCurrency(balance)}
+              {missingDays.length > 0 ? `${missingDays.length} ngày` : 'Đủ các ngày'}
             </Text>
           </View>
         </View>
 
-        {loading ? (
-          <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
-        ) : error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>⚠️ {error}</Text>
+        {missingDays.length > 0 ? (
+          <>
+            <View style={styles.daysChipContainer}>
+              {missingDays.map((d) => (
+                <View key={d} style={styles.dayChip}>
+                  <Text style={styles.dayChipText}>
+                    {d < 10 ? `0${d}` : d}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.missingDaysSubtitle}>
+              * Tính đến ngày {maxDayStr}/{mStr}, không có tiền hàng nhập vào các ngày trên (không tính ngày tương lai).
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.allDaysPresentText}>
+            🎉 Tính đến ngày {maxDayStr}/{mStr}, tất cả các ngày đều có đơn nhập tiền hàng!
+          </Text>
+        )}
+      </View>
+    );
+  };
+
+  return (
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+        <View style={styles.modalView}>
+          <Text style={styles.modalTitle}>👁️ LỊCH SỬ GIAO DỊCH</Text>
+          <Text style={styles.supplierName}>
+            Nhà cung cấp: {currentSupplier?.name || supplier?.name || ''}
+          </Text>
+
+          {/* Thanh lọc tháng và nút xuất ảnh */}
+          <View style={[styles.filterBar, { zIndex: selectContainerZIndex }]}>
+            <View style={styles.selectWrapper}>
+              <CustomSelect
+                options={monthOptions}
+                value={selectedMonthOption}
+                placeholder="Lọc theo tháng..."
+                onSelect={(item) => setSelectedMonth(item.id)}
+                renderSelected={(m) => m?.name || ''}
+                zIndex={999999}
+                onOpenChange={(isOpen) => setSelectContainerZIndex(isOpen ? 999999 : 10)}
+              />
+            </View>
+
             <TouchableOpacity
-              style={styles.retryButton}
-              onPress={() => fetchHistory(currentSupplier?.id || supplier?.id)}
+              style={styles.exportBtn}
+              onPress={() => {
+                const now = new Date();
+                const currentMonthStr = `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+                const targetMonth = selectedMonth === 'ALL'
+                  ? (availableMonths[0] || currentMonthStr)
+                  : selectedMonth;
+                exportSupplierHistoryModalRef.current?.open(currentSupplier || supplier, targetMonth, history);
+              }}
+              activeOpacity={0.7}
             >
-              <Text style={styles.retryText}>Thử lại 🔄</Text>
+              <Text style={styles.exportBtnText}>🖼️ Xuất ảnh</Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <FlatList
-            data={filteredHistory}
-            renderItem={renderHistoryItem}
-            keyExtractor={(item) => `${item.type || 'tx'}-${item.id}`}
-            contentContainerStyle={styles.listContent}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>
-                  {selectedMonth === 'ALL'
-                    ? 'Chưa có giao dịch nhập hàng hay trả tiền nào được ghi nhận.'
-                    : `Không có giao dịch nào trong Tháng ${selectedMonth}.`}
-                </Text>
-              </View>
-            }
-          />
-        )}
 
-        <TouchableOpacity style={styles.closeButton} onPress={() => setVisible(false)}>
-          <Text style={styles.closeButtonText}>ĐÓNG LẠI</Text>
-        </TouchableOpacity>
-      </View>
+          {/* Thanh thống kê nhanh theo tháng đang lọc */}
+          <View style={styles.summaryBar}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Tiền hàng nhập (+)</Text>
+              <Text style={styles.summaryValueDebt}>+{formatCurrency(totalDebt)}</Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Đã trả (-)</Text>
+              <Text style={styles.summaryValuePayment}>-{formatCurrency(totalPayment)}</Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Chênh lệch</Text>
+              <Text style={[
+                styles.summaryValueBalance,
+                balance > 0 ? styles.textDebt : (balance < 0 ? styles.textPayment : styles.textNeutral)
+              ]}>
+                {balance > 0 ? '+' : ''}{formatCurrency(balance)}
+              </Text>
+            </View>
+          </View>
+
+          {loading ? (
+            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>⚠️ {error}</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={() => fetchHistory(currentSupplier?.id || supplier?.id)}
+              >
+                <Text style={styles.retryText}>Thử lại 🔄</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <FlatList
+              data={filteredHistory}
+              renderItem={renderHistoryItem}
+              keyExtractor={(item) => `${item.type || 'tx'}-${item.id}`}
+              contentContainerStyle={styles.listContent}
+              ListHeaderComponent={renderMissingDaysCard}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>
+                    {selectedMonth === 'ALL'
+                      ? 'Chưa có giao dịch nhập hàng hay trả tiền nào được ghi nhận.'
+                      : `Không có giao dịch nào trong Tháng ${selectedMonth}.`}
+                  </Text>
+                </View>
+              }
+            />
+          )}
+
+          <TouchableOpacity style={styles.closeButton} onPress={() => setVisible(false)}>
+            <Text style={styles.closeButtonText}>ĐÓNG LẠI</Text>
+          </TouchableOpacity>
+        </View>
+      </SmoothModal>
 
       {/* Modal xuất báo cáo lịch sử dạng ảnh */}
       <ExportSupplierHistoryModal ref={exportSupplierHistoryModalRef} />
@@ -380,7 +498,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
 
       {/* Modal xác nhận xóa */}
       <PopupModal ref={popupModalRef} />
-    </SmoothModal>
+    </>
   );
 });
 
@@ -621,6 +739,93 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  missingDaysCard: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  missingDaysHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  missingDaysHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    paddingRight: 6,
+  },
+  missingDaysIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  missingDaysTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#92400E',
+    flexShrink: 1,
+  },
+  missingCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  missingCountBadgeActive: {
+    backgroundColor: '#FEF08A',
+  },
+  missingCountBadgeZero: {
+    backgroundColor: '#DCFCE7',
+  },
+  missingCountText: {
+    fontSize: 11.5,
+    fontWeight: 'bold',
+  },
+  missingCountTextActive: {
+    color: '#B45309',
+  },
+  missingCountTextZero: {
+    color: '#15803D',
+  },
+  daysChipContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginVertical: 4,
+  },
+  dayChip: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    minWidth: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  missingDaysSubtitle: {
+    fontSize: 11.5,
+    color: '#78350F',
+    fontStyle: 'italic',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  allDaysPresentText: {
+    fontSize: 12.5,
+    color: '#15803D',
+    fontWeight: '500',
+    marginTop: 2,
   },
 });
 

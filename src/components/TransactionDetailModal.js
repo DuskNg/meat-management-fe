@@ -123,11 +123,11 @@ const TransactionDetailModal = forwardRef(({
     });
   };
 
-  // Mở modal tải ảnh hóa đơn gắn trực tiếp cho khách và ngày này
+  // Mở modal tải ảnh hóa đơn gắn trực tiếp cho khách, ngày và đơn nợ cụ thể này
   const handleOpenAddInvoice = (t) => {
     const uploader = invoiceImageUploadModalRef?.current || internalUploadRef.current;
     if (uploader) {
-      uploader.open(customerId, dayGroup?.dateKey || toDateKey(t.date));
+      uploader.open(customerId, dayGroup?.dateKey || toDateKey(t.date), 'upload', t.id, t);
     }
   };
 

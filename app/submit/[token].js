@@ -441,6 +441,40 @@ export default function StaffSubmitScreen() {
     return selectedDate === `${d}/${m}/${y}`;
   }, [selectedDate]);
 
+  // Nhóm lịch sử hóa đơn theo mốc giờ (ví dụ: 17:00, 14:00, 09:00...)
+  const groupedHistory = useMemo(() => {
+    if (!historySubmissions || historySubmissions.length === 0) return [];
+    const groups = [];
+    const groupMap = new Map();
+
+    historySubmissions.forEach((item, globalIdx) => {
+      let hourKey = 'Khác';
+      if (item.createdAt) {
+        const d = new Date(item.createdAt);
+        if (!isNaN(d.getTime())) {
+          const hour = String(d.getHours()).padStart(2, '0');
+          hourKey = `${hour}:00`;
+        }
+      }
+
+      if (!groupMap.has(hourKey)) {
+        const newGroup = {
+          hourKey,
+          items: [],
+        };
+        groupMap.set(hourKey, newGroup);
+        groups.push(newGroup);
+      }
+
+      groupMap.get(hourKey).items.push({
+        ...item,
+        globalIdx,
+      });
+    });
+
+    return groups;
+  }, [historySubmissions]);
+
   // Modal phóng to / thu nhỏ / xoay ảnh chuyên dụng
   const imagePreviewModalRef = useRef(null);
 
@@ -910,113 +944,146 @@ export default function StaffSubmitScreen() {
                 : `Chưa có hóa đơn nào được gửi trong ngày ${selectedDate}.`}
             </Text>
           ) : (
-            <View style={styles.historyGrid}>
+            <View style={{ gap: 10 }}>
               {/* CÁC TỆP ĐANG TẢI (HIỂN THỊ TỨC THÌ PHONG CÁCH ZALO) */}
-              {uploadQueue.map((item) => {
-                const isVideo = item.fileType === 'VIDEO';
-                const isError = item.status === 'ERROR';
-
-                return (
-                  <View key={item.id} style={styles.historyGridBox}>
-                    {isVideo ? (
-                      <View style={styles.historyVideoWrap}>
-                        <View style={styles.historyVideoFallback}>
-                          <Text style={{ fontSize: 26 }}>🎬</Text>
-                          <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 2, fontWeight: '600' }}>Video</Text>
-                        </View>
-                        <View style={styles.videoBadgeTag}>
-                          <Text style={styles.videoBadgeTagText}>VIDEO</Text>
-                        </View>
-                      </View>
-                    ) : (
-                      <Image source={{ uri: item.blobUrl }} style={styles.historyGridImg} resizeMode="cover" />
-                    )}
-
-                    {/* Lớp phủ trạng thái Zalo (Đang gửi hoặc Thử lại nếu lỗi) */}
-                    {isError ? (
-                      <TouchableOpacity
-                        style={styles.uploadQueueOverlayError}
-                        activeOpacity={0.8}
-                        onPress={() => handleRetryQueueItem(item.id)}
-                      >
-                        <Text style={{ fontSize: 16 }}>⚠️</Text>
-                        <Text style={styles.uploadQueueErrorText}>Thử lại</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <View style={styles.uploadQueueOverlay}>
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                        <Text style={styles.uploadQueueLoadingText}>
-                          {item.status === 'UPLOADING' ? 'Đang gửi...' : 'Chờ tải...'}
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Nút hủy ✕ góc trên phải */}
-                    <TouchableOpacity
-                      style={styles.btnCancelQueueItem}
-                      activeOpacity={0.7}
-                      onPress={() => handleCancelQueueItem(item.id)}
-                    >
-                      <Text style={styles.btnCancelQueueItemText}>✕</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-
-              {/* CÁC TỆP ĐÃ GỬI THÀNH CÔNG HÔM NAY */}
-              {historySubmissions.map((item, idx) => {
-                const isVideo = item.fileType === 'VIDEO';
-                const mediaUrl = resolveMediaUrl(item.fileUrl);
-                const timeStr = item.createdAt
-                  ? new Date(item.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-                  : '';
-
-                return (
-                  <TouchableOpacity
-                    key={item.id || idx}
-                    style={styles.historyGridBox}
-                    activeOpacity={0.85}
-                    onPress={() => handlePreviewMedia(mediaUrl, item.fileType)}
-                  >
-                    {isVideo ? (
-                      <View style={styles.historyVideoWrap}>
-                        {mediaUrl && mediaUrl.includes('res.cloudinary.com') ? (
-                          <Image
-                            source={{ uri: mediaUrl.replace(/\.(mp4|mov|avi|webm)$/i, '.jpg') }}
-                            style={styles.historyGridImg}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={styles.historyVideoFallback}>
-                            <Text style={{ fontSize: 26 }}>🎬</Text>
-                            <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 2, fontWeight: '600' }}>Video</Text>
-                          </View>
-                        )}
-                        <View style={styles.videoPlayOverlay}>
-                          <View style={styles.videoPlayCircle}>
-                            <Text style={styles.videoPlayTriangle}>▶</Text>
-                          </View>
-                        </View>
-                        <View style={styles.videoBadgeTag}>
-                          <Text style={styles.videoBadgeTagText}>VIDEO</Text>
-                        </View>
-                      </View>
-                    ) : (
-                      <Image source={{ uri: mediaUrl }} style={styles.historyGridImg} resizeMode="cover" />
-                    )}
-
-                    {/* Số thứ tự và giờ gửi nhỏ ở góc */}
-                    <View style={styles.historyIndexBadge}>
-                      <Text style={styles.historyIndexBadgeText}>#{idx + 1}</Text>
+              {uploadQueue.length > 0 && (
+                <View style={styles.timeGroupContainer}>
+                  <View style={styles.timeGroupHeader}>
+                    <View style={styles.timeGroupBadgeUploading}>
+                      <ActivityIndicator size="small" color="#059669" style={{ transform: [{ scale: 0.75 }] }} />
+                      <Text style={styles.timeGroupUploadingText}>Đang tải lên ({uploadQueue.length} tệp)</Text>
                     </View>
-                    {timeStr && !isVideo ? (
-                      <View style={styles.historyTimeBadge}>
-                        <Text style={styles.historyTimeBadgeText}>{timeStr}</Text>
-                      </View>
-                    ) : null}
-                  </TouchableOpacity>
-                );
-              })}
+                    <View style={styles.timeGroupDivider} />
+                  </View>
+                  <View style={styles.historyGrid}>
+                    {uploadQueue.map((item) => {
+                      const isVideo = item.fileType === 'VIDEO';
+                      const isError = item.status === 'ERROR';
+
+                      return (
+                        <View key={item.id} style={styles.historyGridBox}>
+                          {isVideo ? (
+                            <View style={styles.historyVideoWrap}>
+                              <View style={styles.historyVideoFallback}>
+                                <Text style={{ fontSize: 26 }}>🎬</Text>
+                                <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 2, fontWeight: '600' }}>Video</Text>
+                              </View>
+                              <View style={styles.videoBadgeTag}>
+                                <Text style={styles.videoBadgeTagText}>VIDEO</Text>
+                              </View>
+                            </View>
+                          ) : (
+                            <Image source={{ uri: item.blobUrl }} style={styles.historyGridImg} resizeMode="cover" />
+                          )}
+
+                          {/* Lớp phủ trạng thái Zalo (Đang gửi hoặc Thử lại nếu lỗi) */}
+                          {isError ? (
+                            <TouchableOpacity
+                              style={styles.uploadQueueOverlayError}
+                              activeOpacity={0.8}
+                              onPress={() => handleRetryQueueItem(item.id)}
+                            >
+                              <Text style={{ fontSize: 16 }}>⚠️</Text>
+                              <Text style={styles.uploadQueueErrorText}>Thử lại</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <View style={styles.uploadQueueOverlay}>
+                              <ActivityIndicator size="small" color="#FFFFFF" />
+                              <Text style={styles.uploadQueueLoadingText}>
+                                {item.status === 'UPLOADING' ? 'Đang gửi...' : 'Chờ tải...'}
+                              </Text>
+                            </View>
+                          )}
+
+                          {/* Nút hủy ✕ góc trên phải */}
+                          <TouchableOpacity
+                            style={styles.btnCancelQueueItem}
+                            activeOpacity={0.7}
+                            onPress={() => handleCancelQueueItem(item.id)}
+                          >
+                            <Text style={styles.btnCancelQueueItemText}>✕</Text>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {/* CÁC TỆP ĐÃ GỬI THÀNH CÔNG HÔM NAY - PHÂN THEO MỐC GIỜ */}
+              {groupedHistory.map((group, groupIdx) => (
+                <View
+                  key={group.hourKey}
+                  style={[styles.timeGroupContainer, groupIdx === 0 && uploadQueue.length === 0 && { marginTop: 0 }]}
+                >
+                  {/* Mốc giờ (ví dụ: 17:00, 14:00, 09:00...) */}
+                  <View style={styles.timeGroupHeader}>
+                    <View style={styles.timeGroupBadge}>
+                      <Text style={styles.timeGroupClockIcon}>⏰</Text>
+                      <Text style={styles.timeGroupTitleText}>{group.hourKey}</Text>
+                      <Text style={styles.timeGroupCountText}>({group.items.length} tệp)</Text>
+                    </View>
+                    <View style={styles.timeGroupDivider} />
+                  </View>
+
+                  {/* Danh sách ảnh + video trong khung giờ */}
+                  <View style={styles.historyGrid}>
+                    {group.items.map((item) => {
+                      const isVideo = item.fileType === 'VIDEO';
+                      const mediaUrl = resolveMediaUrl(item.fileUrl);
+                      const timeStr = item.createdAt
+                        ? new Date(item.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                        : '';
+
+                      return (
+                        <TouchableOpacity
+                          key={item.id || item.globalIdx}
+                          style={styles.historyGridBox}
+                          activeOpacity={0.85}
+                          onPress={() => handlePreviewMedia(mediaUrl, item.fileType)}
+                        >
+                          {isVideo ? (
+                            <View style={styles.historyVideoWrap}>
+                              {mediaUrl && mediaUrl.includes('res.cloudinary.com') ? (
+                                <Image
+                                  source={{ uri: mediaUrl.replace(/\.(mp4|mov|avi|webm)$/i, '.jpg') }}
+                                  style={styles.historyGridImg}
+                                  resizeMode="cover"
+                                />
+                              ) : (
+                                <View style={styles.historyVideoFallback}>
+                                  <Text style={{ fontSize: 26 }}>🎬</Text>
+                                  <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 2, fontWeight: '600' }}>Video</Text>
+                                </View>
+                              )}
+                              <View style={styles.videoPlayOverlay}>
+                                <View style={styles.videoPlayCircle}>
+                                  <Text style={styles.videoPlayTriangle}>▶</Text>
+                                </View>
+                              </View>
+                              <View style={styles.videoBadgeTag}>
+                                <Text style={styles.videoBadgeTagText}>VIDEO</Text>
+                              </View>
+                            </View>
+                          ) : (
+                            <Image source={{ uri: mediaUrl }} style={styles.historyGridImg} resizeMode="cover" />
+                          )}
+
+                          {/* Số thứ tự và giờ gửi nhỏ ở góc */}
+                          <View style={styles.historyIndexBadge}>
+                            <Text style={styles.historyIndexBadgeText}>#{item.globalIdx + 1}</Text>
+                          </View>
+                          {timeStr && !isVideo ? (
+                            <View style={styles.historyTimeBadge}>
+                              <Text style={styles.historyTimeBadgeText}>{timeStr}</Text>
+                            </View>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
             </View>
           )}
         </View>
@@ -1387,7 +1454,60 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: 6,
+  },
+  timeGroupContainer: {
+    marginTop: 12,
+  },
+  timeGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  timeGroupBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 14,
+  },
+  timeGroupClockIcon: {
+    fontSize: 12,
+  },
+  timeGroupTitleText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  timeGroupCountText: {
+    fontSize: 11.5,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  timeGroupDivider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  timeGroupBadgeUploading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 14,
+  },
+  timeGroupUploadingText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
   },
   historyGridBox: {
     position: 'relative',
