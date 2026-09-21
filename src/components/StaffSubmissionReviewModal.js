@@ -1639,13 +1639,23 @@ const resolveCustomerForSub = (sub, custList) => {
     }
   }
 
-  // 6. Khớp thông thường: Sắp xếp theo tên dài nhất và CẤM so khớp substring 1-2 ký tự
+  // 6. Khớp thông thường:
+  // 6.1. BẮT BUỘC ƯU TIÊN KHỚP CHÍNH XÁC 100% (Exact Match) TRƯỚC
+  // Tuyệt đối không để trường hợp khách "Kcc" bị nhận nhầm sang "Kcc1"!
+  if (!matchedCust) {
+    matchedCust = custList.find((c) => {
+      const cName = removeDiacritics(c.name.toLowerCase().trim());
+      const cNameNoSpace = cName.replace(/\s+/g, '');
+      return cName === cleanDetected || cNameNoSpace === cleanDetectedNoSpace;
+    }) || null;
+  }
+
+  // 6.2. Chỉ khi KHÔNG CÓ khách nào khớp 100%, mới tìm so khớp một phần (includes)
   if (!matchedCust) {
     const sortedCusts = [...custList].sort((a, b) => b.name.length - a.name.length);
     matchedCust = sortedCusts.find((c) => {
       const cName = removeDiacritics(c.name.toLowerCase().trim());
       const cNameNoSpace = cName.replace(/\s+/g, '');
-      if (cName === cleanDetected || cNameNoSpace === cleanDetectedNoSpace) return true;
       // Chỉ cho phép includes khi tên khách có ít nhất 3 ký tự (tránh khách 1 ký tự như "N")
       if (cName.length >= 3 && cleanDetected.includes(cName)) return true;
       if (cNameNoSpace.length >= 3 && cleanDetectedNoSpace.includes(cNameNoSpace)) return true;
