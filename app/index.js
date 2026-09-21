@@ -1088,8 +1088,8 @@ export default function DashboardScreen() {
         setScanning(true);
         setScanningMsg(`Đang chuẩn bị ${files.length} ảnh (0/${files.length})...`);
 
-        // Xử lý tối ưu hoá ảnh bằng 3 luồng song song để tăng tốc gấp 3 lần nhưng vẫn giải phóng RAM an toàn
-        const concurrency = 3;
+        // Xử lý tối ưu hoá ảnh bằng 5 luồng song song để tăng tốc tối đa nhưng vẫn giải phóng RAM an toàn
+        const concurrency = 5;
         let currentIndex = 0;
         let completedCount = 0;
         const optResults = new Array(files.length);

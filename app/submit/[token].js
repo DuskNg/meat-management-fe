@@ -724,8 +724,8 @@ export default function StaffSubmitScreen() {
     }
   };
 
-  // Giới hạn số luồng upload song song (3 luồng đồng thời: tăng tốc 3-4x mà vẫn đảm bảo an toàn RAM & mạng)
-  const MAX_CONCURRENT = 3;
+  // Giới hạn số luồng upload song song (5 luồng đồng thời: tối ưu tốc độ tối đa trong ngưỡng kết nối trình duyệt)
+  const MAX_CONCURRENT = 5;
 
   // Xử lý tải lên một tệp đơn lẻ độc lập
   const uploadSingleItem = async (nextItem) => {
