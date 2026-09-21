@@ -104,14 +104,13 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
           </TouchableOpacity>
         </View>
 
-        {/* Nội dung chính cuộn mượt */}
-        <ScrollView
-          style={styles.bodyScrollView}
-          contentContainerStyle={styles.bodyContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {step === 'options' ? (
-            /* Bước 1: 2 Lựa chọn chính (Tất cả nhà hàng vs Từng nhà hàng) */
+        {step === 'options' ? (
+          /* Bước 1: 2 Lựa chọn chính (Tất cả nhà hàng vs Từng nhà hàng) */
+          <ScrollView
+            style={styles.bodyScrollView}
+            contentContainerStyle={styles.bodyContent}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.optionsContainer}>
               {/* Option 1: Xuất tất cả nhà hàng */}
               <TouchableOpacity
@@ -164,9 +163,12 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
                 </View>
               </TouchableOpacity>
             </View>
-          ) : (
-            /* Bước 2: Danh sách chọn nhà hàng cụ thể */
-            <View style={styles.branchSelectContainer}>
+          </ScrollView>
+        ) : (
+          /* Bước 2: Danh sách chọn nhà hàng cụ thể */
+          <View style={styles.branchSelectContainer}>
+            {/* PHẦN CỐ ĐỊNH TRÊN ĐỈNH: Nút quay lại & Ô tìm kiếm không bị cuộn */}
+            <View style={styles.fixedBranchHeader}>
               {/* Nút quay lại bước chọn hình thức */}
               <TouchableOpacity
                 style={styles.backButton}
@@ -199,61 +201,65 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
                   ) : null}
                 </View>
               )}
-
-              {/* Danh sách các thẻ nhà hàng */}
-              <View style={styles.branchListWrap}>
-                {filteredBranches.length === 0 ? (
-                  <View style={styles.emptyBranchWrap}>
-                    <Text style={styles.emptyBranchText}>
-                      Không tìm thấy nhà hàng nào phù hợp với &quot;{searchQuery}&quot;
-                    </Text>
-                  </View>
-                ) : (
-                  filteredBranches.map((branch, index) => {
-                    const isSelected = branch.id === currentBranchId;
-                    return (
-                      <TouchableOpacity
-                        key={branch.id || index}
-                        style={[
-                          styles.branchItemCard,
-                          isSelected && styles.branchItemCardActive,
-                        ]}
-                        onPress={() => handleSelectBranch(branch)}
-                        activeOpacity={0.75}
-                      >
-                        <View style={styles.branchItemLeft}>
-                          <View style={styles.branchIconWrap}>
-                            <Text style={styles.branchIconText}>📍</Text>
-                          </View>
-                          <View style={styles.branchInfoCol}>
-                            <View style={styles.branchNameRow}>
-                              <Text style={styles.branchNameText} numberOfLines={1}>
-                                {branch.name}
-                              </Text>
-                              {isSelected && (
-                                <View style={styles.currentBadge}>
-                                  <Text style={styles.currentBadgeText}>Đang xem</Text>
-                                </View>
-                              )}
-                            </View>
-                            {branch.debt !== undefined && branch.debt !== null ? (
-                              <Text style={styles.branchDebtText}>
-                                Nợ hiện tại: <Text style={styles.branchDebtVal}>{formatCurrency(branch.debt)}</Text>
-                              </Text>
-                            ) : null}
-                          </View>
-                        </View>
-                        <View style={styles.exportActionBtn}>
-                          <Text style={styles.exportActionBtnText}>Xuất ảnh ➔</Text>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </View>
             </View>
-          )}
-        </ScrollView>
+
+            {/* CHỈ CUỘN RIÊNG PHẦN DANH SÁCH CÁC NHÀ HÀNG */}
+            <ScrollView
+              style={styles.branchListScrollView}
+              contentContainerStyle={styles.branchListContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {filteredBranches.length === 0 ? (
+                <View style={styles.emptyBranchWrap}>
+                  <Text style={styles.emptyBranchText}>
+                    Không tìm thấy nhà hàng nào phù hợp với &quot;{searchQuery}&quot;
+                  </Text>
+                </View>
+              ) : (
+                filteredBranches.map((branch, index) => {
+                  const isSelected = branch.id === currentBranchId;
+                  return (
+                    <TouchableOpacity
+                      key={branch.id || index}
+                      style={[
+                        styles.branchItemCard,
+                        isSelected && styles.branchItemCardActive,
+                      ]}
+                      onPress={() => handleSelectBranch(branch)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={styles.branchItemLeft}>
+                        <View style={styles.branchIconWrap}>
+                          <Text style={styles.branchIconText}>📍</Text>
+                        </View>
+                        <View style={styles.branchInfoCol}>
+                          <View style={styles.branchNameRow}>
+                            <Text style={styles.branchNameText} numberOfLines={1}>
+                              {branch.name}
+                            </Text>
+                            {isSelected && (
+                              <View style={styles.currentBadge}>
+                                <Text style={styles.currentBadgeText}>Đang xem</Text>
+                              </View>
+                            )}
+                          </View>
+                          {branch.debt !== undefined && branch.debt !== null ? (
+                            <Text style={styles.branchDebtText}>
+                              Nợ hiện tại: <Text style={styles.branchDebtVal}>{formatCurrency(branch.debt)}</Text>
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                      <View style={styles.exportActionBtn}>
+                        <Text style={styles.exportActionBtnText}>Xuất ảnh ➔</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Footer chân modal neo đáy: Nút Đóng Lại chuẩn */}
         <View style={styles.modalFooter}>
@@ -434,6 +440,19 @@ const styles = StyleSheet.create({
   // Giao diện chọn chi nhánh
   branchSelectContainer: {
     paddingTop: 2,
+    flexShrink: 1,
+  },
+  fixedBranchHeader: {
+    paddingTop: 2,
+    paddingBottom: 2,
+  },
+  branchListScrollView: {
+    maxHeight: 400,
+    marginTop: 2,
+  },
+  branchListContent: {
+    paddingBottom: 12,
+    gap: 8,
   },
   backButton: {
     paddingVertical: 6,
@@ -479,9 +498,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94A3B8',
     fontWeight: 'bold',
-  },
-  branchListWrap: {
-    gap: 8,
   },
   branchItemCard: {
     flexDirection: 'row',
