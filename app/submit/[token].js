@@ -431,6 +431,14 @@ export default function StaffSubmitScreen() {
   // Lịch sử gửi trong ngày của nhóm
   const [historySubmissions, setHistorySubmissions] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  // Giới hạn hiển thị ban đầu 24 tệp để triệt tiêu tràn RAM trên Safari iOS
+  const [visibleCount, setVisibleCount] = useState(24);
+  const isFetchingHistoryRef = useRef(false);
+
+  // Reset số lượng hiển thị khi người dùng đổi ngày
+  useEffect(() => {
+    setVisibleCount(24);
+  }, [selectedDate]);
 
   // Kiểm tra ngày đang chọn có phải là ngày hôm nay không
   const isToday = useMemo(() => {
@@ -445,6 +453,9 @@ export default function StaffSubmitScreen() {
   const groupedHistory = useMemo(() => {
     if (!historySubmissions || historySubmissions.length === 0) return [];
 
+    // Chỉ render tối đa visibleCount tệp trên màn hình để bảo vệ bộ nhớ RAM máy khách
+    const displayedList = historySubmissions.slice(0, visibleCount);
+
     // Helper định dạng giờ phút HH:mm (chuẩn 2 chữ số)
     const formatHM = (d) => {
       const h = String(d.getHours()).padStart(2, '0');
@@ -453,7 +464,7 @@ export default function StaffSubmitScreen() {
     };
 
     // Chuẩn hóa và sắp xếp tệp theo thời gian tạo giảm dần (mới nhất lên đầu)
-    const sorted = historySubmissions
+    const sorted = displayedList
       .map((item, originalIdx) => {
         const rawTime = item.createdAt || item.date;
         const time = rawTime ? new Date(rawTime).getTime() : 0;
@@ -543,7 +554,7 @@ export default function StaffSubmitScreen() {
     });
 
     return groups;
-  }, [historySubmissions]);
+  }, [historySubmissions, visibleCount]);
 
   // Modal phóng to / thu nhỏ / xoay ảnh chuyên dụng
   const imagePreviewModalRef = useRef(null);
@@ -596,8 +607,9 @@ export default function StaffSubmitScreen() {
 
   // Tải lịch sử gửi theo ngày được chọn
   const fetchHistory = async (dateStr = selectedDate) => {
-    if (!token) return;
+    if (!token || isFetchingHistoryRef.current) return;
     try {
+      isFetchingHistoryRef.current = true;
       setLoadingHistory(true);
       let queryDate = '';
       if (dateStr) {
@@ -620,6 +632,7 @@ export default function StaffSubmitScreen() {
     } catch (err) {
       console.warn('Lỗi khi tải lịch sử:', err);
     } finally {
+      isFetchingHistoryRef.current = false;
       setLoadingHistory(false);
     }
   };
@@ -1118,9 +1131,10 @@ export default function StaffSubmitScreen() {
                             <View style={styles.historyVideoWrap}>
                               {mediaUrl && mediaUrl.includes('res.cloudinary.com') ? (
                                 <Image
-                                  source={{ uri: mediaUrl.replace(/\.(mp4|mov|avi|webm)$/i, '.jpg') }}
+                                  source={{ uri: mediaUrl.replace(/\.(mp4|mov|avi|webm)$/i, '.jpg').replace('/upload/', '/upload/w_160,h_160,c_fill,q_auto,f_auto/') }}
                                   style={styles.historyGridImg}
                                   resizeMode="cover"
+                                  {...(Platform.OS === 'web' ? { loading: 'lazy', decoding: 'async' } : {})}
                                 />
                               ) : (
                                 <View style={styles.historyVideoFallback}>
@@ -1138,7 +1152,16 @@ export default function StaffSubmitScreen() {
                               </View>
                             </View>
                           ) : (
-                            <Image source={{ uri: mediaUrl }} style={styles.historyGridImg} resizeMode="cover" />
+                            <Image
+                              source={{
+                                uri: mediaUrl && mediaUrl.includes('res.cloudinary.com')
+                                  ? mediaUrl.replace('/upload/', '/upload/w_160,h_160,c_fill,q_auto,f_auto/')
+                                  : mediaUrl,
+                              }}
+                              style={styles.historyGridImg}
+                              resizeMode="cover"
+                              {...(Platform.OS === 'web' ? { loading: 'lazy', decoding: 'async' } : {})}
+                            />
                           )}
 
                           {/* Số thứ tự và giờ gửi nhỏ ở góc */}
@@ -1156,6 +1179,29 @@ export default function StaffSubmitScreen() {
                   </View>
                 </View>
               ))}
+
+              {/* Nút bấm Xem thêm tệp cũ hơn (Bảo vệ bộ nhớ RAM máy khách) */}
+              {historySubmissions.length > visibleCount && (
+                <View style={styles.btnLoadMoreWrap}>
+                  <TouchableOpacity
+                    style={styles.btnLoadMore}
+                    activeOpacity={0.8}
+                    onPress={() => setVisibleCount((prev) => prev + 24)}
+                  >
+                    <Text style={styles.btnLoadMoreText}>
+                      👇 Xem thêm 24 tệp cũ hơn (còn {historySubmissions.length - visibleCount} tệp)
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setVisibleCount(historySubmissions.length)}
+                  >
+                    <Text style={styles.btnShowAllText}>
+                      Xem toàn bộ ({historySubmissions.length} tệp)
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -1769,6 +1815,38 @@ const styles = StyleSheet.create({
   previewModalImage: {
     width: '100%',
     height: 420,
+  },
+
+  // Nút xem thêm tệp cũ hơn
+  btnLoadMoreWrap: {
+    alignItems: 'center',
+    marginTop: 14,
+    marginBottom: 6,
+    gap: 8,
+  },
+  btnLoadMore: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    width: '100%',
+    cursor: 'pointer',
+  },
+  btnLoadMoreText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  btnShowAllText: {
+    fontSize: 12,
+    color: '#059669',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+    cursor: 'pointer',
+    paddingVertical: 4,
   },
 });
 
