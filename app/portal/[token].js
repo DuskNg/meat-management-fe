@@ -2400,7 +2400,11 @@ export default function PortalScreen() {
       />
 
       {/* MODAL XEM ẢNH HÓA ĐƠN THỰC TẾ TRÊN PORTAL */}
-      <InvoiceImageViewerModal ref={invoiceViewerRef} />
+      <InvoiceImageViewerModal
+        ref={invoiceViewerRef}
+        portalToken={token}
+        portalSessionToken={sessionToken}
+      />
 
       {/* MODAL KIỂM TRA GIÁ THỊT & PHẢN ÁNH GIÁ */}
       <CustomerPriceCheckModal

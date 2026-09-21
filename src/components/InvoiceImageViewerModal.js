@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { API_HOST } from '../api/client';
+import { api } from '../api/client';
+import axios from 'axios';
 import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -33,6 +35,10 @@ const checkIsVideoUrl = (url) => {
  * - Hỗ trợ chuyển đổi giữa nhiều ảnh hóa đơn (Next/Prev).
  */
 const InvoiceImageViewerModal = forwardRef((props, ref) => {
+  // portalToken + portalSessionToken: chỉ truyền vào khi dùng trong portal khách hàng (không có auth Bearer)
+  const { portalToken, portalSessionToken } = props;
+  const isPortalMode = Boolean(portalToken);
+
   const [visible, setVisible] = useState(false);
   const [images, setImages] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -50,6 +56,10 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  // State đồng bộ Cloudinary khi video lỗi tải từ máy chủ cục bộ
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [isMissingFile, setIsMissingFile] = useState(false);
+  const [syncedUrls, setSyncedUrls] = useState({}); // lưu cache URL sau khi sync theo id hoặc index
 
   const containerRef = useRef(null);
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
@@ -67,6 +77,8 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     resetZoom();
     setImageLoading(true);
     setImageError(false);
+    setIsSyncingCloud(false);
+    setIsMissingFile(false);
   }, [currentIndex, visible, reloadKey]);
 
   // Phơi bày hàm điều khiển ra ngoài ref
@@ -93,6 +105,9 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
       resetZoom();
       setImageLoading(true);
       setImageError(false);
+      setIsSyncingCloud(false);
+      setIsMissingFile(false);
+      setSyncedUrls({}); // Xóa cache URL đã sync của lần mở trước
       setVisible(true);
     },
     close: () => {
@@ -123,14 +138,68 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   // Chuẩn hóa đường dẫn ảnh đầy đủ
   const getFullImageUrl = (path) => {
     if (!path) return '';
-    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:image/')) {
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:image/') || path.startsWith('data:video/')) {
       return path;
     }
     const host = API_HOST || '';
     return `${host}${path.startsWith('/') ? '' : '/'}${path}`;
   };
 
-  const currentUrl = currentItem ? getFullImageUrl(currentItem.imageUrl) : '';
+  // URL hiện tại — ưu tiên URL đã được sync Cloudinary nếu có
+  const rawUrl = currentItem ? (syncedUrls[currentIndex] || currentItem.imageUrl) : '';
+  const currentUrl = getFullImageUrl(rawUrl);
+
+  // Hàm tự động thử sync Cloudinary khi video lỗi (chỉ khi có invoiceId và URL còn là /uploads/)
+  const handleVideoError = async (errCode, errMsg) => {
+    const invoiceId = currentItem?.id;
+    const isLocalUrl = rawUrl && rawUrl.startsWith('/uploads/');
+
+    // Nếu có invoiceId và là link /uploads/ — tự động gọi sync-cloud
+    if (invoiceId && isLocalUrl && !isSyncingCloud) {
+      setIsSyncingCloud(true);
+      try {
+        let res;
+        if (isPortalMode) {
+          // Chế độ Portal: gọi endpoint công khai, xác thực qua portal token + session
+          const headers = {};
+          if (portalSessionToken) {
+            headers['x-portal-session'] = portalSessionToken;
+          }
+          res = await axios.post(
+            `${API_HOST}/api/v1/portal/sync-invoice/${portalToken}/${invoiceId}`,
+            {},
+            { headers }
+          );
+        } else {
+          // Chế độ Admin: gọi endpoint authenticated
+          res = await api.post(`/transactions/invoices/${invoiceId}/sync-cloud`);
+        }
+
+        if (res.data?.success && res.data?.data?.imageUrl) {
+          // Đã sync xong, lưu URL mới vào cache và reload video
+          setSyncedUrls((prev) => ({ ...prev, [currentIndex]: res.data.data.imageUrl }));
+          setImageError(false);
+          setImageLoading(true);
+          setReloadKey((k) => k + 1);
+          return;
+        } else if (res.data?.isMissingFile) {
+          // File hết hạn trên server — hiển thị thông báo riêng
+          setIsMissingFile(true);
+          setImageLoading(false);
+          setImageError(true);
+          return;
+        }
+      } catch (_) {
+        // Bỏ qua lỗi sync, tiếp tục hiển thị error UI bình thường
+      } finally {
+        setIsSyncingCloud(false);
+      }
+    }
+
+    // Hiển thị error UI bình thường
+    setImageLoading(false);
+    setImageError(true);
+  };
 
   // Mở ảnh trong tab mới
   const handleOpenInNewTab = () => {
@@ -353,31 +422,62 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
           {/* Trạng thái bị lỗi không tải được */}
           {imageError && (
             <View style={styles.errorContainer}>
-              <Text style={styles.errorIcon}>⚠️</Text>
-              <Text style={styles.errorTitle}>
-                {isVideo ? 'Không thể phát video hóa đơn' : 'Không thể tải được hình ảnh hóa đơn'}
-              </Text>
-              <Text style={styles.errorDesc}>
-                Đường truyền mạng bị gián đoạn hoặc định dạng tệp không tương thích.
-              </Text>
-              <View style={styles.errorBtnRow}>
-                <TouchableOpacity
-                  style={styles.retryBtn}
-                  onPress={() => {
-                    setImageError(false);
-                    setImageLoading(true);
-                    setReloadKey((k) => k + 1);
-                  }}
-                >
-                  <Text style={styles.retryBtnText}>🔄 Thử lại</Text>
-                </TouchableOpacity>
+              {isSyncingCloud ? (
+                // Đang tự động thử sync Cloudinary
+                <>
+                  <ActivityIndicator size="large" color="#38BDF8" />
+                  <Text style={[styles.errorTitle, { color: '#38BDF8', marginTop: 12 }]}>
+                    Đang đồng bộ video lên đám mây...
+                  </Text>
+                  <Text style={styles.errorDesc}>
+                    Video sẽ sẵn sàng trong vài giây. Vui lòng chờ.
+                  </Text>
+                </>
+              ) : isMissingFile ? (
+                // File hết hạn trên server
+                <>
+                  <Text style={styles.errorIcon}>🎬</Text>
+                  <Text style={styles.errorTitle}>Video tạm đã hết hạn trên máy chủ</Text>
+                  <Text style={styles.errorDesc}>
+                    Dữ liệu AI nhận diện và đơn nợ vẫn được lưu an toàn. Tệp video tạm chỉ lưu 24-48 giờ nếu chưa kịp đồng bộ lên Cloudinary.
+                  </Text>
+                  <View style={[styles.errorBtnRow, { justifyContent: 'center' }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#065F46', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 }}>
+                      <Text style={{ color: '#34D399', fontSize: 12, fontWeight: 'bold' }}>✓ Dữ liệu đơn nợ an toàn</Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                // Lỗi tải thông thường
+                <>
+                  <Text style={styles.errorIcon}>⚠️</Text>
+                  <Text style={styles.errorTitle}>
+                    {isVideo ? 'Không thể phát video hóa đơn' : 'Không thể tải được hình ảnh hóa đơn'}
+                  </Text>
+                  <Text style={styles.errorDesc}>
+                    Đường truyền mạng bị gián đoạn hoặc định dạng tệp không tương thích.
+                  </Text>
+                  <View style={styles.errorBtnRow}>
+                    <TouchableOpacity
+                      style={styles.retryBtn}
+                      onPress={() => {
+                        setImageError(false);
+                        setImageLoading(true);
+                        setIsMissingFile(false);
+                        setReloadKey((k) => k + 1);
+                      }}
+                    >
+                      <Text style={styles.retryBtnText}>🔄 Thử lại</Text>
+                    </TouchableOpacity>
 
-                {Platform.OS === 'web' && currentUrl ? (
-                  <TouchableOpacity style={styles.openTabBtn} onPress={handleOpenInNewTab}>
-                    <Text style={styles.openTabBtnText}>🔗 Mở tab mới</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
+                    {Platform.OS === 'web' && currentUrl ? (
+                      <TouchableOpacity style={styles.openTabBtn} onPress={handleOpenInNewTab}>
+                        <Text style={styles.openTabBtnText}>🔗 Mở tab mới</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                </>
+              )}
             </View>
           )}
 
@@ -399,8 +499,8 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
                     const errCode = e?.target?.error?.code;
                     const errMsg = e?.target?.error?.message || 'Không xác định';
                     console.error('Lỗi khi tải video hóa đơn trên Web:', currentUrl, `code=${errCode}`, errMsg);
-                    setImageLoading(false);
-                    setImageError(true);
+                    // Gọi hàm xử lý lỗi thông minh (tự sync Cloudinary nếu video iPhone chưa kịp upload)
+                    handleVideoError(errCode, errMsg);
                   }}
                   style={{
                     maxWidth: '100%',
