@@ -481,13 +481,37 @@ const buildInvoiceRows = (
         monthFull: `T${d.getMonth() + 1}/${yyyy}`,
         entries: [],
         invoices: [],
+        customerInvoicesMap: {}, // Phân loại ảnh hóa đơn theo từng cửa hàng: { [customerName]: Invoice[] }
         meatSum: 0,
         returnSum: 0,
       };
     }
 
     if (tx.invoices && tx.invoices.length > 0) {
-      allDayMap[dateKey].invoices.push(...tx.invoices);
+      if (!allDayMap[dateKey].invoices) {
+        allDayMap[dateKey].invoices = [];
+      }
+      if (!allDayMap[dateKey].customerInvoicesMap) {
+        allDayMap[dateKey].customerInvoicesMap = {};
+      }
+      const cName = (tx.customerName || '').trim();
+
+      tx.invoices.forEach((inv) => {
+        const invId = inv.id || inv.imageUrl || inv.url;
+        // Thêm vào danh sách toàn ngày (tránh trùng)
+        if (!allDayMap[dateKey].invoices.some((x) => (x.id || x.imageUrl || x.url) === invId)) {
+          allDayMap[dateKey].invoices.push(inv);
+        }
+        // Thêm vào danh sách riêng của quán đó
+        if (cName) {
+          if (!allDayMap[dateKey].customerInvoicesMap[cName]) {
+            allDayMap[dateKey].customerInvoicesMap[cName] = [];
+          }
+          if (!allDayMap[dateKey].customerInvoicesMap[cName].some((x) => (x.id || x.imageUrl || x.url) === invId)) {
+            allDayMap[dateKey].customerInvoicesMap[cName].push(inv);
+          }
+        }
+      });
     }
 
     if (tx.items && tx.items.length > 0) {
@@ -851,7 +875,7 @@ const buildInvoiceRows = (
 };
 
 // Helper vẽ ảnh Canvas độ nét cao 2x chuẩn hóa đơn kế toán
-const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', toDateStr = '', timePresetLabel = '', branchList = []) => {
+const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', toDateStr = '', timePresetLabel = '', branchList = [], isChainViewAll = false) => {
   if (typeof document === 'undefined') return null;
   const startX = 36;
   const colWidths = [65, 195, 65, 100, 135]; // Tổng chiều rộng 1 panel: 560px
@@ -983,7 +1007,7 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
     panelY += tableHeaderHeight;
 
     // Các dòng dữ liệu
-    panelDays.forEach((day) => {
+    panelDays.forEach((day, dIdx) => {
       const dayHeight = day.entries.length * rowHeight;
       const dayStartY = panelY;
 
@@ -1110,9 +1134,17 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
         ctx.stroke();
       }
 
-      // Ô ngày gộp chung: xanh (đã thanh toán), cam (thanh toán 1 phần), đỏ (còn nợ)
+      // Ô ngày gộp chung
       let dateCellBg, dateCellBorder, dateCellTextColor;
-      if (day.isPaid) {
+      if (isChainViewAll) {
+        // Xem toàn bộ chuỗi: Xen kẽ màu xanh nhẹ và đỏ nhẹ giữa các ngày
+        const isEven = dIdx % 2 === 0;
+        if (isEven) {
+          dateCellBg = '#F0FDF4'; dateCellBorder = '#BBF7D0'; dateCellTextColor = '#15803D';
+        } else {
+          dateCellBg = '#FEF2F2'; dateCellBorder = '#FECACA'; dateCellTextColor = '#B91C1C';
+        }
+      } else if (day.isPaid) {
         dateCellBg = '#F0FDF4'; dateCellBorder = '#BBF7D0'; dateCellTextColor = '#047857';
       } else if (day.isPartialPaid) {
         dateCellBg = '#FFF7ED'; dateCellBorder = '#FED7AA'; dateCellTextColor = '#C2410C';
@@ -1128,19 +1160,26 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = dateCellTextColor;
-      ctx.font = 'bold 12.5px Arial, sans-serif';
-      ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
 
-      ctx.font = 'bold 9px Arial, sans-serif';
-      if (day.isPaid) {
-        ctx.fillStyle = '#059669';
-        ctx.fillText('Đã thanh toán', pColX[0] + colWidths[0] / 2, dayMidY + 8);
-      } else if (day.isPartialPaid) {
-        ctx.fillStyle = '#C2410C';
-        ctx.fillText('Trả 1 phần', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+      if (isChainViewAll) {
+        // Xem full chuỗi: Căn giữa ngày to rõ, không hiện Còn nợ / Đã thanh toán
+        ctx.font = 'bold 13.5px Arial, sans-serif';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY);
       } else {
-        ctx.fillStyle = '#DC2626';
-        ctx.fillText('Còn nợ', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
+
+        ctx.font = 'bold 9px Arial, sans-serif';
+        if (day.isPaid) {
+          ctx.fillStyle = '#059669';
+          ctx.fillText('Đã thanh toán', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        } else if (day.isPartialPaid) {
+          ctx.fillStyle = '#C2410C';
+          ctx.fillText('Trả 1 phần', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        } else {
+          ctx.fillStyle = '#DC2626';
+          ctx.fillText('Còn nợ', pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        }
       }
 
       // Kẻ ngang phân cách ngày (ĐẬM NHẤT)
@@ -1257,16 +1296,45 @@ export default function PortalScreen() {
   const invoiceViewerRef = useRef(null);
   const customerPriceCheckModalRef = useRef(null);
 
-  // Mở modal xem phóng to ảnh hóa đơn trên Portal
-  const handleOpenInvoiceModal = (day) => {
-    if (invoiceViewerRef.current && day.invoices && day.invoices.length > 0) {
+  // Helper lấy ảnh hóa đơn cho từng quán trên ngày đó
+  const getInvoicesForCustomer = (day, customerName) => {
+    if (!day || !day.customerInvoicesMap || !customerName) return [];
+    if (day.customerInvoicesMap[customerName]) {
+      return day.customerInvoicesMap[customerName];
+    }
+    const cleanTarget = customerName.trim().toLowerCase();
+    for (const [key, list] of Object.entries(day.customerInvoicesMap)) {
+      if (key.trim().toLowerCase() === cleanTarget) {
+        return list;
+      }
+    }
+    return [];
+  };
+
+  // Mở modal xem phóng to ảnh hóa đơn trên Portal (hỗ trợ cả ngày hoặc từng quán)
+  const handleOpenInvoiceModal = (dayOrInvoices, title, subtitle) => {
+    let images = [];
+    let modalTitle = '';
+    let modalSubtitle = '';
+
+    if (Array.isArray(dayOrInvoices)) {
+      images = dayOrInvoices;
+      modalTitle = title || 'Ảnh hóa đơn';
+      modalSubtitle = subtitle || '';
+    } else if (dayOrInvoices?.invoices) {
+      images = dayOrInvoices.invoices;
+      modalTitle = title || `Hóa đơn ngày ${dayOrInvoices.dateKey}`;
+      modalSubtitle = subtitle || `Ngày: ${dayOrInvoices.dateKey}`;
+    }
+
+    if (invoiceViewerRef.current && images.length > 0) {
       invoiceViewerRef.current.open({
-        images: day.invoices,
-        title: `Hóa đơn ngày ${day.dateKey}`,
-        subtitle: `Ngày: ${day.dateKey}`,
+        images,
+        title: modalTitle,
+        subtitle: modalSubtitle,
       });
     } else {
-      showGlobalToast('Ngày này chưa có ảnh chụp hóa đơn đính kèm.', 'info');
+      showGlobalToast('Chưa có ảnh chụp hóa đơn đính kèm.', 'info');
     }
   };
 
@@ -1328,6 +1396,9 @@ export default function PortalScreen() {
   const selectedBranchOption = useMemo(() => {
     return branchOptions.find((opt) => opt.id === selectedCustomerId) || branchOptions[0] || null;
   }, [branchOptions, selectedCustomerId]);
+
+  const isChain = Boolean(portalInfo?.customers && portalInfo.customers.length > 1);
+  const isChainViewAll = Boolean(isChain && (selectedCustomerId === 'all' || !selectedCustomerId));
 
   // Đọc session token đã lưu trong LocalStorage khi ở trên Web
   useEffect(() => {
@@ -1741,7 +1812,8 @@ export default function PortalScreen() {
         fromDate,
         toDate,
         presetLabel,
-        branchList
+        branchList,
+        isChainViewAll
       );
 
       if (!dataUrl) {
@@ -1845,8 +1917,6 @@ export default function PortalScreen() {
       </SafeAreaView>
     );
   }
-
-  const isChain = portalInfo?.customers && portalInfo.customers.length > 1;
 
   // ─── GIAO DIỆN CHÍNH CỦA PORTAL ───
   return (
@@ -2096,157 +2166,203 @@ export default function PortalScreen() {
                       nestedScrollEnabled={true}
                     >
                       {/* Các khối ngày */}
-                      {displayInvoiceData.sortedDays.map((day) => (
-                        <View key={day.dateKey} style={styles.tableDayRowGroup}>
-                          {/* Cột Ngày bên trái (gộp chung cho toàn bộ các món trong ngày) */}
-                          <View
-                            style={[
-                              styles.tdDateCol,
-                              day.isPaid
-                                ? styles.tdDateColPaid
-                                : day.isPartialPaid
-                                ? styles.tdDateColPartial
-                                : styles.tdDateColUnpaid,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.tdDateText,
-                                day.isPaid
-                                  ? styles.tdDateTextPaid
-                                  : day.isPartialPaid
-                                  ? styles.tdDateTextPartial
-                                  : styles.tdDateTextUnpaid,
-                              ]}
-                            >
-                              {day.displayDate}
-                            </Text>
-                            <Text
-                              style={[
-                                styles.tdDateStatusText,
-                                day.isPaid
-                                  ? styles.tdDateStatusPaid
-                                  : day.isPartialPaid
-                                  ? styles.tdDateStatusPartial
-                                  : styles.tdDateStatusUnpaid,
-                              ]}
-                            >
-                              {day.isPaid
-                                ? 'Đã\nthanh\ntoán'
-                                : day.isPartialPaid
-                                ? 'Trả\n1 phần'
-                                : 'Còn\nnợ'}
-                            </Text>
-                          </View>
+                      {displayInvoiceData.sortedDays.map((day, dayIdx) => {
+                        // Xác định màu sắc và trạng thái cột ngày
+                        let dateColStyle = styles.tdDateColUnpaid;
+                        let dateTextStyle = styles.tdDateTextUnpaid;
+                        let statusBadge = null;
 
-                          {/* Danh sách các dòng món hàng bên phải */}
-                          <View style={styles.tdItemsCol}>
-                            {day.entries.map((entry, idx) => {
-                              const isLast = idx === day.entries.length - 1;
-                              const nextEntry = !isLast ? day.entries[idx + 1] : null;
-                              const isRestaurantBoundary =
-                                !isLast &&
-                                Boolean(entry.customerName || nextEntry?.customerName) &&
-                                entry.customerName !== nextEntry?.customerName;
+                        if (isChainViewAll) {
+                          // Xem toàn bộ chuỗi: Bỏ logic còn nợ / đã thanh toán, xen kẽ màu xanh nhẹ và đỏ nhẹ giữa các ngày
+                          const isEven = dayIdx % 2 === 0;
+                          dateColStyle = isEven ? styles.tdDateColChainGreen : styles.tdDateColChainRed;
+                          dateTextStyle = isEven ? styles.tdDateTextChainGreen : styles.tdDateTextChainRed;
+                        } else {
+                          // Lọc theo từng quán hoặc link đơn lẻ: Hiển thị logic nợ & thanh toán
+                          if (day.isPaid) {
+                            dateColStyle = styles.tdDateColPaid;
+                            dateTextStyle = styles.tdDateTextPaid;
+                            statusBadge = (
+                              <Text style={[styles.tdDateStatusText, styles.tdDateStatusPaid]}>
+                                {'Đã\nthanh\ntoán'}
+                              </Text>
+                            );
+                          } else if (day.isPartialPaid) {
+                            dateColStyle = styles.tdDateColPartial;
+                            dateTextStyle = styles.tdDateTextPartial;
+                            statusBadge = (
+                              <Text style={[styles.tdDateStatusText, styles.tdDateStatusPartial]}>
+                                {'Trả\n1 phần'}
+                              </Text>
+                            );
+                          } else {
+                            dateColStyle = styles.tdDateColUnpaid;
+                            dateTextStyle = styles.tdDateTextUnpaid;
+                            statusBadge = (
+                              <Text style={[styles.tdDateStatusText, styles.tdDateStatusUnpaid]}>
+                                {'Còn\nnợ'}
+                              </Text>
+                            );
+                          }
+                        }
 
-                              const isDayTotal = entry.type === 'DAY_TOTAL';
-                              const isPartialPaid = entry.type === 'DAY_PARTIAL_PAID';
-                              const isPartialRemaining = entry.type === 'DAY_PARTIAL_REMAINING';
-                              const isSummary = isDayTotal || isPartialPaid || isPartialRemaining;
-                              const isReturn = entry.type === 'RETURN';
+                        return (
+                          <View key={day.dateKey} style={styles.tableDayRowGroup}>
+                            {/* Cột Ngày bên trái (gộp chung cho toàn bộ các món trong ngày) */}
+                            <View style={[styles.tdDateCol, dateColStyle]}>
+                              <Text style={[styles.tdDateText, dateTextStyle]}>
+                                {day.displayDate}
+                              </Text>
+                              {statusBadge}
+                            </View>
 
-                              // Chỉ bôi màu đỏ/xanh ở cột Ngày, các dòng dữ liệu giữ màu chuẩn
-                              const rowBg = isPartialPaid
-                                ? '#F0FDF4'
-                                : isPartialRemaining
-                                ? '#FEF2F2'
-                                : isDayTotal
-                                ? '#F8FAFC'
-                                : (entry.customerName ? getRestaurantColor(entry.customerName, branchList) : '#FFFFFF');
+                            {/* Danh sách các dòng món hàng bên phải */}
+                            <View style={styles.tdItemsCol}>
+                              {day.entries.map((entry, idx) => {
+                                const isLast = idx === day.entries.length - 1;
+                                const nextEntry = !isLast ? day.entries[idx + 1] : null;
+                                const isRestaurantBoundary =
+                                  !isLast &&
+                                  Boolean(entry.customerName || nextEntry?.customerName) &&
+                                  entry.customerName !== nextEntry?.customerName;
 
-                              return (
-                                <View
-                                  key={idx}
-                                  style={[
-                                    styles.itemSubRow,
-                                    { backgroundColor: rowBg },
-                                    isDayTotal && { borderTopWidth: 1, borderTopColor: '#CBD5E1' },
-                                    !isLast && (isRestaurantBoundary ? styles.itemSubRowBoundary : styles.itemSubRowBorder),
-                                    isReturn && styles.itemSubRowReturn,
-                                  ]}
-                                >
-                                  {isSummary ? (
-                                    <View style={[styles.tdName, styles.tdTotalCellWrap]}>
-                                      <Text
-                                        style={[
-                                          styles.tdTotalTitleText,
-                                          isPartialPaid && { color: '#047857', fontSize: 11 },
-                                          isPartialRemaining && { color: '#DC2626', fontSize: 11.5, fontWeight: 'bold' },
-                                        ]}
-                                        numberOfLines={1}
-                                      >
-                                        {entry.name}
-                                      </Text>
-                                      {isDayTotal && day.invoices && day.invoices.length > 0 && (
-                                        <TouchableOpacity
+                                const isDayTotal = entry.type === 'DAY_TOTAL';
+                                const isPartialPaid = entry.type === 'DAY_PARTIAL_PAID';
+                                const isPartialRemaining = entry.type === 'DAY_PARTIAL_REMAINING';
+                                const isSummary = isDayTotal || isPartialPaid || isPartialRemaining;
+                                const isReturn = entry.type === 'RETURN';
+
+                                // Kiểm tra món cuối cùng của quán này trên ngày đó để hiển thị nút xem ảnh
+                                const isLastEntryOfRestaurant =
+                                  !isSummary &&
+                                  Boolean(entry.customerName) &&
+                                  (isLast || isRestaurantBoundary || (nextEntry && isDaySummaryEntry(nextEntry)));
+
+                                const custInvoices = (isChainViewAll && isLastEntryOfRestaurant)
+                                  ? getInvoicesForCustomer(day, entry.customerName)
+                                  : [];
+
+                                // Chỉ bôi màu đỏ/xanh ở cột Ngày, các dòng dữ liệu giữ màu chuẩn
+                                const rowBg = isPartialPaid
+                                  ? '#F0FDF4'
+                                  : isPartialRemaining
+                                  ? '#FEF2F2'
+                                  : isDayTotal
+                                  ? '#F8FAFC'
+                                  : (entry.customerName ? getRestaurantColor(entry.customerName, branchList) : '#FFFFFF');
+
+                                return (
+                                  <View
+                                    key={idx}
+                                    style={[
+                                      styles.itemSubRow,
+                                      { backgroundColor: rowBg },
+                                      isDayTotal && { borderTopWidth: 1, borderTopColor: '#CBD5E1' },
+                                      !isLast && (isRestaurantBoundary ? styles.itemSubRowBoundary : styles.itemSubRowBorder),
+                                      isReturn && styles.itemSubRowReturn,
+                                    ]}
+                                  >
+                                    {isSummary ? (
+                                      <View style={[styles.tdName, styles.tdTotalCellWrap]}>
+                                        <Text
                                           style={[
-                                            styles.dayTotalInvoiceBtn,
-                                            styles.dayTotalInvoiceBtnActive,
+                                            styles.tdTotalTitleText,
+                                            isPartialPaid && { color: '#047857', fontSize: 11 },
+                                            isPartialRemaining && { color: '#DC2626', fontSize: 11.5, fontWeight: 'bold' },
                                           ]}
-                                          onPress={() => handleOpenInvoiceModal(day)}
-                                          activeOpacity={0.7}
+                                          numberOfLines={1}
                                         >
-                                          <Text
+                                          {entry.name}
+                                        </Text>
+                                        {/* Chỉ hiển thị xem ảnh ở dòng TỔNG khi lọc theo từng nhà hàng */}
+                                        {!isChainViewAll && isDayTotal && day.invoices && day.invoices.length > 0 && (
+                                          <TouchableOpacity
                                             style={[
-                                              styles.dayTotalInvoiceBtnText,
-                                              styles.dayTotalInvoiceBtnTextActive,
+                                              styles.dayTotalInvoiceBtn,
+                                              styles.dayTotalInvoiceBtnActive,
                                             ]}
+                                            onPress={() => handleOpenInvoiceModal(day)}
+                                            activeOpacity={0.7}
                                           >
-                                            Xem ảnh ({day.invoices.length})
-                                          </Text>
-                                        </TouchableOpacity>
-                                      )}
-                                    </View>
-                                  ) : (
-                                    <View style={[styles.tdCell, styles.tdName, styles.tdTotalCellWrap, { paddingRight: 4 }]}>
-                                      <Text
-                                        style={[
-                                          { flexShrink: 1 },
-                                          isReturn && styles.textRed,
-                                        ]}
-                                        numberOfLines={3}
-                                      >
-                                        {entry.customerName ? (
-                                          <>
-                                            <Text style={styles.branchPrefixText}>{`[${entry.customerName}] `}</Text>
-                                            <Text>{entry.name}</Text>
-                                          </>
-                                        ) : (
-                                          entry.name
+                                            <Text
+                                              style={[
+                                                styles.dayTotalInvoiceBtnText,
+                                                styles.dayTotalInvoiceBtnTextActive,
+                                              ]}
+                                            >
+                                              Xem ảnh ({day.invoices.length})
+                                            </Text>
+                                          </TouchableOpacity>
                                         )}
-                                      </Text>
-                                      {/* Nếu ngày không có dòng TỔNG nhưng có ảnh hóa đơn và đây là món đầu tiên thì hiển thị nút xem ảnh */}
-                                      {day.invoices && day.invoices.length > 0 && !day.entries.some(isDaySummaryEntry) && idx === 0 && (
-                                        <TouchableOpacity
+                                      </View>
+                                    ) : (
+                                      <View style={[styles.tdCell, styles.tdName, styles.tdTotalCellWrap, { paddingRight: 4 }]}>
+                                        <Text
                                           style={[
-                                            styles.dayTotalInvoiceBtn,
-                                            styles.dayTotalInvoiceBtnActive,
+                                            { flexShrink: 1 },
+                                            isReturn && styles.textRed,
                                           ]}
-                                          onPress={() => handleOpenInvoiceModal(day)}
-                                          activeOpacity={0.7}
+                                          numberOfLines={3}
                                         >
-                                          <Text
+                                          {entry.customerName ? (
+                                            <>
+                                              <Text style={styles.branchPrefixText}>{`[${entry.customerName}] `}</Text>
+                                              <Text>{entry.name}</Text>
+                                            </>
+                                          ) : (
+                                            entry.name
+                                          )}
+                                        </Text>
+
+                                        {/* Case 1: Xem toàn bộ chuỗi -> Tách xem ảnh theo từng cửa hàng, đặt ở hàng thịt cuối của quán đó */}
+                                        {isChainViewAll && isLastEntryOfRestaurant && custInvoices.length > 0 && (
+                                          <TouchableOpacity
                                             style={[
-                                              styles.dayTotalInvoiceBtnText,
-                                              styles.dayTotalInvoiceBtnTextActive,
+                                              styles.dayTotalInvoiceBtn,
+                                              styles.dayTotalInvoiceBtnActive,
                                             ]}
+                                            onPress={() =>
+                                              handleOpenInvoiceModal(
+                                                custInvoices,
+                                                `Hóa đơn [${entry.customerName}] - ${day.dateKey}`,
+                                                `Cơ sở: ${entry.customerName} | Ngày: ${day.dateKey}`
+                                              )
+                                            }
+                                            activeOpacity={0.7}
                                           >
-                                            Xem ảnh ({day.invoices.length})
-                                          </Text>
-                                        </TouchableOpacity>
-                                      )}
-                                    </View>
-                                  )}
+                                            <Text
+                                              style={[
+                                                styles.dayTotalInvoiceBtnText,
+                                                styles.dayTotalInvoiceBtnTextActive,
+                                              ]}
+                                            >
+                                              Xem ảnh ({custInvoices.length})
+                                            </Text>
+                                          </TouchableOpacity>
+                                        )}
+
+                                        {/* Case 2: Lọc theo từng quán -> Nếu ngày không có dòng TỔNG nhưng có ảnh hóa đơn và đây là món đầu tiên thì hiển thị nút xem ảnh */}
+                                        {!isChainViewAll && day.invoices && day.invoices.length > 0 && !day.entries.some(isDaySummaryEntry) && idx === 0 && (
+                                          <TouchableOpacity
+                                            style={[
+                                              styles.dayTotalInvoiceBtn,
+                                              styles.dayTotalInvoiceBtnActive,
+                                            ]}
+                                            onPress={() => handleOpenInvoiceModal(day)}
+                                            activeOpacity={0.7}
+                                          >
+                                            <Text
+                                              style={[
+                                                styles.dayTotalInvoiceBtnText,
+                                                styles.dayTotalInvoiceBtnTextActive,
+                                              ]}
+                                            >
+                                              Xem ảnh ({day.invoices.length})
+                                            </Text>
+                                          </TouchableOpacity>
+                                        )}
+                                      </View>
+                                    )}
                                   <Text
                                     style={[
                                       styles.tdCell,
@@ -3329,6 +3445,40 @@ const styles = StyleSheet.create({
   },
   tdDateStatusPartial: {
     color: '#C2410C',
+  },
+  // Cột ngày khi xem toàn bộ chuỗi (xen kẽ xanh nhẹ và đỏ nhẹ để phân biệt rõ từng ngày)
+  tdDateColChainGreen: {
+    backgroundColor: '#F0FDF4',
+    borderRightColor: '#BBF7D0',
+  },
+  tdDateTextChainGreen: {
+    color: '#15803D',
+    fontWeight: '800',
+    fontSize: 10.5,
+  },
+  tdDateColChainRed: {
+    backgroundColor: '#FEF2F2',
+    borderRightColor: '#FECACA',
+  },
+  tdDateTextChainRed: {
+    color: '#B91C1C',
+    fontWeight: '800',
+    fontSize: 10.5,
+  },
+  // Cột ngày khi lọc theo từng quán (hoặc link đơn lẻ)
+  tdDateColPaid: {
+    backgroundColor: '#F0FDF4',
+    borderRightColor: '#BBF7D0',
+  },
+  tdDateTextPaid: {
+    color: '#15803D',
+  },
+  tdDateColUnpaid: {
+    backgroundColor: '#FEF2F2',
+    borderRightColor: '#FECACA',
+  },
+  tdDateTextUnpaid: {
+    color: '#B91C1C',
   },
   tdItemsCol: {
     flex: 1,
