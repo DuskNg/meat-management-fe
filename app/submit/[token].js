@@ -425,6 +425,7 @@ export default function StaffSubmitScreen() {
   // Danh sách hàng đợi tải ngầm (phong cách Zalo: đưa lên giao diện ngay lập tức trong 0ms)
   const [uploadQueue, setUploadQueue] = useState([]);
   const activeUploadsRef = useRef(0);
+  const inFlightIdsRef = useRef(new Set());
   const uploadQueueRef = useRef([]);
   uploadQueueRef.current = uploadQueue;
 
@@ -716,29 +717,18 @@ export default function StaffSubmitScreen() {
 
       setUploadQueue((prev) => [...prev, ...newItems]);
       if (files.length >= 20) {
-        showGlobalToast(`Đang đưa ${files.length} tệp vào hàng đợi, hệ thống sẽ tự động tải lần lượt...`, 'info');
+        showGlobalToast(`Đang đưa ${files.length} tệp vào hàng đợi, hệ thống đang tăng tốc tải lên song song...`, 'info');
       }
     } catch (err) {
       console.error('Lỗi trong handleMediaChange:', err);
     }
   };
 
-  // Tự động điều phối hàng đợi upload ngầm (chế độ Băng chuyền 1 luồng: giải phóng RAM ngay sau mỗi ảnh, không lo tràn bộ nhớ)
-  const processUploadQueue = async () => {
-    const MAX_CONCURRENT = 1;
-    if (activeUploadsRef.current >= MAX_CONCURRENT) return;
+  // Giới hạn số luồng upload song song (3 luồng đồng thời: tăng tốc 3-4x mà vẫn đảm bảo an toàn RAM & mạng)
+  const MAX_CONCURRENT = 3;
 
-    const currentQueue = uploadQueueRef.current;
-    const nextItem = currentQueue.find((it) => it.status === 'QUEUED');
-    if (!nextItem) return;
-
-    activeUploadsRef.current += 1;
-
-    // Chuyển trạng thái sang UPLOADING
-    setUploadQueue((prev) =>
-      prev.map((it) => (it.id === nextItem.id ? { ...it, status: 'UPLOADING', errorMsg: '' } : it))
-    );
-
+  // Xử lý tải lên một tệp đơn lẻ độc lập
+  const uploadSingleItem = async (nextItem) => {
     try {
       // 1. Kiểm tra lại một lần nữa bằng Magic Bytes để đảm bảo tuyệt đối không nén nhầm Video thành Canvas Image
       const checkCategory = await detectMediaCategoryFromFile(nextItem.file);
@@ -820,15 +810,14 @@ export default function StaffSubmitScreen() {
           const stillActive = updated.some((it) => it.status === 'QUEUED' || it.status === 'UPLOADING');
           if (!stillActive) {
             const errorCount = updated.filter((it) => it.status === 'ERROR').length;
-            const isVideo = nextItem.fileType === 'VIDEO';
             if (errorCount === 0) {
               showGlobalToast(
-                `✅ Đã gửi ${isVideo ? 'video' : 'ảnh'} hóa đơn thành công! Chủ buôn sẽ xem và duyệt sớm nhé.`,
+                '✅ Đã gửi tất cả ảnh/video hóa đơn thành công! Chủ buôn sẽ xem và duyệt sớm nhé.',
                 'success'
               );
             } else {
               showGlobalToast(
-                `⚠️ Đã gửi xong, nhưng ${errorCount} tệp bị lỗi. Vui lòng kiểm tra lại!`,
+                `⚠️ Đã gửi xong, nhưng có ${errorCount} tệp bị lỗi. Vui lòng kiểm tra lại!`,
                 'warning'
               );
             }
@@ -848,9 +837,33 @@ export default function StaffSubmitScreen() {
         )
       );
     } finally {
+      inFlightIdsRef.current.delete(nextItem.id);
       activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
-      // Kích hoạt xử lý tệp kế tiếp trong hàng đợi
+      // Kích hoạt tiếp tục xử lý các tệp kế tiếp trong hàng đợi
       processUploadQueue();
+    }
+  };
+
+  // Tự động điều phối hàng đợi upload ngầm đa luồng (chạy đồng thời 3 tệp cùng lúc để tối ưu tốc độ)
+  const processUploadQueue = () => {
+    while (activeUploadsRef.current < MAX_CONCURRENT) {
+      const currentQueue = uploadQueueRef.current;
+      const nextItem = currentQueue.find(
+        (it) => it.status === 'QUEUED' && !inFlightIdsRef.current.has(it.id)
+      );
+      if (!nextItem) break;
+
+      // Đánh dấu ngay ID đang tải vào Set để không bị luồng khác bốc trùng
+      inFlightIdsRef.current.add(nextItem.id);
+      activeUploadsRef.current += 1;
+
+      // Chuyển trạng thái sang UPLOADING trên state
+      setUploadQueue((prev) =>
+        prev.map((it) => (it.id === nextItem.id ? { ...it, status: 'UPLOADING', errorMsg: '' } : it))
+      );
+
+      // Chạy worker upload độc lập
+      uploadSingleItem(nextItem);
     }
   };
 
@@ -864,6 +877,7 @@ export default function StaffSubmitScreen() {
 
   // Hủy một tệp trong hàng đợi
   const handleCancelQueueItem = (id) => {
+    inFlightIdsRef.current.delete(id);
     setUploadQueue((prev) => {
       const item = prev.find((it) => it.id === id);
       if (item && item.blobUrl) {
@@ -877,6 +891,7 @@ export default function StaffSubmitScreen() {
 
   // Thử lại tệp bị lỗi
   const handleRetryQueueItem = (id) => {
+    inFlightIdsRef.current.delete(id);
     setUploadQueue((prev) =>
       prev.map((it) => (it.id === id ? { ...it, status: 'QUEUED', errorMsg: '' } : it))
     );

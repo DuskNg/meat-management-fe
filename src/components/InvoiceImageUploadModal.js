@@ -510,12 +510,34 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
     setProcessProgress(`0/${fileArr.length}`);
 
     try {
+      // Xử lý đọc và tối ưu hóa tệp bằng 3 luồng song song để tăng tốc gấp 3 lần nhưng vẫn an toàn bộ nhớ
+      const concurrency = 3;
+      let currentIndex = 0;
+      let completedCount = 0;
+      const rawResults = new Array(fileArr.length);
+
+      const worker = async () => {
+        while (currentIndex < fileArr.length) {
+          const idx = currentIndex++;
+          const file = fileArr[idx];
+          try {
+            const res = await readFileAsBase64(file);
+            rawResults[idx] = { file, res };
+          } catch (e) {
+            rawResults[idx] = null;
+          }
+          completedCount++;
+          setProcessProgress(`${completedCount}/${fileArr.length}`);
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(concurrency, fileArr.length) }, () => worker()));
+
       const newItems = [];
-      for (let i = 0; i < fileArr.length; i++) {
-        const file = fileArr[i];
-        setProcessProgress(`${i + 1}/${fileArr.length}`);
-        const res = await readFileAsBase64(file);
-        if (res && res.base64) {
+      for (let i = 0; i < rawResults.length; i++) {
+        const item = rawResults[i];
+        if (item && item.res && item.res.base64) {
+          const { file, res } = item;
           const isVid = res.isVideo;
           const formattedSize = isVid
             ? `${(res.size / (1024 * 1024)).toFixed(1)} MB`

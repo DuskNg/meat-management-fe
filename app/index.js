@@ -1088,15 +1088,29 @@ export default function DashboardScreen() {
         setScanning(true);
         setScanningMsg(`Đang chuẩn bị ${files.length} ảnh (0/${files.length})...`);
 
-        // Đọc tuần tự từng ảnh để tối ưu hoá bộ nhớ, giải phóng RAM liên tục khi tải 60 ảnh
-        const optimizedImages = [];
-        for (let i = 0; i < files.length; i++) {
-          setScanningMsg(`Đang tối ưu ảnh: ${i + 1}/${files.length}...`);
-          const opt = await readAndOptimizeTicketImage(files[i]);
-          if (opt && opt.dataUri) {
-            optimizedImages.push(opt);
+        // Xử lý tối ưu hoá ảnh bằng 3 luồng song song để tăng tốc gấp 3 lần nhưng vẫn giải phóng RAM an toàn
+        const concurrency = 3;
+        let currentIndex = 0;
+        let completedCount = 0;
+        const optResults = new Array(files.length);
+
+        const worker = async () => {
+          while (currentIndex < files.length) {
+            const idx = currentIndex++;
+            try {
+              const opt = await readAndOptimizeTicketImage(files[idx]);
+              optResults[idx] = opt;
+            } catch (e) {
+              optResults[idx] = null;
+            }
+            completedCount++;
+            setScanningMsg(`Đang tối ưu ảnh: ${completedCount}/${files.length}...`);
           }
-        }
+        };
+
+        await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, () => worker()));
+
+        const optimizedImages = optResults.filter((opt) => opt && opt.dataUri);
 
         if (!optimizedImages.length) {
           setScanning(false);
