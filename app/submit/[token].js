@@ -441,35 +441,105 @@ export default function StaffSubmitScreen() {
     return selectedDate === `${d}/${m}/${y}`;
   }, [selectedDate]);
 
-  // Nhóm lịch sử hóa đơn theo mốc giờ (ví dụ: 17:00, 14:00, 09:00...)
+  // Nhóm lịch sử hóa đơn theo khung giờ (các tệp gửi cách nhau <= 5 phút sẽ tính chung 1 khung giờ)
   const groupedHistory = useMemo(() => {
     if (!historySubmissions || historySubmissions.length === 0) return [];
-    const groups = [];
-    const groupMap = new Map();
 
-    historySubmissions.forEach((item, globalIdx) => {
-      let hourKey = 'Khác';
-      if (item.createdAt) {
-        const d = new Date(item.createdAt);
-        if (!isNaN(d.getTime())) {
-          const hour = String(d.getHours()).padStart(2, '0');
-          hourKey = `${hour}:00`;
+    // Helper định dạng giờ phút HH:mm (chuẩn 2 chữ số)
+    const formatHM = (d) => {
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return `${h}:${m}`;
+    };
+
+    // Chuẩn hóa và sắp xếp tệp theo thời gian tạo giảm dần (mới nhất lên đầu)
+    const sorted = historySubmissions
+      .map((item, originalIdx) => {
+        const rawTime = item.createdAt || item.date;
+        const time = rawTime ? new Date(rawTime).getTime() : 0;
+        return {
+          ...item,
+          originalIdx,
+          timestamp: isNaN(time) ? 0 : time,
+        };
+      })
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    // Gán lại globalIdx theo thứ tự hiển thị tuần tự (#1, #2, #3...)
+    sorted.forEach((item, idx) => {
+      item.globalIdx = idx;
+    });
+
+    const GAP_LIMIT_MS = 5 * 60 * 1000; // 5 phút (300.000 ms)
+    const groups = [];
+    let currentGroup = null;
+
+    sorted.forEach((item) => {
+      if (!item.timestamp) {
+        // Tệp không có mốc thời gian hợp lệ
+        if (!currentGroup || !currentGroup.isInvalidTime) {
+          currentGroup = {
+            id: 'group_other',
+            hourKey: 'Khác',
+            isInvalidTime: true,
+            items: [],
+          };
+          groups.push(currentGroup);
+        }
+        currentGroup.items.push(item);
+        return;
+      }
+
+      if (!currentGroup || currentGroup.isInvalidTime) {
+        // Khởi tạo khung giờ đầu tiên
+        currentGroup = {
+          id: `group_${item.timestamp}`,
+          latestTime: item.timestamp,
+          earliestTime: item.timestamp,
+          lastItemTime: item.timestamp,
+          items: [item],
+        };
+        groups.push(currentGroup);
+      } else {
+        // So sánh khoảng cách thời gian giữa tệp hiện tại và tệp liền trước trong nhóm
+        const timeDiff = currentGroup.lastItemTime - item.timestamp;
+        if (timeDiff <= GAP_LIMIT_MS) {
+          // Cách nhau <= 5 phút -> gom chung vào khung giờ hiện tại
+          currentGroup.items.push(item);
+          currentGroup.lastItemTime = item.timestamp;
+          currentGroup.earliestTime = item.timestamp;
+        } else {
+          // Cách nhau > 5 phút -> tách ra khung giờ mới
+          currentGroup = {
+            id: `group_${item.timestamp}`,
+            latestTime: item.timestamp,
+            earliestTime: item.timestamp,
+            lastItemTime: item.timestamp,
+            items: [item],
+          };
+          groups.push(currentGroup);
         }
       }
+    });
 
-      if (!groupMap.has(hourKey)) {
-        const newGroup = {
-          hourKey,
-          items: [],
-        };
-        groupMap.set(hourKey, newGroup);
-        groups.push(newGroup);
+    // Tạo tiêu đề khung giờ (hourKey) cho từng nhóm
+    groups.forEach((group) => {
+      if (group.isInvalidTime) {
+        group.hourKey = 'Khác';
+        return;
       }
+      const latestDate = new Date(group.latestTime);
+      const earliestDate = new Date(group.earliestTime);
+      const latestStr = formatHM(latestDate);
+      const earliestStr = formatHM(earliestDate);
 
-      groupMap.get(hourKey).items.push({
-        ...item,
-        globalIdx,
-      });
+      // Nếu các tệp trong cùng 1 phút (ví dụ: 10:43) -> hiển thị "10:43"
+      // Nếu đợt gửi trải dài qua các phút (ví dụ: 10:40 đến 10:43) -> hiển thị "10:40 - 10:43"
+      if (earliestStr === latestStr) {
+        group.hourKey = latestStr;
+      } else {
+        group.hourKey = `${earliestStr} - ${latestStr}`;
+      }
     });
 
     return groups;
@@ -1015,7 +1085,7 @@ export default function StaffSubmitScreen() {
               {/* CÁC TỆP ĐÃ GỬI THÀNH CÔNG HÔM NAY - PHÂN THEO MỐC GIỜ */}
               {groupedHistory.map((group, groupIdx) => (
                 <View
-                  key={group.hourKey}
+                  key={group.id || `${group.hourKey}_${groupIdx}`}
                   style={[styles.timeGroupContainer, groupIdx === 0 && uploadQueue.length === 0 && { marginTop: 0 }]}
                 >
                   {/* Mốc giờ (ví dụ: 17:00, 14:00, 09:00...) */}
