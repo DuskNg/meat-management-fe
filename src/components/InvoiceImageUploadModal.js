@@ -460,7 +460,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
         const img = document.createElement('img');
         img.onload = () => {
           try {
-            const maxDim = 1600;
+            const maxDim = 1200;
             let { width, height } = img;
             if (width > maxDim || height > maxDim) {
               if (width > height) {
@@ -475,7 +475,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
               canvas.height = height;
               const ctx = canvas.getContext('2d');
               ctx.drawImage(img, 0, 0, width, height);
-              const compressed = canvas.toDataURL('image/jpeg', 0.82);
+              const compressed = canvas.toDataURL('image/jpeg', 0.70);
               resolve({
                 base64: compressed,
                 size: Math.round(compressed.length * 0.75),

@@ -127,8 +127,8 @@ const getFileCategory = (file) => {
   return { isVideo, isImage };
 };
 
-// Helper nén ảnh siêu tốc bằng HTML5 Canvas + createImageBitmap / Blob URL (Tương thích cả iPhone HEIC & iOS Safari)
-const compressImageClient = async (file, maxWidth = 1200, quality = 0.65) => {
+// Helper nén ảnh siêu tốc bằng HTML5 Canvas + createImageBitmap / Blob URL (Tối ưu độ phân giải 1000px, chất lượng 0.55 để tải siêu nhanh)
+const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
   if (!file) return null;
   const { isImage } = getFileCategory(file);
   if (!isImage) return null;
