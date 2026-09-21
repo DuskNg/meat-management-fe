@@ -333,8 +333,18 @@ const AdminLogsModal = forwardRef((props, ref) => {
                   return (
                     <View key={log.id} style={[styles.logItem, { borderLeftColor: badgeColor }]}>
                       <View style={styles.logHeader}>
-                        <View style={[styles.badge, { backgroundColor: badgeColor + '20', borderColor: badgeColor }]}>
-                          <Text style={[styles.badgeText, { color: badgeColor }]}>{translatedAction}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <View style={[styles.badge, { backgroundColor: badgeColor + '20', borderColor: badgeColor }]}>
+                            <Text style={[styles.badgeText, { color: badgeColor }]}>{translatedAction}</Text>
+                          </View>
+                          {log.device ? (
+                            <View style={styles.deviceBadge}>
+                              <Text style={styles.deviceBadgeText}>
+                                {log.device.includes('iPhone') ? '📱 ' : log.device.includes('Android') ? '📱 ' : log.device.includes('iPad') ? '📟 ' : '💻 '}
+                                {log.device}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
                         <Text style={styles.timeText}>{formatTime(log.createdAt)}</Text>
                       </View>
@@ -532,6 +542,19 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 10,
     fontWeight: 'bold',
+  },
+  deviceBadge: {
+    backgroundColor: 'rgba(51, 65, 85, 0.65)',
+    borderWidth: 1,
+    borderColor: '#475569',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+  },
+  deviceBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94A3B8',
   },
   timeText: {
     fontSize: 12,

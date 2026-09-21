@@ -1,6 +1,7 @@
 // meat-management-fe/src/api/client.js
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
+import { getClientDeviceInfo } from '../utils/deviceDetector';
 
 // Cấu hình URL máy chủ Backend (Ưu tiên biến môi trường, tự động nhận diện hostname khi chạy Web)
 export const getApiHost = () => {
@@ -22,13 +23,22 @@ export const api = axios.create({
   timeout: 60000, // Hết hạn kết nối mặc định sau 60 giây (60000ms) để hỗ trợ gọi AI
 });
 
-// 1. Request Interceptor: Tự động đính kèm Access Token vào mọi yêu cầu
+// 1. Request Interceptor: Tự động đính kèm Access Token và Thiết bị máy khách vào mọi yêu cầu
 api.interceptors.request.use(
   (config) => {
     const accessToken = useAuthStore.getState().accessToken;
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
+
+    // Đính kèm thông tin thiết bị chi tiết (ví dụ: iPhone 11, iPhone 12 / 13, PC Windows...)
+    try {
+      const deviceInfo = getClientDeviceInfo();
+      if (deviceInfo) {
+        config.headers['X-Client-Device'] = encodeURIComponent(deviceInfo);
+      }
+    } catch {}
+
     return config;
   },
   (error) => Promise.reject(error)
