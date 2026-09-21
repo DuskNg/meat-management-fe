@@ -2230,6 +2230,41 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
         customPriceCount = updatedItems.filter((it) => it.selectedProduct?.hasCustomPrice || it.selectedProduct?.customPrice != null).length;
 
+        // Xử lý đặc thù Chị Tuyết: gửi về, trả về không có tên thịt -> Thịt chín
+        const isTuyetChange = selectedCustomer.id === '585fa225-f5e2-407d-89ea-c0afecc8263b' ||
+          removeDiacritics(selectedCustomer.name.toLowerCase()).includes('tuyet');
+        const isCardReturnChange = card.isReturn || Boolean(sub?.note && /(trả|gửi về|trả về|trả lại|gửi lại|hàng trả)/i.test(sub.note));
+        if (isTuyetChange && isCardReturnChange && updatedItems.length > 0 && custProds && custProds.length > 0) {
+          const chinProduct = custProds.find((p) => {
+            const pClean = removeDiacritics(p.name.toLowerCase().trim());
+            return pClean.includes('chin') || pClean.includes('thit chin');
+          }) || null;
+
+          updatedItems.forEach((it, idx) => {
+            const cleanRaw = removeDiacritics((it.rawName || '').toLowerCase().trim());
+            const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
+            const pureClean = cleanRaw.replace(returnKeywordsRegex, '').trim();
+            if (!pureClean || ['thit', 'thit bo', 'mon le', 'thit le', 'thit thai', ''].includes(pureClean)) {
+              const qty = parseFloat(it.quantity) || 0;
+              const hasChinPrice = chinProduct && chinProduct.customPrice != null && Number(chinProduct.customPrice) > 0;
+              const chinPrice = hasChinPrice
+                ? Number(chinProduct.customPrice)
+                : (chinProduct?.defaultPrice != null ? Number(chinProduct.defaultPrice) : null);
+              const priceStr = chinPrice ? String(Math.round(chinPrice)) : it.price;
+              const amountStr = (qty > 0 && chinPrice) ? String(Math.round(qty * chinPrice)) : it.amount;
+
+              updatedItems[idx] = {
+                ...it,
+                rawName: 'Thịt chín',
+                selectedProduct: chinProduct || it.selectedProduct,
+                matchedProductId: chinProduct?.id || it.matchedProductId,
+                price: priceStr,
+                amount: amountStr,
+              };
+            }
+          });
+        }
+
         // Xử lý đặc thù video khách Hương nếu có
         const isHuong = removeDiacritics(selectedCustomer.name.toLowerCase()).includes('huong');
         const sub = submissions.find((s) => s.id === subId);
@@ -2519,11 +2554,30 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             let rawName = it.rawName;
 
             // Làm sạch các từ khóa trả hàng nếu vô tình lẫn vào tên món thịt
+            let cleanedMeat = '';
             if (rawName) {
               const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
-              const cleanedMeat = rawName.replace(returnKeywordsRegex, '').replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
+              cleanedMeat = rawName.replace(returnKeywordsRegex, '').replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
               if (cleanedMeat) {
                 rawName = cleanedMeat;
+              }
+            }
+
+            // Quy tắc đặc thù: chị tuyết gửi về, trả về... mà không có tên thịt thì sẽ là thịt chín
+            const isCustTuyet = matchedCust && (
+              matchedCust.id === '585fa225-f5e2-407d-89ea-c0afecc8263b' ||
+              removeDiacritics(matchedCust.name.toLowerCase()).includes('tuyet')
+            );
+            const isReturnItem = Boolean(
+              (sub.note && /(trả|gửi về|trả về|trả lại|gửi lại|hàng trả)/i.test(sub.note)) ||
+              (sub.rawAiResponse && (sub.rawAiResponse.includes('"is_return": true') || sub.rawAiResponse.includes('"is_return":true') || /(trả|gửi về|trả về|trả lại|gửi lại)/i.test(sub.rawAiResponse))) ||
+              (it.rawName && /(trả|gửi về|trả về|trả lại|gửi lại|hàng trả)/i.test(it.rawName))
+            );
+
+            if (isCustTuyet && isReturnItem) {
+              const cleanCheck = removeDiacritics((rawName || '').toLowerCase().trim());
+              if (!cleanedMeat || !cleanCheck || ['thit', 'thit bo', 'mon le', 'thit le', 'thit thai', ''].includes(cleanCheck)) {
+                rawName = 'Thịt chín';
               }
             }
 
@@ -2790,9 +2844,50 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       if (!card) return prev;
       const nextIsReturn = !card.isReturn;
       let nextNote = (card.note || '').trim();
+      let nextItems = card.items;
+
+      // Nếu chuyển sang ĐƠN TRẢ và khách là Chị Tuyết: tự động đổi món không tên thịt thành Thịt chín
+      const isTuyetToggle = card.customer && (
+        card.customer.id === '585fa225-f5e2-407d-89ea-c0afecc8263b' ||
+        removeDiacritics(card.customer.name.toLowerCase()).includes('tuyet')
+      );
+      if (nextIsReturn && isTuyetToggle && Array.isArray(card.items)) {
+        const custProds = (card.customer.id && custProductsMap[card.customer.id]) || products;
+        const chinProduct = custProds.find((p) => {
+          const pClean = removeDiacritics(p.name.toLowerCase().trim());
+          return pClean.includes('chin') || pClean.includes('thit chin');
+        }) || null;
+
+        nextItems = card.items.map((it) => {
+          const cleanRaw = removeDiacritics((it.rawName || '').toLowerCase().trim());
+          const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
+          const pureClean = cleanRaw.replace(returnKeywordsRegex, '').trim();
+
+          if (!pureClean || ['thit', 'thit bo', 'mon le', 'thit le', 'thit thai', ''].includes(pureClean)) {
+            const qty = parseFloat(it.quantity) || 0;
+            const hasChinPrice = chinProduct && chinProduct.customPrice != null && Number(chinProduct.customPrice) > 0;
+            const chinPrice = hasChinPrice
+              ? Number(chinProduct.customPrice)
+              : (chinProduct?.defaultPrice != null ? Number(chinProduct.defaultPrice) : null);
+            const priceStr = chinPrice ? String(Math.round(chinPrice)) : it.price;
+            const amountStr = (qty > 0 && chinPrice) ? String(Math.round(qty * chinPrice)) : it.amount;
+
+            return {
+              ...it,
+              rawName: 'Thịt chín',
+              selectedProduct: chinProduct || it.selectedProduct,
+              matchedProductId: chinProduct?.id || it.matchedProductId,
+              price: priceStr,
+              amount: amountStr,
+            };
+          }
+          return it;
+        });
+      }
+
       if (nextIsReturn) {
         // Tự động tạo ghi chú từ danh sách items nếu có
-        const autoNote = buildReturnNoteFromItems(card.items);
+        const autoNote = buildReturnNoteFromItems(nextItems);
         nextNote = autoNote || nextNote || '';
       } else {
         // Xóa ghi chú tự động khi chuyển về đơn xuất
@@ -2804,6 +2899,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           ...card,
           isReturn: nextIsReturn,
           note: nextNote,
+          items: nextItems,
         },
       };
     });
