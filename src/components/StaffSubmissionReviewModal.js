@@ -1497,6 +1497,23 @@ const resolveCustomerForSub = (sub, custList) => {
     }
   }
 
+  // 5i-1. Ưu tiên khớp khách 126 Nguyễn Khánh Toàn
+  if (!matchedCust) {
+    if (
+      cleanDetected.includes('126') ||
+      cleanDetectedNoSpace.includes('126') ||
+      cleanDetected.includes('khanh toan') ||
+      cleanDetectedNoSpace.includes('khanhtoan')
+    ) {
+      matchedCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('126') && cClean.includes('toan')) ||
+               (cClean.includes('khanh') && cClean.includes('toan')) ||
+               cClean.includes('126');
+      }) || null;
+    }
+  }
+
   // 5i. Ưu tiên khớp khách Minh trang
   if (!matchedCust) {
     if (
