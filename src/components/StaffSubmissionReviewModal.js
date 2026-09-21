@@ -405,276 +405,276 @@ const InvoiceReviewCard = React.memo(
               </View>
             ) : null}
 
-          {/* HÀNG 1: KHÁCH HÀNG */}
-          <View style={{ marginBottom: 8, width: '100%' }}>
-            <Text style={styles.cardFieldLabel}>
-              {card.isReturn ? 'Khách hàng trả hàng' : 'Khách hàng ghi nợ'} <Text style={{ color: '#EF4444' }}>*</Text>
-              {sub.detectedCustomerName ? (
-                <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 11.5 }}>
-                  {' '}(AI: "{sub.detectedCustomerName}")
-                </Text>
-              ) : null}
-            </Text>
-            <CustomSelect
-              value={card.customer}
-              placeholder="Chọn khách hàng..."
-              options={customers}
-              disabled={card.isLoadingPrice}
-              onOpenChange={onOpenDropdown}
-              onSelect={(c) => onCustomerChange(sub.id, c)}
-              renderSelected={(c) => c?.name || ''}
-              renderOption={(c) => (
-                <View style={styles.custOptionRow}>
-                  <Text style={styles.custOptionName}>{c.name}</Text>
-                  {c.phone ? <Text style={styles.custOptionPhone}>📞 {c.phone}</Text> : null}
-                </View>
-              )}
-            />
-          </View>
-
-          {/* HÀNG 2: NGÀY GIAO & GHI CHÚ (2 CỘT SONG SONG) */}
-          <View style={styles.mobileDateNoteRow}>
-            <View style={{ flex: 1.1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 22, marginBottom: 3 }}>
-                <Text style={[styles.cardFieldLabel, { marginBottom: 0 }]}>{card.isReturn ? 'Ngày trả' : 'Ngày giao'}</Text>
-              </View>
-              <DatePickerInput
-                value={card.date}
-                onChange={(d) => onUpdateField(sub.id, 'date', d)}
-                placeholder="DD/MM/YYYY"
-                compact={true}
-                disabled={card.isLoadingPrice}
-              />
-            </View>
-
-            <View style={{ flex: 1.6 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 22, marginBottom: 3 }}>
-                <Text style={[styles.cardFieldLabel, { marginBottom: 0 }]}>Ghi chú</Text>
-                <TouchableOpacity
-                  style={[styles.btnToggleOrderType, card.isReturn && styles.btnToggleOrderTypeReturn, card.isLoadingPrice && { opacity: 0.5 }]}
-                  onPress={() => onToggleReturnType(sub.id)}
-                  disabled={card.isLoadingPrice}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.btnToggleOrderTypeText, card.isReturn && styles.btnToggleOrderTypeTextReturn]}>
-                    {card.isReturn ? '↩️ Trả' : '🥩 Xuất'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={[
-                  styles.cardInputNote,
-                  card.isReturn && { borderColor: '#FB923C', backgroundColor: '#FFF7ED' },
-                  card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 },
-                ]}
-                value={card.note}
-                onChangeText={(val) => onUpdateField(sub.id, 'note', val)}
-                editable={!card.isLoadingPrice}
-                placeholder={card.isReturn ? '1.5kg bắp(300), 2kg nạc(500)' : 'Ghi chú đơn...'}
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-          </View>
-
-          {/* HÀNG 3: THANH CHỌN CHẾ ĐỘ NHẬP NHANH (TIỀN HÀNG) HOẶC CHI TIẾT */}
-          <View style={styles.cardModeToggleRow}>
-            <TouchableOpacity
-              style={[styles.cardModeBtn, card.orderMode === 'quick' && styles.cardModeBtnActive]}
-              onPress={() => onToggleOrderMode && onToggleOrderMode(sub.id)}
-              disabled={card.isLoadingPrice}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.cardModeBtnText, card.orderMode === 'quick' && styles.cardModeBtnTextActive]}>
-                ⚡ Nợ nhanh
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.cardModeBtn, card.orderMode !== 'quick' && styles.cardModeBtnActive]}
-              onPress={() => onToggleOrderMode && onToggleOrderMode(sub.id)}
-              disabled={card.isLoadingPrice}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.cardModeBtnText, card.orderMode !== 'quick' && styles.cardModeBtnTextActive]}>
-                🥩 Chi tiết ({card.items?.length || 0})
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {card.orderMode === 'quick' ? (
-            <View style={styles.cardQuickDebtBox}>
+            {/* HÀNG 1: KHÁCH HÀNG */}
+            <View style={{ marginBottom: 8, width: '100%' }}>
               <Text style={styles.cardFieldLabel}>
-                SỐ TIỀN CÔNG NỢ (VND) <Text style={{ color: '#EF4444' }}>*</Text>
+                {card.isReturn ? 'Khách hàng trả hàng' : 'Khách hàng ghi nợ'} <Text style={{ color: '#EF4444' }}>*</Text>
+                {sub.detectedCustomerName ? (
+                  <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 11.5 }}>
+                    {' '}(AI: "{sub.detectedCustomerName}")
+                  </Text>
+                ) : null}
               </Text>
-              <MoneyInput
-                style={styles.cardQuickMoneyContainer}
-                inputStyle={styles.cardQuickMoneyInput}
-                value={card.quickAmount}
+              <CustomSelect
+                value={card.customer}
+                placeholder="Chọn khách hàng..."
+                options={customers}
                 disabled={card.isLoadingPrice}
-                onChangeValue={(val) => {
-                  onUpdateQuickAmount && onUpdateQuickAmount(sub.id, val > 0 ? String(val) : '');
-                }}
-                placeholder="0"
-                textAlign="center"
-              />
-
-              {/* Danh sách khoản tiền con */}
-              {(card.quickSubAmounts || []).length > 0 && (
-                <View style={styles.cardQuickSubWrap}>
-                  <Text style={styles.cardQuickSubTitle}>Các khoản cộng lại:</Text>
-                  <View style={styles.cardQuickSubChips}>
-                    {(card.quickSubAmounts || []).map((subAmt, sIdx) => (
-                      <View key={sIdx} style={styles.cardQuickSubChip}>
-                        <Text style={styles.cardQuickSubChipText}>{formatCurrency(subAmt)}đ</Text>
-                        <TouchableOpacity
-                          onPress={() => onRemoveQuickSubAmount && onRemoveQuickSubAmount(sub.id, sIdx)}
-                          hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-                        >
-                          <Text style={styles.cardQuickSubChipDelete}>✕</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                    <TouchableOpacity
-                      style={styles.cardQuickAddChipBtn}
-                      onPress={() => onAddQuickSubAmount && onAddQuickSubAmount(sub.id)}
-                    >
-                      <Text style={styles.cardQuickAddChipText}>+ Thêm</Text>
-                    </TouchableOpacity>
+                onOpenChange={onOpenDropdown}
+                onSelect={(c) => onCustomerChange(sub.id, c)}
+                renderSelected={(c) => c?.name || ''}
+                renderOption={(c) => (
+                  <View style={styles.custOptionRow}>
+                    <Text style={styles.custOptionName}>{c.name}</Text>
+                    {c.phone ? <Text style={styles.custOptionPhone}>📞 {c.phone}</Text> : null}
                   </View>
-                </View>
-              )}
+                )}
+              />
             </View>
-          ) : (
-            /* BẢNG CÁC MÓN THỊT (DẠNG COMPACT 2 TẦNG TIỆN LỢI) */
-            <View style={styles.cardItemsTable}>
-              <View style={styles.cardItemsTableHeader}>
-                <Text style={styles.cardItemsTableTitle}>
-                  DANH SÁCH MÓN THỊT ({card.items?.length || 0})
-                </Text>
-                <TouchableOpacity
-                  style={[styles.cardBtnAddItem, card.isLoadingPrice && { opacity: 0.5 }]}
-                  onPress={() => onAddItem(sub.id)}
+
+            {/* HÀNG 2: NGÀY GIAO & GHI CHÚ (2 CỘT SONG SONG) */}
+            <View style={styles.mobileDateNoteRow}>
+              <View style={{ flex: 1.1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 22, marginBottom: 3 }}>
+                  <Text style={[styles.cardFieldLabel, { marginBottom: 0 }]}>{card.isReturn ? 'Ngày trả' : 'Ngày giao'}</Text>
+                </View>
+                <DatePickerInput
+                  value={card.date}
+                  onChange={(d) => onUpdateField(sub.id, 'date', d)}
+                  placeholder="DD/MM/YYYY"
+                  compact={true}
                   disabled={card.isLoadingPrice}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.cardBtnAddItemText}>+ Thêm món</Text>
-                </TouchableOpacity>
+                />
               </View>
 
-              {/* Tiêu đề các cột món thịt trên 1 dòng */}
-              {(card.items && card.items.length > 0) && (
-                <View style={styles.cardItemColumnsHeader}>
-                  <Text style={[styles.cardItemColText, { flex: 1.75 }]}>Tên thịt</Text>
-                  <Text style={[styles.cardItemColText, { flex: 0.85, textAlign: 'center' }]}>Số kg</Text>
-                  <Text style={[styles.cardItemColText, { flex: 1.15, textAlign: 'right' }]}>Đơn giá</Text>
-                  <Text style={[styles.cardItemColText, { flex: 1.5, textAlign: 'right' }]}>Thành tiền</Text>
-                  <View style={{ width: 20 }} />
-                </View>
-              )}
-
-              {/* Từng dòng món thịt (xếp chung toàn bộ trên 1 dòng duy nhất, size chữ nhỏ gọn riêng cho bảng này) */}
-              {(card.items || []).map((item, itemIdx) => (
-                <View key={item.id || itemIdx} style={styles.cardItemRowSingle}>
-                  {/* 1. Chọn món thịt */}
-                  <View style={{ flex: 1.75, minWidth: 68 }}>
-                    <CustomSelect
-                      value={item.selectedProduct}
-                      placeholder="Tên thịt..."
-                      compact={true}
-                      triggerStyle={styles.cardItemSelectTrigger}
-                      inputStyle={styles.cardItemSelectInput}
-                      options={customerProducts}
-                      disabled={card.isLoadingPrice}
-                      onOpenChange={(isOpen) => {
-                        if (isOpen && card.customer?.id) {
-                          onFetchCustomerProducts(card.customer.id);
-                        }
-                        onOpenDropdown(isOpen);
-                      }}
-                      onSelect={(p) => onSelectProduct(sub.id, itemIdx, p)}
-                      onInputChange={(txt) => onUpdateItem(sub.id, itemIdx, 'rawName', txt)}
-                      renderSelected={(p) => p?.name || item.rawName || ''}
-                      renderOption={(p) => {
-                        const isCustom = Boolean(p.hasCustomPrice || (p.customPrice !== undefined && p.customPrice !== null));
-                        const effectivePrice = isCustom ? p.customPrice : (p.baseDefaultPrice ?? p.defaultPrice);
-                        return (
-                          <View style={styles.productOptionRow}>
-                            <Text style={styles.productOptionName}>{p.name}</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                              {isCustom && (
-                                <View style={styles.customPriceBadge}>
-                                  <Text style={styles.customPriceBadgeText}>Giá riêng</Text>
-                                </View>
-                              )}
-                              <Text style={[styles.productOptionPrice, isCustom && styles.productOptionCustomPrice]}>
-                                {formatCurrency(effectivePrice)}/{p.unit}
-                              </Text>
-                            </View>
-                          </View>
-                        );
-                      }}
-                    />
-                  </View>
-
-                  {/* 2. Số kg */}
-                  <View style={{ flex: 0.85, minWidth: 38 }}>
-                    <TextInput
-                      style={[styles.cardItemCell, card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
-                      value={item.quantity}
-                      onChangeText={(val) => onUpdateItem(sub.id, itemIdx, 'quantity', val.replace(',', '.'))}
-                      editable={!card.isLoadingPrice}
-                      placeholder="Số kg"
-                      placeholderTextColor="#94A3B8"
-                      keyboardType="decimal-pad"
-                      inputMode="decimal"
-                      textAlign="center"
-                    />
-                  </View>
-
-                  {/* 3. Đơn giá */}
-                  <View style={{ flex: 1.15, minWidth: 52 }}>
-                    <MoneyInput
-                      style={styles.cardItemMoneyContainer}
-                      inputStyle={styles.cardItemMoneyInput}
-                      value={item.price}
-                      disabled={card.isLoadingPrice}
-                      onChangeValue={(val) => {
-                        const priceNum = val > 0 ? val : 0;
-                        onUpdateItem(sub.id, itemIdx, 'price', priceNum > 0 ? String(priceNum) : '');
-                      }}
-                      placeholder="Đơn giá"
-                      textAlign="right"
-                    />
-                  </View>
-
-                  {/* 4. Thành tiền */}
-                  <View style={{ flex: 1.5, minWidth: 68 }}>
-                    <MoneyInput
-                      style={styles.cardItemMoneyContainer}
-                      inputStyle={styles.cardItemAmountInput}
-                      value={item.amount}
-                      disabled={card.isLoadingPrice}
-                      onChangeValue={(val) => {
-                        const amtNum = val > 0 ? val : 0;
-                        onUpdateItem(sub.id, itemIdx, 'amount', amtNum > 0 ? String(amtNum) : '');
-                      }}
-                      placeholder="Thành tiền"
-                      textAlign="right"
-                    />
-                  </View>
-
-                  {/* 5. Nút xóa món */}
+              <View style={{ flex: 1.6 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 22, marginBottom: 3 }}>
+                  <Text style={[styles.cardFieldLabel, { marginBottom: 0 }]}>Ghi chú</Text>
                   <TouchableOpacity
-                    style={[styles.btnRowDelete, styles.btnRowDeleteSingleRow, card.isLoadingPrice && { opacity: 0.4 }]}
-                    onPress={() => onRemoveItem(sub.id, itemIdx)}
+                    style={[styles.btnToggleOrderType, card.isReturn && styles.btnToggleOrderTypeReturn, card.isLoadingPrice && { opacity: 0.5 }]}
+                    onPress={() => onToggleReturnType(sub.id)}
                     disabled={card.isLoadingPrice}
-                    activeOpacity={0.7}
+                    activeOpacity={0.8}
                   >
-                    <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 10, lineHeight: 12 }}>✕</Text>
+                    <Text style={[styles.btnToggleOrderTypeText, card.isReturn && styles.btnToggleOrderTypeTextReturn]}>
+                      {card.isReturn ? '↩️ Trả' : '🥩 Xuất'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
-              ))}
+                <TextInput
+                  style={[
+                    styles.cardInputNote,
+                    card.isReturn && { borderColor: '#FB923C', backgroundColor: '#FFF7ED' },
+                    card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 },
+                  ]}
+                  value={card.note}
+                  onChangeText={(val) => onUpdateField(sub.id, 'note', val)}
+                  editable={!card.isLoadingPrice}
+                  placeholder={card.isReturn ? '1.5kg bắp(300), 2kg nạc(500)' : 'Ghi chú đơn...'}
+                  placeholderTextColor="#94A3B8"
+                />
+              </View>
             </View>
-          )}
+
+            {/* HÀNG 3: THANH CHỌN CHẾ ĐỘ NHẬP NHANH (TIỀN HÀNG) HOẶC CHI TIẾT */}
+            <View style={styles.cardModeToggleRow}>
+              <TouchableOpacity
+                style={[styles.cardModeBtn, card.orderMode === 'quick' && styles.cardModeBtnActive]}
+                onPress={() => onToggleOrderMode && onToggleOrderMode(sub.id)}
+                disabled={card.isLoadingPrice}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.cardModeBtnText, card.orderMode === 'quick' && styles.cardModeBtnTextActive]}>
+                  ⚡ Nợ nhanh
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.cardModeBtn, card.orderMode !== 'quick' && styles.cardModeBtnActive]}
+                onPress={() => onToggleOrderMode && onToggleOrderMode(sub.id)}
+                disabled={card.isLoadingPrice}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.cardModeBtnText, card.orderMode !== 'quick' && styles.cardModeBtnTextActive]}>
+                  🥩 Chi tiết ({card.items?.length || 0})
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {card.orderMode === 'quick' ? (
+              <View style={styles.cardQuickDebtBox}>
+                <Text style={styles.cardFieldLabel}>
+                  SỐ TIỀN CÔNG NỢ (VND) <Text style={{ color: '#EF4444' }}>*</Text>
+                </Text>
+                <MoneyInput
+                  style={styles.cardQuickMoneyContainer}
+                  inputStyle={styles.cardQuickMoneyInput}
+                  value={card.quickAmount}
+                  disabled={card.isLoadingPrice}
+                  onChangeValue={(val) => {
+                    onUpdateQuickAmount && onUpdateQuickAmount(sub.id, val > 0 ? String(val) : '');
+                  }}
+                  placeholder="0"
+                  textAlign="center"
+                />
+
+                {/* Danh sách khoản tiền con */}
+                {(card.quickSubAmounts || []).length > 0 && (
+                  <View style={styles.cardQuickSubWrap}>
+                    <Text style={styles.cardQuickSubTitle}>Các khoản cộng lại:</Text>
+                    <View style={styles.cardQuickSubChips}>
+                      {(card.quickSubAmounts || []).map((subAmt, sIdx) => (
+                        <View key={sIdx} style={styles.cardQuickSubChip}>
+                          <Text style={styles.cardQuickSubChipText}>{formatCurrency(subAmt)}đ</Text>
+                          <TouchableOpacity
+                            onPress={() => onRemoveQuickSubAmount && onRemoveQuickSubAmount(sub.id, sIdx)}
+                            hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                          >
+                            <Text style={styles.cardQuickSubChipDelete}>✕</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                      <TouchableOpacity
+                        style={styles.cardQuickAddChipBtn}
+                        onPress={() => onAddQuickSubAmount && onAddQuickSubAmount(sub.id)}
+                      >
+                        <Text style={styles.cardQuickAddChipText}>+ Thêm</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              /* BẢNG CÁC MÓN THỊT (DẠNG COMPACT 2 TẦNG TIỆN LỢI) */
+              <View style={styles.cardItemsTable}>
+                <View style={styles.cardItemsTableHeader}>
+                  <Text style={styles.cardItemsTableTitle}>
+                    DANH SÁCH MÓN THỊT ({card.items?.length || 0})
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.cardBtnAddItem, card.isLoadingPrice && { opacity: 0.5 }]}
+                    onPress={() => onAddItem(sub.id)}
+                    disabled={card.isLoadingPrice}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.cardBtnAddItemText}>+ Thêm món</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Tiêu đề các cột món thịt trên 1 dòng */}
+                {(card.items && card.items.length > 0) && (
+                  <View style={styles.cardItemColumnsHeader}>
+                    <Text style={[styles.cardItemColText, { flex: 1.75 }]}>Tên thịt</Text>
+                    <Text style={[styles.cardItemColText, { flex: 0.85, textAlign: 'center' }]}>Số kg</Text>
+                    <Text style={[styles.cardItemColText, { flex: 1.15, textAlign: 'right' }]}>Đơn giá</Text>
+                    <Text style={[styles.cardItemColText, { flex: 1.5, textAlign: 'right' }]}>Thành tiền</Text>
+                    <View style={{ width: 20 }} />
+                  </View>
+                )}
+
+                {/* Từng dòng món thịt (xếp chung toàn bộ trên 1 dòng duy nhất, size chữ nhỏ gọn riêng cho bảng này) */}
+                {(card.items || []).map((item, itemIdx) => (
+                  <View key={item.id || itemIdx} style={styles.cardItemRowSingle}>
+                    {/* 1. Chọn món thịt */}
+                    <View style={{ flex: 1.75, minWidth: 68 }}>
+                      <CustomSelect
+                        value={item.selectedProduct}
+                        placeholder="Tên thịt..."
+                        compact={true}
+                        triggerStyle={styles.cardItemSelectTrigger}
+                        inputStyle={styles.cardItemSelectInput}
+                        options={customerProducts}
+                        disabled={card.isLoadingPrice}
+                        onOpenChange={(isOpen) => {
+                          if (isOpen && card.customer?.id) {
+                            onFetchCustomerProducts(card.customer.id);
+                          }
+                          onOpenDropdown(isOpen);
+                        }}
+                        onSelect={(p) => onSelectProduct(sub.id, itemIdx, p)}
+                        onInputChange={(txt) => onUpdateItem(sub.id, itemIdx, 'rawName', txt)}
+                        renderSelected={(p) => p?.name || item.rawName || ''}
+                        renderOption={(p) => {
+                          const isCustom = Boolean(p.hasCustomPrice || (p.customPrice !== undefined && p.customPrice !== null));
+                          const effectivePrice = isCustom ? p.customPrice : (p.baseDefaultPrice ?? p.defaultPrice);
+                          return (
+                            <View style={styles.productOptionRow}>
+                              <Text style={styles.productOptionName}>{p.name}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                {isCustom && (
+                                  <View style={styles.customPriceBadge}>
+                                    <Text style={styles.customPriceBadgeText}>Giá riêng</Text>
+                                  </View>
+                                )}
+                                <Text style={[styles.productOptionPrice, isCustom && styles.productOptionCustomPrice]}>
+                                  {formatCurrency(effectivePrice)}/{p.unit}
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        }}
+                      />
+                    </View>
+
+                    {/* 2. Số kg */}
+                    <View style={{ flex: 0.85, minWidth: 38 }}>
+                      <TextInput
+                        style={[styles.cardItemCell, card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
+                        value={item.quantity}
+                        onChangeText={(val) => onUpdateItem(sub.id, itemIdx, 'quantity', val.replace(',', '.'))}
+                        editable={!card.isLoadingPrice}
+                        placeholder="Số kg"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="decimal-pad"
+                        inputMode="decimal"
+                        textAlign="center"
+                      />
+                    </View>
+
+                    {/* 3. Đơn giá */}
+                    <View style={{ flex: 1.15, minWidth: 52 }}>
+                      <MoneyInput
+                        style={styles.cardItemMoneyContainer}
+                        inputStyle={styles.cardItemMoneyInput}
+                        value={item.price}
+                        disabled={card.isLoadingPrice}
+                        onChangeValue={(val) => {
+                          const priceNum = val > 0 ? val : 0;
+                          onUpdateItem(sub.id, itemIdx, 'price', priceNum > 0 ? String(priceNum) : '');
+                        }}
+                        placeholder="Đơn giá"
+                        textAlign="right"
+                      />
+                    </View>
+
+                    {/* 4. Thành tiền */}
+                    <View style={{ flex: 1.5, minWidth: 68 }}>
+                      <MoneyInput
+                        style={styles.cardItemMoneyContainer}
+                        inputStyle={styles.cardItemAmountInput}
+                        value={item.amount}
+                        disabled={card.isLoadingPrice}
+                        onChangeValue={(val) => {
+                          const amtNum = val > 0 ? val : 0;
+                          onUpdateItem(sub.id, itemIdx, 'amount', amtNum > 0 ? String(amtNum) : '');
+                        }}
+                        placeholder="Thành tiền"
+                        textAlign="right"
+                      />
+                    </View>
+
+                    {/* 5. Nút xóa món */}
+                    <TouchableOpacity
+                      style={[styles.btnRowDelete, styles.btnRowDeleteSingleRow, card.isLoadingPrice && { opacity: 0.4 }]}
+                      onPress={() => onRemoveItem(sub.id, itemIdx)}
+                      disabled={card.isLoadingPrice}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 10, lineHeight: 12 }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* HÀNG 4: TỔNG TIỀN */}
@@ -781,562 +781,39 @@ const resolveCustomerForSub = (sub, custList) => {
 
   // Kiểm tra và sửa lỗi nếu AI nhận diện có thông tin rõ ràng
   if (sub.detectedCustomerName) {
-  // Làm sạch từ khóa trả hàng nếu có lẫn vào tên khách hàng (ví dụ "Thái Hà trả về", "Gửi lại Cô Thảo"...)
-  const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
-  const rawCustNameClean = sub.detectedCustomerName.replace(returnKeywordsRegex, '').replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
-  const cleanDetected = removeDiacritics((rawCustNameClean || sub.detectedCustomerName).toLowerCase().trim());
-  const cleanDetectedNoSpace = cleanDetected.replace(/\s+/g, '');
-  const currentCustClean = matchedCust ? removeDiacritics(matchedCust.name.toLowerCase().trim()) : '';
+    // Làm sạch từ khóa trả hàng nếu có lẫn vào tên khách hàng (ví dụ "Thái Hà trả về", "Gửi lại Cô Thảo"...)
+    const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
+    const rawCustNameClean = sub.detectedCustomerName.replace(returnKeywordsRegex, '').replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
+    const cleanDetected = removeDiacritics((rawCustNameClean || sub.detectedCustomerName).toLowerCase().trim());
+    const cleanDetectedNoSpace = cleanDetected.replace(/\s+/g, '');
+    const currentCustClean = matchedCust ? removeDiacritics(matchedCust.name.toLowerCase().trim()) : '';
 
-  // 1. ĐẶC BIỆT: Khớp ưu tiên khách "Bún huế văn khê" nếu AI nhận diện có chứa "bun hue" hoặc "van khe"
-  if (
-    cleanDetected.includes('bun hue') ||
-    cleanDetected.includes('van khe') ||
-    cleanDetectedNoSpace.includes('bunhue') ||
-    cleanDetectedNoSpace.includes('vankhe')
-  ) {
-    if (!currentCustClean.includes('bun hue') && !currentCustClean.includes('van khe')) {
-      const bunHueCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('bun hue') && cClean.includes('van khe');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('van khe');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('bun hue');
-      }) || null;
-
-      if (bunHueCust) {
-        matchedCust = bunHueCust;
-      }
-    }
-  }
-
-  // 1b. ĐẶC BIỆT: Khớp ưu tiên khách "Huyền Đô Nghĩa" nếu AI nhận diện có chứa "huyen" hoặc "do nghia"
-  if (
-    cleanDetected.includes('huyen do nghia') ||
-    cleanDetected.includes('huyen do ngia') ||
-    cleanDetected.includes('do nghia') ||
-    cleanDetectedNoSpace === 'huyen' ||
-    cleanDetectedNoSpace === 'chihuyen' ||
-    cleanDetected === 'huyen'
-  ) {
-    if (!currentCustClean.includes('huyen') && !currentCustClean.includes('do nghia') && !currentCustClean.includes('do ngia')) {
-      const huyenCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('huyen') && (cClean.includes('do nghia') || cClean.includes('do ngia'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('do nghia') || cClean.includes('do ngia');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('huyen');
-      }) || null;
-
-      if (huyenCust) {
-        matchedCust = huyenCust;
-      }
-    }
-  }
-
-  // 1c. ĐẶC BIỆT: Khớp ưu tiên khách "Phở tưởng chị luyến" nếu AI nhận diện là "phở tưởng" hoặc "chị luyến"
-  if (
-    cleanDetected.includes('pho tuong') ||
-    cleanDetected.includes('tuong') ||
-    cleanDetected.includes('luyen') ||
-    cleanDetectedNoSpace.includes('photuong') ||
-    cleanDetectedNoSpace.includes('tuong') ||
-    cleanDetectedNoSpace.includes('luyen')
-  ) {
-    if (!currentCustClean.includes('tuong') && !currentCustClean.includes('luyen')) {
-      const phoTuongCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('tuong') && !cClean.includes('tien');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('luyen');
-      }) || null;
-
-      if (phoTuongCust) {
-        matchedCust = phoTuongCust;
-      }
-    }
-  }
-
-  // 1d. ĐẶC BIỆT: Khớp ưu tiên khách "Chị Thúy Nga" nếu AI nhận diện là "chinga", "chị nga", "nga"
-  if (
-    cleanDetected.includes('chinga') ||
-    cleanDetected.includes('chi nga') ||
-    cleanDetected.includes('thuy nga') ||
-    cleanDetectedNoSpace.includes('chinga') ||
-    cleanDetectedNoSpace.includes('thuynga') ||
-    cleanDetectedNoSpace === 'nga' ||
-    cleanDetected === 'nga'
-  ) {
-    if (!currentCustClean.includes('nga')) {
-      const thuyNgaCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('thuy') && cClean.includes('nga');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('nga');
-      }) || null;
-
-      if (thuyNgaCust) {
-        matchedCust = thuyNgaCust;
-      }
-    }
-  }
-
-  // 1d2. ĐẶC BIỆT: Khớp ưu tiên khách "Cồ Hải" nếu AI nhận diện là cồ hải, cổ hải, co hai...
-  if (
-    cleanDetected.includes('co hai') ||
-    cleanDetectedNoSpace.includes('cohai') ||
-    cleanDetected === 'co hai' ||
-    cleanDetectedNoSpace === 'cohai'
-  ) {
-    if (!currentCustClean.includes('co hai')) {
-      const coHaiCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase().trim());
-        return cClean === 'co hai' && c.isActive && !c.isBadDebt;
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase().trim());
-        return cClean === 'co hai';
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase().trim());
-        return cClean.includes('co hai');
-      }) || null;
-
-      if (coHaiCust) {
-        matchedCust = coHaiCust;
-      }
-    }
-  }
-
-  // 1e. ĐẶC BIỆT: Khớp ưu tiên khách "Hà Trì" nếu AI nhận diện là ha tri, ha li, ha lu, co ha tri...
-  if (
-    cleanDetected.includes('ha tri') ||
-    cleanDetected.includes('ha li') ||
-    cleanDetected.includes('ha lu') ||
-    cleanDetected.includes('ha thi') ||
-    cleanDetected.includes('co ha tri') ||    // "cô hà trì" AI đọc thành "co ha tri"
-    cleanDetected.includes('co ha ti') ||     // biến thể nuốt âm
-    cleanDetected.includes('ha ti') ||        // "hà trì" nuốt âm "tr"
-    cleanDetected === 'co ha' ||              // "cô hà" rút gọn
-    cleanDetectedNoSpace === 'hatri' ||
-    cleanDetectedNoSpace === 'hali' ||
-    cleanDetectedNoSpace === 'halu' ||
-    cleanDetectedNoSpace === 'hathi' ||
-    cleanDetectedNoSpace === 'cohati' ||
-    cleanDetectedNoSpace === 'cohatri' ||
-    cleanDetectedNoSpace.includes('hatri')
-  ) {
-    if (!currentCustClean.includes('ha tri') && !currentCustClean.includes('tri')) {
-      const isHanh = cleanDetected.includes('hanh');
-      let targetCust = null;
-      if (isHanh) {
-        // Nếu người nói đọc là chị Hạnh -> Khớp khách chị hạnh sân bóng hà trì
-        targetCust = custList.find((c) => {
+    // 1. ĐẶC BIỆT: Khớp ưu tiên khách "Bún huế văn khê" nếu AI nhận diện có chứa "bun hue" hoặc "van khe"
+    if (
+      cleanDetected.includes('bun hue') ||
+      cleanDetected.includes('van khe') ||
+      cleanDetectedNoSpace.includes('bunhue') ||
+      cleanDetectedNoSpace.includes('vankhe')
+    ) {
+      if (!currentCustClean.includes('bun hue') && !currentCustClean.includes('van khe')) {
+        const bunHueCust = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('hanh');
-        }) || null;
-      } else {
-        // Đọc là Hà Trì -> 100% là khách Hà Trì, TUYỆT ĐỐI KHÔNG chọn nhầm sang "Chị hạnh sân bóng hà trì"
-        targetCust = custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase()).trim();
-          return cClean === 'ha tri';
+          return cClean.includes('bun hue') && cClean.includes('van khe');
         }) || custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return (cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'))) && !cClean.includes('hanh');
+          return cClean.includes('van khe');
         }) || custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
+          return cClean.includes('bun hue');
         }) || null;
-      }
 
-      if (targetCust) {
-        matchedCust = targetCust;
-      }
-    }
-  }
-
-
-  // 1f. ĐẶC BIỆT: Khớp ưu tiên khách "Thăn bình đà(anh Nghĩa)" nếu AI nhận diện là anh nghĩa, anh ngĩa, nghĩa, ngĩa, bình đà...
-  if (
-    cleanDetected.includes('anh nghia') ||
-    cleanDetected.includes('anh ngia') ||
-    cleanDetected.includes('binh da') ||
-    cleanDetected.includes('than binh da') ||
-    cleanDetectedNoSpace.includes('anhnghia') ||
-    cleanDetectedNoSpace.includes('anhngia') ||
-    cleanDetectedNoSpace === 'nghia' ||
-    cleanDetectedNoSpace === 'ngia'
-  ) {
-    if (!currentCustClean.includes('binh da') && !currentCustClean.includes('nghia')) {
-      const thanBinhDaCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('binh da') && (cClean.includes('nghia') || cClean.includes('than'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('binh da');
-      }) || null;
-
-      if (thanBinhDaCust) {
-        matchedCust = thanBinhDaCust;
+        if (bunHueCust) {
+          matchedCust = bunHueCust;
+        }
       }
     }
-  }
 
-  // 1g. ĐẶC BIỆT: Khớp ưu tiên khách "Bà lưu" (kể cả khi AI đọc nhầm do nét chữ thảo: ba liu, ba linh, ba lui, ba lieu, ba lu, ba lúc)
-  if (
-    cleanDetected.includes('ba luu') ||
-    cleanDetected.includes('bà lưu') ||
-    cleanDetected.includes('ba liu') ||
-    cleanDetected.includes('ba lui') ||
-    cleanDetected.includes('ba lieu') ||
-    cleanDetected.includes('ba linh') ||
-    cleanDetected.includes('ba lu') ||
-    cleanDetected.includes('ba luc') ||
-    cleanDetectedNoSpace === 'baluu' ||
-    cleanDetectedNoSpace === 'baliu' ||
-    cleanDetectedNoSpace === 'balinh' ||
-    cleanDetectedNoSpace === 'balui' ||
-    cleanDetectedNoSpace === 'balieu' ||
-    cleanDetectedNoSpace === 'balu' ||
-    cleanDetectedNoSpace === 'luu' ||
-    cleanDetectedNoSpace === 'liu'
-  ) {
-    if (!currentCustClean.includes('luu')) {
-      const baLuuCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean === 'ba luu' || cClean.includes('ba luu');
-      }) || null;
-
-      if (baLuuCust) {
-        matchedCust = baLuuCust;
-      }
-    }
-  }
-
-  // 1g2. ĐẶC BIỆT: Khớp ưu tiên khách "Nguyễn khuyến trường hoàng" (khi AI đọc được nguyễn . hoàng, nguyễn hoàng, nguyễn khuyến, trường hoàng...)
-  const hasNguyenOrKhuyen = cleanDetected.includes('nguyen') || cleanDetected.includes('khuyen') || cleanDetectedNoSpace.includes('nguyen') || cleanDetectedNoSpace.includes('khuyen');
-  const hasHoang = cleanDetected.includes('hoang') || cleanDetectedNoSpace.includes('hoang');
-  const hasTruongHoang = cleanDetected.includes('truong hoang') || cleanDetectedNoSpace.includes('truonghoang');
-  const hasNguyenKhuyen = cleanDetected.includes('nguyen khuyen') || cleanDetectedNoSpace.includes('nguyenkhuyen');
-
-  if ((hasNguyenOrKhuyen && hasHoang) || (hasNguyenKhuyen && hasTruongHoang) || (hasNguyenKhuyen && hasHoang) || cleanDetected.includes('khuyen truong hoang')) {
-    if (!currentCustClean.includes('khuyen') || !currentCustClean.includes('hoang')) {
-      const nkCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return (cClean.includes('khuyen') && cClean.includes('hoang')) || (cClean.includes('nguyen') && cClean.includes('khuyen') && cClean.includes('hoang'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('khuyen') && (cClean.includes('truong') || cClean.includes('hoang'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('nguyen khuyen');
-      }) || null;
-
-      if (nkCust) {
-        matchedCust = nkCust;
-      }
-    }
-  }
-
-  // 1h. ĐẶC BIỆT: Khớp ưu tiên khách "52  trần thái tông" nếu quét được số 52
-  if (
-    cleanDetected.includes('52') ||
-    cleanDetectedNoSpace.includes('52') ||
-    (cleanDetected.includes('tran thai tong') && !cleanDetected.includes('47'))
-  ) {
-    if (!currentCustClean.includes('52')) {
-      const cust52 = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('52') && (cClean.includes('tran thai tong') || cClean.includes('thai tong') || cClean.includes('tran'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('52');
-      }) || null;
-
-      if (cust52) {
-        matchedCust = cust52;
-      }
-    }
-  }
-
-  // 1i. ĐẶC BIỆT: Khớp ưu tiên khách "Minh trang" nếu đọc được chữ minh hoặc mih
-  if (
-    cleanDetected.includes('minh trang') ||
-    cleanDetected.includes('mih trang') ||
-    cleanDetected.includes('minh tuy') ||
-    cleanDetected.includes('mih tuy') ||
-    cleanDetected.includes('mih') ||
-    cleanDetectedNoSpace === 'minh' ||
-    cleanDetectedNoSpace === 'mih' ||
-    cleanDetectedNoSpace.includes('minhtrang') ||
-    cleanDetectedNoSpace.includes('mihtrang') ||
-    cleanDetectedNoSpace.includes('mihtuy') ||
-    cleanDetectedNoSpace.includes('minhtuy')
-  ) {
-    if (!currentCustClean.includes('minh') || !currentCustClean.includes('trang')) {
-      const custMinhTrang = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('minh') && cClean.includes('trang');
-      }) || null;
-
-      if (custMinhTrang) {
-        matchedCust = custMinhTrang;
-      }
-    }
-  }
-
-  // 1j. ĐẶC BIỆT: Khớp ưu tiên khách "Trung kính" / "Bếp trung kính" nếu đọc được trung kinh, tuy kh, tug kh, trung kh
-  if (
-    cleanDetected.includes('trung kinh') ||
-    cleanDetected.includes('bep trung kinh') ||
-    cleanDetected.includes('trung kh') ||
-    cleanDetected.includes('tuy kh') ||
-    cleanDetected.includes('tuy ks') ||
-    cleanDetected.includes('tug kh') ||
-    cleanDetected.includes('tung kh') ||
-    cleanDetected.includes('truy kh') ||
-    cleanDetectedNoSpace === 'trungkinh' ||
-    cleanDetectedNoSpace === 'tuykh' ||
-    cleanDetectedNoSpace === 'tuykhs' ||
-    cleanDetectedNoSpace === 'tuyks' ||
-    cleanDetectedNoSpace === 'tugkh' ||
-    cleanDetectedNoSpace === 'tungkh' ||
-    cleanDetectedNoSpace === 'truykh' ||
-    cleanDetectedNoSpace.includes('trungkinh') ||
-    cleanDetectedNoSpace.includes('beptrungkinh')
-  ) {
-    if (!currentCustClean.includes('trung') || !currentCustClean.includes('kinh')) {
-      const custTrungKinh = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('bep trung kinh') || (cClean.includes('trung') && cClean.includes('kinh'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('trung kinh') || cClean === 'trungkinh';
-      }) || null;
-
-      if (custTrungKinh) {
-        matchedCust = custTrungKinh;
-      }
-    }
-  }
-
-  // 1k. ĐẶC BIỆT: Phân biệt rõ khách "văn khê" và "Bún huế van khe"
-  if (cleanDetected.includes('van khe') || cleanDetectedNoSpace.includes('vankhe')) {
-    const hasBunHue = cleanDetected.includes('bun hue') || cleanDetected.includes('bun bo hue') ||
-      cleanDetectedNoSpace.includes('bunhue') || (cleanDetected.includes('bun') && cleanDetected.includes('van khe'));
-    if (!hasBunHue) {
-      const custVanKhe = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean === 'van khe' || (cClean.includes('van khe') && !cClean.includes('bun'));
-      }) || null;
-      if (custVanKhe) matchedCust = custVanKhe;
-    } else {
-      const custBunHue = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return (cClean.includes('bun hue') && cClean.includes('van khe')) || (cClean.includes('bun') && cClean.includes('van khe'));
-      }) || null;
-      if (custBunHue) matchedCust = custBunHue;
-    }
-  } else if (cleanDetected.includes('bun hue') || cleanDetectedNoSpace.includes('bunhue')) {
-    const custBunHue = custList.find((c) => {
-      const cClean = removeDiacritics(c.name.toLowerCase());
-      return cClean.includes('bun hue');
-    }) || null;
-    if (custBunHue) matchedCust = custBunHue;
-  }
-
-  // 1l. ĐẶC BIỆT: Khớp ưu tiên khách "Thái hà" nếu nhận diện thái hà, hku ha, hki ha, hai ha...
-  if (
-    cleanDetected.includes('thai ha') ||
-    cleanDetected.includes('thái hà') ||
-    cleanDetectedNoSpace.includes('thaiha') ||
-    cleanDetected.includes('hku ha') ||
-    cleanDetectedNoSpace.includes('hkuha') ||
-    cleanDetected.includes('hki ha') ||
-    cleanDetectedNoSpace.includes('hkiha') ||
-    cleanDetected.includes('hkui ha') ||
-    cleanDetectedNoSpace.includes('hkuiha') ||
-    cleanDetected.includes('hkai ha') ||
-    cleanDetectedNoSpace.includes('hkaiha') ||
-    cleanDetected.includes('thki ha') ||
-    cleanDetectedNoSpace.includes('thkiha') ||
-    cleanDetected.includes('hai ha') ||
-    cleanDetectedNoSpace.includes('haiha')
-  ) {
-    const custThaiHa = custList.find((c) => {
-      const cClean = removeDiacritics(c.name.toLowerCase());
-      // BẮT BUỘC tìm cụm từ "thai ha" LIỀN NHAU (có khoảng trắng giữa thai và ha)
-      // TUYỆT ĐỐI KHÔNG dùng includes('thai') && includes('ha') riêng lẻ
-      // vì "tran thai tong" → "thai" chứa chuỗi con "ha" → khớp sai!
-      return (
-        cClean === 'thai ha' ||
-        cClean.includes('thai ha') ||      // cụm "thai ha" liền nhau có space
-        cClean.startsWith('thai ha') ||
-        (cleanDetectedNoSpace.includes('thaiha') && cClean.replace(/\s+/g, '').includes('thaiha'))
-      ) && !cClean.includes('ngoc lam');
-    }) || null;
-    if (custThaiHa) matchedCust = custThaiHa;
-  }
-
-
-  // 1m. ĐẶC BIỆT: Khớp ưu tiên khách "Anh thắng phố cổ" nếu là A Thang, A Thắng, ATHang, thang pho co...
-  if (
-    cleanDetected === 'a thang' ||
-    cleanDetected === 'athang' ||
-    cleanDetected === 'a.thang' ||
-    cleanDetected === 'anh thang' ||
-    cleanDetectedNoSpace === 'athang' ||
-    cleanDetectedNoSpace === 'anhthang' ||
-    cleanDetected.includes('thang pho co') ||
-    cleanDetectedNoSpace.includes('thangphoco') ||
-    (cleanDetected.includes('thang') && !cleanDetected.includes('chu tu'))
-  ) {
-    const custThangPhoCo = custList.find((c) => {
-      const cClean = removeDiacritics(c.name.toLowerCase());
-      return cClean.includes('thang') && cClean.includes('pho co');
-    }) || custList.find((c) => {
-      const cClean = removeDiacritics(c.name.toLowerCase());
-      return cClean === 'anh thang pho co';
-    }) || null;
-    if (custThangPhoCo) matchedCust = custThangPhoCo;
-  }
-
-  // 1n. ĐẶC BIỆT: Khớp ưu tiên khách "Phở đông" nếu là phở đg, phở đông, pho dg, pho dong...
-  if (
-    cleanDetected === 'pho dg' ||
-    cleanDetected === 'phodg' ||
-    cleanDetected === 'pho dong' ||
-    cleanDetected === 'phodong' ||
-    cleanDetected === 'dg' ||
-    cleanDetectedNoSpace === 'phodg' ||
-    cleanDetectedNoSpace === 'phodong' ||
-    (cleanDetected.includes('pho') && (cleanDetected.includes('dg') || cleanDetected.includes('dong'))) ||
-    cleanDetected.includes('pho dong')
-  ) {
-    const custPhoDong = custList.find((c) => {
-      const cClean = removeDiacritics(c.name.toLowerCase());
-      return cClean === 'pho dong' || (cClean.includes('pho') && cClean.includes('dong'));
-    }) || null;
-    if (custPhoDong) matchedCust = custPhoDong;
-  }
-
-  // 1o. ĐẶC BIỆT: Khớp ưu tiên khách "Gia Hưng cs2" nếu là Gia Hy CS2, Gia Hưng CS2, Gia Hưng 2...
-  if (
-    (cleanDetected.includes('gia') && (cleanDetected.includes('hung') || cleanDetected.includes('hy')) && (cleanDetected.includes('cs2') || cleanDetected.includes('cs 2') || cleanDetected.includes('co so 2') || cleanDetected.endsWith('2'))) ||
-    cleanDetectedNoSpace.includes('giahycs2') ||
-    cleanDetectedNoSpace.includes('giahungcs2') ||
-    cleanDetected.includes('gia hy cs2') ||
-    cleanDetected.includes('gia hung cs2')
-  ) {
-    const custGiaHungCs2 = custList.find((c) => {
-      const cClean = removeDiacritics(c.name.toLowerCase());
-      return cClean === 'gia hung cs2' || (cClean.includes('gia hung') && cClean.includes('cs2'));
-    }) || null;
-    if (custGiaHungCs2) matchedCust = custGiaHungCs2;
-  }
-
-  // 2. Nếu khách trước đó bị gán nhầm thành tên quá ngắn (1-2 ký tự như "N") trong khi AI đọc tên dài, hủy bỏ để tìm lại
-  if (matchedCust && currentCustClean.length <= 2 && cleanDetected.length > 2) {
-    matchedCust = null;
-  }
-
-  // 3. Ưu tiên khớp khách Cô thảo(thầy) nếu AI nhận diện là thầy hoặc cô thảo
-  if (!matchedCust) {
-    if (
-      cleanDetectedNoSpace === 'thay' ||
-      cleanDetectedNoSpace === 'cothao' ||
-      cleanDetectedNoSpace === 'thao' ||
-      cleanDetected.includes('thay') ||
-      cleanDetected.includes('thao')
-    ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('thao') && cClean.includes('thay');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('thao');
-      }) || null;
-    }
-  }
-
-  // 4. Ưu tiên khớp khách Tuyết
-  if (!matchedCust) {
-    if (cleanDetected.includes('tuyet') || cleanDetectedNoSpace.includes('tuyet')) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('tuyet');
-      }) || null;
-    }
-  }
-
-  // 5. Ưu tiên khớp các Bếp (B1, B2, B3, B4)
-  if (!matchedCust) {
-    if (
-      cleanDetectedNoSpace === 'b1' ||
-      cleanDetectedNoSpace === 'bep1' ||
-      cleanDetectedNoSpace === 'bephangxom1' ||
-      cleanDetectedNoSpace === 'bl' ||
-      cleanDetectedNoSpace === 'bi' ||
-      cleanDetectedNoSpace === 'b/' ||
-      cleanDetectedNoSpace === 'ba' ||
-      cleanDetectedNoSpace === 'ba1' ||
-      cleanDetectedNoSpace === 'b-1' ||
-      cleanDetectedNoSpace === 'b.1' ||
-      cleanDetected.includes('bep hang xom 1') ||
-      cleanDetected.includes('truong bo 1')
-    ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return (cClean.includes('bep hang xom') && cClean.includes('1')) || (cClean.includes('hang xom') && cClean.includes('1'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean === 'b1' || cClean.includes('bep 1');
-      }) || null;
-    } else if (
-      cleanDetectedNoSpace === 'b2' ||
-      cleanDetectedNoSpace === 'bep2' ||
-      cleanDetectedNoSpace === 'bephangxom2' ||
-      cleanDetected.includes('bep hang xom 2')
-    ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return (cClean.includes('bep hang xom') && cClean.includes('2')) || cClean.includes('b2') || cClean.includes('bep 2');
-      }) || null;
-    } else if (
-      cleanDetectedNoSpace === 'b3' ||
-      cleanDetectedNoSpace === 'bep3' ||
-      cleanDetectedNoSpace === 'bephangxom3' ||
-      cleanDetected.includes('bep hang xom 3')
-    ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return (cClean.includes('bep hang xom') && cClean.includes('3')) || cClean.includes('b3') || cClean.includes('bep 3');
-      }) || null;
-    } else if (
-      cleanDetectedNoSpace === 'b4' ||
-      cleanDetectedNoSpace === 'bep4' ||
-      cleanDetectedNoSpace === 'vuonxanh' ||
-      cleanDetectedNoSpace === 'nhahangvuonxanh' ||
-      cleanDetected.includes('vuon xanh')
-    ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('vuon xanh') || cClean.includes('b4') || cClean.includes('bep 4');
-      }) || null;
-    }
-  }
-
-  // 5b. Ưu tiên khớp khách Huyền Đô Nghĩa nếu AI nhận diện là Huyền hoặc Huyền Đô Nghĩa
-  if (!matchedCust) {
+    // 1b. ĐẶC BIỆT: Khớp ưu tiên khách "Huyền Đô Nghĩa" nếu AI nhận diện có chứa "huyen" hoặc "do nghia"
     if (
       cleanDetected.includes('huyen do nghia') ||
       cleanDetected.includes('huyen do ngia') ||
@@ -1345,21 +822,25 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace === 'chihuyen' ||
       cleanDetected === 'huyen'
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('huyen') && (cClean.includes('do nghia') || cClean.includes('do ngia'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('do nghia') || cClean.includes('do ngia');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('huyen');
-      }) || null;
-    }
-  }
+      if (!currentCustClean.includes('huyen') && !currentCustClean.includes('do nghia') && !currentCustClean.includes('do ngia')) {
+        const huyenCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('huyen') && (cClean.includes('do nghia') || cClean.includes('do ngia'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('do nghia') || cClean.includes('do ngia');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('huyen');
+        }) || null;
 
-  // 5c. Ưu tiên khớp khách Phở tưởng (chị Luyến) nếu AI nhận diện là phở tưởng hoặc luyến
-  if (!matchedCust) {
+        if (huyenCust) {
+          matchedCust = huyenCust;
+        }
+      }
+    }
+
+    // 1c. ĐẶC BIỆT: Khớp ưu tiên khách "Phở tưởng chị luyến" nếu AI nhận diện là "phở tưởng" hoặc "chị luyến"
     if (
       cleanDetected.includes('pho tuong') ||
       cleanDetected.includes('tuong') ||
@@ -1368,21 +849,25 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace.includes('tuong') ||
       cleanDetectedNoSpace.includes('luyen')
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('tuong') && !cClean.includes('tien');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('luyen');
-      }) || null;
-    }
-  }
+      if (!currentCustClean.includes('tuong') && !currentCustClean.includes('luyen')) {
+        const phoTuongCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('tuong') && !cClean.includes('tien');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('luyen');
+        }) || null;
 
-  // 5d. Ưu tiên khớp khách Chị Thúy Nga nếu AI nhận diện là chinga, chị nga, nga
-  if (!matchedCust) {
+        if (phoTuongCust) {
+          matchedCust = phoTuongCust;
+        }
+      }
+    }
+
+    // 1d. ĐẶC BIỆT: Khớp ưu tiên khách "Chị Thúy Nga" nếu AI nhận diện là "chinga", "chị nga", "nga"
     if (
       cleanDetected.includes('chinga') ||
       cleanDetected.includes('chi nga') ||
@@ -1392,75 +877,95 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace === 'nga' ||
       cleanDetected === 'nga'
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('thuy') && cClean.includes('nga');
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('nga');
-      }) || null;
-    }
-  }
+      if (!currentCustClean.includes('nga')) {
+        const thuyNgaCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('thuy') && cClean.includes('nga');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('nga');
+        }) || null;
 
-  // 5d2. Ưu tiên khớp khách Cồ Hải
-  if (!matchedCust) {
+        if (thuyNgaCust) {
+          matchedCust = thuyNgaCust;
+        }
+      }
+    }
+
+    // 1d2. ĐẶC BIỆT: Khớp ưu tiên khách "Cồ Hải" nếu AI nhận diện là cồ hải, cổ hải, co hai...
     if (
       cleanDetected.includes('co hai') ||
       cleanDetectedNoSpace.includes('cohai') ||
       cleanDetected === 'co hai' ||
       cleanDetectedNoSpace === 'cohai'
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase().trim());
-        return cClean === 'co hai' && c.isActive && !c.isBadDebt;
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase().trim());
-        return cClean === 'co hai';
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase().trim());
-        return cClean.includes('co hai');
-      }) || null;
-    }
-  }
+      if (!currentCustClean.includes('co hai')) {
+        const coHaiCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim());
+          return cClean === 'co hai' && c.isActive && !c.isBadDebt;
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim());
+          return cClean === 'co hai';
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim());
+          return cClean.includes('co hai');
+        }) || null;
 
-  // 5e. Ưu tiên khớp khách Hà Trì
-  if (!matchedCust) {
+        if (coHaiCust) {
+          matchedCust = coHaiCust;
+        }
+      }
+    }
+
+    // 1e. ĐẶC BIỆT: Khớp ưu tiên khách "Hà Trì" nếu AI nhận diện là ha tri, ha li, ha lu, co ha tri...
     if (
       cleanDetected.includes('ha tri') ||
       cleanDetected.includes('ha li') ||
       cleanDetected.includes('ha lu') ||
       cleanDetected.includes('ha thi') ||
+      cleanDetected.includes('co ha tri') ||    // "cô hà trì" AI đọc thành "co ha tri"
+      cleanDetected.includes('co ha ti') ||     // biến thể nuốt âm
+      cleanDetected.includes('ha ti') ||        // "hà trì" nuốt âm "tr"
+      cleanDetected === 'co ha' ||              // "cô hà" rút gọn
       cleanDetectedNoSpace === 'hatri' ||
       cleanDetectedNoSpace === 'hali' ||
       cleanDetectedNoSpace === 'halu' ||
       cleanDetectedNoSpace === 'hathi' ||
+      cleanDetectedNoSpace === 'cohati' ||
+      cleanDetectedNoSpace === 'cohatri' ||
       cleanDetectedNoSpace.includes('hatri')
     ) {
-      const isHanh = cleanDetected.includes('hanh');
-      if (isHanh) {
-        // Nếu người nói đọc là chị Hạnh -> Khớp khách chị hạnh sân bóng hà trì
-        matchedCust = custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('hanh');
-        }) || null;
-      } else {
-        // Đọc là Hà Trì -> 100% là khách Hà Trì, TUYỆT ĐỐI KHÔNG chọn nhầm sang "Chị hạnh sân bóng hà trì"
-        matchedCust = custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase()).trim();
-          return cClean === 'ha tri';
-        }) || custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return (cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'))) && !cClean.includes('hanh');
-        }) || custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
-        }) || null;
+      if (!currentCustClean.includes('ha tri') && !currentCustClean.includes('tri')) {
+        const isHanh = cleanDetected.includes('hanh');
+        let targetCust = null;
+        if (isHanh) {
+          // Nếu người nói đọc là chị Hạnh -> Khớp khách chị hạnh sân bóng hà trì
+          targetCust = custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return cClean.includes('hanh');
+          }) || null;
+        } else {
+          // Đọc là Hà Trì -> 100% là khách Hà Trì, TUYỆT ĐỐI KHÔNG chọn nhầm sang "Chị hạnh sân bóng hà trì"
+          targetCust = custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase()).trim();
+            return cClean === 'ha tri';
+          }) || custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return (cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'))) && !cClean.includes('hanh');
+          }) || custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
+          }) || null;
+        }
+
+        if (targetCust) {
+          matchedCust = targetCust;
+        }
       }
     }
-  }
 
-  // 5f. Ưu tiên khớp khách Thăn bình đà(anh Nghĩa)
-  if (!matchedCust) {
+
+    // 1f. ĐẶC BIỆT: Khớp ưu tiên khách "Thăn bình đà(anh Nghĩa)" nếu AI nhận diện là anh nghĩa, anh ngĩa, nghĩa, ngĩa, bình đà...
     if (
       cleanDetected.includes('anh nghia') ||
       cleanDetected.includes('anh ngia') ||
@@ -1471,67 +976,99 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace === 'nghia' ||
       cleanDetectedNoSpace === 'ngia'
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('binh da') && (cClean.includes('nghia') || cClean.includes('than'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('binh da');
-      }) || null;
-    }
-  }
+      if (!currentCustClean.includes('binh da') && !currentCustClean.includes('nghia')) {
+        const thanBinhDaCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('binh da') && (cClean.includes('nghia') || cClean.includes('than'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('binh da');
+        }) || null;
 
-  // 5g. Ưu tiên khớp khách Bà lưu
-  if (!matchedCust) {
+        if (thanBinhDaCust) {
+          matchedCust = thanBinhDaCust;
+        }
+      }
+    }
+
+    // 1g. ĐẶC BIỆT: Khớp ưu tiên khách "Bà lưu" (kể cả khi AI đọc nhầm do nét chữ thảo: ba liu, ba linh, ba lui, ba lieu, ba lu, ba lúc)
     if (
       cleanDetected.includes('ba luu') ||
       cleanDetected.includes('bà lưu') ||
+      cleanDetected.includes('ba liu') ||
+      cleanDetected.includes('ba lui') ||
+      cleanDetected.includes('ba lieu') ||
+      cleanDetected.includes('ba linh') ||
+      cleanDetected.includes('ba lu') ||
+      cleanDetected.includes('ba luc') ||
       cleanDetectedNoSpace === 'baluu' ||
-      cleanDetectedNoSpace === 'luu'
+      cleanDetectedNoSpace === 'baliu' ||
+      cleanDetectedNoSpace === 'balinh' ||
+      cleanDetectedNoSpace === 'balui' ||
+      cleanDetectedNoSpace === 'balieu' ||
+      cleanDetectedNoSpace === 'balu' ||
+      cleanDetectedNoSpace === 'luu' ||
+      cleanDetectedNoSpace === 'liu'
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean === 'ba luu' || cClean.includes('ba luu');
-      }) || null;
-    }
-  }
+      if (!currentCustClean.includes('luu')) {
+        const baLuuCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean === 'ba luu' || cClean.includes('ba luu');
+        }) || null;
 
-  // 5h. Ưu tiên khớp khách 52 trần thái tông
-  if (!matchedCust) {
+        if (baLuuCust) {
+          matchedCust = baLuuCust;
+        }
+      }
+    }
+
+    // 1g2. ĐẶC BIỆT: Khớp ưu tiên khách "Nguyễn khuyến trường hoàng" (khi AI đọc được nguyễn . hoàng, nguyễn hoàng, nguyễn khuyến, trường hoàng...)
+    const hasNguyenOrKhuyen = cleanDetected.includes('nguyen') || cleanDetected.includes('khuyen') || cleanDetectedNoSpace.includes('nguyen') || cleanDetectedNoSpace.includes('khuyen');
+    const hasHoang = cleanDetected.includes('hoang') || cleanDetectedNoSpace.includes('hoang');
+    const hasTruongHoang = cleanDetected.includes('truong hoang') || cleanDetectedNoSpace.includes('truonghoang');
+    const hasNguyenKhuyen = cleanDetected.includes('nguyen khuyen') || cleanDetectedNoSpace.includes('nguyenkhuyen');
+
+    if ((hasNguyenOrKhuyen && hasHoang) || (hasNguyenKhuyen && hasTruongHoang) || (hasNguyenKhuyen && hasHoang) || cleanDetected.includes('khuyen truong hoang')) {
+      if (!currentCustClean.includes('khuyen') || !currentCustClean.includes('hoang')) {
+        const nkCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('khuyen') && cClean.includes('hoang')) || (cClean.includes('nguyen') && cClean.includes('khuyen') && cClean.includes('hoang'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('khuyen') && (cClean.includes('truong') || cClean.includes('hoang'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('nguyen khuyen');
+        }) || null;
+
+        if (nkCust) {
+          matchedCust = nkCust;
+        }
+      }
+    }
+
+    // 1h. ĐẶC BIỆT: Khớp ưu tiên khách "52  trần thái tông" nếu quét được số 52
     if (
       cleanDetected.includes('52') ||
       cleanDetectedNoSpace.includes('52') ||
       (cleanDetected.includes('tran thai tong') && !cleanDetected.includes('47'))
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('52') && (cClean.includes('tran thai tong') || cClean.includes('thai tong') || cClean.includes('tran'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('52');
-      }) || null;
-    }
-  }
+      if (!currentCustClean.includes('52')) {
+        const cust52 = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('52') && (cClean.includes('tran thai tong') || cClean.includes('thai tong') || cClean.includes('tran'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('52');
+        }) || null;
 
-  // 5i-1. Ưu tiên khớp khách 126 Nguyễn Khánh Toàn
-  if (!matchedCust) {
-    if (
-      cleanDetected.includes('126') ||
-      cleanDetectedNoSpace.includes('126') ||
-      cleanDetected.includes('khanh toan') ||
-      cleanDetectedNoSpace.includes('khanhtoan')
-    ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return (cClean.includes('126') && cClean.includes('toan')) ||
-               (cClean.includes('khanh') && cClean.includes('toan')) ||
-               cClean.includes('126');
-      }) || null;
+        if (cust52) {
+          matchedCust = cust52;
+        }
+      }
     }
-  }
 
-  // 5i. Ưu tiên khớp khách Minh trang
-  if (!matchedCust) {
+    // 1i. ĐẶC BIỆT: Khớp ưu tiên khách "Minh trang" nếu đọc được chữ minh hoặc mih
     if (
       cleanDetected.includes('minh trang') ||
       cleanDetected.includes('mih trang') ||
@@ -1545,15 +1082,19 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace.includes('mihtuy') ||
       cleanDetectedNoSpace.includes('minhtuy')
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('minh') && cClean.includes('trang');
-      }) || null;
-    }
-  }
+      if (!currentCustClean.includes('minh') || !currentCustClean.includes('trang')) {
+        const custMinhTrang = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('minh') && cClean.includes('trang');
+        }) || null;
 
-  // 5j. Ưu tiên khớp khách Trung kính / Bếp trung kính
-  if (!matchedCust) {
+        if (custMinhTrang) {
+          matchedCust = custMinhTrang;
+        }
+      }
+    }
+
+    // 1j. ĐẶC BIỆT: Khớp ưu tiên khách "Trung kính" / "Bếp trung kính" nếu đọc được trung kinh, tuy kh, tug kh, trung kh
     if (
       cleanDetected.includes('trung kinh') ||
       cleanDetected.includes('bep trung kinh') ||
@@ -1573,38 +1114,48 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace.includes('trungkinh') ||
       cleanDetectedNoSpace.includes('beptrungkinh')
     ) {
-      matchedCust = custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('bep trung kinh') || (cClean.includes('trung') && cClean.includes('kinh'));
-      }) || custList.find((c) => {
-        const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean.includes('trung kinh') || cClean === 'trungkinh';
-      }) || null;
-    }
-  }
+      if (!currentCustClean.includes('trung') || !currentCustClean.includes('kinh')) {
+        const custTrungKinh = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('bep trung kinh') || (cClean.includes('trung') && cClean.includes('kinh'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('trung kinh') || cClean === 'trungkinh';
+        }) || null;
 
-  // 5k. Ưu tiên phân biệt rõ khách "văn khê" và "Bún huế van khe"
-  if (!matchedCust) {
+        if (custTrungKinh) {
+          matchedCust = custTrungKinh;
+        }
+      }
+    }
+
+    // 1k. ĐẶC BIỆT: Phân biệt rõ khách "văn khê" và "Bún huế van khe"
     if (cleanDetected.includes('van khe') || cleanDetectedNoSpace.includes('vankhe')) {
       const hasBunHue = cleanDetected.includes('bun hue') || cleanDetected.includes('bun bo hue') ||
         cleanDetectedNoSpace.includes('bunhue') || (cleanDetected.includes('bun') && cleanDetected.includes('van khe'));
       if (!hasBunHue) {
-        matchedCust = custList.find((c) => {
+        const custVanKhe = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
           return cClean === 'van khe' || (cClean.includes('van khe') && !cClean.includes('bun'));
         }) || null;
+        if (custVanKhe) matchedCust = custVanKhe;
       } else {
-        matchedCust = custList.find((c) => {
+        const custBunHue = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
           return (cClean.includes('bun hue') && cClean.includes('van khe')) || (cClean.includes('bun') && cClean.includes('van khe'));
         }) || null;
+        if (custBunHue) matchedCust = custBunHue;
       }
     } else if (cleanDetected.includes('bun hue') || cleanDetectedNoSpace.includes('bunhue')) {
-      matchedCust = custList.find((c) => {
+      const custBunHue = custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase());
         return cClean.includes('bun hue');
       }) || null;
-    } else if (
+      if (custBunHue) matchedCust = custBunHue;
+    }
+
+    // 1l. ĐẶC BIỆT: Khớp ưu tiên khách "Thái hà" nếu nhận diện thái hà, hku ha, hki ha, hai ha...
+    if (
       cleanDetected.includes('thai ha') ||
       cleanDetected.includes('thái hà') ||
       cleanDetectedNoSpace.includes('thaiha') ||
@@ -1621,11 +1172,24 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetected.includes('hai ha') ||
       cleanDetectedNoSpace.includes('haiha')
     ) {
-      matchedCust = custList.find((c) => {
+      const custThaiHa = custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase());
-        return cClean === 'thai ha' || (cClean.includes('thai') && cClean.includes('ha') && !cClean.includes('ngoc lam'));
+        // BẮT BUỘC tìm cụm từ "thai ha" LIỀN NHAU (có khoảng trắng giữa thai và ha)
+        // TUYỆT ĐỐI KHÔNG dùng includes('thai') && includes('ha') riêng lẻ
+        // vì "tran thai tong" → "thai" chứa chuỗi con "ha" → khớp sai!
+        return (
+          cClean === 'thai ha' ||
+          cClean.includes('thai ha') ||      // cụm "thai ha" liền nhau có space
+          cClean.startsWith('thai ha') ||
+          (cleanDetectedNoSpace.includes('thaiha') && cClean.replace(/\s+/g, '').includes('thaiha'))
+        ) && !cClean.includes('ngoc lam');
       }) || null;
-    } else if (
+      if (custThaiHa) matchedCust = custThaiHa;
+    }
+
+
+    // 1m. ĐẶC BIỆT: Khớp ưu tiên khách "Anh thắng phố cổ" nếu là A Thang, A Thắng, ATHang, thang pho co...
+    if (
       cleanDetected === 'a thang' ||
       cleanDetected === 'athang' ||
       cleanDetected === 'a.thang' ||
@@ -1636,14 +1200,18 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace.includes('thangphoco') ||
       (cleanDetected.includes('thang') && !cleanDetected.includes('chu tu'))
     ) {
-      matchedCust = custList.find((c) => {
+      const custThangPhoCo = custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase());
         return cClean.includes('thang') && cClean.includes('pho co');
       }) || custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase());
         return cClean === 'anh thang pho co';
       }) || null;
-    } else if (
+      if (custThangPhoCo) matchedCust = custThangPhoCo;
+    }
+
+    // 1n. ĐẶC BIỆT: Khớp ưu tiên khách "Phở đông" nếu là phở đg, phở đông, pho dg, pho dong...
+    if (
       cleanDetected === 'pho dg' ||
       cleanDetected === 'phodg' ||
       cleanDetected === 'pho dong' ||
@@ -1654,50 +1222,482 @@ const resolveCustomerForSub = (sub, custList) => {
       (cleanDetected.includes('pho') && (cleanDetected.includes('dg') || cleanDetected.includes('dong'))) ||
       cleanDetected.includes('pho dong')
     ) {
-      matchedCust = custList.find((c) => {
+      const custPhoDong = custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase());
         return cClean === 'pho dong' || (cClean.includes('pho') && cClean.includes('dong'));
       }) || null;
-    } else if (
+      if (custPhoDong) matchedCust = custPhoDong;
+    }
+
+    // 1o. ĐẶC BIỆT: Khớp ưu tiên khách "Gia Hưng cs2" nếu là Gia Hy CS2, Gia Hưng CS2, Gia Hưng 2...
+    if (
       (cleanDetected.includes('gia') && (cleanDetected.includes('hung') || cleanDetected.includes('hy')) && (cleanDetected.includes('cs2') || cleanDetected.includes('cs 2') || cleanDetected.includes('co so 2') || cleanDetected.endsWith('2'))) ||
       cleanDetectedNoSpace.includes('giahycs2') ||
       cleanDetectedNoSpace.includes('giahungcs2') ||
       cleanDetected.includes('gia hy cs2') ||
       cleanDetected.includes('gia hung cs2')
     ) {
-      matchedCust = custList.find((c) => {
+      const custGiaHungCs2 = custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase());
         return cClean === 'gia hung cs2' || (cClean.includes('gia hung') && cClean.includes('cs2'));
       }) || null;
+      if (custGiaHungCs2) matchedCust = custGiaHungCs2;
+    }
+
+    // 2. Nếu khách trước đó bị gán nhầm thành tên quá ngắn (1-2 ký tự như "N") trong khi AI đọc tên dài, hủy bỏ để tìm lại
+    if (matchedCust && currentCustClean.length <= 2 && cleanDetected.length > 2) {
+      matchedCust = null;
+    }
+
+    // 3. Ưu tiên khớp khách Cô thảo(thầy) nếu AI nhận diện là thầy hoặc cô thảo
+    if (!matchedCust) {
+      if (
+        cleanDetectedNoSpace === 'thay' ||
+        cleanDetectedNoSpace === 'cothao' ||
+        cleanDetectedNoSpace === 'thao' ||
+        cleanDetected.includes('thay') ||
+        cleanDetected.includes('thao')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('thao') && cClean.includes('thay');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('thao');
+        }) || null;
+      }
+    }
+
+    // 4. Ưu tiên khớp khách Tuyết
+    if (!matchedCust) {
+      if (cleanDetected.includes('tuyet') || cleanDetectedNoSpace.includes('tuyet')) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('tuyet');
+        }) || null;
+      }
+    }
+
+    // 5. Ưu tiên khớp các Bếp (B1, B2, B3, B4)
+    if (!matchedCust) {
+      if (
+        cleanDetectedNoSpace === 'b1' ||
+        cleanDetectedNoSpace === 'bep1' ||
+        cleanDetectedNoSpace === 'bephangxom1' ||
+        cleanDetectedNoSpace === 'bl' ||
+        cleanDetectedNoSpace === 'bi' ||
+        cleanDetectedNoSpace === 'b/' ||
+        cleanDetectedNoSpace === 'ba' ||
+        cleanDetectedNoSpace === 'ba1' ||
+        cleanDetectedNoSpace === 'b-1' ||
+        cleanDetectedNoSpace === 'b.1' ||
+        cleanDetected.includes('bep hang xom 1') ||
+        cleanDetected.includes('truong bo 1')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('bep hang xom') && cClean.includes('1')) || (cClean.includes('hang xom') && cClean.includes('1'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean === 'b1' || cClean.includes('bep 1');
+        }) || null;
+      } else if (
+        cleanDetectedNoSpace === 'b2' ||
+        cleanDetectedNoSpace === 'bep2' ||
+        cleanDetectedNoSpace === 'bephangxom2' ||
+        cleanDetected.includes('bep hang xom 2')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('bep hang xom') && cClean.includes('2')) || cClean.includes('b2') || cClean.includes('bep 2');
+        }) || null;
+      } else if (
+        cleanDetectedNoSpace === 'b3' ||
+        cleanDetectedNoSpace === 'bep3' ||
+        cleanDetectedNoSpace === 'bephangxom3' ||
+        cleanDetected.includes('bep hang xom 3')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('bep hang xom') && cClean.includes('3')) || cClean.includes('b3') || cClean.includes('bep 3');
+        }) || null;
+      } else if (
+        cleanDetectedNoSpace === 'b4' ||
+        cleanDetectedNoSpace === 'bep4' ||
+        cleanDetectedNoSpace === 'vuonxanh' ||
+        cleanDetectedNoSpace === 'nhahangvuonxanh' ||
+        cleanDetected.includes('vuon xanh')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('vuon xanh') || cClean.includes('b4') || cClean.includes('bep 4');
+        }) || null;
+      }
+    }
+
+    // 5b. Ưu tiên khớp khách Huyền Đô Nghĩa nếu AI nhận diện là Huyền hoặc Huyền Đô Nghĩa
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('huyen do nghia') ||
+        cleanDetected.includes('huyen do ngia') ||
+        cleanDetected.includes('do nghia') ||
+        cleanDetectedNoSpace === 'huyen' ||
+        cleanDetectedNoSpace === 'chihuyen' ||
+        cleanDetected === 'huyen'
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('huyen') && (cClean.includes('do nghia') || cClean.includes('do ngia'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('do nghia') || cClean.includes('do ngia');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('huyen');
+        }) || null;
+      }
+    }
+
+    // 5c. Ưu tiên khớp khách Phở tưởng (chị Luyến) nếu AI nhận diện là phở tưởng hoặc luyến
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('pho tuong') ||
+        cleanDetected.includes('tuong') ||
+        cleanDetected.includes('luyen') ||
+        cleanDetectedNoSpace.includes('photuong') ||
+        cleanDetectedNoSpace.includes('tuong') ||
+        cleanDetectedNoSpace.includes('luyen')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('tuong') && !cClean.includes('tien');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('luyen');
+        }) || null;
+      }
+    }
+
+    // 5d. Ưu tiên khớp khách Chị Thúy Nga nếu AI nhận diện là chinga, chị nga, nga
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('chinga') ||
+        cleanDetected.includes('chi nga') ||
+        cleanDetected.includes('thuy nga') ||
+        cleanDetectedNoSpace.includes('chinga') ||
+        cleanDetectedNoSpace.includes('thuynga') ||
+        cleanDetectedNoSpace === 'nga' ||
+        cleanDetected === 'nga'
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('thuy') && cClean.includes('nga');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('nga');
+        }) || null;
+      }
+    }
+
+    // 5d2. Ưu tiên khớp khách Cồ Hải
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('co hai') ||
+        cleanDetectedNoSpace.includes('cohai') ||
+        cleanDetected === 'co hai' ||
+        cleanDetectedNoSpace === 'cohai'
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim());
+          return cClean === 'co hai' && c.isActive && !c.isBadDebt;
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim());
+          return cClean === 'co hai';
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim());
+          return cClean.includes('co hai');
+        }) || null;
+      }
+    }
+
+    // 5e. Ưu tiên khớp khách Hà Trì
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('ha tri') ||
+        cleanDetected.includes('ha li') ||
+        cleanDetected.includes('ha lu') ||
+        cleanDetected.includes('ha thi') ||
+        cleanDetectedNoSpace === 'hatri' ||
+        cleanDetectedNoSpace === 'hali' ||
+        cleanDetectedNoSpace === 'halu' ||
+        cleanDetectedNoSpace === 'hathi' ||
+        cleanDetectedNoSpace.includes('hatri')
+      ) {
+        const isHanh = cleanDetected.includes('hanh');
+        if (isHanh) {
+          // Nếu người nói đọc là chị Hạnh -> Khớp khách chị hạnh sân bóng hà trì
+          matchedCust = custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return cClean.includes('hanh');
+          }) || null;
+        } else {
+          // Đọc là Hà Trì -> 100% là khách Hà Trì, TUYỆT ĐỐI KHÔNG chọn nhầm sang "Chị hạnh sân bóng hà trì"
+          matchedCust = custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase()).trim();
+            return cClean === 'ha tri';
+          }) || custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return (cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'))) && !cClean.includes('hanh');
+          }) || custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return cClean.includes('ha tri') || (cClean.includes('ha') && cClean.includes('tri'));
+          }) || null;
+        }
+      }
+    }
+
+    // 5f. Ưu tiên khớp khách Thăn bình đà(anh Nghĩa)
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('anh nghia') ||
+        cleanDetected.includes('anh ngia') ||
+        cleanDetected.includes('binh da') ||
+        cleanDetected.includes('than binh da') ||
+        cleanDetectedNoSpace.includes('anhnghia') ||
+        cleanDetectedNoSpace.includes('anhngia') ||
+        cleanDetectedNoSpace === 'nghia' ||
+        cleanDetectedNoSpace === 'ngia'
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('binh da') && (cClean.includes('nghia') || cClean.includes('than'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('binh da');
+        }) || null;
+      }
+    }
+
+    // 5g. Ưu tiên khớp khách Bà lưu
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('ba luu') ||
+        cleanDetected.includes('bà lưu') ||
+        cleanDetectedNoSpace === 'baluu' ||
+        cleanDetectedNoSpace === 'luu'
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean === 'ba luu' || cClean.includes('ba luu');
+        }) || null;
+      }
+    }
+
+    // 5h. Ưu tiên khớp khách 52 trần thái tông
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('52') ||
+        cleanDetectedNoSpace.includes('52') ||
+        (cleanDetected.includes('tran thai tong') && !cleanDetected.includes('47'))
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('52') && (cClean.includes('tran thai tong') || cClean.includes('thai tong') || cClean.includes('tran'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('52');
+        }) || null;
+      }
+    }
+
+    // 5i-1. Ưu tiên khớp khách 126 Nguyễn Khánh Toàn
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('126') ||
+        cleanDetectedNoSpace.includes('126') ||
+        cleanDetected.includes('khanh toan') ||
+        cleanDetectedNoSpace.includes('khanhtoan')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return (cClean.includes('126') && cClean.includes('toan')) ||
+            (cClean.includes('khanh') && cClean.includes('toan')) ||
+            cClean.includes('126');
+        }) || null;
+      }
+    }
+
+    // 5i. Ưu tiên khớp khách Minh trang
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('minh trang') ||
+        cleanDetected.includes('mih trang') ||
+        cleanDetected.includes('minh tuy') ||
+        cleanDetected.includes('mih tuy') ||
+        cleanDetected.includes('mih') ||
+        cleanDetectedNoSpace === 'minh' ||
+        cleanDetectedNoSpace === 'mih' ||
+        cleanDetectedNoSpace.includes('minhtrang') ||
+        cleanDetectedNoSpace.includes('mihtrang') ||
+        cleanDetectedNoSpace.includes('mihtuy') ||
+        cleanDetectedNoSpace.includes('minhtuy')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('minh') && cClean.includes('trang');
+        }) || null;
+      }
+    }
+
+    // 5j. Ưu tiên khớp khách Trung kính / Bếp trung kính
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('trung kinh') ||
+        cleanDetected.includes('bep trung kinh') ||
+        cleanDetected.includes('trung kh') ||
+        cleanDetected.includes('tuy kh') ||
+        cleanDetected.includes('tuy ks') ||
+        cleanDetected.includes('tug kh') ||
+        cleanDetected.includes('tung kh') ||
+        cleanDetected.includes('truy kh') ||
+        cleanDetectedNoSpace === 'trungkinh' ||
+        cleanDetectedNoSpace === 'tuykh' ||
+        cleanDetectedNoSpace === 'tuykhs' ||
+        cleanDetectedNoSpace === 'tuyks' ||
+        cleanDetectedNoSpace === 'tugkh' ||
+        cleanDetectedNoSpace === 'tungkh' ||
+        cleanDetectedNoSpace === 'truykh' ||
+        cleanDetectedNoSpace.includes('trungkinh') ||
+        cleanDetectedNoSpace.includes('beptrungkinh')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('bep trung kinh') || (cClean.includes('trung') && cClean.includes('kinh'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('trung kinh') || cClean === 'trungkinh';
+        }) || null;
+      }
+    }
+
+    // 5k. Ưu tiên phân biệt rõ khách "văn khê" và "Bún huế van khe"
+    if (!matchedCust) {
+      if (cleanDetected.includes('van khe') || cleanDetectedNoSpace.includes('vankhe')) {
+        const hasBunHue = cleanDetected.includes('bun hue') || cleanDetected.includes('bun bo hue') ||
+          cleanDetectedNoSpace.includes('bunhue') || (cleanDetected.includes('bun') && cleanDetected.includes('van khe'));
+        if (!hasBunHue) {
+          matchedCust = custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return cClean === 'van khe' || (cClean.includes('van khe') && !cClean.includes('bun'));
+          }) || null;
+        } else {
+          matchedCust = custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return (cClean.includes('bun hue') && cClean.includes('van khe')) || (cClean.includes('bun') && cClean.includes('van khe'));
+          }) || null;
+        }
+      } else if (cleanDetected.includes('bun hue') || cleanDetectedNoSpace.includes('bunhue')) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('bun hue');
+        }) || null;
+      } else if (
+        cleanDetected.includes('thai ha') ||
+        cleanDetected.includes('thái hà') ||
+        cleanDetectedNoSpace.includes('thaiha') ||
+        cleanDetected.includes('hku ha') ||
+        cleanDetectedNoSpace.includes('hkuha') ||
+        cleanDetected.includes('hki ha') ||
+        cleanDetectedNoSpace.includes('hkiha') ||
+        cleanDetected.includes('hkui ha') ||
+        cleanDetectedNoSpace.includes('hkuiha') ||
+        cleanDetected.includes('hkai ha') ||
+        cleanDetectedNoSpace.includes('hkaiha') ||
+        cleanDetected.includes('thki ha') ||
+        cleanDetectedNoSpace.includes('thkiha') ||
+        cleanDetected.includes('hai ha') ||
+        cleanDetectedNoSpace.includes('haiha')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean === 'thai ha' || (cClean.includes('thai') && cClean.includes('ha') && !cClean.includes('ngoc lam'));
+        }) || null;
+      } else if (
+        cleanDetected === 'a thang' ||
+        cleanDetected === 'athang' ||
+        cleanDetected === 'a.thang' ||
+        cleanDetected === 'anh thang' ||
+        cleanDetectedNoSpace === 'athang' ||
+        cleanDetectedNoSpace === 'anhthang' ||
+        cleanDetected.includes('thang pho co') ||
+        cleanDetectedNoSpace.includes('thangphoco') ||
+        (cleanDetected.includes('thang') && !cleanDetected.includes('chu tu'))
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('thang') && cClean.includes('pho co');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean === 'anh thang pho co';
+        }) || null;
+      } else if (
+        cleanDetected === 'pho dg' ||
+        cleanDetected === 'phodg' ||
+        cleanDetected === 'pho dong' ||
+        cleanDetected === 'phodong' ||
+        cleanDetected === 'dg' ||
+        cleanDetectedNoSpace === 'phodg' ||
+        cleanDetectedNoSpace === 'phodong' ||
+        (cleanDetected.includes('pho') && (cleanDetected.includes('dg') || cleanDetected.includes('dong'))) ||
+        cleanDetected.includes('pho dong')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean === 'pho dong' || (cClean.includes('pho') && cClean.includes('dong'));
+        }) || null;
+      } else if (
+        (cleanDetected.includes('gia') && (cleanDetected.includes('hung') || cleanDetected.includes('hy')) && (cleanDetected.includes('cs2') || cleanDetected.includes('cs 2') || cleanDetected.includes('co so 2') || cleanDetected.endsWith('2'))) ||
+        cleanDetectedNoSpace.includes('giahycs2') ||
+        cleanDetectedNoSpace.includes('giahungcs2') ||
+        cleanDetected.includes('gia hy cs2') ||
+        cleanDetected.includes('gia hung cs2')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean === 'gia hung cs2' || (cClean.includes('gia hung') && cClean.includes('cs2'));
+        }) || null;
+      }
+    }
+
+    // 6. Khớp thông thường:
+    // 6.1. BẮT BUỘC ƯU TIÊN KHỚP CHÍNH XÁC 100% (Exact Match) TRƯỚC
+    // Tuyệt đối không để trường hợp khách "Kcc" bị nhận nhầm sang "Kcc1"!
+    if (!matchedCust) {
+      matchedCust = custList.find((c) => {
+        const cName = removeDiacritics(c.name.toLowerCase().trim());
+        const cNameNoSpace = cName.replace(/\s+/g, '');
+        return cName === cleanDetected || cNameNoSpace === cleanDetectedNoSpace;
+      }) || null;
+    }
+
+    // 6.2. Chỉ khi KHÔNG CÓ khách nào khớp 100%, mới tìm so khớp một phần (includes)
+    if (!matchedCust) {
+      const sortedCusts = [...custList].sort((a, b) => b.name.length - a.name.length);
+      matchedCust = sortedCusts.find((c) => {
+        const cName = removeDiacritics(c.name.toLowerCase().trim());
+        const cNameNoSpace = cName.replace(/\s+/g, '');
+        // Chỉ cho phép includes khi tên khách có ít nhất 3 ký tự (tránh khách 1 ký tự như "N")
+        if (cName.length >= 3 && cleanDetected.includes(cName)) return true;
+        if (cNameNoSpace.length >= 3 && cleanDetectedNoSpace.includes(cNameNoSpace)) return true;
+        if (cleanDetected.length >= 3 && cName.includes(cleanDetected)) return true;
+        if (cleanDetectedNoSpace.length >= 3 && cNameNoSpace.includes(cleanDetectedNoSpace)) return true;
+        return false;
+      }) || null;
     }
   }
-
-  // 6. Khớp thông thường:
-  // 6.1. BẮT BUỘC ƯU TIÊN KHỚP CHÍNH XÁC 100% (Exact Match) TRƯỚC
-  // Tuyệt đối không để trường hợp khách "Kcc" bị nhận nhầm sang "Kcc1"!
-  if (!matchedCust) {
-    matchedCust = custList.find((c) => {
-      const cName = removeDiacritics(c.name.toLowerCase().trim());
-      const cNameNoSpace = cName.replace(/\s+/g, '');
-      return cName === cleanDetected || cNameNoSpace === cleanDetectedNoSpace;
-    }) || null;
-  }
-
-  // 6.2. Chỉ khi KHÔNG CÓ khách nào khớp 100%, mới tìm so khớp một phần (includes)
-  if (!matchedCust) {
-    const sortedCusts = [...custList].sort((a, b) => b.name.length - a.name.length);
-    matchedCust = sortedCusts.find((c) => {
-      const cName = removeDiacritics(c.name.toLowerCase().trim());
-      const cNameNoSpace = cName.replace(/\s+/g, '');
-      // Chỉ cho phép includes khi tên khách có ít nhất 3 ký tự (tránh khách 1 ký tự như "N")
-      if (cName.length >= 3 && cleanDetected.includes(cName)) return true;
-      if (cNameNoSpace.length >= 3 && cleanDetectedNoSpace.includes(cNameNoSpace)) return true;
-      if (cleanDetected.length >= 3 && cName.includes(cleanDetected)) return true;
-      if (cleanDetectedNoSpace.length >= 3 && cNameNoSpace.includes(cleanDetectedNoSpace)) return true;
-      return false;
-    }) || null;
-  }
-}
   return matchedCust;
 };
 
@@ -1755,8 +1755,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       const custList = custRes.data.success ? (custRes.data.data || []) : [];
       const prodList = prodRes.data.success
         ? (prodRes.data.data || []).filter(
-            (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
-          )
+          (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+        )
         : [];
       if (custRes.data.success) setCustomers(custList);
       if (prodRes.data.success) setProducts(prodList);
@@ -2092,7 +2092,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     match = prodList.find((p) => {
       const pClean = removeDiacritics(p.name.toLowerCase().trim());
       return (cleanRaw.length >= 3 && pClean.includes(cleanRaw)) ||
-             (pClean.length >= 3 && cleanRaw.includes(pClean));
+        (pClean.length >= 3 && cleanRaw.includes(pClean));
     });
 
     return match || null;
@@ -2264,6 +2264,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       }
 
       // 3. Áp dụng giá riêng của khách hàng đó vào TẤT CẢ các dòng món thịt của thẻ này
+      const sub = submissions.find((s) => s.id === subId);
       let customPriceCount = 0;
       setCardDataMap((prev) => {
         const card = prev[subId];
@@ -2312,8 +2313,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
         // Xử lý đặc thù video khách Hương nếu có
         const isHuong = removeDiacritics(selectedCustomer.name.toLowerCase()).includes('huong');
-        const sub = submissions.find((s) => s.id === subId);
         const isVideo = sub?.fileType === 'VIDEO';
+
         if (isHuong && isVideo && updatedItems.length > 0 && custProds && custProds.length > 0) {
           const xoProduct = custProds.find((p) => removeDiacritics(p.name.toLowerCase().trim()) === 'xo') || null;
           updatedItems.forEach((it, idx) => {
@@ -2476,12 +2477,12 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         const applyDateStr = (isApproved && sub.date)
           ? formatDateOnly(sub.date)
           : (filterDate || (() => {
-              const today = new Date();
-              const dNow = String(today.getDate()).padStart(2, '0');
-              const mNow = String(today.getMonth() + 1).padStart(2, '0');
-              const yNow = today.getFullYear();
-              return `${dNow}/${mNow}/${yNow}`;
-            })());
+            const today = new Date();
+            const dNow = String(today.getDate()).padStart(2, '0');
+            const mNow = String(today.getMonth() + 1).padStart(2, '0');
+            const yNow = today.getFullYear();
+            return `${dNow}/${mNow}/${yNow}`;
+          })());
         const dateStr = applyDateStr;
 
         // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp khách hàng đã lưu, không chạy lại regex AI
@@ -2811,7 +2812,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           if (sub.rawAiResponse) {
             parsedAiData = JSON.parse(sub.rawAiResponse);
           }
-        } catch {}
+        } catch { }
 
         const isQuickDebtFromAi = Boolean(
           parsedAiData?.is_quick_debt === true ||
@@ -3101,7 +3102,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         (x, y) => {
           scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
         },
-        () => {}
+        () => { }
       );
     }
   };
@@ -3283,7 +3284,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                 showGlobalToast('🎉 AI đã hoàn tất quét lại hóa đơn!', 'success');
               }
             }
-          } catch {}
+          } catch { }
 
           if (attempts >= 6) {
             clearInterval(intervalId);

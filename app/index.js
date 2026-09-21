@@ -3168,17 +3168,7 @@ export default function DashboardScreen() {
               </View>
             </TouchableOpacity>
 
-            {/* 3. Lợi nhuận trong tháng: Bấm vào để mở modal hướng dẫn tính lợi nhuận */}
-            <TouchableOpacity
-              style={[styles.summaryMicroBox, styles.summaryMicroBoxProfit]}
-              onPress={() => profitFeatureIntroModalRef.current?.open(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.summaryMicroBoxLabelProfit}>🔵 LỢI NHUẬN</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit={true} style={styles.summaryMicroBoxValueProfit}>
-                {isLoadingTransactions ? '...' : formatCurrency(totalProfitInSelectedMonth)}
-              </Text>
-            </TouchableOpacity>
+            {/* 3. Lợi nhuận trong tháng: Đã ẩn theo yêu cầu */}
           </View>
 
           {showDebtSummary && (
@@ -3245,12 +3235,7 @@ export default function DashboardScreen() {
                       </Text>
                     </View>
 
-                    <View style={[styles.monthTotalSalesBox, { marginTop: 4, paddingTop: 4 }]}>
-                      <Text style={[styles.monthTotalSalesLabel, { color: '#0369A1' }]}>💰 Lợi nhuận trong tháng:</Text>
-                      <Text numberOfLines={1} adjustsFontSizeToFit={true} style={[styles.monthTotalSalesValue, { color: '#0369A1' }]}>
-                        {formatCurrency(totalProfitInSelectedMonth)}
-                      </Text>
-                    </View>
+                    {/* 💰 Lợi nhuận trong tháng: Đã ẩn theo yêu cầu */}
 
                     <View style={[styles.monthTotalSalesBox, { marginTop: 4, paddingTop: 4 }]}>
                       <Text style={[styles.monthTotalSalesLabel, { color: '#DC2626' }]}>🔴 Nợ chưa trả trong tháng:</Text>
