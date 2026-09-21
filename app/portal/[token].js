@@ -1138,13 +1138,8 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
       // Ô ngày gộp chung
       let dateCellBg, dateCellBorder, dateCellTextColor;
       if (isChainViewAll) {
-        // Xem toàn bộ chuỗi: Xen kẽ màu xanh nhẹ và đỏ nhẹ giữa các ngày
-        const isEven = dIdx % 2 === 0;
-        if (isEven) {
-          dateCellBg = '#F0FDF4'; dateCellBorder = '#BBF7D0'; dateCellTextColor = '#15803D';
-        } else {
-          dateCellBg = '#FEF2F2'; dateCellBorder = '#FECACA'; dateCellTextColor = '#B91C1C';
-        }
+        // Xem toàn bộ chuỗi (chưa lọc): Cột ngày nền trắng sạch sẽ, không hiển thị logic nợ
+        dateCellBg = '#FFFFFF'; dateCellBorder = '#CBD5E1'; dateCellTextColor = '#0F172A';
       } else if (day.isPaid) {
         dateCellBg = '#F0FDF4'; dateCellBorder = '#BBF7D0'; dateCellTextColor = '#047857';
       } else if (day.isPartialPaid) {
@@ -2275,10 +2270,9 @@ export default function PortalScreen() {
                         let statusBadge = null;
 
                         if (isChainViewAll) {
-                          // Xem toàn bộ chuỗi: Bỏ logic còn nợ / đã thanh toán, xen kẽ màu xanh nhẹ và đỏ nhẹ giữa các ngày
-                          const isEven = dayIdx % 2 === 0;
-                          dateColStyle = isEven ? styles.tdDateColChainGreen : styles.tdDateColChainRed;
-                          dateTextStyle = isEven ? styles.tdDateTextChainGreen : styles.tdDateTextChainRed;
+                          // Xem toàn bộ chuỗi (chưa lọc): Cột ngày nền trắng sạch sẽ, không hiển thị logic nợ
+                          dateColStyle = styles.tdDateColChainWhite;
+                          dateTextStyle = styles.tdDateTextChain;
                         } else {
                           // Lọc theo từng quán hoặc link đơn lẻ: Hiển thị logic nợ & thanh toán
                           if (day.isPaid) {
@@ -3552,22 +3546,13 @@ const styles = StyleSheet.create({
   tdDateStatusPartial: {
     color: '#C2410C',
   },
-  // Cột ngày khi xem toàn bộ chuỗi (xen kẽ xanh nhẹ và đỏ nhẹ để phân biệt rõ từng ngày)
-  tdDateColChainGreen: {
-    backgroundColor: '#F0FDF4',
-    borderRightColor: '#BBF7D0',
+  // Cột ngày khi xem toàn bộ chuỗi (dạng chưa lọc)
+  tdDateColChainWhite: {
+    backgroundColor: '#FFFFFF',
+    borderRightColor: '#CBD5E1',
   },
-  tdDateTextChainGreen: {
-    color: '#15803D',
-    fontWeight: '800',
-    fontSize: 10.5,
-  },
-  tdDateColChainRed: {
-    backgroundColor: '#FEF2F2',
-    borderRightColor: '#FECACA',
-  },
-  tdDateTextChainRed: {
-    color: '#B91C1C',
+  tdDateTextChain: {
+    color: '#0F172A',
     fontWeight: '800',
     fontSize: 10.5,
   },
