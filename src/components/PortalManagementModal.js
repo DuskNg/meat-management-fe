@@ -367,7 +367,7 @@ const PortalManagementModal = forwardRef((props, ref) => {
               <View style={styles.modalHeaderTitleCol}>
                 <Text style={styles.modalTitle}>QUẢN LÝ NHÓM ZALO</Text>
                 <Text style={styles.modalSubTitle}>
-                  Tạo link tra cứu công nợ & giá thịt ghim vào nhóm Zalo
+                  Tạo link tra cứu công nợ & giá thịt ghim Zalo • ⏰ Tự động công bố 20:00 hàng ngày
                 </Text>
               </View>
             </View>
