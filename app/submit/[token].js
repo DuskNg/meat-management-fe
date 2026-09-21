@@ -127,19 +127,31 @@ const getFileCategory = (file) => {
   return { isVideo, isImage };
 };
 
-// Helper nén ảnh siêu tốc bằng HTML5 Canvas + createImageBitmap / Blob URL (Tối ưu độ phân giải 1000px, chất lượng 0.55 để tải siêu nhanh)
+// Helper nén ảnh siêu tốc bằng HTML5 Canvas + cắt nhẹ viền ngoài (Cắt an toàn 5% mỗi cạnh, tập trung vào giữa hóa đơn)
 const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
   if (!file) return null;
   const { isImage } = getFileCategory(file);
   if (!isImage) return null;
+
+  // Cắt nhẹ 5% viền ngoài mỗi cạnh (trên, dưới, trái, phải) để tập trung bố cục ở giữa, loại bỏ bàn/rìa thừa nhưng an toàn không cắt vào chữ
+  const CROP_RATIO = 0.05;
 
   try {
     // 1. Ưu tiên giải mã phần cứng bằng createImageBitmap (cực nhanh, đa luồng off-thread, không tốn RAM)
     if (typeof window !== 'undefined' && 'createImageBitmap' in window) {
       try {
         const bitmap = await createImageBitmap(file);
-        let width = bitmap.width;
-        let height = bitmap.height;
+        const origW = bitmap.width;
+        const origH = bitmap.height;
+
+        // Vùng cắt an toàn tập trung ở giữa (giữ nguyên 90% chiều rộng và 90% chiều cao)
+        const sx = Math.round(origW * CROP_RATIO);
+        const sy = Math.round(origH * CROP_RATIO);
+        const sw = origW - sx * 2;
+        const sh = origH - sy * 2;
+
+        let width = sw;
+        let height = sh;
 
         if (width > maxWidth) {
           height = Math.round((height * maxWidth) / width);
@@ -152,7 +164,7 @@ const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
         const ctx = canvas.getContext('2d', { alpha: false }); // Tắt alpha channel để tăng tốc render 2x
         if (ctx) {
           ctx.imageSmoothingQuality = 'medium'; // Tối ưu tốc độ xử lý điểm ảnh
-          ctx.drawImage(bitmap, 0, 0, width, height);
+          ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, width, height);
           const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
           if (typeof bitmap.close === 'function') bitmap.close();
           // Giải phóng ngay bộ nhớ đồ họa Canvas trên iOS
@@ -191,8 +203,17 @@ const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
       const img = new window.Image();
       img.onload = () => {
         try {
-          let width = img.naturalWidth || img.width;
-          let height = img.naturalHeight || img.height;
+          const origW = img.naturalWidth || img.width;
+          const origH = img.naturalHeight || img.height;
+
+          // Vùng cắt an toàn tập trung ở giữa (giữ nguyên 90% kích thước trung tâm)
+          const sx = Math.round(origW * CROP_RATIO);
+          const sy = Math.round(origH * CROP_RATIO);
+          const sw = origW - sx * 2;
+          const sh = origH - sy * 2;
+
+          let width = sw;
+          let height = sh;
 
           if (width > maxWidth) {
             height = Math.round((height * maxWidth) / width);
@@ -205,7 +226,7 @@ const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
           const ctx = canvas.getContext('2d', { alpha: false });
           if (ctx) {
             ctx.imageSmoothingQuality = 'medium';
-            ctx.drawImage(img, 0, 0, width, height);
+            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
             const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
             // Dọn sạch VRAM Canvas & thu hồi Blob URL
             canvas.width = 1;
@@ -724,8 +745,8 @@ export default function StaffSubmitScreen() {
     }
   };
 
-  // Giới hạn số luồng upload song song (5 luồng đồng thời: tối ưu tốc độ tối đa trong ngưỡng kết nối trình duyệt)
-  const MAX_CONCURRENT = 5;
+  // Giới hạn số luồng upload song song (3 luồng đồng thời: ổn định, an toàn mạng và RAM)
+  const MAX_CONCURRENT = 3;
 
   // Xử lý tải lên một tệp đơn lẻ độc lập
   const uploadSingleItem = async (nextItem) => {

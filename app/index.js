@@ -866,8 +866,18 @@ export default function DashboardScreen() {
         const img = new window.Image();
         img.onload = () => {
           try {
-            let width = img.naturalWidth || img.width;
-            let height = img.naturalHeight || img.height;
+            const origW = img.naturalWidth || img.width;
+            const origH = img.naturalHeight || img.height;
+
+            // Cắt nhẹ 5% viền ngoài mỗi cạnh để tập trung vào bố cục giữa tờ tích kê
+            const CROP_RATIO = 0.05;
+            const sx = Math.round(origW * CROP_RATIO);
+            const sy = Math.round(origH * CROP_RATIO);
+            const sw = origW - sx * 2;
+            const sh = origH - sy * 2;
+
+            let width = sw;
+            let height = sh;
 
             if (width > maxWidth || height > maxWidth) {
               if (width > height) {
@@ -885,7 +895,7 @@ export default function DashboardScreen() {
             const ctx = canvas.getContext('2d', { alpha: false });
             if (ctx) {
               ctx.imageSmoothingQuality = 'high';
-              ctx.drawImage(img, 0, 0, width, height);
+              ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
               const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
               // Dọn sạch VRAM Canvas & thu hồi Blob URL ngay để giải phóng RAM triệt để
               canvas.width = 1;
@@ -1088,8 +1098,8 @@ export default function DashboardScreen() {
         setScanning(true);
         setScanningMsg(`Đang chuẩn bị ${files.length} ảnh (0/${files.length})...`);
 
-        // Xử lý tối ưu hoá ảnh bằng 5 luồng song song để tăng tốc tối đa nhưng vẫn giải phóng RAM an toàn
-        const concurrency = 5;
+        // Xử lý tối ưu hoá ảnh bằng 3 luồng song song để ổn định và giải phóng RAM an toàn
+        const concurrency = 3;
         let currentIndex = 0;
         let completedCount = 0;
         const optResults = new Array(files.length);

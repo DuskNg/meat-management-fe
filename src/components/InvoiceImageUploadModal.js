@@ -461,7 +461,18 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
         img.onload = () => {
           try {
             const maxDim = 1200;
-            let { width, height } = img;
+            const origW = img.naturalWidth || img.width;
+            const origH = img.naturalHeight || img.height;
+
+            // Cắt nhẹ 5% viền ngoài để tập trung bố cục ở giữa
+            const CROP_RATIO = 0.05;
+            const sx = Math.round(origW * CROP_RATIO);
+            const sy = Math.round(origH * CROP_RATIO);
+            const sw = origW - sx * 2;
+            const sh = origH - sy * 2;
+
+            let width = sw;
+            let height = sh;
             if (width > maxDim || height > maxDim) {
               if (width > height) {
                 height = Math.round((height * maxDim) / width);
@@ -470,20 +481,20 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
                 width = Math.round((width * maxDim) / height);
                 height = maxDim;
               }
-              const canvas = document.createElement('canvas');
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, width, height);
-              const compressed = canvas.toDataURL('image/jpeg', 0.70);
-              resolve({
-                base64: compressed,
-                size: Math.round(compressed.length * 0.75),
-                isVideo: false,
-                mediaType: 'image',
-              });
-              return;
             }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.70);
+            resolve({
+              base64: compressed,
+              size: Math.round(compressed.length * 0.75),
+              isVideo: false,
+              mediaType: 'image',
+            });
+            return;
           } catch (_) {}
           resolve({ base64: rawData, size: file.size, isVideo: false, mediaType: 'image' });
         };
@@ -510,8 +521,8 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
     setProcessProgress(`0/${fileArr.length}`);
 
     try {
-      // Xử lý đọc và tối ưu hóa tệp bằng 5 luồng song song để tăng tốc tối đa
-      const concurrency = 5;
+      // Xử lý đọc và tối ưu hóa tệp bằng 3 luồng song song để ổn định và bảo toàn bộ nhớ
+      const concurrency = 3;
       let currentIndex = 0;
       let completedCount = 0;
       const rawResults = new Array(fileArr.length);
