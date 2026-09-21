@@ -396,9 +396,9 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
           quantity: qty,
           price: finalPrc,
           amount: amt,
-          displayQuantity: qty.toString(),
-          displayPrice: formatNumberString(finalPrc.toString()),
-          displayAmount: formatNumberString(amt.toString()),
+          displayQuantity: qty > 0 ? qty.toString() : '',
+          displayPrice: finalPrc > 0 ? formatNumberString(finalPrc.toString()) : '',
+          displayAmount: amt > 0 ? formatNumberString(amt.toString()) : '',
         };
       });
 
