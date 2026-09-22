@@ -1743,6 +1743,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submissions, setSubmissions] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Bộ lọc
   const [filterStatus, setFilterStatus] = useState('ALL'); // ALL | UNPROCESSED | APPROVED
@@ -3127,6 +3128,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const handleCloseModal = () => {
     setVisible(false);
     setCardDataMap({});
+    setSearchQuery('');
   };
 
   useImperativeHandle(ref, () => ({
@@ -3135,6 +3137,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       setVisible(true);
       setFilterStatus(initialStatus || 'ALL');
       setCardDataMap({});
+      setSearchQuery('');
       try {
         const { custList, prodList } = await fetchMasterData();
         await fetchSubmissions(custList, prodList);
@@ -3385,19 +3388,73 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
+  // Lọc danh sách hóa đơn theo từ khóa tìm kiếm (tên khách, SĐT, người gửi, món thịt, tiền, note)
+  const filteredSubmissions = useMemo(() => {
+    if (!searchQuery || !searchQuery.trim()) {
+      return submissions;
+    }
+    const qClean = removeDiacritics(searchQuery.trim().toLowerCase());
+    const qDigits = searchQuery.replace(/\D/g, '');
+
+    return submissions.filter((sub) => {
+      const card = cardDataMap[sub.id];
+
+      // 1. Tên khách hàng (đã chọn trong thẻ, hoặc tên lưu DB, hoặc AI nhận diện)
+      const custName = removeDiacritics((card?.customer?.name || sub.matchedCustomer?.name || sub.detectedCustomerName || '').toLowerCase());
+      if (custName.includes(qClean)) return true;
+
+      // 2. Số điện thoại khách hàng
+      const custPhone = (card?.customer?.phone || sub.matchedCustomer?.phone || '').toLowerCase();
+      if (custPhone && custPhone.includes(qClean)) return true;
+
+      // 3. Tên nhân viên / người gửi / link nộp
+      const senderName = removeDiacritics((sub.senderName || sub.link?.name || '').toLowerCase());
+      if (senderName.includes(qClean)) return true;
+
+      // 4. Ghi chú hóa đơn
+      const noteStr = removeDiacritics((card?.note || sub.note || '').toLowerCase());
+      if (noteStr.includes(qClean)) return true;
+
+      // 5. Tên các món thịt trong đơn
+      const itemsList = (card?.items && card.items.length > 0) ? card.items : (sub.items || []);
+      const matchItem = itemsList.some((it) => {
+        const iName = removeDiacritics((it.selectedProduct?.name || it.rawName || '').toLowerCase());
+        return iName.includes(qClean);
+      });
+      if (matchItem) return true;
+
+      // 6. Số tiền nợ hoặc đơn giá
+      if (qDigits && qDigits.length >= 2) {
+        if (card?.quickAmount && String(card.quickAmount).includes(qDigits)) return true;
+        const matchAmount = itemsList.some((it) => String(Math.round(it.amount || 0)).includes(qDigits) || String(Math.round(it.price || 0)).includes(qDigits));
+        if (matchAmount) return true;
+      }
+
+      // 7. Tìm theo loại đơn (trả hàng / xuất nợ)
+      if (qClean === 'tra' || qClean === 'tra hang' || qClean === 'tra lai') {
+        if (card?.isReturn) return true;
+      }
+      if (qClean === 'xuat' || qClean === 'xuat no' || qClean === 'ban' || qClean === 'no') {
+        if (!card?.isReturn) return true;
+      }
+
+      return false;
+    });
+  }, [submissions, cardDataMap, searchQuery]);
+
   // Đếm số đơn hợp lệ sẵn sàng lưu hàng loạt
   const validBatchCount = useMemo(() => {
-    const unapprovedSubs = submissions.filter((s) => s.status !== 'APPROVED');
+    const unapprovedSubs = filteredSubmissions.filter((s) => s.status !== 'APPROVED');
     return unapprovedSubs.filter((s) => {
       const card = cardDataMap[s.id];
       if (!card || !card.customer) return false;
       return card.items.some((it) => parseFloat(it.amount || 0) > 0);
     }).length;
-  }, [submissions, cardDataMap]);
+  }, [filteredSubmissions, cardDataMap]);
 
   // Lưu hàng loạt tất cả các đơn đã điền đầy đủ
   const handleSaveAllValid = async () => {
-    const unapprovedSubs = submissions.filter((s) => s.status !== 'APPROVED');
+    const unapprovedSubs = filteredSubmissions.filter((s) => s.status !== 'APPROVED');
     const validSubs = unapprovedSubs.filter((s) => {
       const card = cardDataMap[s.id];
       if (!card || !card.customer) return false;
@@ -3859,8 +3916,42 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             )}
           </View>
 
+          {/* ─── THANH TÌM KIẾM HÓA ĐƠN & KHÁCH HÀNG ─── */}
+          {submissions.length > 0 && (
+            <View style={[styles.searchBarContainer, isMobile && styles.searchBarContainerMobile]}>
+              <View style={[styles.searchBoxWrap, isMobile && styles.searchBoxWrapMobile]}>
+                <Text style={styles.searchIcon}>🔍</Text>
+                <TextInput
+                  style={[styles.searchInput, isMobile && styles.searchInputMobile]}
+                  placeholder={isMobile ? 'Tìm khách, SĐT, người gửi, món thịt...' : 'Tìm kiếm nhanh theo tên khách hàng, SĐT, người gửi, món thịt, số tiền, ghi chú...'}
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  returnKeyType="search"
+                />
+                {searchQuery ? (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery('')}
+                    style={styles.clearSearchBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.clearSearchText}>✕</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              {searchQuery ? (
+                <View style={[styles.searchResultBadge, isMobile && styles.searchResultBadgeMobile]}>
+                  <Text style={[styles.searchResultBadgeText, isMobile && styles.searchResultBadgeTextMobile]}>
+                    {filteredSubmissions.length}/{submissions.length} đơn
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+
           {/* ─── THANH ĐIỀU HƯỚNG NHANH CÁC HÓA ĐƠN (QUICK JUMP THUMBNAILS) ─── */}
-          {submissions.length > 1 && (
+          {filteredSubmissions.length > 1 && (
             <View style={[styles.quickNavStrip, isMobile && styles.quickNavStripMobile]}>
               <ScrollView
                 horizontal
@@ -3870,7 +3961,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                 <Text style={[styles.quickNavLabel, isMobile && styles.quickNavLabelMobile]}>
                   {isMobile ? '⚡' : 'Chuyển nhanh:'}
                 </Text>
-                {submissions.map((sub, idx) => {
+                {filteredSubmissions.map((sub, idx) => {
                   const isApproved = sub.status === 'APPROVED';
                   const card = cardDataMap[sub.id];
                   return (
@@ -3904,6 +3995,21 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                 Chưa có hóa đơn hoặc video nào được gửi về trong ngày đã chọn.
               </Text>
             </View>
+          ) : filteredSubmissions.length === 0 ? (
+            <View style={[styles.centerEmpty, isMobile && { padding: 16 }]}>
+              <Text style={{ fontSize: isMobile ? 32 : 40, marginBottom: 8 }}>🔍</Text>
+              <Text style={[styles.emptyTitle, isMobile && { fontSize: 15 }]}>Không tìm thấy hóa đơn</Text>
+              <Text style={[styles.emptyDesc, isMobile && { fontSize: 12 }]}>
+                Không có hóa đơn nào phù hợp với từ khóa "{searchQuery}".
+              </Text>
+              <TouchableOpacity
+                style={styles.btnClearSearchFilter}
+                onPress={() => setSearchQuery('')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.btnClearSearchFilterText}>✕ Xóa tìm kiếm ({submissions.length} đơn)</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             <ScrollView
               ref={scrollViewRef}
@@ -3915,7 +4021,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               showsVerticalScrollIndicator={true}
             >
               <View style={[styles.cardsGrid, !isMobile && styles.cardsGridPC]}>
-                {submissions.map((sub, idx) => {
+                {filteredSubmissions.map((sub, idx) => {
                   const card = cardDataMap[sub.id] || {
                     customer: null,
                     date: '',
@@ -4475,6 +4581,95 @@ const styles = StyleSheet.create({
   },
   btnBatchRejectAllTextMobile: {
     fontSize: 10.5,
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: 8,
+  },
+  searchBarContainerMobile: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 6,
+  },
+  searchBoxWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    height: 36,
+  },
+  searchBoxWrapMobile: {
+    height: 32,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  searchIcon: {
+    fontSize: 13,
+    marginRight: 6,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0F172A',
+    paddingVertical: 0,
+    outlineStyle: 'none',
+    outlineWidth: 0,
+  },
+  searchInputMobile: {
+    fontSize: 12,
+  },
+  clearSearchBtn: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearSearchText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: 'bold',
+  },
+  searchResultBadge: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  searchResultBadgeMobile: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+  },
+  searchResultBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#0284C7',
+  },
+  searchResultBadgeTextMobile: {
+    fontSize: 10.5,
+  },
+  btnClearSearchFilter: {
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  btnClearSearchFilterText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
   },
   quickNavStrip: {
     backgroundColor: '#F8FAFC',
