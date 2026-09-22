@@ -162,11 +162,44 @@ const AdminLogsModal = forwardRef((props, ref) => {
   };
 
   // Hiển thị chi tiết nội dung log với nhận diện trực quan cho các dòng Trước và Sau
+  // Render dòng chi tiết log, làm nổi bật thông tin ngày đơn hàng để người dùng dễ nhận biết
+  const renderDetailLineText = (line, isBefore, isAfter) => {
+    if (!isBefore && !isAfter && (line.includes('ngày ') || line.includes('Đổi ngày:'))) {
+      const parts = line.split(/(ngày \d{1,2}\/\d{1,2}\/\d{4}|Đổi ngày: \d{1,2}\/\d{1,2}\/\d{4} ➔ \d{1,2}\/\d{1,2}\/\d{4})/g);
+      return (
+        <Text style={styles.detailText}>
+          {parts.map((part, pIdx) => {
+            if (/^(ngày \d{1,2}\/\d{1,2}\/\d{4}|Đổi ngày: \d{1,2}\/\d{1,2}\/\d{4} ➔ \d{1,2}\/\d{1,2}\/\d{4})$/.test(part)) {
+              return (
+                <Text key={pIdx} style={{ color: '#FCD34D', fontWeight: 'bold' }}>
+                  {part}
+                </Text>
+              );
+            }
+            return part;
+          })}
+        </Text>
+      );
+    }
+
+    return (
+      <Text
+        style={[
+          styles.detailText,
+          isBefore && styles.detailBeforeText,
+          isAfter && styles.detailAfterText,
+        ]}
+      >
+        {line}
+      </Text>
+    );
+  };
+
   const renderLogDetails = (details) => {
     if (!details) return null;
     const lines = details.split('\n');
     if (lines.length === 1) {
-      return <Text style={styles.detailText}>{details}</Text>;
+      return renderDetailLineText(details, false, false);
     }
 
     return (
@@ -186,15 +219,7 @@ const AdminLogsModal = forwardRef((props, ref) => {
                 idx > 0 && { marginTop: 4 },
               ]}
             >
-              <Text
-                style={[
-                  styles.detailText,
-                  isBefore && styles.detailBeforeText,
-                  isAfter && styles.detailAfterText,
-                ]}
-              >
-                {line}
-              </Text>
+              {renderDetailLineText(line, isBefore, isAfter)}
             </View>
           );
         })}
