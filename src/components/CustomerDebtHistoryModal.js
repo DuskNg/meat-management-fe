@@ -379,15 +379,35 @@ const CustomerDebtHistoryModal = forwardRef(({
                   id: p.id,
                   type: 'payment',
                   date: p.paidAt,
+                  paidAt: p.paidAt,
                   amount: alloc.amount, // Số tiền được phân bổ cho ngày nợ này
                   note: p.note,
+                  invoices: p.invoices || [],
                   allocations: [alloc],
                 });
+                if (p.invoices && p.invoices.length > 0) {
+                  g.invoices = g.invoices || [];
+                  g.invoices.push(...p.invoices);
+                }
                 g.totalPayment += alloc.amount;
               } else {
                 const existingPay = g.payments.find((existingPay) => existingPay.id === p.id);
                 existingPay.amount += alloc.amount;
                 existingPay.allocations.push(alloc);
+                if (p.invoices && p.invoices.length > 0) {
+                  existingPay.invoices = existingPay.invoices || [];
+                  p.invoices.forEach((inv) => {
+                    if (!existingPay.invoices.some((i) => i.imageUrl === inv.imageUrl)) {
+                      existingPay.invoices.push(inv);
+                    }
+                  });
+                  g.invoices = g.invoices || [];
+                  p.invoices.forEach((inv) => {
+                    if (!g.invoices.some((i) => i.imageUrl === inv.imageUrl)) {
+                      g.invoices.push(inv);
+                    }
+                  });
+                }
                 g.totalPayment += alloc.amount;
               }
             }
@@ -415,10 +435,16 @@ const CustomerDebtHistoryModal = forwardRef(({
             id: p.id,
             type: 'payment',
             date: p.paidAt,
+            paidAt: p.paidAt,
             amount: prepayAmt,
             note: p.note || 'Trả trước (dư)',
+            invoices: p.invoices || [],
             allocations: [],
           });
+          if (p.invoices && p.invoices.length > 0) {
+            g.invoices = g.invoices || [];
+            g.invoices.push(...p.invoices);
+          }
           g.totalPayment += prepayAmt;
         }
       });

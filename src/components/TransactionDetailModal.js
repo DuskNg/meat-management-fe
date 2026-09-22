@@ -88,15 +88,23 @@ const TransactionDetailModal = forwardRef(({
     return `${API_HOST}${path.startsWith('/') ? '' : '/'}${path}`;
   };
 
+  // Helper phân loại Trả hàng
+  const isReturnGoodsItem = (item) => {
+    if (!item) return false;
+    const note = item.note || '';
+    return note.includes('Trả hàng') || note.includes('Trả lại') || note.includes('[Trả lại hàng]') || note.includes('[Trả hàng nhanh]');
+  };
+
   // Mở modal xem ảnh hóa đơn phóng to
   const handleViewInvoices = (t, initialIndex = 0) => {
     const viewer = invoiceImageViewerModalRef?.current || internalViewerRef.current;
     if (viewer && t.invoices && t.invoices.length > 0) {
+      const isRet = isReturnGoodsItem(t);
       viewer.open({
         images: t.invoices,
         initialIndex,
-        title: `Hóa đơn đơn #${toDateKey(t.date)}`,
-        subtitle: `Số tiền: ${formatCurrency(t.amount || t.totalAmount)}`,
+        title: isRet ? `Đơn trả hàng #${toDateKey(t.paidAt || t.date)}` : `Hóa đơn đơn #${toDateKey(t.date || t.paidAt)}`,
+        subtitle: `Số tiền: ${isRet ? '-' : ''}${formatCurrency(t.amount || t.totalAmount)}`,
         onDelete: (inv, callback) => handleDeleteInvoice(inv, callback),
       });
     }
@@ -485,13 +493,6 @@ const TransactionDetailModal = forwardRef(({
   const remainingDebt = dayGroup.remainingDebt !== undefined ? dayGroup.remainingDebt : (totalDebt - totalPayment);
   const hasDebt = totalDebt > 0;
 
-  // Helper phân loại Trả hàng
-  const isReturnGoodsItem = (item) => {
-    if (!item) return false;
-    const note = item.note || '';
-    return note.includes('Trả hàng') || note.includes('Trả lại');
-  };
-
   // Tính toán riêng biệt số tiền Hàng trả về (cam) và số tiền Đã thanh toán (xanh)
   let returnDeducted = 0;
   let paymentDeducted = 0;
@@ -776,6 +777,22 @@ const TransactionDetailModal = forwardRef(({
                       >
                         <Text style={styles.deleteCardText}>🗑️ Xóa</Text>
                       </TouchableOpacity>
+
+                      {/* Nút xem ảnh/video của từng lượt trả hàng (nếu có) */}
+                      {p.invoices && p.invoices.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.viewInvoiceBtn}
+                          onPress={() => handleViewInvoices(p, 0)}
+                          title="Xem ảnh/video trả hàng này"
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.viewInvoiceBtnText}>
+                            {p.invoices.some((inv) => checkIsVideoUrl(inv.imageUrl))
+                              ? `👁️ Xem ảnh / video (${p.invoices.length})`
+                              : `👁️ Xem ảnh (${p.invoices.length})`}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                     <Text style={[styles.transCardTotal, { color: '#EA580C' }]}>
                       -{formatCurrency(p.amount)}
@@ -794,6 +811,48 @@ const TransactionDetailModal = forwardRef(({
                           • Khấu trừ <Text style={styles.boldText}>{formatCurrency(alloc.amount)}</Text> cho đơn nợ ngày {toDateKey(alloc.date)}
                         </Text>
                       ))}
+                    </View>
+                  )}
+
+                  {/* Danh sách ảnh & video trả hàng đính kèm trực tiếp dưới đơn trả */}
+                  {p.invoices && p.invoices.length > 0 && (
+                    <View style={styles.invoiceThumbnailsBox}>
+                      <Text style={styles.invoiceThumbnailsTitle}>
+                        {p.invoices.some((inv) => checkIsVideoUrl(inv.imageUrl))
+                          ? `🧾 Ảnh & Video trả hàng (${p.invoices.length}):`
+                          : `🧾 Ảnh trả hàng (${p.invoices.length}):`}
+                      </Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.invoiceThumbScroll}>
+                        {p.invoices.map((inv, invIdx) => {
+                          const isVid = checkIsVideoUrl(inv.imageUrl);
+                          return (
+                            <TouchableOpacity
+                              key={inv.id || invIdx}
+                              style={styles.invoiceThumbCard}
+                              onPress={() => handleViewInvoices(p, invIdx)}
+                              activeOpacity={0.8}
+                            >
+                              {isVid ? (
+                                <View style={[styles.invoiceThumbImg, styles.invoiceThumbVideoBox]}>
+                                  <Text style={styles.invoiceThumbVideoIcon}>🎬</Text>
+                                  <Text style={styles.invoiceThumbVideoText}>VIDEO</Text>
+                                </View>
+                              ) : (
+                                <Image
+                                  source={{ uri: getFullImageUrl(inv.imageUrl) }}
+                                  style={styles.invoiceThumbImg}
+                                  resizeMode="cover"
+                                />
+                              )}
+                              <View style={[styles.invoiceThumbBadge, isVid && styles.invoiceThumbVideoBadge]}>
+                                <Text style={styles.invoiceThumbBadgeText}>
+                                  {isVid ? `🎬 #${invIdx + 1}` : `#${invIdx + 1}`}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
                     </View>
                   )}
                 </View>
