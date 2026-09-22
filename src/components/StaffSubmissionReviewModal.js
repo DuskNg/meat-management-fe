@@ -80,15 +80,14 @@ const formatDateOnly = (isoDate) => {
 const buildReturnNoteFromItems = (items) => {
   if (!items || items.length === 0) return '';
   return items
-    .filter((item) => item.name || item.selectedProduct?.name || item.rawName)
+    .filter((item) => (item.name || item.selectedProduct?.name || item.rawName) && (parseFloat(item.amount) > 0 || ((parseFloat(item.quantity) || 0) > 0 && (parseFloat(item.price) || 0) > 0)))
     .map((item) => {
       const name = item.selectedProduct?.name || item.name || item.rawName || 'thịt';
       const qty = parseFloat(item.quantity) || 0;
-      const amt = parseFloat(item.amount) || 0;
-      const qtyStr = qty > 0 ? `${qty}kg` : '';
-      const amtStr = amt > 0 ? `(${Math.round(amt)})` : '';
-      // Format: "1.5kg bắp(300)" - không có khoảng trắng trước ngoặc
-      return [qtyStr, name].filter(Boolean).join(' ') + amtStr;
+      const amt = parseFloat(item.amount) || Math.round(qty * (parseFloat(item.price) || 0));
+      const qtyStr = qty > 0 ? `${qty}kg ` : '';
+      const amtStr = amt > 0 ? `(${formatCurrency(amt)})` : '';
+      return `${qtyStr}${name} ${amtStr}`.trim();
     })
     .filter(Boolean)
     .join(', ');
@@ -485,7 +484,7 @@ const InvoiceReviewCard = React.memo(
                 activeOpacity={0.8}
               >
                 <Text style={[styles.cardModeBtnText, card.orderMode === 'quick' && styles.cardModeBtnTextActive]}>
-                  ⚡ Nợ nhanh
+                  {card.isReturn ? '⚡ Trả nhanh' : '⚡ Nợ nhanh'}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -495,7 +494,7 @@ const InvoiceReviewCard = React.memo(
                 activeOpacity={0.8}
               >
                 <Text style={[styles.cardModeBtnText, card.orderMode !== 'quick' && styles.cardModeBtnTextActive]}>
-                  🥩 Chi tiết ({card.items?.length || 0})
+                  {card.isReturn ? '↩️ Trả chi tiết' : '🥩 Chi tiết'} ({card.items?.length || 0})
                 </Text>
               </TouchableOpacity>
             </View>
@@ -503,7 +502,7 @@ const InvoiceReviewCard = React.memo(
             {card.orderMode === 'quick' ? (
               <View style={styles.cardQuickDebtBox}>
                 <Text style={styles.cardFieldLabel}>
-                  SỐ TIỀN CÔNG NỢ (VND) <Text style={{ color: '#EF4444' }}>*</Text>
+                  {card.isReturn ? 'SỐ TIỀN TRẢ HÀNG (VND)' : 'SỐ TIỀN CÔNG NỢ (VND)'} <Text style={{ color: '#EF4444' }}>*</Text>
                 </Text>
                 <MoneyInput
                   style={styles.cardQuickMoneyContainer}
@@ -2529,11 +2528,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         if (isApproved) {
           // ─── ĐỐI VỚI HÓA ĐƠN ĐÃ DUYỆT: TẢI NGUYÊN BẢN CHÍNH XÁC NHỮNG GÌ CHỦ BUÔN ĐÃ LƯU ───
           const isReturn = Boolean(
-            sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]'))
+            sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]') || sub.note.includes('Trả lại') || sub.note.includes('Trả hàng') || /trả|tra/i.test(sub.note))
           );
           const cardNote = sub.note || '';
 
-          const rawItems = (sub.items || [])
+          let rawItems = (sub.items || [])
             .filter((it) => it.rawName || it.quantity || it.price || it.amount)
             .map((it, itemIdx) => {
               let matchedP = cardProdList.find((p) => p.id === it.matchedProductId) || null;
@@ -2575,6 +2574,31 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               };
             });
 
+          // Nếu là đơn trả hàng mà sub.items chưa có hoặc rỗng, phân tích từ sub.note
+          if (isReturn && rawItems.length === 0 && sub.note) {
+            let noteClean = sub.note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+            const itemRegex = /(?:(\d+(?:[.,]\d+)?)\s*([a-zA-ZÀ-ỹ]*)\s+)?(.+?)\s*\(\s*([\d.,]+)[\s\u00a0]*[đ₫VNDkK]?\s*\)(?:\s*,\s*|\s*$)/gi;
+            let m;
+            while ((m = itemRegex.exec(noteClean)) !== null) {
+              const qty = parseFloat(m[1]?.replace(',', '.')) || 1;
+              const prodName = m[3]?.trim() || '';
+              const amt = parseFloat(m[4]?.replace(/[.,]/g, '')) || 0;
+              if (prodName && !prodName.toLowerCase().includes('tra hang nhanh')) {
+                const matchedP = cardProdList.find((p) => p.name.toLowerCase().trim() === prodName.toLowerCase()) || null;
+                const price = qty > 0 ? Math.round(amt / qty) : amt;
+                rawItems.push({
+                  id: `parsed_${sub.id}_${rawItems.length}`,
+                  rawName: prodName,
+                  selectedProduct: matchedP || { id: '__manual__', name: prodName, unit: 'kg' },
+                  matchedProductId: matchedP ? matchedP.id : null,
+                  quantity: String(qty),
+                  price: String(price),
+                  amount: String(amt),
+                });
+              }
+            }
+          }
+
           if (rawItems.length === 0) {
             rawItems.push({
               id: `temp_${Date.now()}_${sub.id}`,
@@ -2589,10 +2613,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
           const isGenericMeatItem = (it) => {
             const cName = removeDiacritics((it.rawName || '').toLowerCase().trim());
-            return !cName || cName.includes('tien hang') || cName.includes('thit le') || cName === 'mon le' || cName === 'tien';
+            return !cName || cName.includes('tien hang') || cName.includes('thit le') || cName === 'mon le' || cName === 'tien' || cName.includes('tra hang nhanh');
           };
 
-          const isQuickMode = rawItems.length > 0 && rawItems.every(isGenericMeatItem);
+          const hasExplicitDetailItems = rawItems.some((it) => !isGenericMeatItem(it) && (parseFloat(it.quantity) > 0 || parseFloat(it.amount) > 0));
+          const isQuickMode = !hasExplicitDetailItems && (rawItems.length === 0 || rawItems.every(isGenericMeatItem));
 
           let quickSubAmounts = [];
           let quickAmount = '';
@@ -3152,13 +3177,13 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     if (card.orderMode === 'quick') {
       const quickAmtNum = parseFloat(card.quickAmount) || 0;
       if (quickAmtNum <= 0) {
-        showGlobalToast('Vui lòng nhập số tiền nợ lớn hơn 0đ.', 'warning');
+        showGlobalToast(card.isReturn ? 'Vui lòng nhập số tiền trả hàng lớn hơn 0đ.' : 'Vui lòng nhập số tiền nợ lớn hơn 0đ.', 'warning');
         return false;
       }
       payloadItems = [
         {
           matchedProductId: null,
-          rawName: 'Tiền hàng',
+          rawName: card.isReturn ? 'Trả hàng nhanh' : 'Tiền hàng',
           quantity: 1,
           price: quickAmtNum,
           amount: quickAmtNum,
@@ -3166,19 +3191,24 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       ];
     } else {
       const validItems = (card.items || []).filter(
-        (it) => (it.selectedProduct?.name || it.rawName) && parseFloat(it.amount || 0) > 0
+        (it) => (it.selectedProduct?.name || it.rawName) && (parseFloat(it.amount || 0) > 0 || ((parseFloat(it.quantity) || 0) > 0 && (parseFloat(it.price) || 0) > 0))
       );
       if (validItems.length === 0) {
         showGlobalToast('Vui lòng nhập ít nhất một mặt hàng thịt có thành tiền.', 'warning');
         return false;
       }
-      payloadItems = validItems.map((it) => ({
-        matchedProductId: it.selectedProduct?.id !== '__manual__' ? it.selectedProduct?.id : it.matchedProductId,
-        rawName: it.selectedProduct?.name || it.rawName || 'Thịt',
-        quantity: parseFloat(it.quantity) || 0,
-        price: parseFloat(it.price) || 0,
-        amount: parseFloat(it.amount) || Math.round((parseFloat(it.quantity) || 0) * (parseFloat(it.price) || 0)),
-      }));
+      payloadItems = validItems.map((it) => {
+        const qty = parseFloat(it.quantity) || 0;
+        const price = parseFloat(it.price) || 0;
+        const amount = parseFloat(it.amount) || Math.round(qty * price);
+        return {
+          matchedProductId: it.selectedProduct?.id !== '__manual__' ? it.selectedProduct?.id : it.matchedProductId,
+          rawName: it.selectedProduct?.name || it.rawName || (card.isReturn ? 'Thịt trả lại' : 'Thịt'),
+          quantity: qty,
+          price: price,
+          amount: amount,
+        };
+      });
     }
 
     try {
@@ -3186,13 +3216,34 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       const [d, m, y] = card.date.split('/');
       const isoDate = `${y}-${m}-${d}`;
 
-      let finalNote = card.note || '';
-      if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
-        const breakdownStr = card.quickSubAmounts.map((amt) => `${Math.round(amt / 1000)}k`).join(' + ');
-        if (!finalNote) {
-          finalNote = `Tiền hàng (${breakdownStr})`;
-        } else if (!finalNote.includes(breakdownStr)) {
-          finalNote = `${finalNote} (${breakdownStr})`;
+      let finalNote = (card.note || '').trim();
+      if (card.isReturn) {
+        if (card.orderMode === 'quick') {
+          let cleanNote = finalNote
+            .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '')
+            .replace(/^Trả hàng nhanh\s*[:-]?\s*/gi, '')
+            .trim();
+          finalNote = cleanNote ? `[Trả lại hàng] Trả hàng nhanh - ${cleanNote}` : `[Trả lại hàng] Trả hàng nhanh`;
+        } else {
+          const itemsDesc = buildReturnNoteFromItems(payloadItems);
+          let cleanNote = finalNote
+            .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '')
+            .replace(/^Trả hàng nhanh\s*[:-]?\s*/gi, '')
+            .trim();
+          if (cleanNote.includes('(') && cleanNote.includes(')')) {
+            const lastParen = cleanNote.lastIndexOf(')');
+            cleanNote = cleanNote.substring(lastParen + 1).replace(/^-+\s*/, '').trim();
+          }
+          finalNote = cleanNote ? `[Trả lại hàng] ${itemsDesc} - ${cleanNote}` : `[Trả lại hàng] ${itemsDesc}`;
+        }
+      } else {
+        if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
+          const breakdownStr = card.quickSubAmounts.map((amt) => `${Math.round(amt / 1000)}k`).join(' + ');
+          if (!finalNote) {
+            finalNote = `Tiền hàng (${breakdownStr})`;
+          } else if (!finalNote.includes(breakdownStr)) {
+            finalNote = `${finalNote} (${breakdownStr})`;
+          }
         }
       }
 
@@ -3201,6 +3252,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         date: isoDate,
         note: finalNote,
         isReturn: Boolean(card.isReturn),
+        orderMode: card.orderMode,
         items: payloadItems,
       };
 
@@ -3376,7 +3428,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               payloadItems = [
                 {
                   matchedProductId: null,
-                  rawName: 'Tiền hàng',
+                  rawName: card.isReturn ? 'Trả hàng nhanh' : 'Tiền hàng',
                   quantity: 1,
                   price: quickAmtNum,
                   amount: quickAmtNum,
@@ -3384,25 +3436,51 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               ];
             } else {
               const validItems = (card.items || []).filter(
-                (it) => (it.selectedProduct?.name || it.rawName) && parseFloat(it.amount || 0) > 0
+                (it) => (it.selectedProduct?.name || it.rawName) && (parseFloat(it.amount || 0) > 0 || ((parseFloat(it.quantity) || 0) > 0 && (parseFloat(it.price) || 0) > 0))
               );
               if (validItems.length === 0) continue;
-              payloadItems = validItems.map((it) => ({
-                matchedProductId: it.selectedProduct?.id !== '__manual__' ? it.selectedProduct?.id : it.matchedProductId,
-                rawName: it.selectedProduct?.name || it.rawName || 'Thịt',
-                quantity: parseFloat(it.quantity) || 0,
-                price: parseFloat(it.price) || 0,
-                amount: parseFloat(it.amount) || Math.round((parseFloat(it.quantity) || 0) * (parseFloat(it.price) || 0)),
-              }));
+              payloadItems = validItems.map((it) => {
+                const qty = parseFloat(it.quantity) || 0;
+                const price = parseFloat(it.price) || 0;
+                const amount = parseFloat(it.amount) || Math.round(qty * price);
+                return {
+                  matchedProductId: it.selectedProduct?.id !== '__manual__' ? it.selectedProduct?.id : it.matchedProductId,
+                  rawName: it.selectedProduct?.name || it.rawName || (card.isReturn ? 'Thịt trả lại' : 'Thịt'),
+                  quantity: qty,
+                  price: price,
+                  amount: amount,
+                };
+              });
             }
 
-            let finalNote = card.note || '';
-            if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
-              const breakdownStr = card.quickSubAmounts.map((amt) => `${Math.round(amt / 1000)}k`).join(' + ');
-              if (!finalNote) {
-                finalNote = `Tiền hàng (${breakdownStr})`;
-              } else if (!finalNote.includes(breakdownStr)) {
-                finalNote = `${finalNote} (${breakdownStr})`;
+            let finalNote = (card.note || '').trim();
+            if (card.isReturn) {
+              if (card.orderMode === 'quick') {
+                let cleanNote = finalNote
+                  .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '')
+                  .replace(/^Trả hàng nhanh\s*[:-]?\s*/gi, '')
+                  .trim();
+                finalNote = cleanNote ? `[Trả lại hàng] Trả hàng nhanh - ${cleanNote}` : `[Trả lại hàng] Trả hàng nhanh`;
+              } else {
+                const itemsDesc = buildReturnNoteFromItems(payloadItems);
+                let cleanNote = finalNote
+                  .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '')
+                  .replace(/^Trả hàng nhanh\s*[:-]?\s*/gi, '')
+                  .trim();
+                if (cleanNote.includes('(') && cleanNote.includes(')')) {
+                  const lastParen = cleanNote.lastIndexOf(')');
+                  cleanNote = cleanNote.substring(lastParen + 1).replace(/^-+\s*/, '').trim();
+                }
+                finalNote = cleanNote ? `[Trả lại hàng] ${itemsDesc} - ${cleanNote}` : `[Trả lại hàng] ${itemsDesc}`;
+              }
+            } else {
+              if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
+                const breakdownStr = card.quickSubAmounts.map((amt) => `${Math.round(amt / 1000)}k`).join(' + ');
+                if (!finalNote) {
+                  finalNote = `Tiền hàng (${breakdownStr})`;
+                } else if (!finalNote.includes(breakdownStr)) {
+                  finalNote = `${finalNote} (${breakdownStr})`;
+                }
               }
             }
 
@@ -3411,6 +3489,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               date: isoDate,
               note: finalNote,
               isReturn: Boolean(card.isReturn),
+              orderMode: card.orderMode,
               items: payloadItems,
             };
 

@@ -696,7 +696,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.orderModeTabText, isQuickMode && styles.orderModeTabTextActive]}>
-                        ⚡ Nhập nhanh (Tiền hàng)
+                        {currentCard.isReturn ? '⚡ Trả nhanh (theo tiền)' : '⚡ Nhập nhanh (Tiền hàng)'}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -706,7 +706,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.orderModeTabText, !isQuickMode && styles.orderModeTabTextActive]}>
-                        🥩 Nhập chi tiết ({currentCard.items?.length || 0} món)
+                        {currentCard.isReturn ? `↩️ Trả chi tiết (${currentCard.items?.length || 0} món)` : `🥩 Nhập chi tiết (${currentCard.items?.length || 0} món)`}
                       </Text>
                     </TouchableOpacity>
                   </View>
