@@ -813,6 +813,39 @@ const resolveCustomerForSub = (sub, custList) => {
       }
     }
 
+    // 1a2. ĐẶC BIỆT: Khớp ưu tiên khách "Bếp 3 Miền Kim Liên" nếu AI nhận diện là "3mien", "3 miền", "bếp 3 miền", "kim liên"...
+    if (
+      cleanDetected.includes('3 mien') ||
+      cleanDetected.includes('ba mien') ||
+      cleanDetected.includes('bep 3 mien') ||
+      cleanDetected.includes('kim lien') ||
+      cleanDetectedNoSpace === '3mien' ||
+      cleanDetectedNoSpace === '3m' ||
+      cleanDetectedNoSpace.includes('3mien') ||
+      cleanDetectedNoSpace.includes('bep3mien') ||
+      cleanDetectedNoSpace.includes('kimlien') ||
+      cleanDetectedNoSpace.includes('bamien')
+    ) {
+      if (!currentCustClean.includes('3 mien') && !currentCustClean.includes('3mien') && !currentCustClean.includes('kim lien')) {
+        const bep3MienCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          const cNoSpace = cClean.replace(/\s+/g, '');
+          return (cClean.includes('3 mien') || cNoSpace.includes('3mien') || cClean.includes('ba mien')) && cClean.includes('kim lien');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          const cNoSpace = cClean.replace(/\s+/g, '');
+          return cClean.includes('3 mien') || cNoSpace.includes('3mien') || cClean.includes('ba mien') || cClean.includes('bep 3 mien');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('kim lien');
+        }) || null;
+
+        if (bep3MienCust) {
+          matchedCust = bep3MienCust;
+        }
+      }
+    }
+
     // 1b. ĐẶC BIỆT: Khớp ưu tiên khách "Huyền Đô Nghĩa" nếu AI nhận diện có chứa "huyen" hoặc "do nghia"
     if (
       cleanDetected.includes('huyen do nghia') ||

@@ -60,15 +60,31 @@ export const matchSearch = (target, query) => {
     return true;
   }
 
-  // 3. Khớp tất cả các từ khóa rời rạc (Ví dụ: "san 1" -> cả "san" và "1" đều nằm trong targetNorm)
+  // 3. Khớp chuỗi không khoảng trắng (Ví dụ: "3mien" khớp "Bếp 3 Miền Kim Liên", "bunhue" khớp "Bún Huế")
+  const targetNoSpace = targetNorm.replace(/\s+/g, '');
+  const queryNoSpace = queryNorm.replace(/\s+/g, '');
+  if (queryNoSpace && targetNoSpace.includes(queryNoSpace)) {
+    return true;
+  }
+
+  // 4. Khớp tất cả các từ khóa rời rạc (Ví dụ: "3mien kim lien", "san 1")
   const queryTokens = queryNorm.split(/\s+/).filter(Boolean);
   if (queryTokens.length > 1) {
     const isAllTokensMatched = queryTokens.every(
-      (token) => targetNorm.includes(token) || (initials && initials.includes(token))
+      (token) =>
+        targetNorm.includes(token) ||
+        (initials && initials.includes(token)) ||
+        targetNoSpace.includes(token.replace(/\s+/g, ''))
     );
     if (isAllTokensMatched) {
       return true;
     }
+  }
+
+  // 5. Khớp khi từ khóa có dính số vào chữ (Ví dụ: "3mien" -> tách thành "3 mien" hoặc "cs2" -> "cs 2")
+  const querySpaced = queryNorm.replace(/(\d+)([a-zA-Z]+)/g, '$1 $2').replace(/([a-zA-Z]+)(\d+)/g, '$1 $2');
+  if (querySpaced !== queryNorm && targetNorm.includes(querySpaced)) {
+    return true;
   }
 
   return false;
