@@ -942,7 +942,6 @@ export default function DashboardScreen() {
     setScanningMsg(`AI đang phân tích ${total} tích kê (0/${total})...`);
 
     try {
-      /* [TẠM THỜI COMMENT PHẦN GỌI AI GEMINI ĐỂ TEST TẢI ĐỦ 60 ẢNH TỨC THÌ]
       // Giới hạn số luồng xử lý đồng thời (concurrency = 3) để tránh nghẽn mạng & giới hạn Rate Limit Google Gemini
       const concurrency = 3;
       const results = new Array(total);
@@ -1000,6 +999,8 @@ export default function DashboardScreen() {
       }
       await Promise.all(workers);
 
+      // BẢO ĐẢM 100% SỐ LƯỢNG ẢNH: Duyệt qua tất cả các ảnh từ 1 đến N
+      // Tuyệt đối không để rớt bất kỳ ảnh nào, kể cả khi AI không đọc được chữ!
       const allItems = [];
       const timestamp = Date.now();
 
@@ -1023,6 +1024,8 @@ export default function DashboardScreen() {
             });
           });
         } else {
+          // Khi AI không đọc được chữ (chữ mờ, chói sáng, hoặc gặp lỗi mạng)
+          // Vẫn luôn tạo 1 phiếu có gắn ảnh gốc bên cạnh để người dùng đối chiếu và nhập số cân!
           allItems.push({
             product: { name: 'Thịt lẻ', unit: 'kg', defaultPrice: 0 },
             quantity: 0,
@@ -1035,34 +1038,12 @@ export default function DashboardScreen() {
           });
         }
       });
-      */
-
-      // [CHẾ ĐỘ TEST NHANH]: Tạo trực tiếp 100% số lượng tích kê từ ảnh tải lên kèm hình ảnh gốc để test
-      const allItems = [];
-      const timestamp = Date.now();
-
-      images.forEach((imgObj, idx) => {
-        const ticketKey = `ticket-${timestamp}-${idx}`;
-        const ticketImage = imgObj?.dataUri || imgObj || null;
-        const ticketLabel = total > 1 ? `Tích kê ${idx + 1}` : null;
-
-        allItems.push({
-          product: { name: 'Thịt lẻ', unit: 'kg', defaultPrice: 0 },
-          quantity: 0,
-          price: 0,
-          amount: 0,
-          voiceCustomerName: '',
-          orderKey: ticketKey,
-          ticketLabel,
-          ticketImage,
-        });
-      });
 
       if (!allItems.length) {
         throw new Error('Không có tích kê nào được tạo.');
       }
 
-      scanTicketModalRef.current?.open(allItems, `📸 KẾT QUẢ QUÉT TÍCH KÊ (${allItems.length} ẢNH TEST)`);
+      scanTicketModalRef.current?.open(allItems, '📸 KẾT QUẢ QUÉT TÍCH KÊ');
     } catch (err) {
       console.error(err);
       popupModalRef.current?.show({
