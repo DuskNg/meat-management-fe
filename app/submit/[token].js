@@ -127,14 +127,14 @@ const getFileCategory = (file) => {
   return { isVideo, isImage };
 };
 
-// Helper nén ảnh siêu tốc bằng HTML5 Canvas + cắt nhẹ viền ngoài (Cắt an toàn 5% mỗi cạnh, tập trung vào giữa hóa đơn)
+// Helper nén ảnh siêu tốc bằng HTML5 Canvas + cắt viền ngoài (Cắt 10% mỗi cạnh, tập trung sâu vào giữa hóa đơn)
 const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
   if (!file) return null;
   const { isImage } = getFileCategory(file);
   if (!isImage) return null;
 
-  // Cắt nhẹ 5% viền ngoài mỗi cạnh (trên, dưới, trái, phải) để tập trung bố cục ở giữa, loại bỏ bàn/rìa thừa nhưng an toàn không cắt vào chữ
-  const CROP_RATIO = 0.05;
+  // Cắt 10% viền ngoài mỗi cạnh (trên, dưới, trái, phải) để tập trung sâu vào bố cục ở giữa, loại bỏ bàn/rìa thừa
+  const CROP_RATIO = 0.10;
 
   try {
     // 1. Ưu tiên giải mã phần cứng bằng createImageBitmap (cực nhanh, đa luồng off-thread, không tốn RAM)
@@ -144,7 +144,7 @@ const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
         const origW = bitmap.width;
         const origH = bitmap.height;
 
-        // Vùng cắt an toàn tập trung ở giữa (giữ nguyên 90% chiều rộng và 90% chiều cao)
+        // Vùng cắt tập trung ở giữa (giữ nguyên 80% chiều rộng và 80% chiều cao trung tâm)
         const sx = Math.round(origW * CROP_RATIO);
         const sy = Math.round(origH * CROP_RATIO);
         const sw = origW - sx * 2;
@@ -206,7 +206,7 @@ const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
           const origW = img.naturalWidth || img.width;
           const origH = img.naturalHeight || img.height;
 
-          // Vùng cắt an toàn tập trung ở giữa (giữ nguyên 90% kích thước trung tâm)
+          // Vùng cắt tập trung ở giữa (giữ nguyên 80% kích thước trung tâm)
           const sx = Math.round(origW * CROP_RATIO);
           const sy = Math.round(origH * CROP_RATIO);
           const sw = origW - sx * 2;

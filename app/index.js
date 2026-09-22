@@ -869,8 +869,8 @@ export default function DashboardScreen() {
             const origW = img.naturalWidth || img.width;
             const origH = img.naturalHeight || img.height;
 
-            // Cắt nhẹ 5% viền ngoài mỗi cạnh để tập trung vào bố cục giữa tờ tích kê
-            const CROP_RATIO = 0.05;
+            // Cắt 10% viền ngoài mỗi cạnh để tập trung sâu vào bố cục giữa tờ tích kê
+            const CROP_RATIO = 0.10;
             const sx = Math.round(origW * CROP_RATIO);
             const sy = Math.round(origH * CROP_RATIO);
             const sw = origW - sx * 2;
