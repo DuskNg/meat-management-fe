@@ -164,6 +164,35 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
   // Counter tăng dần đảm bảo tempId/tempItemId luôn unique dù gọi liên tiếp trong cùng 1ms
   const rowIdCounterRef = useRef(1);
 
+  // Ref phục vụ đính kèm ảnh / video cho từng dòng trả hàng
+  const activeMediaRowIdRef = useRef(null);
+  const rowFileInputRef = useRef(null);
+
+  const handleTriggerRowMediaUpload = (tempId) => {
+    activeMediaRowIdRef.current = tempId;
+    rowFileInputRef.current?.click();
+  };
+
+  const handleRowMediaChange = (e) => {
+    const file = e.target.files?.[0];
+    const rowId = activeMediaRowIdRef.current;
+    if (!file || !rowId) return;
+
+    const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|mov|webm|avi|mkv)$/i.test(file.name || '');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setReturnRows((prev) =>
+        prev.map((r) =>
+          r.tempId === rowId
+            ? { ...r, attachedMedia: { base64: event.target.result, isVideo, fileName: file.name } }
+            : r
+        )
+      );
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   // Tải danh mục thịt kèm giá riêng cho 1 khách hàng và tự động cập nhật lại giá các mặt hàng đã chọn
   const fetchProductsForCustomer = async (customerId) => {
     if (!customerId) return [];
@@ -675,6 +704,7 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
           amount: getDetailRowTotal(row),
           note: formattedNote,
           paidAt: isoDate,
+          mediaData: row.attachedMedia?.base64 || null,
         });
       });
 
@@ -952,6 +982,23 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
                         </Text>
                       </View>
 
+                      {/* Nút đính kèm ảnh / video cho từng dòng trả hàng */}
+                      {activeTab === 'return' && (
+                        <TouchableOpacity
+                          style={[
+                            styles.attachMediaBtnRow,
+                            row.attachedMedia && styles.attachMediaBtnRowActive,
+                          ]}
+                          onPress={() => handleTriggerRowMediaUpload(row.tempId)}
+                          title={row.attachedMedia ? `Đã đính kèm: ${row.attachedMedia.fileName || 'Tệp'} (Bấm để đổi)` : 'Đính kèm ảnh/video trả hàng'}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.attachMediaBtnRowText, row.attachedMedia && styles.attachMediaBtnRowTextActive]}>
+                            {row.attachedMedia ? (row.attachedMedia.isVideo ? '🎬 Video' : '📷 Ảnh') : '📎'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+
                       <TouchableOpacity
                         style={styles.deleteRowBtnMini}
                         onPress={() => handleRemoveRow(row.tempId)}
@@ -1188,6 +1235,17 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
       <PinInputModal ref={pinInputRef} />
       <PinSetupModal ref={pinSetupRef} />
       <PopupModal ref={popupRef} />
+
+      {/* Input tệp ẩn hỗ trợ chọn ảnh/video cho dòng trả hàng */}
+      {Platform.OS === 'web' && (
+        <input
+          type="file"
+          ref={rowFileInputRef}
+          style={{ display: 'none' }}
+          accept="image/*,video/*"
+          onChange={handleRowMediaChange}
+        />
+      )}
     </>
   );
 });
@@ -1412,6 +1470,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 6,
+  },
+  attachMediaBtnRow: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    marginLeft: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  attachMediaBtnRowActive: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  attachMediaBtnRowText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  attachMediaBtnRowTextActive: {
+    color: '#166534',
   },
   profitPercentInput: {
     height: 34,

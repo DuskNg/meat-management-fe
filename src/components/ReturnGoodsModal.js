@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
+  Image,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { useQuery } from '@tanstack/react-query';
@@ -28,6 +29,7 @@ import { showGlobalToast } from '../store/toastStore';
  * Modal Trả Hàng Khách Hàng (Độc lập):
  * 1. Trả hàng nhanh: Nhập số tiền trả trực tiếp để trừ nợ.
  * 2. Trả hàng chi tiết: Chọn loại thịt khách trả lại (kg × đơn giá), tính tổng tiền và trừ trực tiếp vào công nợ của khách.
+ * 3. Hỗ trợ đính kèm ảnh/video hóa đơn hoặc cân thịt trả lại.
  */
 const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   // ─── State điều khiển Modal ─────────────────────────────────────────────
@@ -37,6 +39,27 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   const [selectedDate, setSelectedDate] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // State đính kèm ảnh / video chứng từ hàng trả
+  const [attachedMedia, setAttachedMedia] = useState(null); // { base64, isVideo, fileName }
+  const fileInputRef = useRef(null);
+
+  const handleSelectMedia = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|mov|webm|avi|mkv)$/i.test(file.name || '');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setAttachedMedia({
+        base64: event.target.result,
+        isVideo,
+        fileName: file.name,
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   // Tự động khóa khách hàng khi mở modal trả hàng để tránh xung đột thao tác
   useResourceLock('CUSTOMER', customer?.id, visible, () => setVisible(false));
@@ -136,10 +159,12 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
       setCurrentPrice('');
       setEditingItemId(null);
       setManualNote('');
+      setAttachedMedia(null);
       setError('');
       setVisible(true);
     },
     close: () => {
+      setAttachedMedia(null);
       setVisible(false);
     },
   }));
@@ -290,10 +315,12 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
           amount,
           note: formattedNote,
           paidAt: isoDate,
+          mediaData: attachedMedia?.base64 || null,
         });
 
         if (response.data.success) {
           setVisible(false);
+          setAttachedMedia(null);
           showGlobalToast(`Đã trừ ${formatCurrency(amount)} vào công nợ của khách!`, 'success');
           if (onRefresh) onRefresh();
         } else {
@@ -335,10 +362,12 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
           amount: totalRefundAmount,
           note: formattedNote,
           paidAt: isoDate,
+          mediaData: attachedMedia?.base64 || null,
         });
 
         if (response.data.success) {
           setVisible(false);
+          setAttachedMedia(null);
           showGlobalToast(`Đã trừ ${formatCurrency(totalRefundAmount)} vào công nợ của khách!`, 'success');
           if (onRefresh) onRefresh();
         } else {
@@ -627,6 +656,57 @@ const ReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
               />
             </View>
           )}
+
+          {/* ── KHU VỰC ĐÍNH KÈM ẢNH / VIDEO TRẢ HÀNG ── */}
+          <View style={styles.attachmentSection}>
+            <Text style={styles.label}>📷 Ảnh / Video chứng từ trả hàng (Tùy chọn):</Text>
+            {attachedMedia ? (
+              <View style={styles.attachedMediaBox}>
+                {attachedMedia.isVideo ? (
+                  <View style={styles.mediaPreviewRow}>
+                    <View style={styles.videoIconCircle}>
+                      <Text style={{ fontSize: 16 }}>🎬</Text>
+                    </View>
+                    <Text style={styles.attachedMediaText} numberOfLines={1}>
+                      {attachedMedia.fileName || 'Video trả hàng'}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.mediaPreviewRow}>
+                    <Image source={{ uri: attachedMedia.base64 }} style={styles.attachedThumbnail} />
+                    <Text style={styles.attachedMediaText} numberOfLines={1}>
+                      {attachedMedia.fileName || 'Ảnh hóa đơn/cân thịt'}
+                    </Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={styles.removeMediaBtn}
+                  onPress={() => setAttachedMedia(null)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.removeMediaText}>✕ Gỡ bỏ</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.attachBtn}
+                onPress={() => fileInputRef.current?.click()}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.attachBtnIcon}>📎</Text>
+                <Text style={styles.attachBtnText}>Đính kèm ảnh hóa đơn hoặc video cân trả lại</Text>
+              </TouchableOpacity>
+            )}
+            {Platform.OS === 'web' && (
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                accept="image/*,video/*"
+                onChange={handleSelectMedia}
+              />
+            )}
+          </View>
         </ScrollView>
 
         {/* Nút Hủy & Xác nhận */}
@@ -1018,5 +1098,83 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: 13.5,
     fontWeight: '700',
+  },
+  /* STYLES ĐÍNH KÈM ẢNH/VIDEO TRẢ HÀNG */
+  attachmentSection: {
+    marginTop: 14,
+    marginBottom: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  attachBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  attachBtnIcon: {
+    fontSize: 16,
+  },
+  attachBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  attachedMediaBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  mediaPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    marginRight: 8,
+  },
+  attachedThumbnail: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+    backgroundColor: '#E2E8F0',
+  },
+  videoIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachedMediaText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#166534',
+    flex: 1,
+  },
+  removeMediaBtn: {
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  removeMediaText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#DC2626',
   },
 });

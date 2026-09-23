@@ -142,10 +142,17 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
   const [batchDateStr, setBatchDateStr] = useState(getTodayFormatted());
   const [batchTransaction, setBatchTransaction] = useState(null);
   const batchTransactionRef = useRef(null);
+  const [batchPayment, setBatchPayment] = useState(null);
+  const batchPaymentRef = useRef(null);
 
   const updateBatchTransaction = useCallback((tx) => {
     setBatchTransaction(tx);
     batchTransactionRef.current = tx;
+  }, []);
+
+  const updateBatchPayment = useCallback((pay) => {
+    setBatchPayment(pay);
+    batchPaymentRef.current = pay;
   }, []);
   const [activeOpenRowId, setActiveOpenRowId] = useState(null);
 
@@ -257,7 +264,15 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
 
   // Mở modal từ bên ngoài
   useImperativeHandle(ref, () => ({
-    open: async (initialCustomerId = null, initialDate = null, initialTab = 'upload', initialTransactionId = null, initialTransaction = null) => {
+    open: async (
+      initialCustomerId = null,
+      initialDate = null,
+      initialTab = 'upload',
+      initialTransactionId = null,
+      initialTransaction = null,
+      initialPaymentId = null,
+      initialPayment = null
+    ) => {
       setVisible(true);
       setActiveTab(initialTab);
       setSelectedDeleteIds([]);
@@ -266,6 +281,9 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
 
       const targetTx = initialTransaction || (initialTransactionId ? { id: initialTransactionId } : null);
       updateBatchTransaction(targetTx);
+
+      const targetPay = initialPayment || (initialPaymentId ? { id: initialPaymentId } : null);
+      updateBatchPayment(targetPay);
 
       let customerList = (customers && customers.length > 0) ? customers : (propCustomers || []);
 
@@ -356,6 +374,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
     },
     close: () => {
       updateBatchTransaction(null);
+      updateBatchPayment(null);
       setVisible(false);
     },
     fetchSaved: () => {
@@ -1219,6 +1238,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
           items: currentChunk.map((item) => ({
             customerId: item.customerId,
             transactionId: item.transactionId || batchTransactionRef.current?.id || null,
+            paymentId: item.paymentId || batchPaymentRef.current?.id || null,
             date: parseDateString(item.dateStr),
             imageBase64: item.imageBase64,
             mediaType: item.mediaType || (checkIsVideo(item.imageBase64) ? 'video' : 'image'),

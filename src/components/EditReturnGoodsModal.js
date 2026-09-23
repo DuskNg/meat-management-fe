@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
+  Image,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { useQuery } from '@tanstack/react-query';
@@ -38,6 +39,29 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   const [selectedDate, setSelectedDate] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // State quản lý ảnh/video hóa đơn đính kèm của đơn trả hàng
+  const [existingInvoices, setExistingInvoices] = useState([]);
+  const [deletedInvoiceIds, setDeletedInvoiceIds] = useState([]);
+  const [attachedMedia, setAttachedMedia] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handleSelectMedia = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|mov|webm|avi|mkv)$/i.test(file.name || '');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setAttachedMedia({
+        base64: event.target.result,
+        isVideo,
+        fileName: file.name,
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   // Tự động khóa tài nguyên khách hàng khi mở modal sửa trả hàng
   useResourceLock('CUSTOMER', customerId, visible, () => setVisible(false));
@@ -326,9 +350,18 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
       setCurrentQuantity('');
       setCurrentPrice('');
       setEditingItemId(null);
+
+      // Nạp danh sách hóa đơn hiện có của lượt trả hàng này
+      setExistingInvoices(paymentItem.invoices || []);
+      setDeletedInvoiceIds([]);
+      setAttachedMedia(null);
+
       setVisible(true);
     },
     close: () => {
+      setExistingInvoices([]);
+      setDeletedInvoiceIds([]);
+      setAttachedMedia(null);
       setVisible(false);
     },
   }));
@@ -483,10 +516,13 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
           amount,
           note: formattedNote,
           paidAt: isoDate,
+          mediaData: attachedMedia?.base64 || null,
+          deletedInvoiceIds: deletedInvoiceIds.length > 0 ? deletedInvoiceIds : undefined,
         });
 
         if (response.data.success) {
           setVisible(false);
+          setAttachedMedia(null);
           showGlobalToast('Đã cập nhật đơn trả hàng thành công!', 'success');
           if (onRefresh) onRefresh();
         } else {
@@ -527,10 +563,13 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
           amount: totalRefundAmount,
           note: formattedNote,
           paidAt: isoDate,
+          mediaData: attachedMedia?.base64 || null,
+          deletedInvoiceIds: deletedInvoiceIds.length > 0 ? deletedInvoiceIds : undefined,
         });
 
         if (response.data.success) {
           setVisible(false);
+          setAttachedMedia(null);
           showGlobalToast('Đã cập nhật đơn trả hàng thành công!', 'success');
           if (onRefresh) onRefresh();
         } else {
@@ -787,6 +826,93 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
               />
             </View>
           )}
+
+          {/* ── KHU VỰC QUẢN LÝ ẢNH / VIDEO TRẢ HÀNG ── */}
+          <View style={styles.attachmentSection}>
+            <Text style={styles.label}>📷 Ảnh / Video chứng từ trả hàng:</Text>
+
+            {/* Danh sách ảnh/video đã đính kèm trước đó */}
+            {existingInvoices && existingInvoices.length > 0 && (
+              <View style={styles.existingInvoicesWrap}>
+                <Text style={styles.subLabel}>Đã lưu ({existingInvoices.length}):</Text>
+                <View style={styles.existingInvoicesList}>
+                  {existingInvoices.map((inv) => {
+                    const isVid = /\.(mp4|mov|webm|avi|mkv)$/i.test(inv.imageUrl || '');
+                    return (
+                      <View key={inv.id} style={styles.existingInvCard}>
+                        {isVid ? (
+                          <View style={styles.videoIconBoxMini}>
+                            <Text style={{ fontSize: 16 }}>🎬</Text>
+                            <Text style={styles.videoTextMini}>VIDEO</Text>
+                          </View>
+                        ) : (
+                          <Image source={{ uri: inv.imageUrl }} style={styles.invThumbnailMini} />
+                        )}
+                        <TouchableOpacity
+                          style={styles.removeInvBtnMini}
+                          onPress={() => {
+                            setDeletedInvoiceIds((prev) => [...prev, inv.id]);
+                            setExistingInvoices((prev) => prev.filter((i) => i.id !== inv.id));
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.removeInvTextMini}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* File đính kèm mới chuẩn bị tải lên */}
+            {attachedMedia ? (
+              <View style={styles.attachedMediaBox}>
+                {attachedMedia.isVideo ? (
+                  <View style={styles.mediaPreviewRow}>
+                    <View style={styles.videoIconCircle}>
+                      <Text style={{ fontSize: 16 }}>🎬</Text>
+                    </View>
+                    <Text style={styles.attachedMediaText} numberOfLines={1}>
+                      {attachedMedia.fileName || 'Video mới'}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.mediaPreviewRow}>
+                    <Image source={{ uri: attachedMedia.base64 }} style={styles.attachedThumbnail} />
+                    <Text style={styles.attachedMediaText} numberOfLines={1}>
+                      {attachedMedia.fileName || 'Ảnh mới'}
+                    </Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={styles.removeMediaBtn}
+                  onPress={() => setAttachedMedia(null)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.removeMediaText}>✕ Gỡ bỏ</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.attachBtn}
+                onPress={() => fileInputRef.current?.click()}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.attachBtnIcon}>📎</Text>
+                <Text style={styles.attachBtnText}>+ Thêm ảnh hóa đơn hoặc video cân thịt</Text>
+              </TouchableOpacity>
+            )}
+            {Platform.OS === 'web' && (
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                accept="image/*,video/*"
+                onChange={handleSelectMedia}
+              />
+            )}
+          </View>
         </ScrollView>
 
         {/* Footer hành động neo cố định ở đáy modal */}
@@ -1143,5 +1269,140 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  /* STYLES ĐÍNH KÈM ẢNH/VIDEO TRẢ HÀNG */
+  attachmentSection: {
+    marginTop: 14,
+    marginBottom: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  subLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 6,
+  },
+  existingInvoicesWrap: {
+    marginBottom: 10,
+  },
+  existingInvoicesList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  existingInvCard: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  invThumbnailMini: {
+    width: '100%',
+    height: '100%',
+  },
+  videoIconBoxMini: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoTextMini: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#166534',
+    marginTop: 2,
+  },
+  removeInvBtnMini: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeInvTextMini: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  attachBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  attachBtnIcon: {
+    fontSize: 16,
+  },
+  attachBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  attachedMediaBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  mediaPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    marginRight: 8,
+  },
+  attachedThumbnail: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+    backgroundColor: '#E2E8F0',
+  },
+  videoIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachedMediaText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#166534',
+    flex: 1,
+  },
+  removeMediaBtn: {
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  removeMediaText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#DC2626',
   },
 });

@@ -139,6 +139,14 @@ const TransactionDetailModal = forwardRef(({
     }
   };
 
+  // Mở modal tải ảnh/video hóa đơn gắn trực tiếp cho đơn trả hàng / thanh toán này
+  const handleOpenAddPaymentInvoice = (p) => {
+    const uploader = invoiceImageUploadModalRef?.current || internalUploadRef.current;
+    if (uploader) {
+      uploader.open(customerId, dayGroup?.dateKey || toDateKey(p.paidAt), 'upload', null, null, p.id, p);
+    }
+  };
+
   // Kiểm tra mã PIN trước khi thực hiện thao tác nhạy cảm
   const requirePin = async (action) => {
     const pinExists = await hasPin();
@@ -776,6 +784,14 @@ const TransactionDetailModal = forwardRef(({
                         onPress={() => handleDeletePayment(p.id)}
                       >
                         <Text style={styles.deleteCardText}>🗑️ Xóa</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.addInvoiceBtn}
+                        onPress={() => handleOpenAddPaymentInvoice(p)}
+                        title="Đính kèm ảnh/video hóa đơn hoặc chứng từ trả hàng"
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.addInvoiceBtnText}>+ 📷 Ảnh HĐ</Text>
                       </TouchableOpacity>
 
                       {/* Nút xem ảnh/video của từng lượt trả hàng (nếu có) */}
