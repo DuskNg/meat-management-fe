@@ -605,6 +605,7 @@ const buildInvoiceRows = (
         amount: amt,
         remaining: amt,
         paidAt: payDate,
+        note: pm.note || '',
         monthKey: `${String(pmMonth).padStart(2, '0')}/${pmYear}`,
         monthDisplay: `T${pmMonth}`,
         monthFull: `T${pmMonth}/${pmYear}`,
@@ -623,11 +624,94 @@ const buildInvoiceRows = (
     day.paymentsApplied = [];
   });
 
-  // 3. Phân bổ FIFO các khoản thanh toán tiền mặt từ ngày CŨ NHẤT đến MỚI NHẤT
+  // 3. Phân bổ các khoản thanh toán tiền mặt (Đồng bộ chuẩn thuật toán với Hệ thống nội bộ)
   const allDaysOldestToNewest = Object.values(allDayMap).sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
   const sortedCashPayments = allCashPayments.sort((a, b) => a.paidAt.getTime() - b.paidAt.getTime());
 
-  // Xử lý nợ cũ ban đầu (manualDebt) nếu có
+  // Helper thực hiện trừ tiền thanh toán vào một ngày cụ thể
+  const applyPaymentToDay = (pm, day) => {
+    if (pm.remaining <= 0 || day.paidAmount >= day.dayNetTotal) return 0;
+    const toPay = day.dayNetTotal - day.paidAmount;
+    const used = Math.min(pm.remaining, toPay);
+
+    day.paidAmount += used;
+    pm.remaining -= used;
+
+    day.paymentsApplied.push({
+      paymentId: pm.id,
+      amount: used,
+      paidAt: pm.paidAt,
+      paidMonthKey: pm.monthKey,
+      paidMonthDisplay: pm.monthDisplay,
+      paidMonthFull: pm.monthFull,
+      isSameMonth: pm.monthKey === day.monthKey,
+      totalPaymentAmount: pm.amount,
+    });
+
+    pm.allocations.push({
+      targetDateKey: day.dateKey,
+      targetMonthKey: day.monthKey,
+      targetMonthDisplay: day.monthDisplay,
+      targetMonthFull: day.monthFull,
+      amount: used,
+      isSameMonth: pm.monthKey === day.monthKey,
+    });
+
+    return used;
+  };
+
+  // Bước A: Phân bổ theo ngày cụ thể (Specific Date matching từ ghi chú: "Thanh toán nợ ngày DD/MM/YYYY")
+  sortedCashPayments.forEach((pm) => {
+    if (pm.remaining <= 0) return;
+    const trimNote = (pm.note || '').trim();
+    const dateMatch = trimNote.match(/^Thanh toán (?:nợ\s+)?ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    if (dateMatch) {
+      const dKey = `${String(dateMatch[1]).padStart(2, '0')}/${String(dateMatch[2]).padStart(2, '0')}/${dateMatch[3]}`;
+      const targetDay = allDayMap[dKey];
+      if (targetDay) {
+        applyPaymentToDay(pm, targetDay);
+      }
+    }
+  });
+
+  // Bước A2: Phân bổ theo cụm ngày / khoảng ngày (Range matching: "Thanh toán nợ từ ngày DD/MM/YYYY đến ngày DD/MM/YYYY")
+  sortedCashPayments.forEach((pm) => {
+    if (pm.remaining <= 0) return;
+    const trimNote = (pm.note || '').trim();
+    const rangeMatch = trimNote.match(/Thanh toán (?:nợ\s+)?từ ngày (\d{1,2})\/(\d{1,2})\/(\d{4}) đến ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    if (rangeMatch) {
+      const fromParts = [Number(rangeMatch[1]), Number(rangeMatch[2]), Number(rangeMatch[3])];
+      const toParts = [Number(rangeMatch[4]), Number(rangeMatch[5]), Number(rangeMatch[6])];
+      const fromDateObj = new Date(fromParts[2], fromParts[1] - 1, fromParts[0], 0, 0, 0, 0);
+      const toDateObj = new Date(toParts[2], toParts[1] - 1, toParts[0], 23, 59, 59, 999);
+
+      const rangeDays = allDaysOldestToNewest.filter((day) => {
+        return day.dateObj >= fromDateObj && day.dateObj <= toDateObj;
+      });
+
+      for (const day of rangeDays) {
+        if (pm.remaining <= 0) break;
+        applyPaymentToDay(pm, day);
+      }
+    }
+  });
+
+  // Bước B: Phân bổ theo tháng cụ thể (Month matching: "Thanh toán nợ Tháng MM/YYYY")
+  sortedCashPayments.forEach((pm) => {
+    if (pm.remaining <= 0) return;
+    const trimNote = (pm.note || '').trim();
+    const monthMatch = trimNote.match(/^Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{1,2})\/(\d{4})/i);
+    if (monthMatch) {
+      const targetMKey = `${String(monthMatch[1]).padStart(2, '0')}/${monthMatch[2]}`;
+      const monthDays = allDaysOldestToNewest.filter((day) => day.monthKey === targetMKey);
+      for (const day of monthDays) {
+        if (pm.remaining <= 0) break;
+        applyPaymentToDay(pm, day);
+      }
+    }
+  });
+
+  // Bước C: Xử lý nợ cũ ban đầu (manualDebt) nếu có cho phần tiền còn dư
   if (currentCustomerTotalDebt !== null && currentCustomerTotalDebt !== undefined) {
     const allMeatSum = (transactions || []).reduce((sum, tx) => sum + (Number(tx.totalAmount) || 0), 0);
     const allPaySum = allCashPayments.reduce((sum, p) => sum + p.amount, 0);
@@ -636,6 +720,7 @@ const buildInvoiceRows = (
       let remManualDebt = Math.max(0, currentCustomerTotalDebt - calculatedDebt);
       for (const pm of sortedCashPayments) {
         if (remManualDebt <= 0) break;
+        if (pm.remaining <= 0) continue;
         const used = Math.min(pm.remaining, remManualDebt);
         pm.remaining -= used;
         remManualDebt -= used;
@@ -643,39 +728,17 @@ const buildInvoiceRows = (
     }
   }
 
+  // Bước D: Phân bổ chung FIFO cho các khoản thanh toán còn dư hoặc không chỉ định cụ thể
   allDaysOldestToNewest.forEach((day) => {
-    const needed = day.dayNetTotal;
-    while (day.paidAmount < needed) {
+    while (day.paidAmount < day.dayNetTotal) {
       const pm = sortedCashPayments.find((p) => p.remaining > 0);
       if (!pm) break; // Hết tiền thanh toán
-
-      const toPay = needed - day.paidAmount;
-      const used = Math.min(pm.remaining, toPay);
-
-      day.paidAmount += used;
-      pm.remaining -= used;
-
-      day.paymentsApplied.push({
-        paymentId: pm.id,
-        amount: used,
-        paidAt: pm.paidAt,
-        paidMonthKey: pm.monthKey,
-        paidMonthDisplay: pm.monthDisplay,
-        paidMonthFull: pm.monthFull,
-        isSameMonth: pm.monthKey === day.monthKey,
-        totalPaymentAmount: pm.amount,
-      });
-
-      pm.allocations.push({
-        targetDateKey: day.dateKey,
-        targetMonthKey: day.monthKey,
-        targetMonthDisplay: day.monthDisplay,
-        targetMonthFull: day.monthFull,
-        amount: used,
-        isSameMonth: pm.monthKey === day.monthKey,
-      });
+      applyPaymentToDay(pm, day);
     }
+  });
 
+  // Cập nhật trạng thái thanh toán cuối cùng của từng ngày
+  allDaysOldestToNewest.forEach((day) => {
     if (day.paidAmount >= day.dayNetTotal) {
       day.isPaid = true;
       day.isPartialPaid = false;
