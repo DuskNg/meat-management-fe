@@ -3192,17 +3192,34 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     }
   }, [filterStatus, filterDate]);
 
+  // Tự động cuộn lên đầu danh sách khi thay đổi từ khóa tìm kiếm hoặc bộ lọc
+  useEffect(() => {
+    if (scrollViewRef.current) {
+      if (typeof scrollViewRef.current.scrollTo === 'function') {
+        scrollViewRef.current.scrollTo({ y: 0, animated: false });
+      }
+    }
+  }, [searchQuery, filterStatus, filterDate]);
+
   // Cuộn nhanh đến 1 hóa đơn khi bấm tab thumbnail
   const scrollToCard = (subId) => {
     const node = cardLayoutRefs.current[subId];
-    if (node && scrollViewRef.current) {
-      node.measureLayout(
-        scrollViewRef.current,
-        (x, y) => {
-          scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
-        },
-        () => { }
-      );
+    if (node) {
+      if (typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (node.measureLayout && scrollViewRef.current) {
+        node.measureLayout(
+          scrollViewRef.current,
+          (x, y) => {
+            scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
+          },
+          () => {
+            if (typeof node.scrollIntoView === 'function') {
+              node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }
+        );
+      }
     }
   };
 
@@ -3259,23 +3276,27 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
       let finalNote = (card.note || '').trim();
       if (card.isReturn) {
+        const isImport = /\b(nhập hàng|nhập thịt|nhập tái|nhập gầu|nhập kho|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(finalNote);
+        const tag = isImport ? '[Nhập hàng]' : '[Trả lại hàng]';
         if (card.orderMode === 'quick') {
           let cleanNote = finalNote
-            .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '')
-            .replace(/^Trả hàng nhanh\s*[:-]?\s*/gi, '')
+            .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
+            .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '')
+            .replace(/[-–—:\s]+$/g, '')
             .trim();
-          finalNote = cleanNote ? `[Trả lại hàng] Trả hàng nhanh - ${cleanNote}` : `[Trả lại hàng] Trả hàng nhanh`;
+          finalNote = cleanNote ? `${tag} ${cleanNote}` : (isImport ? `[Nhập hàng] Nhập hàng nhanh` : `[Trả lại hàng] Trả hàng nhanh`);
         } else {
           const itemsDesc = buildReturnNoteFromItems(payloadItems);
           let cleanNote = finalNote
-            .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '')
-            .replace(/^Trả hàng nhanh\s*[:-]?\s*/gi, '')
+            .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
+            .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '')
             .trim();
           if (cleanNote.includes('(') && cleanNote.includes(')')) {
             const lastParen = cleanNote.lastIndexOf(')');
-            cleanNote = cleanNote.substring(lastParen + 1).replace(/^-+\s*/, '').trim();
+            cleanNote = cleanNote.substring(lastParen + 1).replace(/^[-–—:\s]+/, '').trim();
           }
-          finalNote = cleanNote ? `[Trả lại hàng] ${itemsDesc} - ${cleanNote}` : `[Trả lại hàng] ${itemsDesc}`;
+          cleanNote = cleanNote.replace(/^(?:NHẬP HÀNG|NHẬP THỊT|TRẢ HÀNG|TRẢ LẠI)\s*$/gi, '').trim();
+          finalNote = cleanNote ? `${tag} ${itemsDesc} - ${cleanNote}` : `${tag} ${itemsDesc}`;
         }
       } else {
         if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
@@ -3550,23 +3571,27 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
             let finalNote = (card.note || '').trim();
             if (card.isReturn) {
+              const isImport = /\b(nhập hàng|nhập thịt|nhập tái|nhập gầu|nhập kho|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(finalNote);
+              const tag = isImport ? '[Nhập hàng]' : '[Trả lại hàng]';
               if (card.orderMode === 'quick') {
                 let cleanNote = finalNote
-                  .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '')
-                  .replace(/^Trả hàng nhanh\s*[:-]?\s*/gi, '')
+                  .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
+                  .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '')
+                  .replace(/[-–—:\s]+$/g, '')
                   .trim();
-                finalNote = cleanNote ? `[Trả lại hàng] Trả hàng nhanh - ${cleanNote}` : `[Trả lại hàng] Trả hàng nhanh`;
+                finalNote = cleanNote ? `${tag} ${cleanNote}` : (isImport ? `[Nhập hàng] Nhập hàng nhanh` : `[Trả lại hàng] Trả hàng nhanh`);
               } else {
                 const itemsDesc = buildReturnNoteFromItems(payloadItems);
                 let cleanNote = finalNote
-                  .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '')
-                  .replace(/^Trả hàng nhanh\s*[:-]?\s*/gi, '')
+                  .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
+                  .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '')
                   .trim();
                 if (cleanNote.includes('(') && cleanNote.includes(')')) {
                   const lastParen = cleanNote.lastIndexOf(')');
-                  cleanNote = cleanNote.substring(lastParen + 1).replace(/^-+\s*/, '').trim();
+                  cleanNote = cleanNote.substring(lastParen + 1).replace(/^[-–—:\s]+/, '').trim();
                 }
-                finalNote = cleanNote ? `[Trả lại hàng] ${itemsDesc} - ${cleanNote}` : `[Trả lại hàng] ${itemsDesc}`;
+                cleanNote = cleanNote.replace(/^(?:NHẬP HÀNG|NHẬP THỊT|TRẢ HÀNG|TRẢ LẠI)\s*$/gi, '').trim();
+                finalNote = cleanNote ? `${tag} ${itemsDesc} - ${cleanNote}` : `${tag} ${itemsDesc}`;
               }
             } else {
               if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
@@ -5049,9 +5074,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  /* Form bên phải của Thẻ */
+  /* Form bên dưới của Thẻ */
   cardFormCol: {
-    flex: 1,
+    width: '100%',
     padding: 10,
     display: 'flex',
     flexDirection: 'column',
