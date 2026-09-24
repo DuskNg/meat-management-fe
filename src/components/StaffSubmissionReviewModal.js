@@ -827,23 +827,21 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace.includes('kimlien') ||
       cleanDetectedNoSpace.includes('bamien')
     ) {
-      if (!currentCustClean.includes('3 mien') && !currentCustClean.includes('3mien') && !currentCustClean.includes('kim lien')) {
-        const bep3MienCust = custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          const cNoSpace = cClean.replace(/\s+/g, '');
-          return (cClean.includes('3 mien') || cNoSpace.includes('3mien') || cClean.includes('ba mien')) && cClean.includes('kim lien');
-        }) || custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          const cNoSpace = cClean.replace(/\s+/g, '');
-          return cClean.includes('3 mien') || cNoSpace.includes('3mien') || cClean.includes('ba mien') || cClean.includes('bep 3 mien');
-        }) || custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('kim lien');
-        }) || null;
+      const bep3MienCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        const cNoSpace = cClean.replace(/\s+/g, '');
+        return (cClean.includes('3 mien') || cNoSpace.includes('3mien') || cClean.includes('ba mien')) && cClean.includes('kim lien');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('kim lien');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        const cNoSpace = cClean.replace(/\s+/g, '');
+        return (cClean.includes('3 mien') || cNoSpace.includes('3mien') || cClean.includes('ba mien') || cClean.includes('bep 3 mien')) && c.name.toLowerCase() !== '3mien';
+      }) || null;
 
-        if (bep3MienCust) {
-          matchedCust = bep3MienCust;
-        }
+      if (bep3MienCust) {
+        matchedCust = bep3MienCust;
       }
     }
 
