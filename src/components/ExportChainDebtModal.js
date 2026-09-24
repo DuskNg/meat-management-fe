@@ -131,7 +131,7 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
                     </View>
                   </View>
                   <Text style={styles.optionDesc}>
-                    Bảng kê tổng hợp toàn bộ các cơ sở trong chuỗi theo khoảng thời gian đã lọc.
+                    Xuất riêng lẻ từng ảnh bảng kê cho tất cả {branches.length} cơ sở trong chuỗi.
                   </Text>
                 </View>
                 <View style={styles.optionActionWrap}>

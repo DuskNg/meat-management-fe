@@ -23,6 +23,7 @@ import ExportChainDebtModal from '../../src/components/ExportChainDebtModal';
 import DatePickerInput from '../../src/components/DatePickerInput';
 import CustomSelect from '../../src/components/CustomSelect';
 import { showGlobalToast } from '../../src/store/toastStore';
+import { downloadOrShareImage, downloadOrShareMultipleImages } from '../../src/utils/imageShareHelper';
 import { COLORS } from '../../src/theme';
 import { matchSearch } from '../../src/utils/searchHelper';
 
@@ -1918,30 +1919,19 @@ export default function PortalScreen() {
         return;
       }
 
-      // Mở modal xem trước và phóng to ảnh (có sẵn nút tải về / lưu ảnh)
+      // Mở modal xem trước và phóng to ảnh
       imagePreviewModalRef.current?.open(dataUrl);
 
-      // Thử chia sẻ qua Web Share API nếu trên điện thoại
-      const isMobileDevice =
-        typeof navigator !== 'undefined' &&
-        /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-
-      if (isMobileDevice && typeof navigator !== 'undefined' && navigator.share && typeof File !== 'undefined') {
-        try {
-          const res = await fetch(dataUrl);
-          const blob = await res.blob();
-          const file = new File([blob], `BangKeCongNo_${customerName}.png`, { type: 'image/png' });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: `Bảng kê công nợ ${customerName}`,
-              text: `Bảng kê công nợ ${customerName} (${presetLabel})`,
-            });
-          }
-        } catch (shareErr) {
-          // Bỏ qua nếu người dùng bấm Hủy chia sẻ
-        }
-      }
+      // Thực hiện quy chuẩn xuất ảnh: PC tải về máy, Mobile chuyển tiếp Zalo
+      const cleanName = (customerName || 'KhachHang').replace(/[^a-zA-Z0-9À-ỹ]/g, '_');
+      const fileName = `BangKeCongNo_${cleanName}_${fromDate.replace(/\//g, '-')}_${toDate.replace(/\//g, '-')}.png`;
+      await downloadOrShareImage({
+        imageUri: dataUrl,
+        fileName,
+        title: `Bảng kê công nợ ${customerName}`,
+        text: `Bảng kê công nợ ${customerName} (${presetLabel})`,
+        customerName: customerName,
+      });
     } catch (err) {
       console.error('Lỗi khi xuất ảnh bảng kê:', err);
       showGlobalToast('Đã xảy ra lỗi khi tạo ảnh bảng kê.', 'error');
@@ -2002,31 +1992,107 @@ export default function PortalScreen() {
         return;
       }
 
+      // Mở modal xem trước và phóng to ảnh
       imagePreviewModalRef.current?.open(dataUrl);
 
-      const isMobileDevice =
-        typeof navigator !== 'undefined' &&
-        /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-
-      if (isMobileDevice && typeof navigator !== 'undefined' && navigator.share && typeof File !== 'undefined') {
-        try {
-          const res = await fetch(dataUrl);
-          const blob = await res.blob();
-          const file = new File([blob], `BangKeCongNo_${branchName}.png`, { type: 'image/png' });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: `Bảng kê công nợ ${branchName}`,
-              text: `Bảng kê công nợ ${branchName} (${presetLabel})`,
-            });
-          }
-        } catch (shareErr) {
-          // Bỏ qua nếu người dùng hủy chia sẻ
-        }
-      }
+      // Thực hiện quy chuẩn xuất ảnh: PC tải về máy, Mobile chuyển tiếp Zalo
+      const cleanBranchName = (branchName || 'NhaHang').replace(/[^a-zA-Z0-9À-ỹ]/g, '_');
+      const fileName = `BangKeCongNo_${cleanBranchName}_${fromDate.replace(/\//g, '-')}_${toDate.replace(/\//g, '-')}.png`;
+      await downloadOrShareImage({
+        imageUri: dataUrl,
+        fileName,
+        title: `Bảng kê công nợ ${branchName}`,
+        text: `Bảng kê công nợ ${branchName} (${presetLabel})`,
+        phone: branch.phone,
+        customerName: branchName,
+      });
     } catch (err) {
       console.error('Lỗi khi xuất ảnh bảng kê từng quán:', err);
       showGlobalToast('Đã xảy ra lỗi khi tạo ảnh bảng kê.', 'error');
+    } finally {
+      setExportingImage(false);
+    }
+  };
+
+  // Xuất ảnh bảng kê riêng cho từng nhà hàng trong chuỗi (Mỗi quán 1 ảnh riêng biệt)
+  const handleExportAllBranches = async () => {
+    const allBranches = portalData?.branches || portalInfo?.customers || [];
+    if (allBranches.length === 0) {
+      handleExportCanvasImage();
+      return;
+    }
+
+    try {
+      setExportingImage(true);
+      const presetObj = TIME_PRESETS.find((p) => p.key === timePreset);
+      const presetLabel = presetObj ? presetObj.label : 'Tùy chọn';
+      const exportItems = [];
+
+      for (const branch of allBranches) {
+        const branchName = branch.name;
+        const branchId = branch.id;
+        const branchTxs = (portalData?.transactions || []).filter(
+          (tx) => tx.customerId === branchId || tx.customerName === branchName
+        );
+        const branchPayments = (portalData?.payments || []).filter(
+          (p) => p.customerId === branchId || p.customerName === branchName
+        );
+        const branchDebt = branch.debt ?? null;
+
+        const branchInvoiceData = buildInvoiceRows(
+          branchTxs,
+          branchPayments,
+          fromDate,
+          toDate,
+          sortOrder,
+          [branch],
+          branchDebt
+        );
+
+        if (branchInvoiceData?.sortedDays && branchInvoiceData.sortedDays.length > 0) {
+          const dataUrl = drawInvoiceCanvas(
+            branchInvoiceData.sortedDays,
+            branchInvoiceData.totals,
+            branchName,
+            fromDate,
+            toDate,
+            presetLabel,
+            [branch],
+            false // isChainViewAll = false (bảng kê xuất riêng cho 1 cơ sở)
+          );
+
+          if (dataUrl) {
+            const cleanName = (branchName || 'NhaHang').replace(/[^a-zA-Z0-9À-ỹ]/g, '_');
+            const fileName = `BangKeCongNo_${cleanName}_${fromDate.replace(/\//g, '-')}_${toDate.replace(/\//g, '-')}.png`;
+            exportItems.push({
+              imageUri: dataUrl,
+              fileName,
+              customerName: branchName,
+              phone: branch.phone,
+            });
+          }
+        }
+      }
+
+      if (exportItems.length === 0) {
+        showGlobalToast('Không có dữ liệu giao dịch của các nhà hàng trong khoảng thời gian này.', 'warning');
+        return;
+      }
+
+      // Mở modal xem trước ảnh đầu tiên
+      imagePreviewModalRef.current?.open(exportItems[0].imageUri);
+
+      // Thực hiện quy chuẩn xuất ảnh:
+      // - Web PC: Tự động tải tất cả các ảnh về máy tính
+      // - Web Mobile: Chuyển tiếp tất cả các ảnh xuất đến Zalo
+      await downloadOrShareMultipleImages({
+        items: exportItems,
+        title: `Bảng kê công nợ (${fromDate} - ${toDate})`,
+        text: `Bảng kê công nợ ${exportItems.length} nhà hàng (${portalInfo?.name || ''})`,
+      });
+    } catch (err) {
+      console.error('Lỗi khi xuất ảnh tất cả nhà hàng:', err);
+      showGlobalToast('Đã xảy ra lỗi khi tạo ảnh bảng kê các nhà hàng.', 'error');
     } finally {
       setExportingImage(false);
     }
@@ -2039,7 +2105,7 @@ export default function PortalScreen() {
         branches: portalData?.branches || portalInfo?.customers || [],
         currentCustomerId: selectedCustomerId,
         onExportAll: () => {
-          handleExportCanvasImage();
+          handleExportAllBranches();
         },
         onExportBranch: (branch) => {
           handleExportSingleBranch(branch);
