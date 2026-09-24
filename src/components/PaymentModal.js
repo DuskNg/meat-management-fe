@@ -130,22 +130,6 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
         const prefix = `Thanh toán nợ Tháng ${targetMonthKey} (ngày ${dateStr})`;
         finalNote = finalNote ? `${prefix} - ${finalNote}` : prefix;
-
-        // Chuyển ngày thanh toán về ngày cuối cùng của tháng nợ mục tiêu để số liệu khớp đúng tháng
-        const [tM, tY] = targetMonthKey.split('/').map(Number);
-        if (tM && tY) {
-          const lastDay = new Date(tY, tM, 0).getDate();
-          finalPaidAt = new Date(Date.UTC(tY, tM - 1, lastDay, 5, 0, 0, 0)).toISOString();
-        }
-      } else if (finalNote) {
-        // Nếu ghi chú dạng khoảng ngày: "Thanh toán nợ từ ngày DD/MM/YYYY đến ngày DD/MM/YYYY"
-        const rangeMatch = finalNote.match(/Thanh toán nợ từ ngày (\d{2})\/(\d{2})\/(\d{4}) đến ngày (\d{2})\/(\d{2})\/(\d{4})/);
-        if (rangeMatch) {
-          const [, , , , toD, toM, toY] = rangeMatch;
-          if (toD && toM && toY) {
-            finalPaidAt = new Date(Date.UTC(Number(toY), Number(toM) - 1, Number(toD), 12, 0, 0, 0)).toISOString();
-          }
-        }
       }
 
       const response = await api.post('/payments', {

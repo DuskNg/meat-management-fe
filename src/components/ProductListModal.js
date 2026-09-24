@@ -541,14 +541,19 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
           `Đã lưu giá riêng thành công cho ${targetCustomerIds.length} cửa hàng!`,
           'success'
         );
-        // Tải lại nếu đang chọn từng khách hàng để cập nhật trạng thái mới nhất
+        // Tải lại nếu đang chọn từng khách hàng hoặc nhóm để cập nhật trạng thái mới nhất
         if (customTargetType === 'customer' && selectedCustomer) {
           await handleSelectCustomer(selectedCustomer);
+        } else if (customTargetType === 'group' && selectedGroup) {
+          await handleSelectGroup(selectedGroup);
         } else {
           setCustomProductItems((prev) =>
             prev.map((i) => ({ ...i, isEdited: false }))
           );
         }
+        if (onRefresh) onRefresh();
+        queryClient.invalidateQueries(['customer-prices']);
+        queryClient.invalidateQueries(['products']);
       } else {
         showGlobalToast(res.data?.message || 'Không thể lưu giá riêng.', 'error');
       }

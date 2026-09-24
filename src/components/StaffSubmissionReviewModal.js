@@ -146,6 +146,7 @@ const InvoiceReviewCard = React.memo(
     sub,
     idx,
     card,
+    cardResponsiveStyle,
     isApproved,
     isDropdownActive,
     isMobile,
@@ -194,7 +195,7 @@ const InvoiceReviewCard = React.memo(
         style={[
           styles.invoiceCard,
           isApproved && styles.invoiceCardApproved,
-          isMobile ? styles.invoiceCardMobile : (isTablet ? styles.invoiceCardTablet : styles.invoiceCardPC),
+          cardResponsiveStyle || (isMobile ? styles.invoiceCardMobile : (isTablet ? styles.invoiceCardTablet : styles.invoiceCardPC)),
           isDropdownActive && { zIndex: 999999, elevation: 999999 },
         ]}
       >
@@ -562,10 +563,10 @@ const InvoiceReviewCard = React.memo(
                 {/* Tiêu đề các cột món thịt trên 1 dòng */}
                 {(card.items && card.items.length > 0) && (
                   <View style={styles.cardItemColumnsHeader}>
-                    <Text style={[styles.cardItemColText, { flex: 1.75 }]}>Tên thịt</Text>
-                    <Text style={[styles.cardItemColText, { flex: 0.85, textAlign: 'center' }]}>Số kg</Text>
-                    <Text style={[styles.cardItemColText, { flex: 1.15, textAlign: 'right' }]}>Đơn giá</Text>
-                    <Text style={[styles.cardItemColText, { flex: 1.5, textAlign: 'right' }]}>Thành tiền</Text>
+                    <Text style={[styles.cardItemColText, { flex: 1.65 }]}>Tên thịt</Text>
+                    <Text style={[styles.cardItemColText, { flex: 0.8, textAlign: 'center' }]}>Số kg</Text>
+                    <Text style={[styles.cardItemColText, { flex: 1.2, textAlign: 'right' }]}>Đơn giá</Text>
+                    <Text style={[styles.cardItemColText, { flex: 1.55, textAlign: 'right' }]}>Thành tiền</Text>
                     <View style={{ width: 20 }} />
                   </View>
                 )}
@@ -574,7 +575,7 @@ const InvoiceReviewCard = React.memo(
                 {(card.items || []).map((item, itemIdx) => (
                   <View key={item.id || itemIdx} style={styles.cardItemRowSingle}>
                     {/* 1. Chọn món thịt */}
-                    <View style={{ flex: 1.75, minWidth: 68 }}>
+                    <View style={{ flex: 1.65, minWidth: 55 }}>
                       <CustomSelect
                         value={item.selectedProduct}
                         placeholder="Tên thịt..."
@@ -615,7 +616,7 @@ const InvoiceReviewCard = React.memo(
                     </View>
 
                     {/* 2. Số kg */}
-                    <View style={{ flex: 0.85, minWidth: 38 }}>
+                    <View style={{ flex: 0.8, minWidth: 34 }}>
                       <TextInput
                         style={[styles.cardItemCell, card.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
                         value={item.quantity}
@@ -630,7 +631,7 @@ const InvoiceReviewCard = React.memo(
                     </View>
 
                     {/* 3. Đơn giá */}
-                    <View style={{ flex: 1.15, minWidth: 52 }}>
+                    <View style={{ flex: 1.2, minWidth: 50 }}>
                       <MoneyInput
                         style={styles.cardItemMoneyContainer}
                         inputStyle={styles.cardItemMoneyInput}
@@ -646,7 +647,7 @@ const InvoiceReviewCard = React.memo(
                     </View>
 
                     {/* 4. Thành tiền */}
-                    <View style={{ flex: 1.5, minWidth: 68 }}>
+                    <View style={{ flex: 1.55, minWidth: 64 }}>
                       <MoneyInput
                         style={styles.cardItemMoneyContainer}
                         inputStyle={styles.cardItemAmountInput}
@@ -754,6 +755,7 @@ const InvoiceReviewCard = React.memo(
     if (prev.idx !== next.idx) return false;
     if (prev.isMobile !== next.isMobile) return false;
     if (prev.isTablet !== next.isTablet) return false;
+    if (prev.cardResponsiveStyle !== next.cardResponsiveStyle) return false;
     if (prev.customers !== next.customers) return false;
     if (prev.customerProducts !== next.customerProducts) return false;
     if (prev.isReparsing !== next.isReparsing) return false;
@@ -1738,6 +1740,44 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const isMobile = width < 768;
   const isTablet = width >= 768 && width < 1024;
   const isPC = width >= 1024;
+
+  // Tính toán số cột và độ rộng tối ưu để thẻ luôn vừa vặn mọi màn hình (Mobile, Tablet, Laptop 1366px, Desktop 1080p, Màn hình lớn 2K/4K)
+  const cardResponsiveStyle = useMemo(() => {
+    if (width < 640) {
+      // Mobile: 1 thẻ chiếm trọn 100% chiều ngang
+      return {
+        width: '100%',
+        maxWidth: '100%',
+        flexBasis: '100%',
+        flexGrow: 0,
+        flexShrink: 0,
+      };
+    }
+
+    let cols = 2;
+    if (width >= 1800) {
+      cols = 5; // Màn hình rất lớn / Ultrawide >= 1800px (mỗi thẻ ~340px - 380px)
+    } else if (width >= 1440) {
+      cols = 4; // Màn hình desktop Full HD tiêu chuẩn (mỗi thẻ ~340px - 410px)
+    } else if (width >= 1050) {
+      cols = 3; // Màn hình laptop phổ biến 13"-15" (1280px, 1366px, hoặc 1080p zoom 125%/150%) (mỗi thẻ ~330px - 430px)
+    } else {
+      cols = 2; // Tablet, iPad, hoặc cửa sổ thu nhỏ (mỗi thẻ ~310px - 480px)
+    }
+
+    const gap = 12;
+    const totalGaps = (cols - 1) * gap;
+    const widthPct = `calc((100% - ${totalGaps}px) / ${cols})`;
+
+    return {
+      width: widthPct,
+      maxWidth: widthPct,
+      flexBasis: widthPct,
+      flexGrow: 0,
+      flexShrink: 0,
+    };
+  }, [width]);
+
   const [activeDropdownSubId, setActiveDropdownSubId] = useState(null);
 
   const [visible, setVisible] = useState(false);
@@ -4039,6 +4079,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       sub={sub}
                       idx={idx}
                       card={card}
+                      cardResponsiveStyle={cardResponsiveStyle}
                       isApproved={isApproved}
                       isDropdownActive={isDropdownActive}
                       isMobile={isMobile}
@@ -4136,6 +4177,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     height: '95%',
     maxHeight: '95%',
+    width: '100%',
+    maxWidth: '100%',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
@@ -4144,6 +4187,7 @@ const styles = StyleSheet.create({
     height: '100%',
     maxHeight: '100%',
     width: '100%',
+    maxWidth: '100%',
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
     borderRadius: 0,
@@ -4733,17 +4777,24 @@ const styles = StyleSheet.create({
   },
   cardsScrollArea: {
     flex: 1,
+    width: '100%',
+    maxWidth: '100%',
   },
   cardsScrollContent: {
     padding: 10,
-    paddingBottom: 60,
+    paddingBottom: 70,
+    width: '100%',
+    maxWidth: '100%',
   },
   cardsScrollContentPC: {
     padding: 12,
-    paddingBottom: 60,
+    paddingBottom: 70,
+    width: '100%',
+    maxWidth: '100%',
   },
   cardsGrid: {
     width: '100%',
+    maxWidth: '100%',
     display: 'flex',
     flexDirection: 'column',
     gap: 14,
@@ -4753,6 +4804,8 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
     alignItems: 'flex-start',
+    width: '100%',
+    maxWidth: '100%',
   },
   centerLoading: {
     flex: 1,
@@ -4790,11 +4843,11 @@ const styles = StyleSheet.create({
     ...SHADOWS.sm,
   },
   invoiceCardPC: {
-    width: 'calc((100% - 48px) / 5)',
-    flexBasis: 'calc((100% - 48px) / 5)',
+    width: 'calc((100% - 24px) / 3)',
+    flexBasis: 'calc((100% - 24px) / 3)',
     flexGrow: 0,
     flexShrink: 0,
-    maxWidth: 'calc((100% - 48px) / 5)',
+    maxWidth: 'calc((100% - 24px) / 3)',
   },
   invoiceCardTablet: {
     width: 'calc((100% - 12px) / 2)',
@@ -4892,7 +4945,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   cardMediaBox: {
-    height: 145,
+    height: 125,
     backgroundColor: '#020617',
     borderRadius: 8,
     overflow: 'hidden',
@@ -4901,7 +4954,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cardMediaBoxMobile: {
-    height: 140,
+    height: 120,
   },
   cardVideoWrap: {
     width: '100%',
@@ -5173,7 +5226,7 @@ const styles = StyleSheet.create({
   },
   cardItemSelectTrigger: {
     height: 30,
-    paddingLeft: 6,
+    paddingLeft: 4,
     paddingRight: 2,
     borderRadius: 6,
   },
@@ -5184,7 +5237,7 @@ const styles = StyleSheet.create({
   },
   cardItemCell: {
     height: 30,
-    paddingHorizontal: 3,
+    paddingHorizontal: 2,
     fontSize: 11,
     borderRadius: 6,
     borderWidth: 1,
@@ -5194,7 +5247,7 @@ const styles = StyleSheet.create({
   },
   cardItemMoneyContainer: {
     height: 30,
-    paddingHorizontal: 3,
+    paddingHorizontal: 2,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#CBD5E1',

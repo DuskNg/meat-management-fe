@@ -21,116 +21,11 @@ import InvoiceImageUploadModal from './InvoiceImageUploadModal';
 import { showGlobalToast } from '../store/toastStore';
 import { matchSearch } from '../utils/searchHelper';
 import { downloadOrShareImage } from '../utils/imageShareHelper';
-import { exportDailyReportBundle } from '../utils/dailyBundleExportHelper';
-
-// Bảng màu đa dạng, tương phản cao, dễ phân biệt cho các nhóm khách hàng trùng đơn
-// Mỗi khách hàng 1 màu riêng biệt, màu sắc phân bố đều trên vòng tròn màu sắc để tránh bị na ná nhau
-const DUPLICATE_COLOR_PALETTES = [
-  {
-    // Nhóm 1: Vàng tươi / Hoàng yến (Yellow / Gold)
-    cardBg: '#FEFCE8',
-    borderColor: '#FEF08A',
-    borderLeftColor: '#EAB308',
-    badgeBg: '#FEF08A',
-    badgeBorder: '#EAB308',
-    badgeText: '#854D0E',
-    canvasBgEven: '#FEF9C3',
-    canvasBgOdd: '#FEF08A',
-    canvasStroke: '#EAB308',
-    canvasText: '#713F12',
-  },
-  {
-    // Nhóm 2: Xanh dương tươi (Electric Blue)
-    cardBg: '#EFF6FF',
-    borderColor: '#BFDBFE',
-    borderLeftColor: '#2563EB',
-    badgeBg: '#DBEAFE',
-    badgeBorder: '#2563EB',
-    badgeText: '#1D4ED8',
-    canvasBgEven: '#DBEAFE',
-    canvasBgOdd: '#BFDBFE',
-    canvasStroke: '#2563EB',
-    canvasText: '#1E40AF',
-  },
-  {
-    // Nhóm 3: Hồng cánh sen (Hot Pink / Magenta)
-    cardBg: '#FDF2F8',
-    borderColor: '#FBCFE8',
-    borderLeftColor: '#EC4899',
-    badgeBg: '#FCE7F3',
-    badgeBorder: '#EC4899',
-    badgeText: '#BE185D',
-    canvasBgEven: '#FCE7F3',
-    canvasBgOdd: '#FBCFE8',
-    canvasStroke: '#EC4899',
-    canvasText: '#9D174D',
-  },
-  {
-    // Nhóm 4: Xanh ngọc biển (Cyan / Turquoise)
-    cardBg: '#ECFEFF',
-    borderColor: '#A5F3FC',
-    borderLeftColor: '#06B6D4',
-    badgeBg: '#CFFAFE',
-    badgeBorder: '#06B6D4',
-    badgeText: '#0E7490',
-    canvasBgEven: '#CFFAFE',
-    canvasBgOdd: '#A5F3FC',
-    canvasStroke: '#06B6D4',
-    canvasText: '#155E75',
-  },
-  {
-    // Nhóm 5: Nâu đất sẫm (Chocolate Brown)
-    cardBg: '#FAF5EF',
-    borderColor: '#D7CCC8',
-    borderLeftColor: '#6D4C41',
-    badgeBg: '#EFEBE9',
-    badgeBorder: '#6D4C41',
-    badgeText: '#4E342E',
-    canvasBgEven: '#EFEBE9',
-    canvasBgOdd: '#D7CCC8',
-    canvasStroke: '#6D4C41',
-    canvasText: '#3E2723',
-  },
-  {
-    // Nhóm 6: Xanh chàm đậm (Deep Indigo)
-    cardBg: '#EEF2FF',
-    borderColor: '#C7D2FE',
-    borderLeftColor: '#4F46E5',
-    badgeBg: '#E0E7FF',
-    badgeBorder: '#4F46E5',
-    badgeText: '#3730A3',
-    canvasBgEven: '#E0E7FF',
-    canvasBgOdd: '#C7D2FE',
-    canvasStroke: '#4F46E5',
-    canvasText: '#312E81',
-  },
-  {
-    // Nhóm 7: Xám than chì (Charcoal / Slate)
-    cardBg: '#F8FAFC',
-    borderColor: '#CBD5E1',
-    borderLeftColor: '#334155',
-    badgeBg: '#E2E8F0',
-    badgeBorder: '#334155',
-    badgeText: '#0F172A',
-    canvasBgEven: '#F1F5F9',
-    canvasBgOdd: '#E2E8F0',
-    canvasStroke: '#334155',
-    canvasText: '#0F172A',
-  },
-  {
-    // Nhóm 8: Xanh chanh tươi (Lime Green)
-    cardBg: '#F7FEE7',
-    borderColor: '#D9F99D',
-    borderLeftColor: '#65A30D',
-    badgeBg: '#ECFCCB',
-    badgeBorder: '#65A30D',
-    badgeText: '#3F6212',
-    canvasBgEven: '#ECFCCB',
-    canvasBgOdd: '#D9F99D',
-    canvasStroke: '#65A30D',
-    canvasText: '#365314',
-  },
-];
+import {
+  exportDailyReportBundle,
+  generateDuplicateDebtsImage,
+  DUPLICATE_COLOR_PALETTES,
+} from '../utils/dailyBundleExportHelper';
 
 const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransaction, onEditPayment }, ref) => {
   const popupModalRef = useRef(null);
@@ -206,6 +101,26 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     const mm = (d.getMonth() + 1).toString().padStart(2, '0');
     const yyyy = d.getFullYear();
     return `${mm}/${yyyy}` === targetMonthYear;
+  };
+
+  // Helper kiểm tra xem khoản thanh toán có thuộc ngày được chọn hay không (khớp paidAt hoặc createdAt hoặc ghi chú)
+  const isPaymentOnDate = (p, targetDate) => {
+    if (!p || !targetDate) return false;
+    if (toDateKey(p.paidAt) === targetDate) return true;
+    if (toDateKey(p.createdAt) === targetDate) return true;
+    const noteMatch = (p.note || '').match(/\(ngày\s+(\d{2}\/\d{2}\/\d{4})\)/i);
+    if (noteMatch && noteMatch[1] === targetDate) return true;
+    return false;
+  };
+
+  // Helper kiểm tra xem khoản thanh toán có thuộc tháng được chọn hay không
+  const isPaymentInMonth = (p, targetMonth) => {
+    if (!p || !targetMonth) return false;
+    if (isDateInMonth(p.paidAt, targetMonth)) return true;
+    if (isDateInMonth(p.createdAt, targetMonth)) return true;
+    const targetM = getPaymentTargetMonth(p);
+    if (targetM === targetMonth) return true;
+    return false;
   };
 
   const formatPaymentNote = (note, paidAt) => {
@@ -392,9 +307,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
   const currentPayments = useMemo(() => {
     if (activeReportTab === 'day') {
-      return rawPayments.filter(p => toDateKey(p.paidAt) === selectedDate);
+      return rawPayments.filter(p => isPaymentOnDate(p, selectedDate));
     } else {
-      return rawPayments.filter(p => isDateInMonth(p.paidAt, selectedMonth));
+      return rawPayments.filter(p => isPaymentInMonth(p, selectedMonth));
     }
   }, [rawPayments, activeReportTab, selectedDate, selectedMonth]);
 
@@ -456,7 +371,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ...currentPayments.map(p => ({
         id: p.id,
         type: 'payment',
-        time: p.paidAt,
+        time: (isPaymentOnDate(p, selectedDate) && toDateKey(p.paidAt) !== selectedDate) ? (p.createdAt || p.paidAt) : p.paidAt,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
         customerId: p.customerId,
@@ -1297,10 +1212,38 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     }
 
     try {
+      // Nếu đang lọc đơn nợ trùng: dùng CHUNG hàm generateDuplicateDebtsImage chuẩn từ dailyBundleExportHelper (Giao diện Ảnh 2)
+      if (activeFilter === 'duplicate') {
+        const result = generateDuplicateDebtsImage({
+          selectedDate,
+          transactions: currentTransactions,
+          returnDetails: true,
+        });
+
+        if (!result || !result.dataUrl) {
+          showGlobalToast('Không thể tạo ảnh báo cáo đơn trùng.', 'error');
+          return;
+        }
+
+        exportDailyReportModalRef.current?.open({
+          selectedDate,
+          customImageUri: result.dataUrl,
+          customTitle: '📸 XUẤT BÁO CÁO ĐƠN NỢ TRÙNG',
+          customFileName: result.fileName,
+          customStats: {
+            type: 'duplicate',
+            totalDupAmount: result.totalDupAmount,
+            duplicateCustomerCount: result.duplicateCustomerCount,
+            duplicateCount: result.duplicateCount,
+          },
+        });
+        return;
+      }
+
       // 1. Lấy danh sách giao dịch nợ mới & thu nợ trong ngày (tách biệt tiền trả hàng)
       const newDebtOrders = rawTransactions.filter(t => toDateKey(t.date) === selectedDate);
-      const paymentsCollected = rawPayments.filter(p => toDateKey(p.paidAt) === selectedDate && !isReturnPayment(p));
-      const returnsCollected = rawPayments.filter(p => toDateKey(p.paidAt) === selectedDate && isReturnPayment(p));
+      const paymentsCollected = rawPayments.filter(p => isPaymentOnDate(p, selectedDate) && !isReturnPayment(p));
+      const returnsCollected = rawPayments.filter(p => isPaymentOnDate(p, selectedDate) && isReturnPayment(p));
 
       // Tính tổng tiền nợ mới, thu nợ và trả hàng
       const totalNewDebt = newDebtOrders.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);

@@ -370,7 +370,7 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
   const handleSelectProduct = (prod) => {
     setCurrentProduct(prod);
     setCurrentPrice(formatNumberString((prod.defaultPrice || 0).toString()));
-    setEditingItemId(null);
+    // Giữ nguyên editingItemId nếu đang sửa
     setError('');
   };
 
@@ -400,20 +400,39 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
     }
 
     if (editingItemId !== null) {
-      setCartItems((prev) =>
-        prev.map((item) =>
+      setCartItems((prev) => {
+        const existingOtherIndex = prev.findIndex(
+          (item) => item.tempId !== editingItemId && item.product.id === currentProduct.id
+        );
+        if (existingOtherIndex > -1) {
+          const updated = [...prev];
+          const existingItem = updated[existingOtherIndex];
+          const newQuantity = existingItem.quantity + q;
+          updated[existingOtherIndex] = {
+            ...existingItem,
+            quantity: newQuantity,
+            price: p,
+            displayQuantity: newQuantity.toString(),
+            displayPrice: currentPrice,
+            amount: Math.round(newQuantity * p),
+          };
+          return updated.filter((item) => item.tempId !== editingItemId);
+        }
+
+        return prev.map((item) =>
           item.tempId === editingItemId
             ? {
-              ...item,
-              quantity: q,
-              price: p,
-              displayQuantity: currentQuantity,
-              displayPrice: currentPrice,
-              amount: Math.round(q * p),
-            }
+                ...item,
+                product: currentProduct,
+                quantity: q,
+                price: p,
+                displayQuantity: currentQuantity,
+                displayPrice: currentPrice,
+                amount: Math.round(q * p),
+              }
             : item
-        )
-      );
+        );
+      });
       setEditingItemId(null);
       setCurrentProduct(null);
       setCurrentQuantity('');

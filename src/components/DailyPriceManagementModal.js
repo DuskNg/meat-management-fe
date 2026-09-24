@@ -20,6 +20,7 @@ import DatePickerInput from './DatePickerInput';
 import MoneyInput from './MoneyInput';
 import AnimatedPressable from './AnimatedPressable';
 import { showGlobalToast } from '../store/toastStore';
+import EditDailyPriceModal from './EditDailyPriceModal';
 
 // Định dạng tiền tệ VNĐ
 const formatCurrency = (amount) =>
@@ -97,11 +98,8 @@ const DailyPriceManagementModal = forwardRef(({ onRefresh }, ref) => {
   const [search, setSearch] = useState('');
   const [selectedProductFilter, setSelectedProductFilter] = useState(''); // Lọc theo loại thịt
 
-  // State cho modal con sửa nhanh giá
-  const [editPriceModalVisible, setEditPriceModalVisible] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [newPrice, setNewPrice] = useState(0);
-  const [savingPrice, setSavingPrice] = useState(false);
+  // Ref điều khiển modal sửa giá thịt riêng biệt
+  const editPriceModalRef = useRef(null);
 
   // Phơi bày các hàm điều khiển ra bên ngoài qua ref
   useImperativeHandle(ref, () => ({
@@ -139,7 +137,7 @@ const DailyPriceManagementModal = forwardRef(({ onRefresh }, ref) => {
       }
     } catch (err) {
       console.error('Lỗi khi tải danh sách biến động giá thịt:', err);
-      Alert.alert('Lỗi', 'Không thể tải danh sách thịt được cập nhật giá.');
+      showGlobalToast('Không thể tải danh sách thịt được cập nhật giá.', 'error');
     } finally {
       setLoading(false);
     }
@@ -189,47 +187,110 @@ const DailyPriceManagementModal = forwardRef(({ onRefresh }, ref) => {
 
   // Mở modal sửa giá nhanh
   const handleOpenEditPrice = (customer, changeItem) => {
-    setEditingItem({
+    editPriceModalRef.current?.open({
       customerId: customer.customerId,
       customerName: customer.customerName,
+      customerPhone: customer.customerPhone,
       productId: changeItem.productId,
       productName: changeItem.productName,
       unit: changeItem.unit,
+      oldPrice: changeItem.oldPrice,
       currentPrice: changeItem.newPrice,
+      transactionId: changeItem.transactionId,
+      date: changeItem.date || selectedDate,
     });
-    setNewPrice(changeItem.newPrice || 0);
-    setEditPriceModalVisible(true);
   };
 
-  // Lưu đơn giá mới vào bảng giá riêng của khách
-  const handleSavePrice = async () => {
-    if (!editingItem || !newPrice || newPrice <= 0) {
-      Alert.alert('Lỗi', 'Vui lòng nhập đơn giá hợp lệ lớn hơn 0.');
-      return;
-    }
+  // Xử lý khi sửa giá thành công: cập nhật danh sách ngay lập tức
+  const handleEditPriceSuccess = ({ customerId, productId, oldPrice, newPrice, transactionId }) => {
+    const isSameAsOld = Math.abs(Number(newPrice) - Number(oldPrice)) <= 0.01;
 
-    setSavingPrice(true);
-    try {
-      const res = await api.post('/products/customer-price', {
-        customerId: editingItem.customerId,
-        productId: editingItem.productId,
-        price: newPrice,
+    setData((prevData) => {
+      if (!prevData || !prevData.customers) return prevData;
+
+      // 1. Cập nhật danh sách allChanges
+      let updatedAllChanges = [];
+      if (isSameAsOld) {
+        // Nếu giá mới = giá cũ: loại bỏ mặt hàng này khỏi danh sách đổi giá
+        updatedAllChanges = (prevData.allChanges || []).filter(
+          (ch) => !(ch.customerId === customerId && ch.productId === productId && (!transactionId || ch.transactionId === transactionId))
+        );
+      } else {
+        // Nếu giá mới khác giá cũ: cập nhật giá mới và tính lại chênh lệch
+        const diff = Number(newPrice) - Number(oldPrice);
+        const diffPercent = Number(oldPrice) > 0 ? Math.round((diff / Number(oldPrice)) * 1000) / 10 : 0;
+        updatedAllChanges = (prevData.allChanges || []).map((ch) => {
+          if (ch.customerId === customerId && ch.productId === productId && (!transactionId || ch.transactionId === transactionId)) {
+            return {
+              ...ch,
+              newPrice: Number(newPrice),
+              diff,
+              diffPercent,
+            };
+          }
+          return ch;
+        });
+      }
+
+      // 2. Cập nhật danh sách customers
+      const updatedCustomers = prevData.customers
+        .map((cust) => {
+          if (cust.customerId !== customerId) return cust;
+
+          let newChanges = [];
+          if (isSameAsOld) {
+            newChanges = (cust.changes || []).filter(
+              (ch) => !(ch.productId === productId && (!transactionId || ch.transactionId === transactionId))
+            );
+          } else {
+            const diff = Number(newPrice) - Number(oldPrice);
+            const diffPercent = Number(oldPrice) > 0 ? Math.round((diff / Number(oldPrice)) * 1000) / 10 : 0;
+            newChanges = (cust.changes || []).map((ch) => {
+              if (ch.productId === productId && (!transactionId || ch.transactionId === transactionId)) {
+                return {
+                  ...ch,
+                  newPrice: Number(newPrice),
+                  diff,
+                  diffPercent,
+                };
+              }
+              return ch;
+            });
+          }
+
+          if (newChanges.length === 0) {
+            return null; // Khách này không còn mặt hàng nào đổi giá
+          }
+
+          return {
+            ...cust,
+            changes: newChanges,
+          };
+        })
+        .filter(Boolean);
+
+      // Thống kê lại số lượng
+      let incCount = 0;
+      let decCount = 0;
+      updatedAllChanges.forEach((c) => {
+        if (c.diff > 0) incCount++;
+        else if (c.diff < 0) decCount++;
       });
 
-      if (res.data && res.data.success) {
-        showGlobalToast(`Đã đổi giá ${editingItem.productName} cho ${editingItem.customerName}!`, 'success');
-        setEditPriceModalVisible(false);
-        fetchPriceChanges(fromDate, toDate);
-        if (onRefresh) onRefresh();
-      } else {
-        Alert.alert('Thất bại', res.data?.message || 'Không thể lưu giá thịt mới.');
-      }
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Lỗi', err.response?.data?.message || 'Lỗi kết nối khi lưu đơn giá.');
-    } finally {
-      setSavingPrice(false);
-    }
+      return {
+        ...prevData,
+        customers: updatedCustomers,
+        allChanges: updatedAllChanges,
+        totalUpdates: updatedAllChanges.length,
+        totalCustomers: updatedCustomers.length,
+        increasedCount: incCount,
+        decreasedCount: decCount,
+      };
+    });
+
+    // Đồng bộ lại ngầm từ server và cập nhật danh sách công nợ ngoài trang chủ
+    fetchPriceChanges(fromDate, toDate);
+    if (onRefresh) onRefresh();
   };
 
   // Danh sách các loại thịt có biến động giá để làm filter chip
@@ -394,7 +455,8 @@ const DailyPriceManagementModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalCard}>
         {/* HEADER MODAL */}
         <View style={styles.headerContainer}>
@@ -555,67 +617,16 @@ const DailyPriceManagementModal = forwardRef(({ onRefresh }, ref) => {
           />
         )}
 
-        {/* MODAL CON: SỬA NHANH GIÁ THỊT CỦA KHÁCH */}
-        {editPriceModalVisible && editingItem && (
-          <SmoothModal
-            centered={true}
-            visible={editPriceModalVisible}
-            onClose={() => setEditPriceModalVisible(false)}
-          >
-            <View style={styles.editModalCard}>
-              <View style={styles.editModalHeader}>
-                <Text style={styles.editModalTitle}>✏️ Điều chỉnh giá thịt</Text>
-                <TouchableOpacity onPress={() => setEditPriceModalVisible(false)}>
-                  <Text style={styles.editModalCloseText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.editModalBody}>
-                <View style={styles.editMetaBox}>
-                  <Text style={styles.editMetaCustomer}>
-                    Khách hàng: <Text style={styles.editMetaHighlight}>{editingItem.customerName}</Text>
-                  </Text>
-                  <Text style={styles.editMetaProduct}>
-                    Mặt hàng: <Text style={styles.editMetaHighlight}>{editingItem.productName}</Text>
-                  </Text>
-                </View>
-
-                <Text style={styles.inputLabel}>Nhập đơn giá mới (VNĐ/{editingItem.unit}):</Text>
-                <MoneyInput
-                  value={newPrice}
-                  onChangeValue={setNewPrice}
-                  placeholder="Ví dụ: 140000"
-                />
-
-                {/* Nút lưu */}
-                <View style={styles.editModalActions}>
-                  <TouchableOpacity
-                    style={styles.btnCancelEdit}
-                    onPress={() => setEditPriceModalVisible(false)}
-                    disabled={savingPrice}
-                  >
-                    <Text style={styles.btnCancelEditText}>Hủy</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.btnSaveEdit}
-                    onPress={handleSavePrice}
-                    disabled={savingPrice}
-                  >
-                    {savingPrice ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.btnSaveEditText}>💾 Cập nhật giá</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </SmoothModal>
-        )}
       </View>
     </SmoothModal>
-  );
+
+    {/* MODAL CON ĐIỀU CHỈNH GIÁ THỊT TẦNG CAO NHẤT ĐỘC LẬP CHUẨN BOTTOM-SHEET */}
+    <EditDailyPriceModal
+      ref={editPriceModalRef}
+      onSaveSuccess={handleEditPriceSuccess}
+    />
+  </>
+);
 });
 
 const styles = StyleSheet.create({

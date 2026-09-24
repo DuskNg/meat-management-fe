@@ -292,7 +292,7 @@ const ExportDailyReportModal = forwardRef((props, ref) => {
     try {
       // 1. Lọc toàn bộ giao dịch mua hàng, trả hàng và thanh toán theo ngày đã chọn (không áp dụng bộ lọc nào)
       const dayTransactions = rawTransactions.filter(t => toDateKey(t.date) === date);
-      const dayPayments = rawPayments.filter(p => toDateKey(p.paidAt) === date);
+      const dayPayments = rawPayments.filter(p => toDateKey(p.paidAt) === date || toDateKey(p.createdAt) === date);
 
       // 2. Gom nhóm theo từng Khách hàng
       // customerMap: { [customerIdOrName]: { customerName, entries: [] } }

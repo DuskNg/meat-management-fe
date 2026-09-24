@@ -969,53 +969,319 @@ const generateMissingCustomersImage = ({ selectedDate, allTransactions, customer
 };
 
 /**
- * ── 3. VẼ ẢNH BÁO CÁO ĐƠN NỢ TRÙNG / KHÁCH TRÙNG (HTML5 Canvas) ──
+ * ── BẢNG MÀU ĐA DẠNG CHO CÁC NHÓM KHÁCH HÀNG TRÙNG ĐƠN ──
+ * Dùng chung giữa DailyReportModal và dailyBundleExportHelper
  */
-const generateDuplicateDebtsImage = ({ selectedDate, transactions }) => {
+export const DUPLICATE_COLOR_PALETTES = [
+  {
+    // Nhóm 1: Vàng tươi / Hoàng yến (Yellow / Gold)
+    cardBg: '#FEFCE8',
+    borderColor: '#FEF08A',
+    borderLeftColor: '#EAB308',
+    badgeBg: '#FEF08A',
+    badgeBorder: '#EAB308',
+    badgeText: '#854D0E',
+    canvasBgEven: '#FEF9C3',
+    canvasBgOdd: '#FEF08A',
+    canvasStroke: '#EAB308',
+    canvasText: '#713F12',
+  },
+  {
+    // Nhóm 2: Xanh dương tươi (Electric Blue)
+    cardBg: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderLeftColor: '#2563EB',
+    badgeBg: '#DBEAFE',
+    badgeBorder: '#2563EB',
+    badgeText: '#1D4ED8',
+    canvasBgEven: '#DBEAFE',
+    canvasBgOdd: '#BFDBFE',
+    canvasStroke: '#2563EB',
+    canvasText: '#1E40AF',
+  },
+  {
+    // Nhóm 3: Hồng cánh sen (Hot Pink / Magenta)
+    cardBg: '#FDF2F8',
+    borderColor: '#FBCFE8',
+    borderLeftColor: '#EC4899',
+    badgeBg: '#FCE7F3',
+    badgeBorder: '#EC4899',
+    badgeText: '#BE185D',
+    canvasBgEven: '#FCE7F3',
+    canvasBgOdd: '#FBCFE8',
+    canvasStroke: '#EC4899',
+    canvasText: '#9D174D',
+  },
+  {
+    // Nhóm 4: Xanh ngọc biển (Cyan / Turquoise)
+    cardBg: '#ECFEFF',
+    borderColor: '#A5F3FC',
+    borderLeftColor: '#06B6D4',
+    badgeBg: '#CFFAFE',
+    badgeBorder: '#06B6D4',
+    badgeText: '#0E7490',
+    canvasBgEven: '#CFFAFE',
+    canvasBgOdd: '#A5F3FC',
+    canvasStroke: '#06B6D4',
+    canvasText: '#155E75',
+  },
+  {
+    // Nhóm 5: Nâu đất sẫm (Chocolate Brown)
+    cardBg: '#FAF5EF',
+    borderColor: '#D7CCC8',
+    borderLeftColor: '#6D4C41',
+    badgeBg: '#EFEBE9',
+    badgeBorder: '#6D4C41',
+    badgeText: '#4E342E',
+    canvasBgEven: '#EFEBE9',
+    canvasBgOdd: '#D7CCC8',
+    canvasStroke: '#6D4C41',
+    canvasText: '#3E2723',
+  },
+  {
+    // Nhóm 6: Xanh chàm đậm (Deep Indigo)
+    cardBg: '#EEF2FF',
+    borderColor: '#C7D2FE',
+    borderLeftColor: '#4F46E5',
+    badgeBg: '#E0E7FF',
+    badgeBorder: '#4F46E5',
+    badgeText: '#3730A3',
+    canvasBgEven: '#E0E7FF',
+    canvasBgOdd: '#C7D2FE',
+    canvasStroke: '#4F46E5',
+    canvasText: '#312E81',
+  },
+  {
+    // Nhóm 7: Xám than chì (Charcoal / Slate)
+    cardBg: '#F8FAFC',
+    borderColor: '#CBD5E1',
+    borderLeftColor: '#334155',
+    badgeBg: '#E2E8F0',
+    badgeBorder: '#334155',
+    badgeText: '#0F172A',
+    canvasBgEven: '#F1F5F9',
+    canvasBgOdd: '#E2E8F0',
+    canvasStroke: '#334155',
+    canvasText: '#0F172A',
+  },
+  {
+    // Nhóm 8: Xanh chanh tươi (Lime Green)
+    cardBg: '#F7FEE7',
+    borderColor: '#D9F99D',
+    borderLeftColor: '#65A30D',
+    badgeBg: '#ECFCCB',
+    badgeBorder: '#65A30D',
+    badgeText: '#3F6212',
+    canvasBgEven: '#ECFCCB',
+    canvasBgOdd: '#D9F99D',
+    canvasStroke: '#65A30D',
+    canvasText: '#365314',
+  },
+];
+
+/**
+ * ── 3. VẼ ẢNH BÁO CÁO ĐƠN NỢ TRÙNG TRONG NGÀY (HTML5 Canvas) ──
+ * Giao diện chuẩn Ảnh 2: Header xanh đậm #065F46, 3 hộp KPI, 2 cột cân đối, nhóm màu sắc theo khách
+ *
+ * @param {Object} params
+ * @param {string} params.selectedDate - Ngày xuất báo cáo (DD/MM/YYYY)
+ * @param {Array} params.transactions - Danh sách các giao dịch nợ (hoặc timeline items)
+ * @param {boolean} [params.returnDetails=false] - Trả về object { dataUrl, totalDupAmount, duplicateCustomerCount, duplicateCount, fileName }
+ */
+export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], returnDetails = false }) => {
   if (typeof document === 'undefined') return null;
 
   try {
-    const dayTransactions = (transactions || []).filter((t) => toDateKey(t?.date) === selectedDate);
+    // 1. Chuẩn hóa helper xử lý dữ liệu
+    const getCustomerKey = (item) => {
+      if (!item) return 'khach_an_danh';
+      const name = item.customer?.name || item.customerName || (item.customerId ? String(item.customerId) : 'khach_an_danh');
+      return name.trim().toLowerCase();
+    };
 
-    // Đếm số đơn nợ của từng khách hàng
-    const countByCustomer = {};
-    dayTransactions.forEach((t) => {
-      if (!t) return;
-      const cId = t.customerId || (t.customer?.id || t.customer?._id || t.customer?.name || 'Khách vãng lai');
-      countByCustomer[cId] = (countByCustomer[cId] || 0) + 1;
+    const getCustomerDisplayName = (item) => {
+      return item.customer?.name || item.customerName || 'Khách vãng lai';
+    };
+
+    const getItemAmount = (item) => {
+      return parseFloat(item.totalAmount ?? item.amount ?? 0);
+    };
+
+    const getItemTimeStr = (item) => {
+      const d = item.createdAt || item.date || item.time;
+      if (!d) return '';
+      const dateObj = new Date(d);
+      if (isNaN(dateObj.getTime())) return '';
+      return `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+    };
+
+    const getItemDetailsStr = (item) => {
+      if (item.details && typeof item.details === 'string') return item.details;
+      if (item.items && item.items.length > 0) {
+        return item.items.map((it) => {
+          const qty = parseFloat(it.quantity);
+          const name = it.product?.name || it.productName || 'Thịt';
+          const isQuick = name === 'Tiền hàng' || name.toLowerCase().startsWith('tiền') || item.note === 'Ghi nợ nhanh';
+          if (isQuick) return name;
+          return `${qty}${it.product?.unit || 'kg'} ${name}`;
+        }).join(', ');
+      }
+      return item.note || 'Đơn nợ';
+    };
+
+    // 2. Lọc danh sách giao dịch đúng ngày được chọn
+    const dayTransactions = (transactions || []).filter((t) => {
+      if (!t) return false;
+      const d = t.date || t.time || t.createdAt;
+      return toDateKey(d) === selectedDate;
     });
 
-    // Lọc các đơn của khách hàng có >= 2 đơn nợ
-    const duplicateItems = dayTransactions
-      .filter((t) => {
-        if (!t) return false;
-        const cId = t.customerId || (t.customer?.id || t.customer?._id || t.customer?.name || 'Khách vãng lai');
-        return (countByCustomer[cId] || 0) >= 2;
-      })
-      .sort((a, b) => {
-        const nameA = a.customer?.name || '';
-        const nameB = b.customer?.name || '';
-        return nameA.localeCompare(nameB, 'vi');
+    // 3. Đếm số đơn nợ của từng khách hàng
+    const customerDebtCountMap = {};
+    dayTransactions.forEach((t) => {
+      const key = getCustomerKey(t);
+      customerDebtCountMap[key] = (customerDebtCountMap[key] || 0) + 1;
+    });
+
+    // 4. Lọc các khách hàng có >= 2 đơn nợ trong ngày
+    const duplicateCustomerKeys = Object.keys(customerDebtCountMap).filter(
+      (key) => (customerDebtCountMap[key] || 0) >= 2
+    );
+    const duplicateCustomerCount = duplicateCustomerKeys.length;
+
+    // Lập bản đồ gán màu sắc ổn định cho từng khách hàng
+    const duplicateCustomerIndexMap = {};
+    const sortedUniqueKeys = [...duplicateCustomerKeys].sort();
+    sortedUniqueKeys.forEach((key, idx) => {
+      duplicateCustomerIndexMap[key] = idx % DUPLICATE_COLOR_PALETTES.length;
+    });
+
+    // Lọc danh sách các đơn trùng
+    const rawDuplicateItems = dayTransactions.filter((t) => {
+      const key = getCustomerKey(t);
+      return (customerDebtCountMap[key] || 0) >= 2;
+    });
+
+    // Gom các đơn theo từng khách hàng, sắp xếp theo thời gian đơn tăng dần để đánh số [Đơn 1/N, Đơn 2/N...]
+    const customerGroupMap = {};
+    rawDuplicateItems.forEach((item) => {
+      const key = getCustomerKey(item);
+      if (!customerGroupMap[key]) {
+        customerGroupMap[key] = [];
+      }
+      customerGroupMap[key].push(item);
+    });
+
+    // Trong mỗi nhóm khách hàng, sắp xếp theo thời gian tăng dần và gán tag [Đơn X/Y]
+    Object.keys(customerGroupMap).forEach((key) => {
+      customerGroupMap[key].sort((a, b) => {
+        const timeA = new Date(a.date || a.createdAt || a.time || 0).getTime();
+        const timeB = new Date(b.date || b.createdAt || b.time || 0).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+        return String(a.id || '').localeCompare(String(b.id || ''));
       });
+    });
 
-    const dupCustomerIds = new Set(duplicateItems.map((t) => t.customerId || t.customer?.name));
-    const duplicateCustomerCount = dupCustomerIds.size;
-    const totalDupAmount = duplicateItems.reduce((sum, t) => sum + parseFloat(t.totalAmount || 0), 0);
+    // Sắp xếp các nhóm khách hàng theo thời gian đơn mới nhất giảm dần
+    const sortedCustomerGroups = Object.keys(customerGroupMap).sort((keyA, keyB) => {
+      const itemsA = customerGroupMap[keyA];
+      const itemsB = customerGroupMap[keyB];
+      const maxTimeA = Math.max(...itemsA.map((it) => new Date(it.date || it.createdAt || it.time || 0).getTime()));
+      const maxTimeB = Math.max(...itemsB.map((it) => new Date(it.date || it.createdAt || it.time || 0).getTime()));
+      return maxTimeB - maxTimeA;
+    });
 
-    // Kích thước canvas (Tối ưu scale cho Mobile)
-    const isMobile = isMobileDevice();
-    const scale = isMobile ? 1.5 : 2;
-    const width = 760;
-    const padding = 20;
-    const headerHeight = 90;
-    const summaryBoxHeight = 65;
-    const rowHeight = 44;
-    const emptyRowHeight = 70;
-    const footerHeight = 45;
+    // Ghép lại thành danh sách phẳng, giữ các đơn của cùng 1 khách hàng liền nhau
+    const duplicateItems = [];
+    sortedCustomerGroups.forEach((key) => {
+      const group = customerGroupMap[key];
+      const totalInGroup = group.length;
+      group.forEach((item, idxInGroup) => {
+        const colorIdx = duplicateCustomerIndexMap[key] ?? 0;
+        const palette = DUPLICATE_COLOR_PALETTES[colorIdx % DUPLICATE_COLOR_PALETTES.length];
+        duplicateItems.push({
+          ...item,
+          customerKey: key,
+          customerName: getCustomerDisplayName(item),
+          amount: getItemAmount(item),
+          details: getItemDetailsStr(item),
+          timeStr: getItemTimeStr(item),
+          seqText: `Đơn ${idxInGroup + 1}/${totalInGroup}`,
+          palette,
+        });
+      });
+    });
 
-    const contentHeight = duplicateItems.length === 0 ? emptyRowHeight : duplicateItems.length * rowHeight;
-    const totalHeight = padding * 2 + headerHeight + summaryBoxHeight + 15 + contentHeight + footerHeight;
+    const totalDupAmount = duplicateItems.reduce((sum, item) => sum + item.amount, 0);
+    const totalCount = duplicateItems.length;
 
+    // 5. Tính toán kích thước canvas và phân bổ 2 cột cân đối
+    const isTwoCol = totalCount >= 10;
+    const width = isTwoCol ? 1200 : 900;
+    const sidePadding = 25;
+    const colGap = 20;
+    const colWidth = isTwoCol ? (width - sidePadding * 2 - colGap) / 2 : (width - sidePadding * 2);
+    const leftColX = sidePadding;
+    const rightColX = sidePadding + colWidth + colGap;
+
+    let leftItems = [];
+    let rightItems = [];
+    if (isTwoCol) {
+      const half = Math.ceil(totalCount / 2);
+      leftItems = duplicateItems.slice(0, half).map((it, idx) => ({ ...it, globalIdx: idx + 1 }));
+      rightItems = duplicateItems.slice(half).map((it, idx) => ({ ...it, globalIdx: half + idx + 1 }));
+    } else {
+      leftItems = duplicateItems.map((it, idx) => ({ ...it, globalIdx: idx + 1 }));
+    }
+
+    const numRows = Math.max(1, leftItems.length);
+
+    let rowHeight = 48;
+    let fontSizeName = 14;
+    let fontSizeDetail = 11.5;
+    let fontSizeAmount = 14;
+
+    if (numRows <= 6) {
+      rowHeight = 68;
+      fontSizeName = 17;
+      fontSizeDetail = 13.5;
+      fontSizeAmount = 17;
+    } else if (numRows <= 12) {
+      rowHeight = 60;
+      fontSizeName = 16;
+      fontSizeDetail = 12.5;
+      fontSizeAmount = 16;
+    } else if (numRows <= 18) {
+      rowHeight = 54;
+      fontSizeName = 15;
+      fontSizeDetail = 12;
+      fontSizeAmount = 15;
+    } else if (numRows <= 26) {
+      rowHeight = 48;
+      fontSizeName = 14;
+      fontSizeDetail = 11.5;
+      fontSizeAmount = 14;
+    } else {
+      rowHeight = Math.max(42, Math.round(48 - (numRows - 26) * 0.25));
+      fontSizeName = Math.max(12.5, 14 - (numRows - 26) * 0.05);
+      fontSizeDetail = Math.max(10, 11.5 - (numRows - 26) * 0.05);
+      fontSizeAmount = fontSizeName;
+    }
+
+    const headerTop = 15;
+    const headerHeight = 110;
+    const boxY = headerTop + headerHeight + 10;
+    const boxH = 70;
+    const colHeaderHeight = 42;
+    const listStartY = boxY + boxH + 20;
+    const listHeight = colHeaderHeight + numRows * rowHeight;
+    const footerGap = 20;
+    const footerHeight = 55;
+    const bottomPadding = 15;
+
+    const totalHeight = listStartY + listHeight + footerGap + footerHeight + bottomPadding;
+
+    const scale = 2;
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(totalHeight * scale);
@@ -1023,139 +1289,218 @@ const generateDuplicateDebtsImage = ({ selectedDate, transactions }) => {
     if (!ctx) return null;
     ctx.scale(scale, scale);
 
+    // Nền trắng và viền ngoài
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, width, totalHeight);
 
     ctx.strokeStyle = '#CBD5E1';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(8, 8, width - 16, totalHeight - 16);
+    ctx.lineWidth = 3;
+    ctx.strokeRect(10, 10, width - 20, totalHeight - 20);
 
-    // Header màu cam cháy / đỏ cảnh báo
-    ctx.fillStyle = '#B45309';
-    ctx.fillRect(12, 12, width - 24, headerHeight);
+    // ── 1. HEADER BÁO CÁO (Xanh lá đậm #065F46) ──
+    ctx.fillStyle = '#065F46';
+    ctx.fillRect(15, 15, width - 30, headerHeight);
 
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 22px Arial, sans-serif';
+    ctx.font = 'bold 24px Arial, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('BÁO CÁO ĐƠN NỢ TRÙNG TRONG NGÀY', width / 2, 46);
+    ctx.fillText('BÁO CÁO ĐƠN NỢ TRÙNG TRONG NGÀY', width / 2, 52);
 
-    ctx.fillStyle = '#FDE68A';
-    ctx.font = 'bold 13.5px Arial, sans-serif';
-    ctx.fillText(`Ngày báo cáo: ${selectedDate}   •   Kiểm tra phát hiện ghi nợ 2 lần`, width / 2, 72);
-
-    // 3 Hộp KPI tóm tắt
-    const boxY = 12 + headerHeight + 10;
-    const boxW = (width - padding * 2 - 16) / 3;
-
-    // Box 1: Tiền đơn trùng
-    ctx.fillStyle = '#FFFBEB';
-    ctx.fillRect(padding, boxY, boxW, summaryBoxHeight);
-    ctx.strokeStyle = '#FDE68A';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(padding, boxY, boxW, summaryBoxHeight);
-    ctx.fillStyle = '#92400E';
-    ctx.font = 'bold 11px Arial, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('⚠️ TỔNG TIỀN ĐƠN TRÙNG', padding + 10, boxY + 22);
+    ctx.fillStyle = '#A7F3D0';
     ctx.font = 'bold 16px Arial, sans-serif';
-    ctx.fillText(formatCurrency(totalDupAmount), padding + 10, boxY + 48);
-
-    // Box 2: Khách bị trùng
-    const box2X = padding + boxW + 8;
-    ctx.fillStyle = '#EFF6FF';
-    ctx.fillRect(box2X, boxY, boxW, summaryBoxHeight);
-    ctx.strokeStyle = '#BFDBFE';
-    ctx.strokeRect(box2X, boxY, boxW, summaryBoxHeight);
-    ctx.fillStyle = '#1E40AF';
-    ctx.font = 'bold 11px Arial, sans-serif';
-    ctx.fillText('👥 KHÁCH BỊ TRÙNG', box2X + 10, boxY + 22);
-    ctx.font = 'bold 16px Arial, sans-serif';
-    ctx.fillText(`${duplicateCustomerCount} khách`, box2X + 10, boxY + 48);
-
-    // Box 3: Số đơn trùng
-    const box3X = box2X + boxW + 8;
-    ctx.fillStyle = '#F8FAFC';
-    ctx.fillRect(box3X, boxY, boxW, summaryBoxHeight);
-    ctx.strokeStyle = '#CBD5E1';
-    ctx.strokeRect(box3X, boxY, boxW, summaryBoxHeight);
-    ctx.fillStyle = '#334155';
-    ctx.font = 'bold 11px Arial, sans-serif';
-    ctx.fillText('📋 SỐ ĐƠN TRÙNG', box3X + 10, boxY + 22);
-    ctx.font = 'bold 16px Arial, sans-serif';
-    ctx.fillText(`${duplicateItems.length} đơn`, box3X + 10, boxY + 48);
-
-    let startY = boxY + summaryBoxHeight + 14;
-
-    if (duplicateItems.length === 0) {
-      ctx.fillStyle = '#F0FDF4';
-      ctx.fillRect(padding, startY, width - padding * 2, emptyRowHeight);
-      ctx.strokeStyle = '#BBF7D0';
-      ctx.strokeRect(padding, startY, width - padding * 2, emptyRowHeight);
-
-      ctx.fillStyle = '#166534';
-      ctx.font = 'bold 14px Arial, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(`🎉 Không có khách hàng nào bị trùng đơn trong ngày ${selectedDate}!`, width / 2, startY + 40);
-      startY += emptyRowHeight;
-    } else {
-      duplicateItems.forEach((item, idx) => {
-        ctx.fillStyle = idx % 2 === 0 ? '#FFFFFF' : '#FFFBEB';
-        ctx.fillRect(padding, startY, width - padding * 2, rowHeight);
-        ctx.strokeStyle = '#FEF3C7';
-        ctx.strokeRect(padding, startY, width - padding * 2, rowHeight);
-
-        const custName = item.customer?.name || 'Khách vãng lai';
-
-        // Số thứ tự & tên khách hàng
-        ctx.fillStyle = '#92400E';
-        ctx.font = 'bold 14px Arial, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(`${idx + 1}. ${custName}`, padding + 14, startY + 27);
-
-        // Chi tiết món thịt
-        let desc = '';
-        if (item.items && item.items.length > 0) {
-          desc = item.items
-            .map((it) => `${it.product?.name || it.productName || 'Thịt'} (${it.quantity || ''})`)
-            .join(', ');
-        } else {
-          desc = item.note || 'Đơn nợ';
-        }
-
-        ctx.fillStyle = '#64748B';
-        ctx.font = '12px Arial, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(`• ${desc}`, padding + 260, startY + 27);
-
-        // Số tiền
-        ctx.fillStyle = '#DC2626';
-        ctx.font = 'bold 14px Arial, sans-serif';
-        ctx.textAlign = 'right';
-        ctx.fillText(formatCurrency(item.totalAmount || 0), width - padding - 14, startY + 27);
-
-        startY += rowHeight;
-      });
-    }
-
-    // Footer ảnh
-    const footerY = startY + 12;
-    ctx.strokeStyle = '#E2E8F0';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(padding, footerY);
-    ctx.lineTo(width - padding, footerY);
-    ctx.stroke();
+    ctx.fillText(`Ngày báo cáo: ${selectedDate}`, width / 2, 82);
 
     const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} ngày ${toDateKey(now)}`;
-    ctx.fillStyle = '#64748B';
-    ctx.font = '11px Arial, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(`Thời gian xuất: ${timeStr}`, padding, footerY + 18);
-    ctx.textAlign = 'right';
-    ctx.fillText('Phần mềm Quản lý Sạp thịt', width - padding, footerY + 18);
+    const timeExportStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} - ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    ctx.fillStyle = '#E2E8F0';
+    ctx.font = 'italic 12px Arial, sans-serif';
+    ctx.fillText(`Thời gian xuất: ${timeExportStr}`, width / 2, 107);
 
-    return canvas.toDataURL('image/png');
+    // ── 2. BA HỘP KPI TÓM TẮT ──
+    const boxW = (width - sidePadding * 2 - 20) / 3;
+
+    // Hộp 1: Tổng tiền đơn trùng
+    ctx.fillStyle = '#FFFBEB';
+    ctx.fillRect(sidePadding, boxY, boxW, boxH);
+    ctx.strokeStyle = '#FDE68A';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(sidePadding, boxY, boxW, boxH);
+
+    ctx.fillStyle = '#92400E';
+    ctx.font = 'bold 12.5px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('⚠️ TỔNG TIỀN ĐƠN TRÙNG', sidePadding + 14, boxY + 26);
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillText(formatCurrency(totalDupAmount), sidePadding + 14, boxY + 54);
+
+    // Hộp 2: Khách hàng bị trùng
+    const box2X = sidePadding + boxW + 10;
+    ctx.fillStyle = '#EFF6FF';
+    ctx.fillRect(box2X, boxY, boxW, boxH);
+    ctx.strokeStyle = '#BFDBFE';
+    ctx.strokeRect(box2X, boxY, boxW, boxH);
+
+    ctx.fillStyle = '#1E40AF';
+    ctx.font = 'bold 12.5px Arial, sans-serif';
+    ctx.fillText('👥 KHÁCH HÀNG BỊ TRÙNG', box2X + 14, boxY + 26);
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillText(`${duplicateCustomerCount} khách hàng`, box2X + 14, boxY + 54);
+
+    // Hộp 3: Tổng số đơn trùng
+    const box3X = box2X + boxW + 10;
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fillRect(box3X, boxY, boxW, boxH);
+    ctx.strokeStyle = '#CBD5E1';
+    ctx.strokeRect(box3X, boxY, boxW, boxH);
+
+    ctx.fillStyle = '#334155';
+    ctx.font = 'bold 12.5px Arial, sans-serif';
+    ctx.fillText('📋 TỔNG SỐ ĐƠN TRÙNG', box3X + 14, boxY + 26);
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillText(`${totalCount} đơn nợ`, box3X + 14, boxY + 54);
+
+    // Helper cắt bớt text bằng dấu "..."
+    const fitTextWithEllipsis = (context, text, maxWidth) => {
+      if (!text) return '';
+      if (context.measureText(text).width <= maxWidth) return text;
+      let t = text;
+      while (t.length > 0 && context.measureText(`${t}...`).width > maxWidth) {
+        t = t.slice(0, -1);
+      }
+      return `${t.trim()}...`;
+    };
+
+    const fitCustomerTitleWithTag = (context, prefix, name, tag, maxWidth) => {
+      const full = `${prefix}${name}${tag}`;
+      if (context.measureText(full).width <= maxWidth) return full;
+      let truncated = name;
+      while (truncated.length > 0 && context.measureText(`${prefix}${truncated}...${tag}`).width > maxWidth) {
+        truncated = truncated.slice(0, -1);
+      }
+      return `${prefix}${truncated.trim()}...${tag}`;
+    };
+
+    // ── 3. VẼ CÁC CỘT DANH SÁCH ĐƠN NỢ TRÙNG ──
+    const drawColumn = (items, startX, colW, headerTitle) => {
+      let colY = listStartY;
+
+      // Header cột
+      ctx.fillStyle = '#1E293B';
+      ctx.fillRect(startX, colY, colW, colHeaderHeight);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 14px Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(headerTitle, startX + 14, colY + 26);
+
+      colY += colHeaderHeight;
+
+      if (items.length === 0) {
+        ctx.fillStyle = '#F0FDF4';
+        ctx.fillRect(startX, colY, colW, rowHeight);
+        ctx.strokeStyle = '#BBF7D0';
+        ctx.strokeRect(startX, colY, colW, rowHeight);
+
+        ctx.fillStyle = '#166534';
+        ctx.font = 'bold 13.5px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`🎉 Không có khách hàng nào bị trùng đơn trong ngày ${selectedDate}!`, startX + colW / 2, colY + Math.round(rowHeight / 2) + 5);
+        colY += rowHeight;
+      } else {
+        items.forEach((item) => {
+          const palette = item.palette || DUPLICATE_COLOR_PALETTES[0];
+          ctx.fillStyle = palette.canvasBgEven;
+          ctx.strokeStyle = palette.canvasStroke;
+
+          ctx.fillRect(startX, colY, colW, rowHeight);
+          ctx.strokeRect(startX, colY, colW, rowHeight);
+
+          // 1. Số tiền (căn phải)
+          const amountText = `+${formatCurrency(item.amount)}`;
+          ctx.font = `bold ${fontSizeAmount}px Arial, sans-serif`;
+          const amountWidth = ctx.measureText(amountText).width;
+
+          // 2. Tên khách hàng & Tag [Đơn X/Y]
+          const maxCustomerTitleWidth = Math.max(80, colW - 24 - amountWidth - 16);
+          ctx.fillStyle = palette.canvasText;
+          ctx.font = `bold ${fontSizeName}px Arial, sans-serif`;
+          ctx.textAlign = 'left';
+          const dupTag = ` [${item.seqText}]`;
+          const prefix = `${item.globalIdx}. `;
+          const titleText = fitCustomerTitleWithTag(ctx, prefix, item.customerName || '', dupTag, maxCustomerTitleWidth);
+          ctx.fillText(titleText, startX + 12, colY + Math.round(rowHeight * 0.42));
+
+          // 3. Giờ tạo đơn (căn phải)
+          const itemTimeStr = item.timeStr;
+          let timeWidth = 0;
+          if (itemTimeStr) {
+            ctx.font = `italic ${Math.max(9.5, fontSizeDetail - 1.5)}px Arial, sans-serif`;
+            timeWidth = ctx.measureText(itemTimeStr).width;
+          }
+
+          // 4. Chi tiết món thịt
+          const maxDetailWidth = Math.max(60, colW - 34 - (timeWidth > 0 ? timeWidth + 16 : 0));
+          ctx.fillStyle = '#64748B';
+          ctx.font = `${fontSizeDetail}px Arial, sans-serif`;
+          const subText = fitTextWithEllipsis(ctx, item.details || '', maxDetailWidth);
+          ctx.fillText(subText, startX + 22, colY + Math.round(rowHeight * 0.8));
+
+          // 5. Vẽ số tiền đỏ (căn phải)
+          ctx.fillStyle = '#DC2626';
+          ctx.font = `bold ${fontSizeAmount}px Arial, sans-serif`;
+          ctx.textAlign = 'right';
+          ctx.fillText(amountText, startX + colW - 12, colY + Math.round(rowHeight * 0.44));
+
+          // 6. Vẽ thời gian (căn phải)
+          if (itemTimeStr) {
+            ctx.fillStyle = '#64748B';
+            ctx.font = `italic ${Math.max(9.5, fontSizeDetail - 1.5)}px Arial, sans-serif`;
+            ctx.fillText(itemTimeStr, startX + colW - 12, colY + Math.round(rowHeight * 0.8));
+          }
+          ctx.textAlign = 'left';
+
+          colY += rowHeight;
+        });
+      }
+      return colY;
+    };
+
+    const colTitlePrefix = '⚠️ DANH SÁCH ĐƠN NỢ TRÙNG';
+    if (!isTwoCol) {
+      drawColumn(leftItems, leftColX, width - sidePadding * 2, `${colTitlePrefix} (${totalCount} đơn nợ)`);
+    } else {
+      drawColumn(leftItems, leftColX, colWidth, `${colTitlePrefix} (Phần 1 - ${leftItems.length} đơn)`);
+      drawColumn(rightItems, rightColX, colWidth, `${colTitlePrefix} (Phần 2 - ${rightItems.length} đơn)`);
+    }
+
+    // ── 4. FOOTER ──
+    const footerY1 = listStartY + listHeight + footerGap;
+    ctx.strokeStyle = '#CBD5E1';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sidePadding, footerY1);
+    ctx.lineTo(width - sidePadding, footerY1);
+    ctx.stroke();
+
+    ctx.fillStyle = '#64748B';
+    ctx.font = '12px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, footerY1 + 22);
+    ctx.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, footerY1 + 40);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const fileName = `BaoCao_DonNoTrung_Ngay_${selectedDate.replace(/\//g, '_')}.png`;
+
+    if (returnDetails) {
+      return {
+        dataUrl,
+        totalDupAmount,
+        duplicateCustomerCount,
+        duplicateCount: totalCount,
+        fileName,
+      };
+    }
+
+    return dataUrl;
   } catch (err) {
     console.error('[GENERATE DUPLICATE DEBTS IMAGE ERROR]', err);
     return null;

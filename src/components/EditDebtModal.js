@@ -285,7 +285,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
       ? product.customPrice
       : (product.defaultPrice || 0);
     setCurrentPrice(formatNumberString(effectivePrice.toString()));
-    setEditingItemId(null);
+    // Giữ nguyên editingItemId nếu đang trong chế độ sửa để cập nhật vào đúng dòng thịt cũ
     setError('');
   };
 
@@ -297,7 +297,16 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
     setError('');
   };
 
-  // ─── Thêm mặt hàng đang nhập vào giỏ hàng ────────────────────────────
+  // Hủy chế độ sửa mặt hàng
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+    setCurrentProduct(null);
+    setCurrentQuantity('');
+    setCurrentPrice('');
+    setError('');
+  };
+
+  // ─── Thêm / Cập nhật mặt hàng vào giỏ hàng ────────────────────────────
   const handleAddToCart = () => {
     if (!currentProduct) {
       setError('Vui lòng chọn loại thịt trước.');
@@ -320,18 +329,46 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
     }
 
     if (editingItemId !== null) {
-      setCartItems((prev) => prev.map((item) => item.tempId === editingItemId
-        ? {
-          ...item,
-          quantity: q,
-          price: p,
-          costPrice: item.costPrice !== undefined ? item.costPrice : (currentProduct?.costPrice || 0),
-          displayQuantity: currentQuantity,
-          displayPrice: currentPrice,
-          amount: q * p
+      setCartItems((prev) => {
+        // Kiểm tra xem loại thịt mới có trùng với một dòng khác trong giỏ hàng hay không
+        const existingOtherIndex = prev.findIndex(
+          (item) => item.tempId !== editingItemId && item.product.id === currentProduct.id
+        );
+
+        if (existingOtherIndex > -1) {
+          // Nếu đổi sang loại thịt đã có ở dòng khác: cộng dồn vào dòng đó và xóa dòng đang sửa
+          const updated = [...prev];
+          const existingItem = updated[existingOtherIndex];
+          const newQuantity = existingItem.quantity + q;
+          updated[existingOtherIndex] = {
+            ...existingItem,
+            quantity: newQuantity,
+            price: p,
+            costPrice: currentProduct?.costPrice !== undefined ? currentProduct.costPrice : (existingItem.costPrice || 0),
+            displayQuantity: newQuantity.toString(),
+            displayPrice: currentPrice,
+            amount: Math.round(newQuantity * p),
+          };
+          return updated.filter((item) => item.tempId !== editingItemId);
         }
-        : item
-      ));
+
+        // Cập nhật đúng mặt hàng đang sửa (bao gồm loại thịt mới, số lượng, đơn giá)
+        return prev.map((item) =>
+          item.tempId === editingItemId
+            ? {
+                ...item,
+                product: currentProduct,
+                quantity: q,
+                price: p,
+                costPrice: currentProduct?.costPrice !== undefined ? currentProduct.costPrice : (item.costPrice || 0),
+                displayQuantity: currentQuantity,
+                displayPrice: currentPrice,
+                amount: Math.round(q * p),
+              }
+            : item
+        );
+      });
+
       setEditingItemId(null);
       setCurrentProduct(null);
       setCurrentQuantity('');
@@ -646,9 +683,16 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
               )}
 
               {/* ── CHỌN LOẠI THỊT ── */}
-              <Text style={styles.label}>
-                {cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua:'}
-              </Text>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.label}>
+                  {editingItemId !== null ? '✏️ Đang sửa mặt hàng:' : (cartItems.length > 0 ? '➕ Thêm mặt hàng tiếp theo:' : '1. Chọn loại thịt mua:')}
+                </Text>
+                {editingItemId !== null && (
+                  <TouchableOpacity onPress={handleCancelEdit} style={styles.cancelEditBtn} activeOpacity={0.7}>
+                    <Text style={styles.cancelEditText}>✕ Hủy sửa</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               <ProductSelector
                 products={products}
                 currentProduct={currentProduct}
@@ -977,6 +1021,23 @@ const styles = StyleSheet.create({
   },
 
   // ── Chọn sản phẩm (đồng bộ DebtModal) ──────────────────────────
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  cancelEditBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 6,
+  },
+  cancelEditText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
   label: {
     fontSize: 14,
     fontWeight: FONTS.weightBold,
