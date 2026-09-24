@@ -376,6 +376,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         updatedAt: p.updatedAt,
         customerId: p.customerId,
         rawObj: p,
+        invoices: p.invoices || [],
         customerName: p.customer?.name || 'Khách ẩn danh',
         amount: parseFloat(p.amount || 0),
         note: p.note,
@@ -629,34 +630,37 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     });
   };
 
-  // Xử lý xem ảnh hóa đơn của đơn hàng hoặc tải ảnh mới
+  // Xử lý xem ảnh/video hóa đơn của đơn hàng/đơn trả hàng hoặc tải ảnh mới
   const handleViewItemImages = (item) => {
     const raw = item.rawObj || item;
     const invoices = item.invoices || raw.invoices || [];
+    const isRet = getItemStatus(item) === 'return';
+    const typeLabel = isRet ? 'Đơn trả hàng' : (item.type === 'payment' ? 'Chứng từ thu nợ' : 'Hóa đơn');
+
     if (invoices.length > 0) {
       invoiceImageViewerModalRef.current?.open({
         images: invoices,
         initialIndex: 0,
-        title: `Hóa đơn: ${item.customerName || 'Khách hàng'}`,
+        title: `${typeLabel}: ${item.customerName || 'Khách hàng'}`,
         subtitle: `Số tiền: ${formatCurrency(item.amount)} (${item.time ? toDateKey(item.time) : selectedDate})`,
         onDelete: async (inv, callback) => {
           try {
             await api.delete(`/transactions/invoices/${inv.id}`);
-            showGlobalToast('Đã xóa ảnh hóa đơn thành công.', 'success');
+            showGlobalToast('Đã xóa tệp thành công.', 'success');
             if (callback) callback();
             fetchReportData();
             if (onRefresh) onRefresh();
           } catch (err) {
-            showGlobalToast('Không thể xóa ảnh hóa đơn. Vui lòng thử lại.', 'error');
+            showGlobalToast('Không thể xóa. Vui lòng thử lại.', 'error');
           }
         },
       });
     } else {
       popupModalRef.current?.show({
         type: 'confirm',
-        title: 'Chưa có ảnh hóa đơn',
-        message: `Đơn hàng của khách "${item.customerName}" chưa có ảnh hóa đơn đính kèm. Bạn có muốn tải ảnh lên ngay không?`,
-        confirmText: 'Tải ảnh',
+        title: isRet ? 'Chưa có ảnh/video trả hàng' : 'Chưa có ảnh hóa đơn',
+        message: `Đơn của khách "${item.customerName}" chưa có ảnh/video đính kèm. Bạn có muốn tải ảnh/video lên ngay không?`,
+        confirmText: 'Tải ảnh/video',
         cancelText: 'Đóng',
         onConfirm: () => {
           invoiceImageUploadModalRef.current?.open(
@@ -2061,35 +2065,42 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                         <View style={styles.itemHeader}>
                           <View style={styles.customerNameRow}>
                             <Text style={styles.customerName}>{item.customerName}</Text>
-                            {/* Nút Xem ảnh hóa đơn bên cạnh nút Sửa */}
-                            {isDebt && (
-                              <TouchableOpacity
-                                style={[
-                                  styles.itemImageBtn,
-                                  (item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)
-                                    ? styles.itemImageBtnActive
-                                    : styles.itemImageBtnEmpty,
-                                ]}
-                                onPress={() => handleViewItemImages(item)}
-                                activeOpacity={0.7}
-                                title={(item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)
-                                  ? `Xem ${(item.invoices?.length || item.rawObj?.invoices?.length)} ảnh hóa đơn`
-                                  : 'Chưa có ảnh hóa đơn'}
-                              >
-                                <Text
+                            {/* Nút Xem ảnh/video hóa đơn hoặc đơn trả hàng bên cạnh nút Sửa */}
+                            {(isDebt || isReturnGoods || (item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)) && (() => {
+                              const invList = item.invoices || item.rawObj?.invoices || [];
+                              const invCount = invList.length;
+                              const hasVideo = invList.some(
+                                (inv) => inv.fileType === 'video' || (inv.imageUrl && /\.(mp4|mov|webm|avi|m4v)(\?.*)?$/i.test(inv.imageUrl))
+                              );
+                              const btnLabel = hasVideo ? 'Xem ảnh/video' : 'Xem ảnh';
+
+                              return (
+                                <TouchableOpacity
                                   style={[
-                                    styles.itemImageBtnText,
-                                    (item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)
-                                      ? styles.itemImageBtnActiveText
-                                      : styles.itemImageBtnEmptyText,
+                                    styles.itemImageBtn,
+                                    invCount > 0
+                                      ? styles.itemImageBtnActive
+                                      : styles.itemImageBtnEmpty,
                                   ]}
+                                  onPress={() => handleViewItemImages(item)}
+                                  activeOpacity={0.7}
+                                  title={invCount > 0
+                                    ? `Xem ${invCount} ${hasVideo ? 'ảnh/video' : 'ảnh'}`
+                                    : (isReturnGoods ? 'Chưa có ảnh/video trả hàng' : 'Chưa có ảnh hóa đơn')}
                                 >
-                                  Xem ảnh{(item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)
-                                    ? ` (${item.invoices?.length || item.rawObj?.invoices?.length})`
-                                    : ''}
-                                </Text>
-                              </TouchableOpacity>
-                            )}
+                                  <Text
+                                    style={[
+                                      styles.itemImageBtnText,
+                                      invCount > 0
+                                        ? styles.itemImageBtnActiveText
+                                        : styles.itemImageBtnEmptyText,
+                                    ]}
+                                  >
+                                    {btnLabel}{invCount > 0 ? ` (${invCount})` : ''}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })()}
 
                             <TouchableOpacity
                               style={styles.itemEditBtn}
