@@ -775,14 +775,14 @@ const buildInvoiceRows = (
 
   // Cập nhật trạng thái thanh toán cuối cùng của từng ngày
   allDaysOldestToNewest.forEach((day) => {
-    if (day.paidAmount >= day.dayNetTotal) {
+    if (day.dayNetTotal > 0 && day.paidAmount >= day.dayNetTotal) {
       day.isPaid = true;
       day.isPartialPaid = false;
       day.remainingDebt = 0;
     } else if (day.paidAmount > 0) {
       day.isPaid = false;
       day.isPartialPaid = true;
-      day.remainingDebt = day.dayNetTotal - day.paidAmount;
+      day.remainingDebt = Math.max(0, day.dayNetTotal - day.paidAmount);
     } else {
       day.isPaid = false;
       day.isPartialPaid = false;
