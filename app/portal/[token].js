@@ -616,6 +616,7 @@ const buildInvoiceRows = (
           monthFull: `T${effectiveDate.getMonth() + 1}/${yyyy}`,
           entries: [],
           invoices: [],
+          customerInvoicesMap: {},
           meatSum: 0,
           returnSum: 0,
         };
@@ -623,6 +624,33 @@ const buildInvoiceRows = (
 
       allDayMap[dateKey].returnSum += amt;
       const payCustomerName = pm.customerName || pm.customer?.name || null;
+      const cName = (payCustomerName || '').trim();
+
+      // Đính kèm ảnh / video của đơn trả hàng vào danh sách chứng từ của ngày đó
+      if (pm.invoices && pm.invoices.length > 0) {
+        if (!allDayMap[dateKey].invoices) {
+          allDayMap[dateKey].invoices = [];
+        }
+        if (!allDayMap[dateKey].customerInvoicesMap) {
+          allDayMap[dateKey].customerInvoicesMap = {};
+        }
+
+        pm.invoices.forEach((inv) => {
+          const invId = inv.id || inv.imageUrl || inv.url;
+          if (!allDayMap[dateKey].invoices.some((x) => (x.id || x.imageUrl || x.url) === invId)) {
+            allDayMap[dateKey].invoices.push(inv);
+          }
+          if (cName) {
+            if (!allDayMap[dateKey].customerInvoicesMap[cName]) {
+              allDayMap[dateKey].customerInvoicesMap[cName] = [];
+            }
+            if (!allDayMap[dateKey].customerInvoicesMap[cName].some((x) => (x.id || x.imageUrl || x.url) === invId)) {
+              allDayMap[dateKey].customerInvoicesMap[cName].push(inv);
+            }
+          }
+        });
+      }
+
       const returnItems = parseReturnItems(pm.note, amt);
       returnItems.forEach((rItem) => {
         allDayMap[dateKey].entries.push({
@@ -2458,7 +2486,9 @@ export default function PortalScreen() {
                                                 styles.dayTotalInvoiceBtnTextActive,
                                               ]}
                                             >
-                                              Xem ảnh ({day.invoices.length})
+                                              {day.invoices.some((inv) => inv.fileType === 'VIDEO' || /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(inv.imageUrl || inv.url || ''))
+                                                ? `Xem ảnh / video (${day.invoices.length})`
+                                                : `Xem ảnh (${day.invoices.length})`}
                                             </Text>
                                           </TouchableOpacity>
                                         )}
@@ -2504,7 +2534,9 @@ export default function PortalScreen() {
                                                 styles.dayTotalInvoiceBtnTextActive,
                                               ]}
                                             >
-                                              Xem ảnh ({custInvoices.length})
+                                              {custInvoices.some((inv) => inv.fileType === 'VIDEO' || /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(inv.imageUrl || inv.url || ''))
+                                                ? `Xem ảnh / video (${custInvoices.length})`
+                                                : `Xem ảnh (${custInvoices.length})`}
                                             </Text>
                                           </TouchableOpacity>
                                         )}
@@ -2525,7 +2557,9 @@ export default function PortalScreen() {
                                                 styles.dayTotalInvoiceBtnTextActive,
                                               ]}
                                             >
-                                              Xem ảnh ({day.invoices.length})
+                                              {day.invoices.some((inv) => inv.fileType === 'VIDEO' || /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(inv.imageUrl || inv.url || ''))
+                                                ? `Xem ảnh / video (${day.invoices.length})`
+                                                : `Xem ảnh (${day.invoices.length})`}
                                             </Text>
                                           </TouchableOpacity>
                                         )}
