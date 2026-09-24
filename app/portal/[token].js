@@ -2552,9 +2552,7 @@ export default function PortalScreen() {
                                                 styles.dayTotalInvoiceBtnTextActive,
                                               ]}
                                             >
-                                              {day.invoices.some((inv) => inv.fileType === 'VIDEO' || /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(inv.imageUrl || inv.url || ''))
-                                                ? `Xem ảnh / video (${day.invoices.length})`
-                                                : `Xem ảnh (${day.invoices.length})`}
+                                              {`Xem hóa đơn (${day.invoices.length})`}
                                             </Text>
                                           </TouchableOpacity>
                                         )}
@@ -2600,9 +2598,7 @@ export default function PortalScreen() {
                                                 styles.dayTotalInvoiceBtnTextActive,
                                               ]}
                                             >
-                                              {custInvoices.some((inv) => inv.fileType === 'VIDEO' || /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(inv.imageUrl || inv.url || ''))
-                                                ? `Xem ảnh / video (${custInvoices.length})`
-                                                : `Xem ảnh (${custInvoices.length})`}
+                                              {`Xem hóa đơn (${custInvoices.length})`}
                                             </Text>
                                           </TouchableOpacity>
                                         )}
@@ -2623,9 +2619,7 @@ export default function PortalScreen() {
                                                 styles.dayTotalInvoiceBtnTextActive,
                                               ]}
                                             >
-                                              {day.invoices.some((inv) => inv.fileType === 'VIDEO' || /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(inv.imageUrl || inv.url || ''))
-                                                ? `Xem ảnh / video (${day.invoices.length})`
-                                                : `Xem ảnh (${day.invoices.length})`}
+                                              {`Xem hóa đơn (${day.invoices.length})`}
                                             </Text>
                                           </TouchableOpacity>
                                         )}
