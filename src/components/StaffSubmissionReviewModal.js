@@ -3555,9 +3555,16 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const handleSaveCard = async (subId) => {
     const card = cardDataMap[subId];
     if (!card) return false;
-    if (!card.customer) {
-      showGlobalToast('Vui lòng chọn khách hàng để ghi nợ.', 'warning');
-      return false;
+    if (card.targetType === 'supplier') {
+      if (!card.supplier?.id) {
+        showGlobalToast('Vui lòng chọn nhà cung cấp để lên đơn nhập hàng!', 'warning');
+        return false;
+      }
+    } else {
+      if (!card.customer) {
+        showGlobalToast('Vui lòng chọn khách hàng để ghi nợ.', 'warning');
+        return false;
+      }
     }
     let payloadItems = [];
     if (card.orderMode === 'quick') {
@@ -3901,7 +3908,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     const unapprovedSubs = filteredSubmissions.filter((s) => s.status !== 'APPROVED');
     return unapprovedSubs.filter((s) => {
       const card = cardDataMap[s.id];
-      if (!card || !card.customer) return false;
+      if (!card) return false;
+      const hasPartner = card.targetType === 'supplier' ? Boolean(card.supplier?.id) : Boolean(card.customer);
+      if (!hasPartner) return false;
       return card.items.some((it) => parseFloat(it.amount || 0) > 0);
     }).length;
   }, [filteredSubmissions, cardDataMap]);
@@ -3911,7 +3920,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     const unapprovedSubs = filteredSubmissions.filter((s) => s.status !== 'APPROVED');
     const validSubs = unapprovedSubs.filter((s) => {
       const card = cardDataMap[s.id];
-      if (!card || !card.customer) return false;
+      if (!card) return false;
+      const hasPartner = card.targetType === 'supplier' ? Boolean(card.supplier?.id) : Boolean(card.customer);
+      if (!hasPartner) return false;
       return card.items.some((it) => parseFloat(it.amount || 0) > 0);
     });
 
@@ -4045,8 +4056,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       status: 'APPROVED',
                       note: payload.note,
                       date: payload.date,
-                      matchedCustomerId: card.customer.id,
-                      matchedCustomer: card.customer,
+                      matchedCustomerId: card.customer?.id || null,
+                      matchedCustomer: card.customer || null,
+                      matchedSupplierId: card.supplier?.id || null,
+                      matchedSupplier: card.supplier || null,
+                      targetType: card.targetType || 'customer',
                       items: payload.items,
                     };
                   }
