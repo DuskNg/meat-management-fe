@@ -20,6 +20,7 @@ import MoneyInput from './MoneyInput';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import { API_HOST } from '../api/client';
 import { showGlobalToast } from '../store/toastStore';
+import { isMobileDevice } from '../utils/imageShareHelper';
 
 // Helper định dạng tiền VNĐ
 const formatCurrency = (amount) =>
@@ -418,133 +419,150 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   const isVideo = currentSub.fileType === 'VIDEO' || /\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i.test(currentSub.fileUrl || '');
   const mediaUrl = resolveMediaUrl(currentSub.fileUrl);
 
-  // Xử lý chia sẻ thông tin hóa đơn qua Zalo
+  // Xử lý gửi lại ảnh hoặc video vào Zalo để cho anh chủ kiểm tra lại
   const handleShareZalo = async () => {
-    if (!currentCard || !currentSub) return;
-
-    // Tìm thông tin khách hàng đã chọn
-    const selectedCustomer = customers.find(
-      (c) => String(c.id) === String(currentCard.selectedCustomerId)
-    );
-
-    const isReturn = !!currentCard.isReturn;
-    const headerTitle = isReturn ? '↩️ HÓA ĐƠN TRẢ HÀNG' : '🥩 HÓA ĐƠN GIAO THỊT';
-    const dateFormatted = formatDisplayDate(currentCard.date);
-
-    const lines = [];
-    lines.push(`${headerTitle}${dateFormatted ? ` (${dateFormatted})` : ''}`);
-    if (selectedCustomer?.name) {
-      lines.push(`Khách hàng: ${selectedCustomer.name}`);
+    if (!currentSub || !currentSub.fileUrl) {
+      showGlobalToast('Không tìm thấy file ảnh hoặc video để gửi Zalo!', 'warning');
+      return;
     }
-    lines.push('------------------------');
 
-    if (isQuickMode) {
-      if (currentCard.quickSubAmounts && currentCard.quickSubAmounts.length > 0) {
-        currentCard.quickSubAmounts.forEach((sub, idx) => {
-          const val = parseFloat(sub.amount) || 0;
-          if (val > 0) {
-            lines.push(`• Món ${idx + 1}: ${formatCurrency(val)} đ`);
+    const mediaUrl = resolveMediaUrl(currentSub.fileUrl);
+    if (!mediaUrl) {
+      showGlobalToast('Đường dẫn file ảnh/video không hợp lệ!', 'warning');
+      return;
+    }
+
+    const isMobile = isMobileDevice();
+    const mediaName = isVideo ? 'video' : 'ảnh';
+    const custName = currentCard?.customer?.name || currentSub.detectedCustomerName || 'Khách hàng';
+    const ext = isVideo ? 'mp4' : (mediaUrl.includes('.png') ? 'png' : 'jpg');
+    const fileName = `HoaDon_${isVideo ? 'Video' : 'Anh'}_${Date.now()}.${ext}`;
+
+    showGlobalToast(`Đang chuẩn bị file ${mediaName} để gửi cho anh chủ qua Zalo...`, 'info');
+
+    try {
+      // Fetch file về dạng Blob và File để hỗ trợ chia sẻ / tải về
+      let fileBlob = null;
+      let fileToShare = null;
+
+      try {
+        const response = await fetch(mediaUrl);
+        fileBlob = await response.blob();
+        if (fileBlob && typeof File !== 'undefined') {
+          const mimeType = fileBlob.type || (isVideo ? 'video/mp4' : (ext === 'png' ? 'image/png' : 'image/jpeg'));
+          fileToShare = new File([fileBlob], fileName, { type: mimeType });
+        }
+      } catch (fetchErr) {
+        console.warn('Không thể fetch blob từ mediaUrl:', fetchErr);
+      }
+
+      // ─── 1. TRƯỜNG HỢP MOBILE: ƯU TIÊN WEB SHARE API CHUYỂN TIẾP FILE VÀO ZALO ───
+      if (isMobile) {
+        let sharedSuccess = false;
+
+        // Thử chia sẻ file trực tiếp qua Web Share API (chọn app Zalo để gửi cho anh chủ)
+        if (fileToShare && typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
+          try {
+            if (navigator.canShare({ files: [fileToShare] })) {
+              await navigator.share({
+                title: `Gửi anh chủ kiểm tra ${mediaName} đơn ${custName}`,
+                files: [fileToShare],
+              });
+              sharedSuccess = true;
+              return;
+            }
+          } catch (shareErr) {
+            if (shareErr.name === 'AbortError') {
+              return; // Người dùng chủ động đóng bảng chia sẻ
+            }
+            console.warn('[WebShare file thất bại, thử share URL]:', shareErr);
           }
-        });
-      } else {
-        lines.push(`• Tiền hàng: ${formatCurrency(cardTotal)} đ`);
-      }
-    } else {
-      const items = currentCard.items || [];
-      if (items.length > 0) {
-        items.forEach((item) => {
-          const q = parseFloat(item.quantity) || 0;
-          const p = parseFloat(item.price) || 0;
-          const amt = parseFloat(item.amount) || (q * p);
-          const name = item.productName || 'Thịt';
-          const unit = item.unit || 'kg';
-          const priceDisplay = (p >= 1000 && p % 1000 === 0) ? `${p / 1000}k` : `${formatCurrency(p)}đ`;
-          lines.push(`• ${q}${unit} ${name} x ${priceDisplay} = ${formatCurrency(amt)} đ`);
-        });
-      } else {
-        lines.push(`• Tiền hàng: ${formatCurrency(cardTotal)} đ`);
-      }
-    }
+        }
 
-    lines.push('------------------------');
-    lines.push(`👉 TỔNG TIỀN: ${isReturn ? '-' : ''}${formatCurrency(cardTotal)} đ`);
+        // Nếu không share file được, share link mediaUrl qua Web Share API
+        if (!sharedSuccess && typeof navigator !== 'undefined' && navigator.share) {
+          try {
+            await navigator.share({
+              title: `Kiểm tra ${mediaName} hóa đơn: ${custName}`,
+              url: mediaUrl,
+            });
+            sharedSuccess = true;
+            return;
+          } catch (shareUrlErr) {
+            if (shareUrlErr.name === 'AbortError') return;
+            console.warn('[WebShare URL thất bại]:', shareUrlErr);
+          }
+        }
 
-    if (currentCard.note && currentCard.note.trim()) {
-      lines.push(`📝 Ghi chú: ${currentCard.note.trim()}`);
-    }
+        // Fallback Mobile: Sao chép link media vào Clipboard và mở ứng dụng Zalo
+        try {
+          if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(mediaUrl);
+          }
+        } catch (_) {}
 
-    const shareMessage = lines.join('\n');
-
-    // 1. Sao chép nội dung vào Clipboard
-    let copied = false;
-    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-      try {
-        await navigator.clipboard.writeText(shareMessage);
-        copied = true;
-      } catch (err) {
-        console.warn('Lỗi copy clipboard navigator:', err);
-      }
-    }
-    if (!copied && Platform.OS === 'web' && typeof document !== 'undefined') {
-      try {
-        const textArea = document.createElement('textarea');
-        textArea.value = shareMessage;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-9999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-        copied = true;
-      } catch (err) {
-        console.warn('Lỗi fallback copy textarea:', err);
-      }
-    }
-
-    // 2. Chuyển tiếp tới Zalo của khách hàng nếu có số điện thoại
-    if (selectedCustomer?.phone) {
-      const cleanPhone = String(selectedCustomer.phone).replace(/[^0-9]/g, '');
-      let webPhone = cleanPhone;
-      if (webPhone.startsWith('84')) {
-        webPhone = '0' + webPhone.slice(2);
-      } else if (!webPhone.startsWith('0') && webPhone.length > 0) {
-        webPhone = '0' + webPhone;
-      }
-      if (webPhone) {
-        const zaloUrl = `https://zalo.me/${webPhone}`;
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const zaloUrl = 'https://zalo.me';
+        if (typeof window !== 'undefined') {
           window.open(zaloUrl, '_blank');
         } else {
           Linking.openURL(zaloUrl).catch(() => {});
         }
-        showGlobalToast(`Đã sao chép hóa đơn & mở Zalo chat với ${selectedCustomer.name}!`, 'success');
+        showGlobalToast(`Đã sao chép link ${mediaName} & mở Zalo để gửi anh chủ!`, 'success');
         return;
       }
-    }
 
-    // Nếu trên Mobile có Web Share API (đặc biệt khi chưa có SĐT khách)
-    if (isMobile && typeof navigator !== 'undefined' && navigator.share) {
+      // ─── 2. TRƯỜNG HỢP WEB PC: TẢI FILE VỀ MÁY VÀ MỞ ZALO WEB ĐỂ KÉO THẢ GỬI ANH CHỦ ───
+      if (typeof window !== 'undefined') {
+        let downloadUrl = mediaUrl;
+        let blobUrl = null;
+
+        if (fileBlob) {
+          blobUrl = URL.createObjectURL(fileBlob);
+          downloadUrl = blobUrl;
+        }
+
+        // Tự động tải file ảnh/video về máy tính
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = fileName;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        if (blobUrl) {
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+        }
+
+        // Sao chép link media vào Clipboard
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(mediaUrl);
+          }
+        } catch (_) {}
+
+        // Mở Zalo Web (chat.zalo.me) để người dùng dán link hoặc kéo thả file vừa tải vào chat anh chủ
+        const zaloWebUrl = 'https://chat.zalo.me';
+        window.open(zaloWebUrl, '_blank');
+
+        showGlobalToast(
+          `Đã tải ${mediaName} về máy & mở Zalo Web để gửi cho anh chủ kiểm tra!`,
+          'success'
+        );
+      }
+    } catch (err) {
+      console.error('Lỗi khi chia sẻ Zalo:', err);
+      // Fallback sao chép link & mở Zalo Web
       try {
-        await navigator.share({
-          title: headerTitle,
-          text: shareMessage,
-        });
-        showGlobalToast('Đã mở bảng chia sẻ Zalo!', 'success');
-        return;
-      } catch (err) {
-        // Bỏ qua nếu người dùng ấn hủy
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(mediaUrl);
+        }
+      } catch (_) {}
+      if (typeof window !== 'undefined') {
+        window.open('https://chat.zalo.me', '_blank');
       }
+      showGlobalToast(`Đã sao chép link ${mediaName} & mở Zalo để gửi anh chủ!`, 'info');
     }
-
-    // Fallback mở Zalo chung
-    const defaultZaloUrl = 'https://zalo.me';
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.open(defaultZaloUrl, '_blank');
-    } else {
-      Linking.openURL(defaultZaloUrl).catch(() => {});
-    }
-    showGlobalToast('Đã sao chép hóa đơn & mở Zalo!', 'success');
   };
 
   return (
@@ -567,7 +585,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
               activeOpacity={0.7}
               accessibilityLabel="Chia sẻ Zalo"
             >
-              <Text style={styles.btnHeaderZaloText}>💬 Zalo</Text>
+              <Text style={styles.btnHeaderZaloText}>{isVideo ? '💬 Zalo video' : '💬 Zalo ảnh'}</Text>
             </TouchableOpacity>
 
             {/* Thông tin vị trí hóa đơn */}
