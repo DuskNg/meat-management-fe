@@ -1118,6 +1118,10 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '700',
   },
+  manualContainer: {
+    position: 'relative',
+    zIndex: 10,
+  },
   /* STYLES ĐÍNH KÈM ẢNH/VIDEO TRẢ HÀNG */
   attachmentSection: {
     marginTop: 14,
@@ -1125,6 +1129,8 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    position: 'relative',
+    zIndex: 1,
   },
   attachBtn: {
     flexDirection: 'row',

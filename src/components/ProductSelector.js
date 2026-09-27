@@ -1,19 +1,18 @@
 // meat-management-fe/src/components/ProductSelector.js
-import React, { useState } from 'react';
+import React from 'react';
 import {
   StyleSheet,
   Text,
   View,
-  TextInput,
   TouchableOpacity,
-  ScrollView,
 } from 'react-native';
-import { COLORS, FONTS } from '../theme';
-import { matchItemSearch } from '../utils/searchHelper';
+import { COLORS } from '../theme';
+import CustomSelect from './CustomSelect';
 
 /**
- * Component ProductSelector dùng chung cho cả DebtModal (ghi nợ mới) và EditDebtModal (cập nhật đơn nợ).
- * Quản lý giao diện Dropdown tìm kiếm nhanh và chọn thịt.
+ * Component ProductSelector dùng chung cho cả DebtModal, EditDebtModal, ReturnGoodsModal, EditReturnGoodsModal.
+ * Tích hợp CustomSelect tiêu chuẩn với Portal hiển thị lớp trên cùng tuyệt đối (zIndex 999999).
+ * Giải quyết triệt để lỗi dropdown bị các phần tử khác (như phần đính kèm ảnh) đè lên.
  */
 const ProductSelector = ({
   products = [],
@@ -25,135 +24,71 @@ const ProductSelector = ({
   hasError = false,
   error = '',
 }) => {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [productSearch, setProductSearch] = useState('');
-
-  const filteredProducts = products.filter((product) =>
-    matchItemSearch(product, productSearch, ['name', 'unit'])
-  );
+  // Helper định dạng tiền tệ an toàn
+  const safeFormatCurrency = (val) => {
+    if (typeof formatCurrency === 'function') return formatCurrency(val);
+    return Number(val || 0).toLocaleString('vi-VN');
+  };
 
   return (
-    <View style={[styles.productsContainer, dropdownOpen && { zIndex: 100 }]}>
-      {/* Hàng chứa ô chọn và nút thêm nhanh */}
+    <View style={styles.productsContainer}>
+      {/* Hàng chứa ô chọn CustomSelect và các nút thao tác */}
       <View style={styles.selectRow}>
-        <TouchableOpacity
-          style={[
-            styles.selectTrigger,
-            dropdownOpen && styles.selectTriggerActive,
-            currentProduct && styles.selectTriggerSelected,
-            hasError && styles.selectTriggerError,
-          ]}
-          onPress={() => setDropdownOpen((prev) => !prev)}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.selectTriggerText,
-              !currentProduct && styles.selectTriggerPlaceholder,
+        <View style={styles.selectWrapperCol}>
+          <CustomSelect
+            value={currentProduct}
+            placeholder="🔍 Chọn loại thịt..."
+            options={products}
+            onSelect={(product) => {
+              if (onSelectProduct) onSelectProduct(product);
+            }}
+            getOptionLabel={(p) => (p?.name ? p.name : '')}
+            renderSelected={(p) => (p?.name ? p.name : '')}
+            renderOption={(p) => (
+              <View style={styles.dropdownOptionRow}>
+                <Text style={styles.dropdownOptionName}>{p.name}</Text>
+                <Text style={styles.dropdownOptionPrice}>
+                  {safeFormatCurrency(p.defaultPrice)}đ/{p.unit || 'kg'}
+                </Text>
+              </View>
+            )}
+            hasError={hasError}
+            triggerStyle={[
+              styles.customSelectTrigger,
+              currentProduct && styles.customSelectTriggerSelected,
+              hasError && styles.customSelectTriggerError,
             ]}
-            numberOfLines={1}
+          />
+        </View>
+
+        {/* Nút xóa lựa chọn nhanh khi đã chọn một món thịt */}
+        {currentProduct && (
+          <TouchableOpacity
+            style={styles.clearProductBtn}
+            onPress={() => {
+              if (onClearProduct) onClearProduct();
+            }}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
           >
-            {currentProduct ? currentProduct.name : '🔍 Chọn loại thịt...'}
-          </Text>
-          {currentProduct ? (
-            <TouchableOpacity
-              style={styles.selectClearBtn}
-              onPress={(e) => {
-                e.stopPropagation();
-                onClearProduct();
-                setProductSearch('');
-                setDropdownOpen(false);
-              }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.selectClearText}>✕</Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={styles.selectChevron}>{dropdownOpen ? '▲' : '▼'}</Text>
-          )}
-        </TouchableOpacity>
+            <Text style={styles.clearProductText}>✕</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Nút thêm thịt nhanh */}
         <TouchableOpacity
           style={styles.addProductBtn}
           onPress={onAddProduct}
+          activeOpacity={0.75}
         >
           <Text style={styles.addProductBtnText}>＋ Thêm thịt</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Lớp dropdown hiển thị danh sách thịt */}
-      {dropdownOpen && (
-        <View style={styles.dropdownContainer}>
-          {/* Ô tìm kiếm bên trong dropdown */}
-          <View style={styles.dropdownSearchRow}>
-            <TextInput
-              style={styles.dropdownSearchInput}
-              placeholder="🔍 Tìm thịt..."
-              placeholderTextColor={COLORS.textLight}
-              value={productSearch}
-              onChangeText={setProductSearch}
-              autoCorrect={false}
-              autoFocus={true}
-            />
-            {productSearch.length > 0 && (
-              <TouchableOpacity
-                style={styles.dropdownClearBtn}
-                onPress={() => setProductSearch('')}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              >
-                <Text style={styles.dropdownClearText}>✕</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Danh sách sản phẩm */}
-          <ScrollView
-            style={styles.dropdownList}
-            nestedScrollEnabled={true}
-            keyboardShouldPersistTaps="handled"
-          >
-            {filteredProducts.length === 0 ? (
-              <Text style={styles.noProductSearchText}>Không tìm thấy loại thịt phù hợp.</Text>
-            ) : (
-              filteredProducts.map((p) => {
-                const isSelected = currentProduct?.id === p.id;
-                return (
-                  <TouchableOpacity
-                    key={p.id}
-                    style={[
-                      styles.dropdownItem,
-                      isSelected && styles.dropdownItemSelected,
-                    ]}
-                    onPress={() => {
-                      onSelectProduct(p);
-                      setDropdownOpen(false);
-                      setProductSearch('');
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.dropdownItemText,
-                        isSelected && styles.dropdownItemTextSelected,
-                      ]}
-                    >
-                      {p.name}
-                    </Text>
-                    <Text style={styles.dropdownItemPrice}>
-                      {formatCurrency(p.defaultPrice)}/{p.unit}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-          </ScrollView>
-        </View>
-      )}
-
       {/* Khi không có sản phẩm nào */}
       {products.length === 0 && (
-        <Text style={[styles.noProductSearchText, { color: COLORS.dangerDark }]}>
-          Chưa có loại thịt. Bấm ＋ để thêm.
+        <Text style={styles.noProductHintText}>
+          Chưa có loại thịt trong danh mục. Bấm ＋ Thêm thịt để tạo mới.
         </Text>
       )}
 
@@ -170,66 +105,51 @@ export default ProductSelector;
 const styles = StyleSheet.create({
   productsContainer: {
     marginBottom: 10,
+    position: 'relative',
+    zIndex: 100,
   },
   selectRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 0,
   },
-  selectTrigger: {
+  selectWrapperCol: {
     flex: 1,
+    minWidth: 0,
+  },
+  customSelectTrigger: {
     height: 42,
-    backgroundColor: COLORS.inputBg,
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    borderColor: '#CBD5E1',
+    paddingLeft: 10,
+    paddingRight: 6,
+    outlineStyle: 'none',
+    outlineWidth: 0,
   },
-  selectTriggerActive: {
+  customSelectTriggerSelected: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  customSelectTriggerError: {
     borderColor: COLORS.danger,
     borderWidth: 1.5,
   },
-  selectTriggerSelected: {
-    borderColor: COLORS.danger,
-    backgroundColor: COLORS.dangerLight,
-  },
-  selectTriggerError: {
-    borderColor: COLORS.danger,
-    borderWidth: 1.5,
-  },
-  selectTriggerText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    flex: 1,
-  },
-  selectTriggerPlaceholder: {
-    color: COLORS.textLight,
-    fontWeight: '400',
-  },
-  selectChevron: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    marginLeft: 4,
-  },
-  selectClearBtn: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: COLORS.danger,
+  clearProductBtn: {
+    width: 32,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 4,
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
-  selectClearText: {
-    fontSize: 10,
+  clearProductText: {
+    fontSize: 14,
     fontWeight: 'bold',
-    color: '#fff',
-    lineHeight: 11,
+    color: '#DC2626',
   },
   addProductBtn: {
     height: 42,
@@ -240,105 +160,41 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
   },
   addProductBtnText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: 'bold',
     color: '#7F1D1D',
   },
-  dropdownContainer: {
-    position: 'absolute',
-    top: 44,
-    left: 0,
-    right: 90, // Khoảng cách chừa chỗ cho nút thêm nhanh bên phải
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.danger,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 10,
-    zIndex: 200,
-    overflow: 'hidden',
-  },
-  dropdownSearchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  dropdownSearchInput: {
-    flex: 1,
-    height: 36,
-    fontSize: 14,
-    color: COLORS.text,
-    paddingVertical: 0,
-    paddingHorizontal: 10,
-    backgroundColor: COLORS.inputBg,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  dropdownClearBtn: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: COLORS.textLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 6,
-  },
-  dropdownClearText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#fff',
-    lineHeight: 11,
-  },
-  dropdownList: {
-    maxHeight: 180,
-  },
-  dropdownItem: {
+  dropdownOptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    width: '100%',
+    paddingVertical: 2,
   },
-  dropdownItemSelected: {
-    backgroundColor: COLORS.dangerLight,
-  },
-  dropdownItemText: {
-    fontSize: 14,
+  dropdownOptionName: {
+    fontSize: 13.5,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#0F172A',
     flex: 1,
+    marginRight: 8,
   },
-  dropdownItemTextSelected: {
-    color: COLORS.dangerDark,
-  },
-  dropdownItemPrice: {
+  dropdownOptionPrice: {
     fontSize: 12,
-    color: COLORS.textSecondary,
-    marginLeft: 8,
+    color: '#64748B',
+    fontWeight: '600',
   },
-  noProductSearchText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    paddingVertical: 10,
-    textAlign: 'center',
+  noProductHintText: {
+    color: COLORS.dangerDark,
+    fontSize: 13,
+    paddingVertical: 8,
   },
   fieldErrorText: {
     fontSize: 12,
     color: COLORS.danger,
     marginTop: 4,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 });
