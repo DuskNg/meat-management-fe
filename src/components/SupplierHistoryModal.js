@@ -525,14 +525,58 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     );
   };
 
+  // Xóa nhà cung cấp ngay từ modal lịch sử
+  const confirmDeleteSupplierFromHistory = () => {
+    const targetSup = currentSupplier || supplier;
+    if (!targetSup) return;
+    const debtVal = balance !== undefined ? balance : (targetSup.debt || 0);
+    const hasDebt = debtVal > 0;
+    const warningMsg = hasDebt
+      ? `Nhà cung cấp "${targetSup.name}" hiện đang có dư nợ ${formatCurrency(debtVal)}. Bạn có chắc chắn muốn xóa nhà cung cấp này không? Lịch sử giao dịch vẫn được lưu trữ an toàn.`
+      : `Bạn có chắc chắn muốn xóa nhà cung cấp "${targetSup.name}" không?`;
+
+    popupModalRef.current?.show({
+      title: 'Xác nhận xóa nhà cung cấp',
+      message: warningMsg,
+      type: 'confirm',
+      confirmText: 'Xóa ngay',
+      cancelText: 'Hủy bỏ',
+      onConfirm: async () => {
+        try {
+          const res = await api.delete(`/suppliers/${targetSup.id}`);
+          if (res.data.success) {
+            showGlobalToast(`Đã xóa nhà cung cấp "${targetSup.name}" thành công!`, 'success');
+            setVisible(false);
+            if (typeof onRefresh === 'function') onRefresh();
+          } else {
+            showGlobalToast(res.data.message || 'Không thể xóa nhà cung cấp.', 'error');
+          }
+        } catch (err) {
+          showGlobalToast(err.response?.data?.message || 'Có lỗi xảy ra khi xóa nhà cung cấp.', 'error');
+        }
+      },
+    });
+  };
+
   return (
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
         <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>👁️ LỊCH SỬ GIAO DỊCH</Text>
-          <Text style={styles.supplierName}>
-            Nhà cung cấp: {currentSupplier?.name || supplier?.name || ''}
-          </Text>
+          <View style={styles.historyModalHeaderRow}>
+            <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+              <Text style={styles.modalTitle}>👁️ LỊCH SỬ GIAO DỊCH</Text>
+              <Text style={styles.supplierName} numberOfLines={1}>
+                Nhà cung cấp: {currentSupplier?.name || supplier?.name || ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.btnDeleteSupplierHeader}
+              onPress={confirmDeleteSupplierFromHistory}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.btnDeleteSupplierHeaderText}>🗑️ Xóa NCC</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Thanh lọc tháng và nút xuất ảnh */}
           <View style={[styles.filterBar, { zIndex: selectContainerZIndex }]}>
@@ -669,8 +713,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.textSecondary,
-    textAlign: 'center',
     marginBottom: 12,
+  },
+  historyModalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  btnDeleteSupplierHeader: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  btnDeleteSupplierHeaderText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#DC2626',
   },
   filterBar: {
     flexDirection: 'row',

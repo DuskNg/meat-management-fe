@@ -1638,11 +1638,54 @@ export default function DashboardScreen() {
                   💵 Trả tiền
                 </Text>
               </AnimatedPressable>
+
+              {/* Nút xóa nhà cung cấp */}
+              <AnimatedPressable
+                style={styles.deleteSupplierBtn}
+                onPress={() => confirmDeleteSupplier(item)}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.deleteSupplierBtnText}>
+                  🗑️ Xóa
+                </Text>
+              </AnimatedPressable>
             </View>
           </View>
         </View>
       </View>
     );
+  };
+
+  // Xác nhận xóa nhà cung cấp
+  const confirmDeleteSupplier = (item) => {
+    const hasDebt = (item.debt || 0) > 0;
+    const warningMsg = hasDebt
+      ? `Nhà cung cấp "${item.name}" hiện đang có dư nợ ${formatCurrency(item.debt)}. Bạn có chắc chắn muốn xóa nhà cung cấp này không? Lịch sử giao dịch vẫn được lưu trữ an toàn.`
+      : `Bạn có chắc chắn muốn xóa nhà cung cấp "${item.name}" không?`;
+
+    popupModalRef.current?.show({
+      title: 'Xác nhận xóa nhà cung cấp',
+      message: warningMsg,
+      type: 'confirm',
+      confirmText: 'Xóa ngay',
+      cancelText: 'Hủy bỏ',
+      onConfirm: () => handleDeleteSupplier(item.id, item.name),
+    });
+  };
+
+  const handleDeleteSupplier = async (supplierId, supplierName) => {
+    try {
+      const response = await api.delete(`/suppliers/${supplierId}`);
+      if (response.data.success) {
+        showGlobalToast(`Đã xóa nhà cung cấp "${supplierName}" thành công!`, 'success');
+        refetchSuppliers();
+      } else {
+        showGlobalToast(response.data.message || 'Không thể xóa nhà cung cấp.', 'error');
+      }
+    } catch (err) {
+      console.error('Lỗi khi xóa nhà cung cấp:', err);
+      showGlobalToast(err.response?.data?.message || 'Có lỗi xảy ra khi xóa nhà cung cấp.', 'error');
+    }
   };
 
   const confirmDeleteEmployee = (empId, empName) => {
@@ -4528,6 +4571,22 @@ const styles = StyleSheet.create({
   },
   payBadDebtBtnTextDisabled: {
     color: '#64748B', // Chữ màu xám
+  },
+  deleteSupplierBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 7,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  deleteSupplierBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#DC2626',
   },
   // Thẻ khách hàng chứa cả thông tin nhấp và nút xóa bên trong
   customerCard: {
