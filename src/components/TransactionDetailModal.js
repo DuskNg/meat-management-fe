@@ -604,6 +604,15 @@ const TransactionDetailModal = forwardRef(({
                   <View style={styles.transCardHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
                       <Text style={styles.transCardNum}>Đơn #{tIdx + 1}</Text>
+                      {Boolean(
+                        t.isRecurring ||
+                        t.recurringDebtId ||
+                        (typeof t.note === 'string' && /cố định/i.test(t.note))
+                      ) && (
+                        <View style={styles.recurringTag}>
+                          <Text style={styles.recurringTagText}>📌 Đơn cố định</Text>
+                        </View>
+                      )}
                       <TouchableOpacity
                         style={styles.editCardBtn}
                         onPress={() => {
@@ -1394,5 +1403,20 @@ const styles = StyleSheet.create({
   },
   invoiceThumbVideoBadge: {
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
+  },
+  recurringTag: {
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recurringTagText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#6D28D9',
   },
 });

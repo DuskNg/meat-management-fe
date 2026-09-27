@@ -2026,6 +2026,15 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                     const isDuplicate = isItemDuplicateDebt(item);
                     const palette = isDuplicate ? getDuplicatePalette(item) : null;
                     const seqText = isDuplicate ? getItemDebtSequence(item) : '';
+                    const isRecurring = Boolean(
+                      isDebt && (
+                        item.isRecurring ||
+                        item.rawObj?.isRecurring ||
+                        item.rawObj?.recurringDebtId ||
+                        (typeof item.note === 'string' && /cố định/i.test(item.note)) ||
+                        (typeof item.rawObj?.note === 'string' && /cố định/i.test(item.rawObj.note))
+                      )
+                    );
 
                     let displayDetails = item.details;
                     if (isReturnGoods) {
@@ -2062,6 +2071,11 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                         <View style={styles.itemHeader}>
                           <View style={styles.customerNameRow}>
                             <Text style={styles.customerName}>{item.customerName}</Text>
+                            {isRecurring && (
+                              <View style={styles.recurringTag}>
+                                <Text style={styles.recurringTagText}>📌 Đơn cố định</Text>
+                              </View>
+                            )}
                             {/* Nút Xem ảnh/video hóa đơn hoặc đơn trả hàng bên cạnh nút Sửa */}
                             {(isDebt || isReturnGoods || (item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)) && (() => {
                               const invList = item.invoices || item.rawObj?.invoices || [];
@@ -2562,6 +2576,29 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: 'bold',
     color: COLORS.text,
+  },
+  customerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    flex: 1,
+    marginRight: 8,
+  },
+  recurringTag: {
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recurringTagText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#6D28D9',
   },
   itemAmountContainer: {
     alignItems: 'flex-end',
