@@ -44,14 +44,30 @@ const ProductSelector = ({
             }}
             getOptionLabel={(p) => (p?.name ? p.name : '')}
             renderSelected={(p) => (p?.name ? p.name : '')}
-            renderOption={(p) => (
-              <View style={styles.dropdownOptionRow}>
-                <Text style={styles.dropdownOptionName}>{p.name}</Text>
-                <Text style={styles.dropdownOptionPrice}>
-                  {safeFormatCurrency(p.defaultPrice)}đ/{p.unit || 'kg'}
-                </Text>
-              </View>
-            )}
+            renderOption={(p) => {
+              const isCustom = p.customPrice !== undefined && p.customPrice !== null;
+              const displayPrice = isCustom ? p.customPrice : p.defaultPrice;
+              return (
+                <View style={styles.dropdownOptionRow}>
+                  <View style={{ flex: 1, paddingRight: 6 }}>
+                    <Text style={styles.dropdownOptionName}>{p.name}</Text>
+                    {p.changeReason ? (
+                      <Text style={{ fontSize: 10, color: '#B45309', fontStyle: 'italic', marginTop: 1 }} numberOfLines={1}>
+                        💬 {p.changeReason}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[styles.dropdownOptionPrice, isCustom && { color: '#059669', fontWeight: 'bold' }]}>
+                      {safeFormatCurrency(displayPrice)}đ/{p.unit || 'kg'}
+                    </Text>
+                    {isCustom && (
+                      <Text style={{ fontSize: 9.5, color: '#059669', fontWeight: '600' }}>Giá riêng</Text>
+                    )}
+                  </View>
+                </View>
+              );
+            }}
             hasError={hasError}
             triggerStyle={[
               styles.customSelectTrigger,

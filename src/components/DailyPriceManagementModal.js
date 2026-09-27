@@ -198,6 +198,7 @@ const DailyPriceManagementModal = forwardRef(({ onRefresh }, ref) => {
       currentPrice: changeItem.newPrice,
       transactionId: changeItem.transactionId,
       date: changeItem.date || selectedDate,
+      changeReason: changeItem.changeReason || null,
     });
   };
 
@@ -398,13 +399,22 @@ const DailyPriceManagementModal = forwardRef(({ onRefresh }, ref) => {
                   idx === item.changes.length - 1 && { borderBottomWidth: 0 },
                 ]}
               >
-                {/* Cột trái: Tên thịt + đơn vị */}
+                {/* Cột trái: Tên thịt + đơn vị + lý do nếu có */}
                 <View style={styles.changeLeftCol}>
-                  <Text style={styles.productNameText} numberOfLines={1}>
-                    {ch.productName}
-                  </Text>
-                  <View style={styles.unitBadge}>
-                    <Text style={styles.unitBadgeText}>{ch.unit || 'kg'}</Text>
+                  <View style={{ flexShrink: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Text style={styles.productNameText} numberOfLines={1}>
+                        {ch.productName}
+                      </Text>
+                      <View style={styles.unitBadge}>
+                        <Text style={styles.unitBadgeText}>{ch.unit || 'kg'}</Text>
+                      </View>
+                    </View>
+                    {ch.changeReason ? (
+                      <Text style={styles.changeReasonText} numberOfLines={1}>
+                        💬 {ch.changeReason}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
 
@@ -918,6 +928,12 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: 'bold',
     color: '#0F172A',
+  },
+  changeReasonText: {
+    fontSize: 10,
+    color: '#B45309',
+    fontStyle: 'italic',
+    marginTop: 1,
   },
   unitBadge: {
     backgroundColor: '#F1F5F9',

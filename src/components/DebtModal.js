@@ -25,8 +25,10 @@ import ProductSelector from './ProductSelector';
 import { useResourceLock } from '../hooks/useResourceLock';
 import { matchItemSearch } from '../utils/searchHelper';
 import MoneyInput from './MoneyInput';
+import PriceChangeReasonModal from './PriceChangeReasonModal';
 
-const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
+const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRefresh }, ref) => {
+  const [currentCustomerName, setCurrentCustomerName] = useState(propCustomerName || '');
   // ─── Helper: lấy ngày hôm nay dạng DD/MM/YYYY ──────────────────────────
   const getTodayFormatted = () => {
     const today = new Date();
@@ -113,6 +115,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
   const popupRef = useRef(null);
+  const priceChangeReasonModalRef = useRef(null);
   const isSubmittingRef = useRef(false);
 
   // ─── Tải danh mục sản phẩm (chỉ khi modal đang mở, có kèm theo customerId để lấy giá riêng) ───
@@ -137,6 +140,7 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
   useImperativeHandle(ref, () => ({
     open: (options = {}) => {
       setVisible(true);
+      setCurrentCustomerName(options?.customerName || propCustomerName || '');
       setCartItems([]);
       setCurrentProduct(null);
       setCurrentQuantity('');
@@ -312,6 +316,43 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
     }
   };
 
+  // ─── Thực thi gửi API tạo đơn nợ thủ công ─────────────────────────────────────
+  const executeManualSubmit = async (isoDate, priceChangeReason = null) => {
+    setError('');
+    setErrorField('');
+    setLoading(true);
+    isSubmittingRef.current = true;
+    try {
+      const response = await api.post('/transactions', {
+        customerId,
+        date: isoDate,
+        note: note.trim() || null,
+        source: 'MANUAL_SINGLE',
+        priceChangeReason: priceChangeReason || null,
+        // Gửi toàn bộ mặt hàng trong giỏ hàng lên cùng 1 lần
+        items: cartItems.map((item) => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+          price: item.price,
+          costPrice: item.costPrice !== undefined ? item.costPrice : (item.product?.costPrice || 0),
+        })),
+      });
+
+      if (response.data.success) {
+        if (onRefresh) onRefresh();
+        setVisible(false);
+        showGlobalToast('Đã ghi nợ thành công.', 'success');
+      } else {
+        setError(response.data.message || 'Lỗi ghi nợ. Vui lòng thử lại.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+      isSubmittingRef.current = false;
+    }
+  };
+
   // ─── Xác nhận và gửi toàn bộ giỏ hàng lên API ──────────────────────────────────
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
@@ -351,38 +392,29 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
         return;
       }
 
-      setError('');
-      setErrorField('');
-      setLoading(true);
-      isSubmittingRef.current = true;
-      try {
-        const response = await api.post('/transactions', {
-          customerId,
-          date: isoDate,
-          note: note.trim() || null,
-          source: 'MANUAL_SINGLE',
-          // Gửi toàn bộ mặt hàng trong giỏ hàng lên cùng 1 lần
-          items: cartItems.map((item) => ({
-            productId: item.product.id,
-            quantity: item.quantity,
-            price: item.price,
-            costPrice: item.costPrice !== undefined ? item.costPrice : (item.product?.costPrice || 0),
-          })),
-        });
+      // Kiểm tra xem có món nào trong giỏ hàng có đơn giá thay đổi so với giá riêng hoặc giá mặc định
+      const changedPriceItems = cartItems.filter((item) => {
+        const origPrice = Number(item.product?.customPrice ?? item.product?.defaultPrice ?? 0);
+        return Math.abs(Number(item.price) - origPrice) > 0.01;
+      });
 
-        if (response.data.success) {
-          if (onRefresh) onRefresh();
-          setVisible(false);
-          showGlobalToast('Đã ghi nợ thành công.', 'success');
-        } else {
-          setError(response.data.message || 'Lỗi ghi nợ. Vui lòng thử lại.');
-        }
-      } catch (err) {
-        setError(err.response?.data?.message || 'Lỗi kết nối mạng, vui lòng thử lại.');
-      } finally {
-        setLoading(false);
-        isSubmittingRef.current = false;
+      // Nếu có món đổi giá, hiển thị pop-up hỏi lý do đổi giá trước khi hoàn tất
+      if (changedPriceItems.length > 0) {
+        priceChangeReasonModalRef.current?.open({
+          items: changedPriceItems.map((item) => ({
+            productName: item.product?.name,
+            oldPrice: Number(item.product?.customPrice ?? item.product?.defaultPrice ?? 0),
+            newPrice: item.price,
+          })),
+          customerName: currentCustomerName || 'Khách hàng',
+          onConfirm: (reason) => {
+            executeManualSubmit(isoDate, reason);
+          },
+        });
+        return;
       }
+
+      executeManualSubmit(isoDate, null);
     } else {
       // Logic gửi ghi nợ nhanh
       const qAmt = quickAmountVND;
@@ -644,6 +676,15 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
                     />
                     {errorField === 'price' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
 
+                    {/* Hiển thị lý do đổi giá gần nhất của loại thịt này nếu có */}
+                    {currentProduct?.changeReason ? (
+                      <View style={styles.priceReasonHintBox}>
+                        <Text style={styles.priceReasonHintText}>
+                          💬 Lý do đổi giá gần nhất: <Text style={{ fontWeight: '600' }}>{currentProduct.changeReason}</Text>
+                        </Text>
+                      </View>
+                    ) : null}
+
                     {/* Xem trước thành tiền & lãi mặt hàng đang nhập */}
                     {displayCurrentSubtotal > 0 && (
                       <View style={styles.previewRow}>
@@ -851,6 +892,9 @@ const DebtModal = forwardRef(({ customerId, onRefresh }, ref) => {
     <PinSetupModal ref={pinSetupRef} />
     {/* Toast thông báo ghi nợ thành công */}
     <PopupModal ref={popupRef} />
+
+    {/* Pop-up hỏi lý do đổi giá ở tầng cao nhất */}
+    <PriceChangeReasonModal ref={priceChangeReasonModalRef} />
   </>
 );
 });
@@ -1353,5 +1397,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',
+  },
+  priceReasonHintBox: {
+    backgroundColor: '#FEF9C3',
+    borderWidth: 1,
+    borderColor: '#FDE047',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  priceReasonHintText: {
+    fontSize: 11,
+    color: '#854D0E',
+    fontStyle: 'italic',
   },
 });

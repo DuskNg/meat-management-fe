@@ -24,6 +24,7 @@ import ProductSelector from './ProductSelector';
 
 import MoneyInput from './MoneyInput';
 import { showGlobalToast } from '../store/toastStore';
+import PriceChangeReasonModal from './PriceChangeReasonModal';
 
 const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, ref) => {
   // ─── Helper: Chuyển ISO date string/Date object sang DD/MM/YYYY ───────────
@@ -92,6 +93,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   const [visible, setVisible] = useState(false);
   const [transactionId, setTransactionId] = useState(null);
   const [customerId, setCustomerId] = useState(null); // Lưu ID khách hàng phục vụ lấy giá thịt tùy biến
+  const [customerName, setCustomerName] = useState('');
 
   // Giỏ hàng chứa danh sách mặt hàng đang sửa đổi
   const [cartItems, setCartItems] = useState([]);
@@ -121,6 +123,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   // Refs cho 2 modal PIN
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
+  const priceChangeReasonModalRef = useRef(null);
   const isSubmittingRef = useRef(false);
 
   // ─── Tải danh mục sản phẩm (chỉ khi modal hiển thị và có customerId) ────────────────────
@@ -147,6 +150,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
       if (!transaction) return;
       setTransactionId(transaction.id);
       setCustomerId(transaction.customerId || ownerCustomerId); // Ưu tiên ID trong giao dịch, fallback sang khách hàng đang xem
+      setCustomerName(transaction.customer?.name || '');
 
       // Kiểm tra xem đơn có các mặt hàng thịt thật sự hay không
       const hasRealMeat = (transaction.items || []).some(
@@ -455,6 +459,35 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
     }
   };
 
+  // ─── Thực thi gửi API cập nhật đơn nợ ─────────────────────────
+  const executeSubmit = async (isoDate, payloadItems, priceChangeReason = null) => {
+    setError('');
+    setLoading(true);
+    isSubmittingRef.current = true;
+    try {
+      const response = await api.put(`/transactions/${transactionId}`, {
+        date: isoDate,
+        note: note.trim() || null,
+        profitPercent: activeTab === 'quick' && quickProfitPercent ? parseFloat(quickProfitPercent) : undefined,
+        items: payloadItems,
+        priceChangeReason: priceChangeReason || null,
+      });
+
+      if (response.data.success) {
+        setVisible(false);
+        showGlobalToast('Đã cập nhật đơn ghi nợ thành công!', 'success');
+        if (onRefresh) onRefresh();
+      } else {
+        setError(response.data.message || 'Lỗi cập nhật. Vui lòng thử lại.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Lỗi kết nối, vui lòng kiểm tra lại.');
+    } finally {
+      setLoading(false);
+      isSubmittingRef.current = false;
+    }
+  };
+
   // ─── Lưu cập nhật đơn hàng ──────────────────────────────────
   const handleSubmit = async () => {
     if (loading || isSubmittingRef.current) return; // Ngăn chặn bấm đúp khi đang gửi yêu cầu
@@ -480,6 +513,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
           price: qAmt,
         },
       ];
+      executeSubmit(isoDate, payloadItems, null);
     } else {
       if (cartItems.length === 0) {
         setError('Vui lòng chọn ít nhất 1 loại thịt vào danh sách.');
@@ -491,31 +525,29 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
         price: item.price,
         costPrice: item.costPrice !== undefined ? item.costPrice : (item.product?.costPrice || 0),
       }));
-    }
 
-    setError('');
-    setLoading(true);
-    isSubmittingRef.current = true;
-    try {
-      const response = await api.put(`/transactions/${transactionId}`, {
-        date: isoDate,
-        note: note.trim() || null,
-        profitPercent: activeTab === 'quick' && quickProfitPercent ? parseFloat(quickProfitPercent) : undefined,
-        items: payloadItems,
+      // Kiểm tra xem có món nào có đơn giá thay đổi so với giá gốc không
+      const changedPriceItems = cartItems.filter((item) => {
+        const origPrice = Number(item.product?.customPrice ?? item.product?.defaultPrice ?? 0);
+        return Math.abs(Number(item.price) - origPrice) > 0.01;
       });
 
-      if (response.data.success) {
-        setVisible(false);
-        showGlobalToast('Đã cập nhật đơn ghi nợ thành công!', 'success');
-        if (onRefresh) onRefresh();
-      } else {
-        setError(response.data.message || 'Lỗi cập nhật. Vui lòng thử lại.');
+      if (changedPriceItems.length > 0) {
+        priceChangeReasonModalRef.current?.open({
+          items: changedPriceItems.map((item) => ({
+            productName: item.product?.name,
+            oldPrice: Number(item.product?.customPrice ?? item.product?.defaultPrice ?? 0),
+            newPrice: item.price,
+          })),
+          customerName: customerName || 'Khách hàng',
+          onConfirm: (reason) => {
+            executeSubmit(isoDate, payloadItems, reason);
+          },
+        });
+        return;
       }
-    } catch (err) {
-      setError(err.response?.data?.message || 'Lỗi kết nối, vui lòng kiểm tra lại.');
-    } finally {
-      setLoading(false);
-      isSubmittingRef.current = false;
+
+      executeSubmit(isoDate, payloadItems, null);
     }
   };
 
@@ -761,6 +793,15 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
                     onChangeText={(text) => setCurrentPrice(formatNumberString(text))}
                   />
 
+                  {/* Hiển thị lý do đổi giá gần nhất nếu có */}
+                  {currentProduct?.changeReason ? (
+                    <View style={styles.priceReasonHintBox}>
+                      <Text style={styles.priceReasonHintText}>
+                        💬 Lý do đổi giá gần nhất: <Text style={{ fontWeight: '600' }}>{currentProduct.changeReason}</Text>
+                      </Text>
+                    </View>
+                  ) : null}
+
                   {/* Xem trước thành tiền mặt hàng đang nhập */}
                   {displayCurrentSubtotal > 0 && (
                     <View style={styles.previewRow}>
@@ -848,15 +889,14 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
             )}
           </TouchableOpacity>
         </View>
-      </View>
+      </SmoothModal>
 
+      {/* Các modal con độc lập ở tầng cao nhất */}
       <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
-
-      {/* Modal nhập PIN khi phiên hết hạn */}
       <PinInputModal ref={pinInputRef} />
-      {/* Modal tạo PIN lần đầu */}
       <PinSetupModal ref={pinSetupRef} />
-    </SmoothModal>
+      <PriceChangeReasonModal ref={priceChangeReasonModalRef} />
+    </>
   );
 });
 
@@ -1282,5 +1322,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  priceReasonHintBox: {
+    backgroundColor: '#FEF9C3',
+    borderWidth: 1,
+    borderColor: '#FDE047',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  priceReasonHintText: {
+    fontSize: 11,
+    color: '#854D0E',
+    fontStyle: 'italic',
   },
 });

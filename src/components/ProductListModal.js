@@ -22,6 +22,7 @@ import { showGlobalToast } from '../store/toastStore';
 import CustomSelect from './CustomSelect';
 import { useCustomerGroups } from '../hooks/useCustomerGroups';
 import { useAuthStore } from '../store/authStore';
+import PriceChangeReasonModal from './PriceChangeReasonModal';
 
 const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
@@ -35,6 +36,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
   const queryClient = useQueryClient();
   const [editingProduct, setEditingProduct] = useState(null); // Quản lý trạng thái đang sửa mặt hàng thịt
   const popupModalRef = useRef(null);
+  const priceChangeReasonModalRef = useRef(null);
 
   // State phục vụ tính năng CẬP NHẬT GIÁ ĐỒNG LOẠT
   const [batchModalVisible, setBatchModalVisible] = useState(false);
@@ -381,6 +383,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
             customPrice: currentPrice,
             originalCustomPrice: hasCustom ? currentPrice : null,
             hasCustomPrice: hasCustom,
+            changeReason: p.changeReason || null,
             resetToDefault: false,
             isEdited: false,
           };
@@ -431,6 +434,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
           outliers: p.outliers || [],
           outlierCount: p.outlierCount || 0,
           hasCustomPrice: false,
+          changeReason: null,
           resetToDefault: false,
           isEdited: false,
         }))
@@ -492,42 +496,13 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
     return customProductItems.filter((i) => i.isEdited || i.resetToDefault).length;
   }, [customProductItems]);
 
-  // Lưu bảng giá riêng cho cửa hàng hoặc nhóm cửa hàng
-  const handleSaveCustomPrices = async () => {
-    let targetCustomerIds = [];
-    let targetName = '';
-
-    if (customTargetType === 'customer') {
-      if (!selectedCustomer) {
-        showGlobalToast('Vui lòng chọn cửa hàng cần cài đặt giá riêng.', 'warning');
-        return;
-      }
-      targetCustomerIds = [selectedCustomer.id];
-      targetName = selectedCustomer.name;
-    } else {
-      if (!selectedGroup) {
-        showGlobalToast('Vui lòng chọn nhóm cửa hàng cần cài đặt giá riêng.', 'warning');
-        return;
-      }
-      targetCustomerIds = selectedGroup.customerIds || [];
-      if (targetCustomerIds.length === 0) {
-        showGlobalToast('Nhóm này chưa có cửa hàng thành viên nào.', 'warning');
-        return;
-      }
-      targetName = selectedGroup.name;
-    }
-
-    const changedItems = customProductItems.filter((i) => i.isEdited || i.resetToDefault);
-
-    if (changedItems.length === 0) {
-      showGlobalToast('Bạn chưa điều chỉnh đơn giá của mặt hàng nào.', 'info');
-      return;
-    }
-
+  // Thực thi gọi API lưu bảng giá riêng
+  const executeSaveCustomPrices = async (targetCustomerIds, changedItems, changeReason = null) => {
     setSavingCustomPrices(true);
     try {
       const payload = {
         customerIds: targetCustomerIds,
+        changeReason: changeReason || null,
         items: changedItems.map((i) => ({
           productId: i.id,
           price: i.resetToDefault ? null : i.customPrice,
@@ -563,6 +538,63 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
     } finally {
       setSavingCustomPrices(false);
     }
+  };
+
+  // Lưu bảng giá riêng cho cửa hàng hoặc nhóm cửa hàng
+  const handleSaveCustomPrices = () => {
+    let targetCustomerIds = [];
+    let targetName = '';
+
+    if (customTargetType === 'customer') {
+      if (!selectedCustomer) {
+        showGlobalToast('Vui lòng chọn cửa hàng cần cài đặt giá riêng.', 'warning');
+        return;
+      }
+      targetCustomerIds = [selectedCustomer.id];
+      targetName = selectedCustomer.name;
+    } else {
+      if (!selectedGroup) {
+        showGlobalToast('Vui lòng chọn nhóm cửa hàng cần cài đặt giá riêng.', 'warning');
+        return;
+      }
+      targetCustomerIds = selectedGroup.customerIds || [];
+      if (targetCustomerIds.length === 0) {
+        showGlobalToast('Nhóm này chưa có cửa hàng thành viên nào.', 'warning');
+        return;
+      }
+      targetName = selectedGroup.name;
+    }
+
+    const changedItems = customProductItems.filter((i) => i.isEdited || i.resetToDefault);
+
+    if (changedItems.length === 0) {
+      showGlobalToast('Bạn chưa điều chỉnh đơn giá của mặt hàng nào.', 'info');
+      return;
+    }
+
+    // Lọc ra các mặt hàng có đơn giá thực sự thay đổi (không tính những món chỉ reset về mặc định)
+    const priceChangedItems = changedItems.filter(
+      (i) => !i.resetToDefault && Number(i.customPrice) !== Number(i.originalCustomPrice ?? i.baseDefaultPrice)
+    );
+
+    // Nếu có mặt hàng thay đổi giá, mở pop-up hỏi lý do thay đổi giá
+    if (priceChangedItems.length > 0) {
+      priceChangeReasonModalRef.current?.open({
+        items: priceChangedItems.map((i) => ({
+          productName: i.name,
+          oldPrice: i.originalCustomPrice ?? i.baseDefaultPrice,
+          newPrice: i.customPrice,
+        })),
+        customerName: targetName,
+        onConfirm: (reason) => {
+          executeSaveCustomPrices(targetCustomerIds, changedItems, reason);
+        },
+      });
+      return;
+    }
+
+    // Nếu chỉ có món reset về giá gốc, không cần hỏi lý do
+    executeSaveCustomPrices(targetCustomerIds, changedItems, null);
   };
 
   return (
@@ -1052,6 +1084,13 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
                                 )}
                               </View>
 
+                              {/* Hiển thị lý do đổi giá gần nhất */}
+                              {item.changeReason && !isModified ? (
+                                <Text style={styles.customRowReasonText} numberOfLines={2}>
+                                  💬 {item.changeReason}
+                                </Text>
+                              ) : null}
+
                               {/* Hiện danh sách cửa hàng lệch giá (chế độ nhóm) */}
                               {hasOutliers && (
                                 <View style={{ marginTop: 4 }}>
@@ -1296,6 +1335,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
       </SmoothModal>
 
       <PopupModal ref={popupModalRef} />
+      <PriceChangeReasonModal ref={priceChangeReasonModalRef} />
     </>
   );
 });
@@ -2000,6 +2040,12 @@ const styles = StyleSheet.create({
   customRowUnit: {
     fontSize: 11,
     color: '#64748B',
+  },
+  customRowReasonText: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   customTagHasPrice: {
     backgroundColor: '#DCFCE7',

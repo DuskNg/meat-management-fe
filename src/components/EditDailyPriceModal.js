@@ -1,5 +1,4 @@
-// meat-management-fe/src/components/EditDailyPriceModal.js
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import MoneyInput from './MoneyInput';
+import PriceChangeReasonModal from './PriceChangeReasonModal';
 import { api } from '../api/client';
 import { COLORS, SHADOWS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
@@ -38,6 +38,7 @@ const EditDailyPriceModal = forwardRef(({ onSaveSuccess }, ref) => {
   const [item, setItem] = useState(null);
   const [newPrice, setNewPrice] = useState(0);
   const [saving, setSaving] = useState(false);
+  const priceChangeReasonModalRef = useRef(null);
 
   // Phơi bày các hàm điều khiển qua ref
   useImperativeHandle(ref, () => ({
@@ -63,15 +64,10 @@ const EditDailyPriceModal = forwardRef(({ onSaveSuccess }, ref) => {
     }
   };
 
-  // Lưu đơn giá mới và nhân lại đơn nợ
-  const handleSave = async () => {
+  // Thực thi lưu đơn giá mới và nhân lại đơn nợ kèm lý do thay đổi
+  const executeSave = async (changeReason = null) => {
     if (!item) return;
-
     const numericPrice = Number(newPrice);
-    if (!numericPrice || numericPrice <= 0) {
-      showGlobalToast('Vui lòng nhập đơn giá hợp lệ lớn hơn 0.', 'warning');
-      return;
-    }
 
     setSaving(true);
     try {
@@ -82,6 +78,7 @@ const EditDailyPriceModal = forwardRef(({ onSaveSuccess }, ref) => {
         transactionId: item.transactionId,
         date: item.date,
         recalculateOrder: true,
+        changeReason: changeReason || null,
       });
 
       if (res.data && res.data.success) {
@@ -107,6 +104,7 @@ const EditDailyPriceModal = forwardRef(({ onSaveSuccess }, ref) => {
             newPrice: numericPrice,
             transactionId: item.transactionId,
             date: item.date,
+            changeReason: changeReason || null,
           });
         }
       } else {
@@ -123,12 +121,45 @@ const EditDailyPriceModal = forwardRef(({ onSaveSuccess }, ref) => {
     }
   };
 
+  // Xử lý khi bấm nút lưu: nếu giá đổi thì hỏi lý do qua modal
+  const handleSave = () => {
+    if (!item) return;
+
+    const numericPrice = Number(newPrice);
+    if (!numericPrice || numericPrice <= 0) {
+      showGlobalToast('Vui lòng nhập đơn giá hợp lệ lớn hơn 0.', 'warning');
+      return;
+    }
+
+    const isSameAsOld = Math.abs(numericPrice - Number(item.oldPrice || 0)) <= 0.01;
+    if (isSameAsOld) {
+      executeSave(null);
+      return;
+    }
+
+    // Nếu giá thay đổi so với giá cũ, mở popup hỏi lý do thay đổi giá
+    priceChangeReasonModalRef.current?.open({
+      items: [
+        {
+          productName: item.productName,
+          oldPrice: item.oldPrice,
+          newPrice: numericPrice,
+        },
+      ],
+      customerName: item.customerName,
+      onConfirm: (reason) => {
+        executeSave(reason);
+      },
+    });
+  };
+
   if (!item) return null;
 
   const isSameAsOld = Math.abs(Number(newPrice) - Number(item.oldPrice || 0)) <= 0.01;
 
   return (
-    <SmoothModal visible={visible} onClose={handleClose}>
+    <>
+      <SmoothModal visible={visible} onClose={handleClose}>
       <View style={styles.modalView}>
         {/* HEADER MODAL CHUẨN BOTTOM-SHEET */}
         <View style={styles.headerRow}>
@@ -190,6 +221,14 @@ const EditDailyPriceModal = forwardRef(({ onSaveSuccess }, ref) => {
               <Text style={styles.currentPriceText}>{formatCurrency(item.currentPrice)}</Text>
             </View>
           </View>
+
+          {/* HIỂN THỊ LÝ DO THAY ĐỔI GIÁ GẦN NHẤT NẾU CÓ */}
+          {item.changeReason ? (
+            <View style={styles.currentReasonBox}>
+              <Text style={styles.currentReasonLabel}>Lý do đổi giá gần nhất:</Text>
+              <Text style={styles.currentReasonText}>💬 {item.changeReason}</Text>
+            </View>
+          ) : null}
 
           {/* NÚT KHÔI PHỤC GIÁ CŨ 1-CHẠM */}
           {Number(item.oldPrice) > 0 && !isSameAsOld && (
@@ -265,6 +304,10 @@ const EditDailyPriceModal = forwardRef(({ onSaveSuccess }, ref) => {
         </View>
       </View>
     </SmoothModal>
+
+    {/* Pop-up hỏi lý do đổi giá độc lập ở tầng cao nhất */}
+    <PriceChangeReasonModal ref={priceChangeReasonModalRef} />
+  </>
   );
 });
 
@@ -408,6 +451,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#94A3B8',
     fontWeight: 'bold',
+  },
+  currentReasonBox: {
+    backgroundColor: '#FEF9C3',
+    borderWidth: 1,
+    borderColor: '#FDE047',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  currentReasonLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#854D0E',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  currentReasonText: {
+    fontSize: 12,
+    color: '#713F12',
+    fontStyle: 'italic',
+    lineHeight: 18,
   },
   quickRestoreBtn: {
     backgroundColor: '#FEF3C7',
