@@ -255,9 +255,12 @@ const CustomSelect = ({
     if (!portalElRef.current) {
       const el = document.createElement('div');
       el.id = portalIdRef.current;
-      el.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;z-index:999999;pointer-events:none;';
+      el.style.cssText = `position:absolute;top:0;left:0;width:0;height:0;z-index:${zIndex};pointer-events:none;`;
       document.body.appendChild(el);
       portalElRef.current = el;
+    } else {
+      // Cập nhật z-index nếu prop thay đổi
+      portalElRef.current.style.zIndex = String(zIndex);
     }
 
     // Tính vị trí hiển thị dropdown tuyệt đối theo document body (như Antd)
@@ -269,7 +272,7 @@ const CustomSelect = ({
       left: dropdownPos.left,
       width: calculatedWidth,
       minWidth: effectiveMinWidth,
-      zIndex: 999999,
+      zIndex: zIndex,
       backgroundColor: '#FFFFFF',
       border: '1px solid #E2E8F0',
       borderRadius: 8,

@@ -100,6 +100,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   const [visible, setVisible] = useState(false);
   const [activeSubId, setActiveSubId] = useState(null);
   const [mobileTab, setMobileTab] = useState('split'); // 'image' | 'form' | 'split'
+  const [customerSelectZIndex, setCustomerSelectZIndex] = useState(10);
 
   // State điều khiển Zoom, Kéo rê (Pan) và Xoay ảnh ở cột Viewer
   const [scale, setScale] = useState(1);
@@ -786,7 +787,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   ) : null}
 
                   {/* 1. KHÁCH HÀNG + NGÀY GIAO + GHI CHÚ */}
-                  <View style={styles.formSectionBox}>
+                  <View style={[styles.formSectionBox, { zIndex: customerSelectZIndex }]}>
                     <Text style={styles.formFieldLabel}>
                       {currentCard.isReturn ? 'Khách hàng trả hàng' : 'Khách hàng ghi nợ'}{' '}
                       <Text style={{ color: '#EF4444' }}>*</Text>
@@ -803,6 +804,8 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                       disabled={currentCard.isLoadingPrice}
                       onSelect={(c) => handleCustomerChange(currentSub.id, c)}
                       renderSelected={(c) => c?.name || ''}
+                      zIndex={9999999}
+                      onOpenChange={(isOpen) => setCustomerSelectZIndex(isOpen ? 9999999 : 10)}
                       renderOption={(c) => (
                         <View style={styles.custOptionRow}>
                           <Text style={styles.custOptionName}>{c.name}</Text>
