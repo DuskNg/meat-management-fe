@@ -26,6 +26,7 @@ import { showGlobalToast } from '../../src/store/toastStore';
 import { downloadOrShareImage, downloadOrShareMultipleImages } from '../../src/utils/imageShareHelper';
 import { COLORS } from '../../src/theme';
 import { matchSearch } from '../../src/utils/searchHelper';
+import { getLunarDateString } from '../../src/utils/lunarCalendar';
 
 import { API_HOST } from '../../src/api/client';
 
@@ -506,6 +507,7 @@ const buildInvoiceRows = (
     const yyyy = d.getFullYear();
     const dateKey = `${dd}/${mm}/${yyyy}`;
     const displayDate = `${dd}/${mm}`;
+    const displayLunarDate = getLunarDateString(d);
     const monthKey = `${mm}/${yyyy}`;
 
     if (!allDayMap[dateKey]) {
@@ -514,6 +516,7 @@ const buildInvoiceRows = (
         dateObj: d,
         dateKey,
         displayDate,
+        displayLunarDate,
         monthKey,
         monthDisplay: `T${d.getMonth() + 1}`,
         monthFull: `T${d.getMonth() + 1}/${yyyy}`,
@@ -604,6 +607,7 @@ const buildInvoiceRows = (
       const yyyy = effectiveDate.getFullYear();
       const dateKey = `${dd}/${mm}/${yyyy}`;
       const displayDate = `${dd}/${mm}`;
+      const displayLunarDate = getLunarDateString(effectiveDate);
       const monthKey = `${mm}/${yyyy}`;
 
       if (!allDayMap[dateKey]) {
@@ -612,6 +616,7 @@ const buildInvoiceRows = (
           dateObj: effectiveDate,
           dateKey,
           displayDate,
+          displayLunarDate,
           monthKey,
           monthDisplay: `T${effectiveDate.getMonth() + 1}`,
           monthFull: `T${effectiveDate.getMonth() + 1}/${yyyy}`,
@@ -1275,9 +1280,19 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
       const dayMidY = dayStartY + dayHeight / 2;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#0F172A';
-      ctx.font = 'bold 13.5px Arial, sans-serif';
-      ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY);
+      if (day.displayLunarDate) {
+        ctx.fillStyle = '#0F172A';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
+
+        ctx.fillStyle = '#64748B';
+        ctx.font = '10px Arial, sans-serif';
+        ctx.fillText(`(${day.displayLunarDate} âm)`, pColX[0] + colWidths[0] / 2, dayMidY + 8);
+      } else {
+        ctx.fillStyle = '#0F172A';
+        ctx.font = 'bold 13.5px Arial, sans-serif';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY);
+      }
 
       // Kẻ ngang phân cách ngày (ĐẬM NHẤT)
       ctx.strokeStyle = '#0F172A';
@@ -2475,6 +2490,22 @@ export default function PortalScreen() {
                               <Text style={[styles.tdDateText, dateTextStyle]}>
                                 {day.displayDate}
                               </Text>
+                              {day.displayLunarDate ? (
+                                <Text
+                                  style={[
+                                    styles.tdLunarDateText,
+                                    isChainViewAll
+                                      ? null
+                                      : day.isPaid
+                                      ? styles.tdLunarDateTextPaid
+                                      : day.isPartialPaid
+                                      ? styles.tdLunarDateTextPartial
+                                      : styles.tdLunarDateTextUnpaid,
+                                  ]}
+                                >
+                                  {`(${day.displayLunarDate} âm)`}
+                                </Text>
+                              ) : null}
                               {statusBadge}
                             </View>
 
@@ -3637,7 +3668,7 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   thDate: {
-    width: 38,
+    width: 45,
     textAlign: 'center',
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
@@ -3676,7 +3707,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   tdDateCol: {
-    width: 38,
+    width: 45,
     alignItems: 'center',
     justifyContent: 'center',
     borderRightWidth: 1,
@@ -3687,6 +3718,23 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  tdLunarDateText: {
+    fontSize: 7.5,
+    fontWeight: '600',
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 1,
+    lineHeight: 9,
+  },
+  tdLunarDateTextPaid: {
+    color: '#15803D',
+  },
+  tdLunarDateTextUnpaid: {
+    color: '#B91C1C',
+  },
+  tdLunarDateTextPartial: {
+    color: '#C2410C',
   },
   tdDateStatusText: {
     fontSize: 7.5,

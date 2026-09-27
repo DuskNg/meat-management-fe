@@ -1,5 +1,6 @@
 // meat-management-fe/src/utils/debtImageDrawer.js
 import { Platform } from 'react-native';
+import { getLunarDateString } from './lunarCalendar';
 
 /**
  * Chuyển đổi chuỗi DD/MM/YYYY thành đối tượng Date
@@ -333,12 +334,14 @@ export const drawDebtImageCanvas = async ({
     const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
     const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
     const displayDate = `${dayNum}/${monthNum}`;
+    const displayLunarDate = getLunarDateString(d);
 
     if (!dayMap[dateKey]) {
       dayMap[dateKey] = {
         date: t.date,
         dateKey,
         displayDate,
+        displayLunarDate,
         entries: [],
       };
     }
@@ -382,12 +385,14 @@ export const drawDebtImageCanvas = async ({
     const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
     const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
     const displayDate = `${dayNum}/${monthNum}`;
+    const displayLunarDate = getLunarDateString(d);
 
     if (!dayMap[dateKey]) {
       dayMap[dateKey] = {
         date: p.paidAt,
         dateKey,
         displayDate,
+        displayLunarDate,
         entries: [],
       };
     }
@@ -809,10 +814,21 @@ export const drawDebtImageCanvas = async ({
       ctx.strokeStyle = '#CBD5E1';
       ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
-      ctx.fillStyle = '#334155';
-      ctx.font = '13.5px Arial, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2);
+      if (day.displayLunarDate) {
+        ctx.fillStyle = '#334155';
+        ctx.font = 'bold 12.5px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2 - 7);
+
+        ctx.fillStyle = '#64748B';
+        ctx.font = '10px Arial, sans-serif';
+        ctx.fillText(`(${day.displayLunarDate} âm)`, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2 + 8);
+      } else {
+        ctx.fillStyle = '#334155';
+        ctx.font = '13.5px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2);
+      }
 
       ctx.strokeStyle = '#94A3B8';
       ctx.lineWidth = 1.2;

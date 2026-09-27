@@ -21,6 +21,7 @@ import ImagePreviewModal from './ImagePreviewModal';
 import { showGlobalToast } from '../store/toastStore';
 import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../utils/debtMessageHelper';
 import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
+import { getLunarDateString } from '../utils/lunarCalendar';
 
 // Helper: lấy ngày hôm nay dạng DD/MM/YYYY
 const getTodayFormatted = () => {
@@ -799,12 +800,14 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
         const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
         const displayDate = `${dayNum}/${monthNum}`;
+        const displayLunarDate = getLunarDateString(d);
 
         if (!dayMap[dateKey]) {
           dayMap[dateKey] = {
             date: t.date,
             dateKey,
             displayDate,
+            displayLunarDate,
             entries: [],
           };
         }
@@ -850,6 +853,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
         const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
         const displayDate = `${dayNum}/${monthNum}`;
+        const displayLunarDate = getLunarDateString(d);
 
         // Trích xuất ngày đã thu định dạng DD/MM/YYYY chuẩn (ví dụ 31/07/2026)
         const trimNote = (p.note || '').trim();
@@ -863,6 +867,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             date: p.paidAt,
             dateKey,
             displayDate,
+            displayLunarDate,
             entries: [],
           };
         }
@@ -1350,11 +1355,22 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           ctx.strokeStyle = '#CBD5E1';
           ctx.strokeRect(pColX[0], dayStartY, colWidths[0], dayHeight);
 
-          // Chữ ngày căn giữa (Chữ nét thường, 13.5px)
-          ctx.fillStyle = '#334155';
-          ctx.font = '13.5px Arial, sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2);
+          // Chữ ngày căn giữa (Có thêm ngày âm lịch bên dưới)
+          if (day.displayLunarDate) {
+            ctx.fillStyle = '#334155';
+            ctx.font = 'bold 12.5px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2 - 7);
+
+            ctx.fillStyle = '#64748B';
+            ctx.font = '10px Arial, sans-serif';
+            ctx.fillText(`(${day.displayLunarDate} âm)`, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2 + 8);
+          } else {
+            ctx.fillStyle = '#334155';
+            ctx.font = '13.5px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayStartY + dayHeight / 2);
+          }
 
           // Đường kẻ ngang phân tách giữa các ngày (đậm và rõ hơn)
           ctx.strokeStyle = '#94A3B8';
@@ -1652,12 +1668,13 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       csvContent += `Số ĐT: ${customer?.phone || 'Chưa lưu'}\r\n\r\n`;
 
       // Tiêu đề cột
-      csvContent += 'Ngày,Tên hàng,Số lượng (kg),Đơn giá (đ),Thành tiền (đ)\r\n';
+      csvContent += 'Ngày,Ngày ÂL,Tên hàng,Số lượng (kg),Đơn giá (đ),Thành tiền (đ)\r\n';
 
       // Duyệt qua từng ngày và từng món
       rows.forEach(day => {
         (day.entries || []).forEach((entry, idx) => {
           const dateStr = idx === 0 ? day.displayDate : '';
+          const lunarStr = idx === 0 ? (day.displayLunarDate ? `${day.displayLunarDate} âm` : '') : '';
           const nameStr = `"${entry.name.replace(/"/g, '""')}"`;
           const qtyStr = entry.quantity !== null && entry.quantity !== undefined ? entry.quantity : '';
           const priceStr = entry.price ? Math.round(entry.price) : '';
@@ -1666,7 +1683,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
             amtStr = -amtStr;
           }
 
-          csvContent += `${dateStr},${nameStr},${qtyStr},${priceStr},${amtStr}\r\n`;
+          csvContent += `${dateStr},${lunarStr},${nameStr},${qtyStr},${priceStr},${amtStr}\r\n`;
         });
       });
 
@@ -1692,16 +1709,16 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       // Phần tổng kết báo cáo
       csvContent += '\r\n';
-      csvContent += `,,,TỔNG TIỀN HÀNG${filterRangeStr ? ` (${filterRangeStr})` : ''},${totalDebtInMonth}\r\n`;
+      csvContent += `,,,,TỔNG TIỀN HÀNG${filterRangeStr ? ` (${filterRangeStr})` : ''},${totalDebtInMonth}\r\n`;
       if (totalReturnInMonth > 0) {
-        csvContent += `,,,TIỀN HÀNG TRẢ VỀ,-${totalReturnInMonth}\r\n`;
+        csvContent += `,,,,TIỀN HÀNG TRẢ VỀ,-${totalReturnInMonth}\r\n`;
       }
       if (totalPaymentInMonth > 0) {
-        csvContent += `,,,TIỀN ĐÃ THANH TOÁN,-${totalPaymentInMonth}\r\n`;
+        csvContent += `,,,,TIỀN ĐÃ THANH TOÁN,-${totalPaymentInMonth}\r\n`;
       }
-      csvContent += `,,,CÒN LẠI PHẢI THU${filterRangeStr ? ` (${filterRangeStr})` : ''},${Math.max(0, totalDebtInMonth - totalReturnInMonth - totalPaymentInMonth)}\r\n`;
+      csvContent += `,,,,CÒN LẠI PHẢI THU${filterRangeStr ? ` (${filterRangeStr})` : ''},${Math.max(0, totalDebtInMonth - totalReturnInMonth - totalPaymentInMonth)}\r\n`;
       if (!isFull) {
-        csvContent += `,,,TỔNG CÔNG NỢ CẢ THÁNG (Tháng ${selectedMonth}),${totalWholeMonthDebt}\r\n`;
+        csvContent += `,,,,TỔNG CÔNG NỢ CẢ THÁNG (Tháng ${selectedMonth}),${totalWholeMonthDebt}\r\n`;
       }
 
       // Tải tệp tin về trình duyệt
