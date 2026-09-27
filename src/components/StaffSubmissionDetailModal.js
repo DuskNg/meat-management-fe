@@ -11,6 +11,7 @@ import {
   Image,
   ActivityIndicator,
   Platform,
+  Linking,
   useWindowDimensions,
 } from 'react-native';
 import CustomSelect from './CustomSelect';
@@ -23,6 +24,18 @@ import { showGlobalToast } from '../store/toastStore';
 // Helper định dạng tiền VNĐ
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('vi-VN').format(Math.round(amount || 0));
+
+// Helper chuẩn hóa ngày hiển thị (DD/MM/YYYY)
+const formatDisplayDate = (dateVal) => {
+  if (!dateVal) return '';
+  if (typeof dateVal === 'string' && dateVal.includes('-')) {
+    const parts = dateVal.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+  }
+  return String(dateVal);
+};
 
 // Helper chuẩn hóa URL hình ảnh/video
 const resolveMediaUrl = (url) => {
@@ -388,6 +401,135 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   const isVideo = currentSub.fileType === 'VIDEO' || /\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i.test(currentSub.fileUrl || '');
   const mediaUrl = resolveMediaUrl(currentSub.fileUrl);
 
+  // Xử lý chia sẻ thông tin hóa đơn qua Zalo
+  const handleShareZalo = async () => {
+    if (!currentCard || !currentSub) return;
+
+    // Tìm thông tin khách hàng đã chọn
+    const selectedCustomer = customers.find(
+      (c) => String(c.id) === String(currentCard.selectedCustomerId)
+    );
+
+    const isReturn = !!currentCard.isReturn;
+    const headerTitle = isReturn ? '↩️ HÓA ĐƠN TRẢ HÀNG' : '🥩 HÓA ĐƠN GIAO THỊT';
+    const dateFormatted = formatDisplayDate(currentCard.date);
+
+    const lines = [];
+    lines.push(`${headerTitle}${dateFormatted ? ` (${dateFormatted})` : ''}`);
+    if (selectedCustomer?.name) {
+      lines.push(`Khách hàng: ${selectedCustomer.name}`);
+    }
+    lines.push('------------------------');
+
+    if (isQuickMode) {
+      if (currentCard.quickSubAmounts && currentCard.quickSubAmounts.length > 0) {
+        currentCard.quickSubAmounts.forEach((sub, idx) => {
+          const val = parseFloat(sub.amount) || 0;
+          if (val > 0) {
+            lines.push(`• Món ${idx + 1}: ${formatCurrency(val)} đ`);
+          }
+        });
+      } else {
+        lines.push(`• Tiền hàng: ${formatCurrency(cardTotal)} đ`);
+      }
+    } else {
+      const items = currentCard.items || [];
+      if (items.length > 0) {
+        items.forEach((item) => {
+          const q = parseFloat(item.quantity) || 0;
+          const p = parseFloat(item.price) || 0;
+          const amt = parseFloat(item.amount) || (q * p);
+          const name = item.productName || 'Thịt';
+          const unit = item.unit || 'kg';
+          const priceDisplay = (p >= 1000 && p % 1000 === 0) ? `${p / 1000}k` : `${formatCurrency(p)}đ`;
+          lines.push(`• ${q}${unit} ${name} x ${priceDisplay} = ${formatCurrency(amt)} đ`);
+        });
+      } else {
+        lines.push(`• Tiền hàng: ${formatCurrency(cardTotal)} đ`);
+      }
+    }
+
+    lines.push('------------------------');
+    lines.push(`👉 TỔNG TIỀN: ${isReturn ? '-' : ''}${formatCurrency(cardTotal)} đ`);
+
+    if (currentCard.note && currentCard.note.trim()) {
+      lines.push(`📝 Ghi chú: ${currentCard.note.trim()}`);
+    }
+
+    const shareMessage = lines.join('\n');
+
+    // 1. Sao chép nội dung vào Clipboard
+    let copied = false;
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(shareMessage);
+        copied = true;
+      } catch (err) {
+        console.warn('Lỗi copy clipboard navigator:', err);
+      }
+    }
+    if (!copied && Platform.OS === 'web' && typeof document !== 'undefined') {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = shareMessage;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        copied = true;
+      } catch (err) {
+        console.warn('Lỗi fallback copy textarea:', err);
+      }
+    }
+
+    // 2. Chuyển tiếp tới Zalo của khách hàng nếu có số điện thoại
+    if (selectedCustomer?.phone) {
+      const cleanPhone = String(selectedCustomer.phone).replace(/[^0-9]/g, '');
+      let webPhone = cleanPhone;
+      if (webPhone.startsWith('84')) {
+        webPhone = '0' + webPhone.slice(2);
+      } else if (!webPhone.startsWith('0') && webPhone.length > 0) {
+        webPhone = '0' + webPhone;
+      }
+      if (webPhone) {
+        const zaloUrl = `https://zalo.me/${webPhone}`;
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.open(zaloUrl, '_blank');
+        } else {
+          Linking.openURL(zaloUrl).catch(() => {});
+        }
+        showGlobalToast(`Đã sao chép hóa đơn & mở Zalo chat với ${selectedCustomer.name}!`, 'success');
+        return;
+      }
+    }
+
+    // Nếu trên Mobile có Web Share API (đặc biệt khi chưa có SĐT khách)
+    if (isMobile && typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: headerTitle,
+          text: shareMessage,
+        });
+        showGlobalToast('Đã mở bảng chia sẻ Zalo!', 'success');
+        return;
+      } catch (err) {
+        // Bỏ qua nếu người dùng ấn hủy
+      }
+    }
+
+    // Fallback mở Zalo chung
+    const defaultZaloUrl = 'https://zalo.me';
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.open(defaultZaloUrl, '_blank');
+    } else {
+      Linking.openURL(defaultZaloUrl).catch(() => {});
+    }
+    showGlobalToast('Đã sao chép hóa đơn & mở Zalo!', 'success');
+  };
+
   return (
     <Modal
       visible={visible}
@@ -401,8 +543,15 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
         <View style={[styles.mainDialogContainer, isMobile && styles.mainDialogContainerMobile]}>
           {/* ═══ 1. THANH HEADER ĐIỀU HƯỚNG TỔNG ═══ */}
           <View style={styles.topNavigationHeader}>
-            {/* Khoảng trống bù để căn giữa tiêu đề cân đối với nút đóng ✕ bên phải */}
-            <View style={{ width: 32 }} />
+            {/* Nút chia sẻ Zalo trên thanh tiêu đề */}
+            <TouchableOpacity
+              style={styles.btnHeaderZalo}
+              onPress={handleShareZalo}
+              activeOpacity={0.7}
+              accessibilityLabel="Chia sẻ Zalo"
+            >
+              <Text style={styles.btnHeaderZaloText}>💬 Zalo</Text>
+            </TouchableOpacity>
 
             {/* Thông tin vị trí hóa đơn */}
             <View style={styles.navCenterInfoWrap}>
@@ -924,6 +1073,14 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     </TouchableOpacity>
 
                     <TouchableOpacity
+                      style={styles.btnZaloAction}
+                      onPress={handleShareZalo}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.btnZaloActionText}>💬 Zalo</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
                       style={[
                         styles.btnSaveAction,
                         currentCard.isReturn && styles.btnSaveActionReturn,
@@ -1080,6 +1237,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  btnHeaderZalo: {
+    backgroundColor: '#0068FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 64,
+    height: 30,
+  },
+  btnHeaderZaloText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 12,
   },
 
   // Tab Mobile
@@ -1444,10 +1617,10 @@ const styles = StyleSheet.create({
   actionButtonsWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   btnSkipAction: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 9,
     backgroundColor: '#F1F5F9',
     borderRadius: 8,
@@ -1457,14 +1630,28 @@ const styles = StyleSheet.create({
   btnSkipActionText: {
     color: '#64748B',
     fontWeight: 'bold',
+    fontSize: 12,
+  },
+  btnZaloAction: {
+    backgroundColor: '#0068FF',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.small,
+  },
+  btnZaloActionText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
     fontSize: 12.5,
   },
   btnSaveAction: {
     backgroundColor: '#10B981',
-    paddingHorizontal: 18,
+    paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 8,
-    minWidth: 140,
+    minWidth: 110,
     alignItems: 'center',
     justifyContent: 'center',
     ...SHADOWS.small,
@@ -1478,8 +1665,8 @@ const styles = StyleSheet.create({
   btnSaveActionText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
-    fontSize: 13.5,
-    letterSpacing: 0.3,
+    fontSize: 13,
+    letterSpacing: 0.2,
   },
   orderModeToggleBar: {
     flexDirection: 'row',
