@@ -47,7 +47,7 @@ const CustomSelect = ({
   compact = false,
   hasError = false,
   disabled = false,
-  zIndex = 9999,
+  zIndex = 9999999,
   dropUp,
   minWidth,
   autoFocus = false,

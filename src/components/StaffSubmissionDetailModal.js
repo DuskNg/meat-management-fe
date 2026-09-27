@@ -101,6 +101,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   const [activeSubId, setActiveSubId] = useState(null);
   const [mobileTab, setMobileTab] = useState('split'); // 'image' | 'form' | 'split'
   const [customerSelectZIndex, setCustomerSelectZIndex] = useState(10);
+  const [activeMeatItemIdx, setActiveMeatItemIdx] = useState(null);
 
   // State điều khiển Zoom, Kéo rê (Pan) và Xoay ảnh ở cột Viewer
   const [scale, setScale] = useState(1);
@@ -945,7 +946,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     </View>
                   ) : (
                     /* 2. DANH SÁCH MÓN THỊT CHI TIẾT */
-                    <View style={styles.formSectionBox}>
+                    <View style={[styles.formSectionBox, { zIndex: activeMeatItemIdx !== null ? 9999999 : 5 }]}>
                       <View style={styles.itemsHeaderRow}>
                         <Text style={styles.itemsSectionTitle}>
                           DANH SÁCH MÓN THỊT ({currentCard.items?.length || 0})
@@ -971,15 +972,23 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
 
                       {/* Danh sách từng dòng món thịt */}
                       {(currentCard.items || []).map((item, itemIdx) => (
-                        <View key={item.id || itemIdx} style={styles.tableDataRow}>
+                        <View
+                          key={item.id || itemIdx}
+                          style={[
+                            styles.tableDataRow,
+                            { zIndex: activeMeatItemIdx === itemIdx ? 9999999 : (100 - itemIdx) },
+                          ]}
+                        >
                           {/* Chọn món thịt */}
-                          <View style={{ flex: 3.2 }}>
+                          <View style={{ flex: 3.2, zIndex: activeMeatItemIdx === itemIdx ? 9999999 : 1 }}>
                             <CustomSelect
                               value={item.selectedProduct}
                               placeholder="Tên thịt..."
                               options={(currentCard.customer?.id && custProductsMap[currentCard.customer.id]) || products}
                               disabled={currentCard.isLoadingPrice}
+                              zIndex={9999999}
                               onOpenChange={(isOpen) => {
+                                setActiveMeatItemIdx(isOpen ? itemIdx : null);
                                 if (isOpen && currentCard.customer?.id && !custProductsMap[currentCard.customer.id]) {
                                   fetchProductsForCustomer(currentCard.customer.id);
                                 }

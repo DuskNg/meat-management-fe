@@ -584,6 +584,7 @@ const InvoiceReviewCard = React.memo(
                         inputStyle={styles.cardItemSelectInput}
                         options={customerProducts}
                         disabled={card.isLoadingPrice}
+                        zIndex={9999999}
                         onOpenChange={(isOpen) => {
                           if (isOpen && card.customer?.id) {
                             onFetchCustomerProducts(card.customer.id);
