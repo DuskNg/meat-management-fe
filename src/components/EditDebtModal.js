@@ -568,8 +568,9 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   const displayCurrentSubtotal = isNaN(currentSubtotal) ? 0 : currentSubtotal;
 
   return (
-    <SmoothModal zIndex={25000} visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.modalView}>
+    <>
+      <SmoothModal zIndex={25000} visible={visible} onClose={() => setVisible(false)}>
+        <View style={styles.modalView}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>✏️ CẬP NHẬT ĐƠN GHI NỢ</Text>
           <TouchableOpacity style={styles.closeHeaderButton} onPress={() => setVisible(false)}>
@@ -889,7 +890,8 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
             )}
           </TouchableOpacity>
         </View>
-      </SmoothModal>
+      </View>
+    </SmoothModal>
 
       {/* Các modal con độc lập ở tầng cao nhất */}
       <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
