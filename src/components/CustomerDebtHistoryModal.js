@@ -73,7 +73,7 @@ const getStartOfMonthDisplay = () => {
 
 // Helper phân tích danh sách các món thịt trả lại từ ghi chú
 const parseReturnItems = (note, defaultAmount) => {
-  if (!note) return [{ type: 'RETURN', name: '[TRẢ HÀNG]', quantity: null, price: null, amount: defaultAmount }];
+  if (!note) return [{ type: 'RETURN', name: 'TRẢ HÀNG', quantity: null, price: null, amount: defaultAmount }];
 
   const isNoteLevelImport = /\b(nhập hàng|nhập thịt|nhập kho|nhập lô|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(note || '');
 
@@ -82,7 +82,7 @@ const parseReturnItems = (note, defaultAmount) => {
   if (!text) {
     return [{
       type: 'RETURN',
-      name: isNoteLevelImport ? '[NHẬP HÀNG]' : '[TRẢ HÀNG]',
+      name: isNoteLevelImport ? 'NHẬP HÀNG' : 'TRẢ HÀNG',
       quantity: null,
       price: null,
       amount: defaultAmount,
@@ -98,9 +98,9 @@ const parseReturnItems = (note, defaultAmount) => {
     clean = clean.replace(/^[-–—:\s]+|[-–—:\s]+$/g, '').trim().toUpperCase();
 
     if (isPartImport || isNoteLevelImport) {
-      return clean ? `[NHẬP HÀNG] ${clean}` : '[NHẬP HÀNG]';
+      return clean ? `NHẬP: ${clean}` : 'NHẬP HÀNG';
     }
-    return clean ? `[TRẢ HÀNG] ${clean}` : '[TRẢ HÀNG]';
+    return clean ? `TRẢ: ${clean}` : 'TRẢ HÀNG';
   };
 
   const parts = text.split(/,\s*(?=[a-zA-Z\d\u00C0-\u1EF9])/);
@@ -170,7 +170,7 @@ const parseReturnItems = (note, defaultAmount) => {
 
   return results.length > 0 ? results : [{
     type: 'RETURN',
-    name: isNoteLevelImport ? '[NHẬP HÀNG]' : '[TRẢ HÀNG]',
+    name: isNoteLevelImport ? 'NHẬP HÀNG' : 'TRẢ HÀNG',
     quantity: null,
     price: null,
     amount: defaultAmount,

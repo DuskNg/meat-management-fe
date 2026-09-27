@@ -54,7 +54,7 @@ const parseReturnItems = (note, defaultAmount = 0) => {
   if (!note) {
     return [{
       type: 'RETURN',
-      name: '[TRẢ HÀNG]',
+      name: 'TRẢ HÀNG',
       quantity: null,
       price: null,
       amount: defaultAmount,
@@ -69,14 +69,14 @@ const parseReturnItems = (note, defaultAmount = 0) => {
   if (parts.length === 0) {
     return [{
       type: 'RETURN',
-      name: isNoteLevelImport ? '[NHẬP HÀNG]' : '[TRẢ HÀNG]',
+      name: isNoteLevelImport ? 'NHẬP HÀNG' : 'TRẢ HÀNG',
       quantity: null,
       price: null,
       amount: defaultAmount,
     }];
   }
 
-  // Hàm phụ chuẩn hóa tên món và gắn tiền tố tương ứng [NHẬP HÀNG] hoặc [TRẢ HÀNG]
+  // Hàm phụ chuẩn hóa tên món và gắn tiền tố tương ứng NHẬP: hoặc TRẢ:
   const formatReturnItemName = (rawName, isPartImport) => {
     let clean = (rawName || '').trim();
     clean = clean.replace(/\(\s*[\d.,]+\s*[đ₫kKVND]?\s*\)/gi, ' ').trim();
@@ -86,9 +86,9 @@ const parseReturnItems = (note, defaultAmount = 0) => {
     clean = clean.replace(/^[-–—:\s]+|[-–—:\s]+$/g, '').trim().toUpperCase();
 
     if (isPartImport || isNoteLevelImport) {
-      return clean ? `[NHẬP HÀNG] ${clean}` : '[NHẬP HÀNG]';
+      return clean ? `NHẬP: ${clean}` : 'NHẬP HÀNG';
     }
-    return clean ? `[TRẢ HÀNG] ${clean}` : '[TRẢ HÀNG]';
+    return clean ? `TRẢ: ${clean}` : 'TRẢ HÀNG';
   };
 
   const results = [];
@@ -212,7 +212,7 @@ const parseReturnItems = (note, defaultAmount = 0) => {
 
   return results.length > 0 ? results : [{
     type: 'RETURN',
-    name: isNoteLevelImport ? '[NHẬP HÀNG]' : '[TRẢ HÀNG]',
+    name: isNoteLevelImport ? 'NHẬP HÀNG' : 'TRẢ HÀNG',
     quantity: null,
     price: null,
     amount: defaultAmount,

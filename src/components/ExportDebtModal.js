@@ -173,7 +173,7 @@ const isReturnPayment = (p) => {
 // Helper phân tích danh sách các món thịt trả lại từ ghi chú
 // Helper phân tích danh sách các món thịt trả lại từ ghi chú
 const parseReturnItems = (note, defaultAmount) => {
-  if (!note) return [{ type: 'RETURN', name: '[TRẢ HÀNG]', quantity: null, price: null, amount: defaultAmount }];
+  if (!note) return [{ type: 'RETURN', name: 'TRẢ HÀNG', quantity: null, price: null, amount: defaultAmount }];
 
   const isNoteLevelImport = /\b(nhập hàng|nhập thịt|nhập kho|nhập lô|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(note || '');
 
@@ -183,14 +183,14 @@ const parseReturnItems = (note, defaultAmount) => {
   if (!text) {
     return [{
       type: 'RETURN',
-      name: isNoteLevelImport ? '[NHẬP HÀNG]' : '[TRẢ HÀNG]',
+      name: isNoteLevelImport ? 'NHẬP HÀNG' : 'TRẢ HÀNG',
       quantity: null,
       price: null,
       amount: defaultAmount,
     }];
   }
 
-  // Hàm phụ chuẩn hóa tên món và gắn tiền tố tương ứng [NHẬP HÀNG] hoặc [TRẢ HÀNG]
+  // Hàm phụ chuẩn hóa tên món và gắn tiền tố tương ứng NHẬP: hoặc TRẢ:
   const formatReturnItemName = (rawName, isPartImport) => {
     let clean = (rawName || '').trim();
     clean = clean.replace(/\(\s*[\d.,]+\s*[đ₫kKVND]?\s*\)/gi, ' ').trim();
@@ -200,9 +200,9 @@ const parseReturnItems = (note, defaultAmount) => {
     clean = clean.replace(/^[-–—:\s]+|[-–—:\s]+$/g, '').trim().toUpperCase();
 
     if (isPartImport || isNoteLevelImport) {
-      return clean ? `[NHẬP HÀNG] ${clean}` : '[NHẬP HÀNG]';
+      return clean ? `NHẬP: ${clean}` : 'NHẬP HÀNG';
     }
-    return clean ? `[TRẢ HÀNG] ${clean}` : '[TRẢ HÀNG]';
+    return clean ? `TRẢ: ${clean}` : 'TRẢ HÀNG';
   };
 
   // Tách nhiều món nếu phân tách bởi dấu phẩy
@@ -337,7 +337,7 @@ const parseReturnItems = (note, defaultAmount) => {
 
   return results.length > 0 ? results : [{
     type: 'RETURN',
-    name: isNoteLevelImport ? '[NHẬP HÀNG]' : '[TRẢ HÀNG]',
+    name: isNoteLevelImport ? 'NHẬP HÀNG' : 'TRẢ HÀNG',
     quantity: null,
     price: null,
     amount: defaultAmount,
