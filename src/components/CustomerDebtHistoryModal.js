@@ -1415,34 +1415,27 @@ const CustomerDebtHistoryModal = forwardRef(({
                           </View>
 
                           <View style={styles.meatSummaryTable}>
-                            {month.meatSummary.items.map((item, idx) => {
-                              const percent = month.meatSummary.grandTotalQty > 0
-                                ? Math.round((item.quantity / month.meatSummary.grandTotalQty) * 100)
-                                : 0;
-                              return (
-                                <View
-                                  key={idx}
-                                  style={[
-                                    styles.meatSummaryRow,
-                                    idx % 2 === 1 && styles.meatSummaryRowAlt,
-                                    idx === month.meatSummary.items.length - 1 && styles.meatSummaryRowLast
-                                  ]}
-                                >
-                                  <View style={styles.meatSummaryRowLeft}>
-                                    <Text style={styles.meatSummaryItemName}>• {item.name}</Text>
-                                    <View style={styles.meatProgressBarBg}>
-                                      <View style={[styles.meatProgressBarFill, { width: `${Math.min(100, Math.max(6, percent))}%` }]} />
-                                    </View>
-                                  </View>
-                                  <View style={styles.meatSummaryRowRight}>
+                            <View style={styles.meatSummaryGrid}>
+                              {month.meatSummary.items.map((item, idx) => {
+                                const isLeft = idx % 2 === 0;
+                                return (
+                                  <View
+                                    key={idx}
+                                    style={[
+                                      styles.meatSummaryGridCell,
+                                      isLeft ? styles.meatSummaryGridCellLeft : styles.meatSummaryGridCellRight,
+                                    ]}
+                                  >
+                                    <Text style={styles.meatSummaryItemName} numberOfLines={1}>
+                                      • {item.name}
+                                    </Text>
                                     <Text style={styles.meatSummaryItemQty}>
                                       {Number(item.quantity.toFixed(2)).toLocaleString('vi-VN')} {item.unit}
                                     </Text>
-                                    <Text style={styles.meatSummaryItemPercent}>{percent}%</Text>
                                   </View>
-                                </View>
-                              );
-                            })}
+                                );
+                              })}
+                            </View>
 
                             <View style={styles.meatSummaryTotalRow}>
                               <Text style={styles.meatSummaryTotalLabel}>TỔNG CỘNG:</Text>
@@ -2336,73 +2329,54 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  meatSummaryRow: {
+  meatSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  meatSummaryGridCell: {
+    width: '50%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 6.5,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
-  meatSummaryRowAlt: {
-    backgroundColor: '#F8FAFC',
+  meatSummaryGridCellLeft: {
+    borderRightWidth: 1,
+    borderRightColor: '#F1F5F9',
   },
-  meatSummaryRowLast: {
-    borderBottomWidth: 0,
-  },
-  meatSummaryRowLeft: {
-    flex: 1,
-    marginRight: 10,
-  },
+  meatSummaryGridCellRight: {},
   meatSummaryItemName: {
-    fontSize: 12.5,
+    fontSize: 11.5,
     color: '#334155',
-    fontWeight: '500',
-    marginBottom: 3,
-  },
-  meatProgressBarBg: {
-    height: 4,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 2,
-    overflow: 'hidden',
-    width: '100%',
-    maxWidth: 160,
-  },
-  meatProgressBarFill: {
-    height: '100%',
-    backgroundColor: '#059669',
-    borderRadius: 2,
-  },
-  meatSummaryRowRight: {
-    alignItems: 'flex-end',
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 4,
   },
   meatSummaryItemQty: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#0F172A',
     fontWeight: 'bold',
-  },
-  meatSummaryItemPercent: {
-    fontSize: 10.5,
-    color: '#64748B',
   },
   meatSummaryTotalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 7,
     backgroundColor: '#EFF6FF',
     borderTopWidth: 1.5,
     borderTopColor: '#BFDBFE',
   },
   meatSummaryTotalLabel: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#1E40AF',
   },
   meatSummaryTotalValue: {
-    fontSize: 13.5,
+    fontSize: 12.5,
     fontWeight: 'bold',
     color: '#1D4ED8',
   },

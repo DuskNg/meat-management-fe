@@ -2211,21 +2211,25 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                           </View>
 
                           <View style={styles.monthlyMeatTable}>
-                            {monthlyMeatSummary.items.map((item, idx) => (
-                              <View
-                                key={idx}
-                                style={[
-                                  styles.monthlyMeatRow,
-                                  idx % 2 === 1 && styles.monthlyMeatRowAlt,
-                                  idx === monthlyMeatSummary.items.length - 1 && styles.monthlyMeatRowLast,
-                                ]}
-                              >
-                                <Text style={styles.monthlyMeatName}>• {item.name}</Text>
-                                <Text style={styles.monthlyMeatQty}>
-                                  {Number(item.quantity.toFixed(2)).toLocaleString('vi-VN')} {item.unit}
-                                </Text>
-                              </View>
-                            ))}
+                            <View style={styles.monthlyMeatGrid}>
+                              {monthlyMeatSummary.items.map((item, idx) => {
+                                const isLeft = idx % 2 === 0;
+                                return (
+                                  <View
+                                    key={idx}
+                                    style={[
+                                      styles.monthlyMeatGridCell,
+                                      isLeft ? styles.monthlyMeatGridCellLeft : styles.monthlyMeatGridCellRight,
+                                    ]}
+                                  >
+                                    <Text style={styles.monthlyMeatName} numberOfLines={1}>• {item.name}</Text>
+                                    <Text style={styles.monthlyMeatQty}>
+                                      {Number(item.quantity.toFixed(2)).toLocaleString('vi-VN')} {item.unit}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </View>
 
                             <View style={styles.monthlyMeatTotalRow}>
                               <Text style={styles.monthlyMeatTotalLabel}>TỔNG CỘNG:</Text>
@@ -3050,28 +3054,34 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  monthlyMeatRow: {
+  monthlyMeatGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  monthlyMeatGridCell: {
+    width: '50%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6.5,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
-  monthlyMeatRowAlt: {
-    backgroundColor: '#F8FAFC',
+  monthlyMeatGridCellLeft: {
+    borderRightWidth: 1,
+    borderRightColor: '#F1F5F9',
   },
-  monthlyMeatRowLast: {
-    borderBottomWidth: 0,
-  },
+  monthlyMeatGridCellRight: {},
   monthlyMeatName: {
-    fontSize: 13,
+    fontSize: 11.5,
     color: '#334155',
-    fontWeight: '500',
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 4,
   },
   monthlyMeatQty: {
-    fontSize: 13.5,
+    fontSize: 12,
     color: '#0F172A',
     fontWeight: 'bold',
   },
@@ -3079,14 +3089,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     backgroundColor: '#EFF6FF',
     borderTopWidth: 1.5,
     borderTopColor: '#BFDBFE',
   },
   monthlyMeatTotalLabel: {
-    fontSize: 13.5,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#1E40AF',
   },
