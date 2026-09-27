@@ -36,15 +36,28 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
     return `${d}/${m}/${y}`;
   };
 
-  // ─── Helper: chuỗi DD/MM/YYYY → ISO string để gửi API ──────────────────
+  // ─── Helper: chuỗi ngày → ISO string để gửi API (hỗ trợ cả DD/MM/YYYY và YYYY-MM-DD, đặt 12:00 trưa tránh lệch múi giờ) ───
   const parseDateString = (str) => {
-    const parts = str.trim().split(/[\/\-]/);
+    if (!str) return null;
+    const trimmed = str.trim();
+    if (trimmed.includes('-') && !trimmed.includes('/')) {
+      const parts = trimmed.split('-');
+      if (parts.length === 3 && parts[0].length === 4) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const day = parseInt(parts[2], 10);
+        if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+        const dateObj = new Date(year, month - 1, day, 12, 0, 0);
+        return dateObj.toISOString();
+      }
+    }
+    const parts = trimmed.split(/[\/\-]/);
     if (parts.length !== 3) return null;
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10);
     const year = parseInt(parts[2], 10);
     if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-    const dateObj = new Date(year, month - 1, day);
+    const dateObj = new Date(year, month - 1, day, 12, 0, 0);
     if (
       dateObj.getFullYear() !== year ||
       dateObj.getMonth() !== month - 1 ||

@@ -343,6 +343,79 @@ const parseReturnItems = (note, defaultAmount) => {
   }];
 };
 
+// Helper tính toán tổng hợp sản lượng thịt theo từng loại trong khoảng thời gian đã lọc (chỉ tính thịt thực tế)
+const computeMeatVolumeSummary = (filteredTrans, filteredPays) => {
+  const map = {};
+  let grandTotalQty = 0;
+
+  (filteredTrans || []).forEach(t => {
+    if (t.items && t.items.length > 0) {
+      t.items.forEach(item => {
+        const rawName = (item.product?.name || item.productName || 'Thịt').trim();
+        const isQuick = rawName === 'Tiền hàng' || rawName.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
+        if (isQuick) return;
+
+        const q = parseFloat(item.quantity);
+        if (!isNaN(q) && q > 0) {
+          const upperName = rawName.toUpperCase();
+          if (!map[upperName]) {
+            map[upperName] = {
+              name: upperName,
+              quantity: 0,
+              unit: item.product?.unit || 'kg',
+            };
+          }
+          map[upperName].quantity += q;
+          grandTotalQty += q;
+        }
+      });
+    }
+  });
+
+  // Trừ bớt lượng thịt trả lại nếu có ghi rõ số kg trong phiếu thu / trả hàng
+  (filteredPays || []).forEach(p => {
+    if (isReturnPayment(p)) {
+      const returnItems = parseReturnItems(p.note, parseFloat(p.amount || 0));
+      returnItems.forEach(ritem => {
+        if (ritem.quantity && ritem.quantity > 0) {
+          const cleanReturnName = ritem.name.replace(/\[TRẢ HÀNG\]|\[TRẢ LẠI HÀNG\]|\[NHẬP HÀNG\]/gi, '').trim().toUpperCase();
+          for (const key of Object.keys(map)) {
+            if (key.includes(cleanReturnName) || cleanReturnName.includes(key)) {
+              map[key].quantity = Math.max(0, map[key].quantity - ritem.quantity);
+              grandTotalQty = Math.max(0, grandTotalQty - ritem.quantity);
+              break;
+            }
+          }
+        }
+      });
+    }
+  });
+
+  const items = Object.values(map)
+    .filter(it => it.quantity > 0)
+    .sort((a, b) => b.quantity - a.quantity);
+
+  return {
+    items,
+    grandTotalQty: Math.round(grandTotalQty * 100) / 100,
+  };
+};
+
+// Helper định dạng văn bản tổng hợp sản lượng thịt để gửi Zalo / SMS
+const buildMonthlyMeatSummaryText = (summary, custName, monthStr) => {
+  if (!summary || !summary.items || summary.items.length === 0) return '';
+  const lines = [
+    `🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr || ''}${custName ? ` - ${custName}` : ''}:`,
+  ];
+  summary.items.forEach(it => {
+    const qtyFormatted = Number(it.quantity.toFixed(2)).toLocaleString('vi-VN');
+    lines.push(`• ${it.name}: ${qtyFormatted} ${it.unit}`);
+  });
+  const totalFormatted = Number(summary.grandTotalQty.toFixed(2)).toLocaleString('vi-VN');
+  lines.push(`➡️ TỔNG CỘNG: ${totalFormatted} kg thịt`);
+  return lines.join('\n');
+};
+
 // Helper tạo tin nhắn công nợ theo ngày đúng chuẩn gửi Zalo/SMS
 // Quy tắc: Hàng trên cùng là ngày, hàng dưới tên thịt nhân đơn giá thành tiền, hàng cuối cùng là tổng
 const buildDailyMessage = (dateKey, transList, payList, cust) => {
@@ -451,6 +524,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [availableDays, setAvailableDays] = useState([]);
   const [dailyMessageText, setDailyMessageText] = useState('');
   const [isCopied, setIsCopied] = useState(false);
+  const [monthlyMeatSummary, setMonthlyMeatSummary] = useState({ items: [], grandTotalQty: 0 });
+  const [isExportMonth, setIsExportMonth] = useState(false);
+  const [isMeatCopied, setIsMeatCopied] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -483,6 +559,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       setImageUri(null);
       setError('');
       setIsCopied(false);
+      setMonthlyMeatSummary({ items: [], grandTotalQty: 0 });
+      setIsExportMonth(false);
+      setIsMeatCopied(false);
       fetchData(c.id, c, targetMonth, targetDay);
     },
     close: () => {
@@ -689,6 +768,12 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         }
         return true;
       });
+
+      // Tính toán tổng hợp sản lượng thịt khi xuất theo tháng (theo yêu cầu: chỉ khi xuất theo tháng mới thêm)
+      const meatSummary = isFullMonth ? computeMeatVolumeSummary(filteredTrans, filteredPays) : { items: [], grandTotalQty: 0 };
+      setMonthlyMeatSummary(meatSummary);
+      setIsExportMonth(Boolean(isFullMonth && meatSummary.items.length > 0));
+      const hasMeatSummary = Boolean(isFullMonth && meatSummary.items.length > 0);
 
       const daysInMonth = new Date(yyyy, mm, 0).getDate();
 
@@ -1012,9 +1097,24 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const summaryHeight = summaryRowsCount * summaryRowHeight;
       const summaryStartY = startTableY + tableHeaderHeight + tableContentHeight + 16;
 
+      // Chiều cao cho bảng tổng hợp sản lượng thịt (chỉ khi xuất theo tháng)
+      const meatRowHeight = 32;
+      const meatHeaderHeight = 36;
+      const meatTotalHeight = 34;
+      const meatBoxHeight = hasMeatSummary
+        ? (meatHeaderHeight + (meatSummary.items.length * meatRowHeight) + meatTotalHeight)
+        : 0;
+
       // Chiều cao bổ sung cho dòng ghi chú ngày không lấy hàng nếu là bảng 1 cột
       const emptyDaysHeight = (!isSplit && emptyDays.length > 0) ? 28 : 0;
-      const canvasHeight = summaryStartY + summaryHeight + emptyDaysHeight + 30;
+      
+      let canvasHeight = 0;
+      if (isSplit) {
+        const bottomHeight = Math.max(summaryHeight, (hasMeatSummary ? meatBoxHeight : 0) + (emptyDays.length > 0 ? 30 : 0));
+        canvasHeight = summaryStartY + bottomHeight + 30;
+      } else {
+        canvasHeight = summaryStartY + summaryHeight + emptyDaysHeight + (hasMeatSummary ? (meatBoxHeight + 20) : 0) + 30;
+      }
 
       // Tạo canvas và phóng tỉ lệ 2x cho độ nét cao (Retina)
       const canvas = document.createElement('canvas');
@@ -1424,6 +1524,76 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       ctx.lineWidth = 1.5;
       ctx.strokeRect(summaryStartX, summaryStartY, panelWidth, curSummaryY - summaryStartY);
 
+      // ─── BẢNG TỔNG HỢP SẢN LƯỢNG THỊT (CHỈ XUẤT HIỆN KHI XUẤT THEO THÁNG) ───
+      if (hasMeatSummary) {
+        const meatPanelWidth = panelWidth;
+        const meatStartX = startX;
+        const meatStartY = isSplit ? summaryStartY : (curSummaryY + (emptyDays.length > 0 ? 44 : 20));
+        let curMeatY = meatStartY;
+
+        // 1. Header bảng sản lượng thịt
+        ctx.fillStyle = '#EFF6FF';
+        ctx.fillRect(meatStartX, curMeatY, meatPanelWidth, meatHeaderHeight);
+        ctx.strokeStyle = '#93C5FD';
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(meatStartX, curMeatY, meatPanelWidth, meatHeaderHeight);
+
+        ctx.fillStyle = '#1E3A8A';
+        ctx.font = 'bold 13.5px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr}`, meatStartX + meatPanelWidth / 2, curMeatY + meatHeaderHeight / 2);
+        curMeatY += meatHeaderHeight;
+
+        // 2. Từng loại thịt
+        meatSummary.items.forEach((item, idx) => {
+          ctx.fillStyle = (idx % 2 === 1) ? '#F8FAFC' : '#FFFFFF';
+          ctx.fillRect(meatStartX, curMeatY, meatPanelWidth, meatRowHeight);
+          ctx.strokeStyle = '#E2E8F0';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(meatStartX, curMeatY, meatPanelWidth, meatRowHeight);
+
+          // Cột tên thịt (căn trái)
+          ctx.fillStyle = '#334155';
+          ctx.font = '13.5px Arial, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(`• ${item.name}`, meatStartX + 12, curMeatY + meatRowHeight / 2);
+
+          // Cột số lượng kg (căn phải)
+          const qtyText = `${Number(item.quantity.toFixed(2)).toLocaleString('vi-VN')} ${item.unit}`;
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 14px Arial, sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillText(qtyText, meatStartX + meatPanelWidth - 12, curMeatY + meatRowHeight / 2);
+
+          curMeatY += meatRowHeight;
+        });
+
+        // 3. Dòng tổng cộng sản lượng thịt
+        ctx.fillStyle = '#F0FDF4';
+        ctx.fillRect(meatStartX, curMeatY, meatPanelWidth, meatTotalHeight);
+        ctx.strokeStyle = '#BBF7D0';
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(meatStartX, curMeatY, meatPanelWidth, meatTotalHeight);
+
+        ctx.fillStyle = '#047857';
+        ctx.font = 'bold 13.5px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('➡️ TỔNG CỘNG SẢN LƯỢNG:', meatStartX + 12, curMeatY + meatTotalHeight / 2);
+
+        const totalQtyText = `${Number(meatSummary.grandTotalQty.toFixed(2)).toLocaleString('vi-VN')} kg`;
+        ctx.fillStyle = '#059669';
+        ctx.font = 'bold 15px Arial, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(totalQtyText, meatStartX + meatPanelWidth - 12, curMeatY + meatTotalHeight / 2);
+        curMeatY += meatTotalHeight;
+
+        // Viền tổng thể bảng sản lượng thịt
+        ctx.strokeStyle = '#64748B';
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(meatStartX, meatStartY, meatPanelWidth, curMeatY - meatStartY);
+      }
+
       // ─── LIỆT KÊ CÁC NGÀY KHÔNG PHÁT SINH CÔNG NỢ (LIỆT KÊ BÌNH THƯỜNG, KHÔNG DÙNG BẢNG) ───
       if (emptyDays.length > 0) {
         ctx.font = 'italic 13.5px Arial, sans-serif';
@@ -1435,7 +1605,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         const maxTextWidth = isSplit ? panelWidth : (canvasWidth - startX * 2);
         const words = noteText.split(' ');
         let line = '';
-        let noteCurY = isSplit ? (summaryStartY + 14) : (curSummaryY + 16);
+        let noteCurY = isSplit
+          ? (hasMeatSummary ? (summaryStartY + meatBoxHeight + 10) : (summaryStartY + 14))
+          : (curSummaryY + (hasMeatSummary ? (meatBoxHeight + 36) : 16));
 
         for (let n = 0; n < words.length; n++) {
           const testLine = line + words[n] + ' ';
@@ -1553,6 +1725,30 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
+  // Xử lý sao chép văn bản tóm tắt sản lượng thịt theo tháng
+  const handleCopyMeatSummary = async () => {
+    if (!isExportMonth || monthlyMeatSummary.items.length === 0) return;
+    const text = buildMonthlyMeatSummaryText(monthlyMeatSummary, customer?.name, selectedMonth || fromDate?.substring(3));
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setIsMeatCopied(true);
+      showGlobalToast('Đã sao chép tổng hợp số kg từng loại thịt!', 'success');
+      setTimeout(() => setIsMeatCopied(false), 2500);
+    } catch (err) {
+      console.error('Lỗi khi sao chép tóm tắt thịt:', err);
+      showGlobalToast('Không thể sao chép tóm tắt thịt.', 'error');
+    }
+  };
+
   // Xử lý tải ảnh hoặc chuyển tiếp Zalo:
   // - Trên PC: Luôn tải file ảnh trực tiếp về máy tính.
   // - Trên Mobile: Luôn chuyển tiếp ảnh vào Zalo (qua Web Share hoặc mở Zalo chat).
@@ -1565,11 +1761,15 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       : selectedMonth.replace('/', '-');
     const fileName = `CongNo_${safeName}_${safeRange}.png`;
 
+    const meatText = (isExportMonth && monthlyMeatSummary.items.length > 0)
+      ? `\n\n${buildMonthlyMeatSummaryText(monthlyMeatSummary, customer?.name, selectedMonth || fromDate?.substring(3))}`
+      : '';
+
     await downloadOrShareImage({
       imageUri,
       fileName,
       title: `Công nợ ${customer?.name || ''}`,
-      text: `Bảng kê công nợ khách hàng ${customer?.name || ''} (${safeRange})`,
+      text: `Bảng kê công nợ khách hàng ${customer?.name || ''} (${safeRange})${meatText}`,
       phone: customer?.phone,
       customerName: customer?.name,
     });
@@ -1988,6 +2188,54 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                           ? '💡 Trên điện thoại: Bấm "💬 CHUYỂN TIẾP ZALO" để gửi ảnh bảng kê trực tiếp vào Zalo.'
                           : '💡 Trên máy tính: Bấm "💾 TẢI ẢNH VỀ MÁY" để tải file ảnh bảng kê PNG về máy.'}
                       </Text>
+
+                      {/* KHỐI TỔNG HỢP SẢN LƯỢNG THỊT TRONG THÁNG (CHỈ HIỆN KHI XUẤT THEO THÁNG) */}
+                      {isExportMonth && monthlyMeatSummary.items.length > 0 && (
+                        <View style={styles.monthlyMeatBox}>
+                          <View style={styles.monthlyMeatHeader}>
+                            <View style={styles.monthlyMeatTitleGroup}>
+                              <Text style={styles.monthlyMeatHeaderIcon}>🥩</Text>
+                              <Text style={styles.monthlyMeatHeaderTitle}>
+                                TỔNG HỢP SẢN LƯỢNG THỊT THÁNG {selectedMonth || fromDate?.substring(3)}
+                              </Text>
+                            </View>
+                            <TouchableOpacity
+                              style={[styles.copyMeatButton, isMeatCopied && styles.copyMeatButtonActive]}
+                              onPress={handleCopyMeatSummary}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.copyMeatButtonText}>
+                                {isMeatCopied ? '✓ ĐÃ CHÉP' : '📋 SAO CHÉP TEXT'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          <View style={styles.monthlyMeatTable}>
+                            {monthlyMeatSummary.items.map((item, idx) => (
+                              <View
+                                key={idx}
+                                style={[
+                                  styles.monthlyMeatRow,
+                                  idx % 2 === 1 && styles.monthlyMeatRowAlt,
+                                  idx === monthlyMeatSummary.items.length - 1 && styles.monthlyMeatRowLast,
+                                ]}
+                              >
+                                <Text style={styles.monthlyMeatName}>• {item.name}</Text>
+                                <Text style={styles.monthlyMeatQty}>
+                                  {Number(item.quantity.toFixed(2)).toLocaleString('vi-VN')} {item.unit}
+                                </Text>
+                              </View>
+                            ))}
+
+                            <View style={styles.monthlyMeatTotalRow}>
+                              <Text style={styles.monthlyMeatTotalLabel}>TỔNG CỘNG:</Text>
+                              <Text style={styles.monthlyMeatTotalValue}>
+                                {Number(monthlyMeatSummary.grandTotalQty.toFixed(2)).toLocaleString('vi-VN')} kg thịt
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      )}
                     </View>
                   )}
                 </>
@@ -2748,5 +2996,103 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',
+  },
+  monthlyMeatBox: {
+    marginTop: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    padding: 12,
+    ...SHADOWS.card,
+  },
+  monthlyMeatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  monthlyMeatTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  monthlyMeatHeaderIcon: {
+    fontSize: 16,
+  },
+  monthlyMeatHeaderTitle: {
+    fontSize: 13.5,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  copyMeatButton: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  copyMeatButtonActive: {
+    backgroundColor: '#047857',
+  },
+  copyMeatButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  monthlyMeatTable: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  monthlyMeatRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  monthlyMeatRowAlt: {
+    backgroundColor: '#F8FAFC',
+  },
+  monthlyMeatRowLast: {
+    borderBottomWidth: 0,
+  },
+  monthlyMeatName: {
+    fontSize: 13,
+    color: '#334155',
+    fontWeight: '500',
+  },
+  monthlyMeatQty: {
+    fontSize: 13.5,
+    color: '#0F172A',
+    fontWeight: 'bold',
+  },
+  monthlyMeatTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#EFF6FF',
+    borderTopWidth: 1.5,
+    borderTopColor: '#BFDBFE',
+  },
+  monthlyMeatTotalLabel: {
+    fontSize: 13.5,
+    fontWeight: 'bold',
+    color: '#1E40AF',
+  },
+  monthlyMeatTotalValue: {
+    fontSize: 14.5,
+    fontWeight: 'bold',
+    color: '#1D4ED8',
   },
 });

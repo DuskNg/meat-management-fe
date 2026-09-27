@@ -103,21 +103,18 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     return `${mm}/${yyyy}` === targetMonthYear;
   };
 
-  // Helper kiểm tra xem khoản thanh toán có thuộc ngày được chọn hay không (khớp paidAt hoặc createdAt hoặc ghi chú)
+  // Helper kiểm tra xem khoản thanh toán có thuộc ngày được chọn hay không (chuẩn hóa theo ngày thanh toán paidAt)
   const isPaymentOnDate = (p, targetDate) => {
     if (!p || !targetDate) return false;
-    if (toDateKey(p.paidAt) === targetDate) return true;
-    if (toDateKey(p.createdAt) === targetDate) return true;
-    const noteMatch = (p.note || '').match(/\(ngày\s+(\d{2}\/\d{2}\/\d{4})\)/i);
-    if (noteMatch && noteMatch[1] === targetDate) return true;
-    return false;
+    const paymentDate = p.paidAt || p.createdAt;
+    return toDateKey(paymentDate) === targetDate;
   };
 
   // Helper kiểm tra xem khoản thanh toán có thuộc tháng được chọn hay không
   const isPaymentInMonth = (p, targetMonth) => {
     if (!p || !targetMonth) return false;
-    if (isDateInMonth(p.paidAt, targetMonth)) return true;
-    if (isDateInMonth(p.createdAt, targetMonth)) return true;
+    const paymentDate = p.paidAt || p.createdAt;
+    if (isDateInMonth(paymentDate, targetMonth)) return true;
     const targetM = getPaymentTargetMonth(p);
     if (targetM === targetMonth) return true;
     return false;
@@ -371,7 +368,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ...currentPayments.map(p => ({
         id: p.id,
         type: 'payment',
-        time: (isPaymentOnDate(p, selectedDate) && toDateKey(p.paidAt) !== selectedDate) ? (p.createdAt || p.paidAt) : p.paidAt,
+        time: p.paidAt || p.createdAt,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
         customerId: p.customerId,

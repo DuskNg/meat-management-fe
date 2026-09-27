@@ -2534,8 +2534,17 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             const serverHasRealItems = sub.items && sub.items.length > 0 && sub.items.some((it) => (it.rawName && it.rawName.trim()) || (it.quantity && parseFloat(it.quantity) > 0));
             if (existingHasRealItems || !serverHasRealItems) {
               const autoFixedCust = resolveCustomerForSub(sub, custList);
+              // Nếu tìm được khách trong DB và khác với card hiện tại → cập nhật
               if (autoFixedCust && (!existingCard.customer || existingCard.customer.id !== autoFixedCust.id)) {
                 newMap[sub.id] = { ...existingCard, customer: autoFixedCust };
+              } else if (!autoFixedCust && !existingCard.customer && sub.detectedCustomerName) {
+                // Nếu chưa match được trong DB nhưng card đang trống → điền pseudo-customer từ tên AI bóc tách
+                const cleanedDetectedName = sub.detectedCustomerName
+                  .replace(/\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng)\b/gi, '')
+                  .replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
+                if (cleanedDetectedName) {
+                  newMap[sub.id] = { ...existingCard, customer: { name: cleanedDetectedName } };
+                }
               }
               return;
             }
@@ -2947,8 +2956,19 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           quickAmount = totalSum > 0 ? String(totalSum) : '';
         }
 
+        // Nếu không match được khách trong DB nhưng AI bóc tách được tên → tạo pseudo-customer để điền sẵn vào ô input
+        let effectiveCustomer = matchedCust;
+        if (!effectiveCustomer && sub.detectedCustomerName) {
+          const cleanedDetectedName = sub.detectedCustomerName
+            .replace(/\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng)\b/gi, '')
+            .replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
+          if (cleanedDetectedName) {
+            effectiveCustomer = { name: cleanedDetectedName };
+          }
+        }
+
         newMap[sub.id] = {
-          customer: matchedCust,
+          customer: effectiveCustomer,
           date: dateStr,
           note: cardNote,
           isReturn,
@@ -3309,8 +3329,28 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         }
       }
 
+      // Nếu khách hàng là pseudo-customer (AI bóc tách nhưng chưa có trong DB) → tạo mới trước
+      let resolvedCustomerId = card.customer.id;
+      if (!resolvedCustomerId && card.customer.name) {
+        try {
+          const newCustRes = await api.post('/customers', { name: card.customer.name, isBadDebt: false });
+          const newCust = newCustRes.data?.data;
+          if (!newCust?.id) throw new Error(`Không thể tạo khách hàng "${card.customer.name}".`);
+          resolvedCustomerId = newCust.id;
+          // Cập nhật lại state customers và cardDataMap với khách hàng vừa tạo
+          setCustomers((prev) => [...prev, newCust]);
+          setCardDataMap((prev) => ({
+            ...prev,
+            [subId]: { ...(prev[subId] || {}), customer: newCust },
+          }));
+        } catch (err) {
+          showGlobalToast(err.message || 'Không thể tạo khách hàng mới.', 'error');
+          return false;
+        }
+      }
+
       const payload = {
-        customerId: card.customer.id,
+        customerId: resolvedCustomerId,
         date: isoDate,
         note: finalNote,
         isReturn: Boolean(card.isReturn),

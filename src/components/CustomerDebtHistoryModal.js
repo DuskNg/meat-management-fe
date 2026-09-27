@@ -71,6 +71,190 @@ const getStartOfMonthDisplay = () => {
   return `01/${mm}/${yy}`;
 };
 
+// Helper phân tích danh sách các món thịt trả lại từ ghi chú
+const parseReturnItems = (note, defaultAmount) => {
+  if (!note) return [{ type: 'RETURN', name: '[TRẢ HÀNG]', quantity: null, price: null, amount: defaultAmount }];
+
+  const isNoteLevelImport = /\b(nhập hàng|nhập thịt|nhập kho|nhập lô|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(note || '');
+
+  let text = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '').trim();
+  text = text.replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '').trim();
+  if (!text) {
+    return [{
+      type: 'RETURN',
+      name: isNoteLevelImport ? '[NHẬP HÀNG]' : '[TRẢ HÀNG]',
+      quantity: null,
+      price: null,
+      amount: defaultAmount,
+    }];
+  }
+
+  const formatReturnItemName = (rawName, isPartImport) => {
+    let clean = (rawName || '').trim();
+    clean = clean.replace(/\(\s*[\d.,]+\s*[đ₫kKVND]?\s*\)/gi, ' ').trim();
+    clean = clean.replace(/^(TRẢ HÀNG NHANH|TRẢ LẠI HÀNG|TRẢ HÀNG|TRẢ LẠI|TRẢ|NHẬP HÀNG|NHẬP THỊT|NHẬP)\s*[:-]?\s*/gi, ' ').trim();
+    clean = clean.replace(/[-–—:]*\s*(?:NHẬP HÀNG|NHẬP THỊT|NHẬP TÁI(?:\s*\d+)?|NHẬP GẦU(?:\s*\d+)?|NHẬP\s+[a-zA-ZÀ-ỹ]+(?:\s*\d+)?)\s*$/gi, ' ').trim();
+    clean = clean.replace(/[-–—:]*\s*\d+(?:[.,]\d+)?\s*(?:kg|kilo)?\s+[a-zA-ZÀ-ỹ\s()]+\s*$/gi, ' ').trim();
+    clean = clean.replace(/^[-–—:\s]+|[-–—:\s]+$/g, '').trim().toUpperCase();
+
+    if (isPartImport || isNoteLevelImport) {
+      return clean ? `[NHẬP HÀNG] ${clean}` : '[NHẬP HÀNG]';
+    }
+    return clean ? `[TRẢ HÀNG] ${clean}` : '[TRẢ HÀNG]';
+  };
+
+  const parts = text.split(/,\s*(?=[a-zA-Z\d\u00C0-\u1EF9])/);
+  const results = [];
+
+  for (let part of parts) {
+    part = part.trim();
+    if (!part) continue;
+
+    const isPartImport = /\b(nhập hàng|nhập thịt|nhập tái|nhập gầu|nhập kho|nhập lô|mua thịt|mua hàng|nhap hang|nhap thit|nhap)\b/i.test(part) || isNoteLevelImport;
+
+    const oldFormatRegex = /^(\d+(?:[.,]\d+)?)\s*(?:kg|kilo)?\s+(.+?)(?:\s*\(\s*([\d.,]+)[\s\u00a0]*[đ₫VND]?\s*\))?(?:\s*[-–—:]\s*(.*))?$/i;
+    const oldMatch = part.match(oldFormatRegex);
+    if (oldMatch) {
+      const tokenAfter = oldMatch[2].trim();
+      const startsWithNumber = /^\d+/.test(tokenAfter);
+      if (!startsWithNumber) {
+        const qty = parseFloat(oldMatch[1].replace(',', '.'));
+        let rawProdName = oldMatch[2].trim();
+        const amtStr = oldMatch[3] ? oldMatch[3].replace(/\./g, '').replace(/,/g, '') : null;
+        let amt = amtStr ? parseFloat(amtStr) : 0;
+        if (!amt) {
+          const innerParen = part.match(/\(\s*([\d.,]+)[\s\u00a0]*[đ₫kKVND]?\s*\)/i);
+          if (innerParen) amt = parseFloat(innerParen[1].replace(/\./g, '').replace(/,/g, ''));
+        }
+        if (!amt && parts.length === 1) amt = defaultAmount;
+        const price = (qty && qty > 0 && amt > 0) ? Math.round(amt / qty) : null;
+        results.push({
+          type: 'RETURN',
+          name: formatReturnItemName(rawProdName, isPartImport),
+          quantity: !isNaN(qty) ? qty : null,
+          price: price,
+          amount: amt,
+        });
+        continue;
+      }
+    }
+
+    const nameQtyMatch = part.match(/^([a-zA-ZÀ-ỹ\s()+-]+?)\s+(\d+(?:[.,]\d+)?)\s*(?:kg|kilo)\s*(\([a-zA-Z0-9\s]+\))?$/i);
+    if (nameQtyMatch) {
+      let rawProdName = nameQtyMatch[1].trim();
+      if (nameQtyMatch[3]) rawProdName += ` ${nameQtyMatch[3].trim()}`;
+      const qty = parseFloat(nameQtyMatch[2].replace(',', '.'));
+      let amt = 0;
+      const innerParen = part.match(/\(\s*([\d.,]+)[\s\u00a0]*[đ₫kKVND]?\s*\)/i);
+      if (innerParen) amt = parseFloat(innerParen[1].replace(/\./g, '').replace(/,/g, ''));
+      if (!amt && parts.length === 1) amt = defaultAmount;
+      const price = (qty && qty > 0 && amt > 0) ? Math.round(amt / qty) : null;
+      results.push({
+        type: 'RETURN',
+        name: formatReturnItemName(rawProdName, isPartImport),
+        quantity: !isNaN(qty) ? qty : null,
+        price: price,
+        amount: amt || 0,
+      });
+      continue;
+    }
+
+    results.push({
+      type: 'RETURN',
+      name: formatReturnItemName(part, isPartImport),
+      quantity: null,
+      price: null,
+      amount: parts.length === 1 ? defaultAmount : 0,
+    });
+  }
+
+  return results.length > 0 ? results : [{
+    type: 'RETURN',
+    name: isNoteLevelImport ? '[NHẬP HÀNG]' : '[TRẢ HÀNG]',
+    quantity: null,
+    price: null,
+    amount: defaultAmount,
+  }];
+};
+
+// Helper tính toán tổng hợp sản lượng thịt theo từng loại trong tháng
+const computeMeatVolumeSummary = (filteredTrans, filteredPays) => {
+  const map = {};
+  let grandTotalQty = 0;
+
+  (filteredTrans || []).forEach(t => {
+    if (t.items && t.items.length > 0) {
+      t.items.forEach(item => {
+        const rawName = (item.product?.name || item.productName || 'Thịt').trim();
+        const isQuick = rawName === 'Tiền hàng' || rawName.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
+        if (isQuick) return;
+
+        const q = parseFloat(item.quantity);
+        if (!isNaN(q) && q > 0) {
+          const upperName = rawName.toUpperCase();
+          if (!map[upperName]) {
+            map[upperName] = {
+              name: upperName,
+              quantity: 0,
+              unit: item.product?.unit || 'kg',
+            };
+          }
+          map[upperName].quantity += q;
+          grandTotalQty += q;
+        }
+      });
+    }
+  });
+
+  (filteredPays || []).forEach(p => {
+    const trimNote = (p.note || '').trim();
+    const isReturn = trimNote.includes('[Trả lại hàng]') ||
+      trimNote.includes('[Trả hàng nhanh]') ||
+      trimNote.includes('Trả hàng') ||
+      trimNote.includes('Trả lại');
+
+    if (isReturn) {
+      const returnItems = parseReturnItems(p.note, parseFloat(p.amount || 0));
+      returnItems.forEach(ritem => {
+        if (ritem.quantity && ritem.quantity > 0) {
+          const cleanReturnName = ritem.name.replace(/\[TRẢ HÀNG\]|\[TRẢ LẠI HÀNG\]|\[NHẬP HÀNG\]/gi, '').trim().toUpperCase();
+          for (const key of Object.keys(map)) {
+            if (key.includes(cleanReturnName) || cleanReturnName.includes(key)) {
+              map[key].quantity = Math.max(0, map[key].quantity - ritem.quantity);
+              grandTotalQty = Math.max(0, grandTotalQty - ritem.quantity);
+              break;
+            }
+          }
+        }
+      });
+    }
+  });
+
+  const items = Object.values(map)
+    .filter(it => it.quantity > 0)
+    .sort((a, b) => b.quantity - a.quantity);
+
+  return {
+    items,
+    grandTotalQty: Math.round(grandTotalQty * 100) / 100,
+  };
+};
+
+// Helper định dạng văn bản tổng hợp sản lượng thịt để gửi Zalo / SMS
+const buildMonthlyMeatSummaryText = (summary, custName, monthStr) => {
+  if (!summary || !summary.items || summary.items.length === 0) return '';
+  const lines = [
+    `🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr || ''}${custName ? ` - ${custName}` : ''}:`,
+  ];
+  summary.items.forEach(it => {
+    const qtyFormatted = Number(it.quantity.toFixed(2)).toLocaleString('vi-VN');
+    lines.push(`• ${it.name}: ${qtyFormatted} ${it.unit}`);
+  });
+  const totalFormatted = Number(summary.grandTotalQty.toFixed(2)).toLocaleString('vi-VN');
+  lines.push(`➡️ TỔNG CỘNG: ${totalFormatted} kg thịt`);
+  return lines.join('\n');
+};
+
 const CustomerDebtHistoryModal = forwardRef(({
   paymentModalRef,
   detailModalRef,
@@ -92,6 +276,32 @@ const CustomerDebtHistoryModal = forwardRef(({
   const [rangeFromDate, setRangeFromDate] = useState(() => getDaysAgoDisplay(6));
   const [rangeToDate, setRangeToDate] = useState(() => getTodayDisplay());
   const [rangeViewFilter, setRangeViewFilter] = useState('debt_only'); // 'debt_only' (chỉ ngày còn nợ) | 'all' (tất cả) | 'paid_only' (đã trả)
+  const [copiedMonthKey, setCopiedMonthKey] = useState(null);
+  const [showPayTools, setShowPayTools] = useState(false); // Mặc định thu gọn công cụ thu nợ để giao diện tối giản
+
+  // Xử lý sao chép văn bản tóm tắt sản lượng thịt theo tháng
+  const handleCopyMeatSummary = async (month) => {
+    if (!month?.meatSummary || !month.meatSummary.items?.length) return;
+    const text = buildMonthlyMeatSummaryText(month.meatSummary, customer?.name, month.monthKey);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopiedMonthKey(month.monthKey);
+      showGlobalToast(`Đã sao chép tổng hợp sản lượng thịt Tháng ${month.monthKey}!`, 'success');
+      setTimeout(() => setCopiedMonthKey(null), 2500);
+    } catch (err) {
+      console.error('Lỗi khi sao chép tóm tắt thịt:', err);
+      showGlobalToast('Không thể sao chép tóm tắt thịt.', 'error');
+    }
+  };
 
   // 1. Phơi bày các hàm điều khiển (open, close, refresh) ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -99,6 +309,7 @@ const CustomerDebtHistoryModal = forwardRef(({
       setCustomer(customerData);
       setVisible(true);
       setExpandedMonth(null);
+      setShowPayTools(false);
       setMonthGroups([]);
       setAllDaysList([]);
       setPayInputAmount(0);
@@ -477,6 +688,19 @@ const CustomerDebtHistoryModal = forwardRef(({
 
       Object.values(groups).forEach((m) => {
         m.totalPayment = Math.max(0, m.totalDebt - m.remainingDebt);
+
+        // Gom toàn bộ transactions và payments của tháng để tính tổng sản lượng thịt
+        const allTransInMonth = [];
+        const allPaysInMonth = [];
+        (m.days || []).forEach((dayGroup) => {
+          if (dayGroup.transactions && dayGroup.transactions.length > 0) {
+            allTransInMonth.push(...dayGroup.transactions);
+          }
+          if (dayGroup.payments && dayGroup.payments.length > 0) {
+            allPaysInMonth.push(...dayGroup.payments);
+          }
+        });
+        m.meatSummary = computeMeatVolumeSummary(allTransInMonth, allPaysInMonth);
       });
 
       const sortedMonths = Object.values(groups).sort((a, b) => {
@@ -698,13 +922,19 @@ const CustomerDebtHistoryModal = forwardRef(({
         <Text style={styles.modalTitle}>📊 LỊCH SỬ NỢ CHI TIẾT</Text>
 
         {customer && (
-          <View style={styles.customerBox}>
-            <Text style={styles.customerName}>
-              Khách hàng: <Text style={styles.boldText}>{customer.name}</Text>
-            </Text>
-            {customer.phone ? (
-              <Text style={styles.customerPhone}>Số ĐT: {customer.phone}</Text>
-            ) : null}
+          <View style={styles.compactHeaderCard}>
+            <View style={styles.compactCustomerCol}>
+              <Text style={styles.compactCustomerName} numberOfLines={1}>{customer.name}</Text>
+              {customer.phone ? (
+                <Text style={styles.compactCustomerPhone}>📞 {customer.phone}</Text>
+              ) : null}
+            </View>
+            <View style={styles.compactDebtCol}>
+              <Text style={styles.compactDebtLabel}>Tổng nợ:</Text>
+              <Text style={styles.compactDebtValue}>
+                {formatCurrency(totalAllRemainingDebt)}
+              </Text>
+            </View>
           </View>
         )}
 
@@ -718,14 +948,37 @@ const CustomerDebtHistoryModal = forwardRef(({
             <Text style={styles.emptyText}>📋 Khách hàng này chưa phát sinh giao dịch nào.</Text>
           </View>
         ) : (
-          <>
-            {/* Thanh chuyển đổi chế độ trả nợ: Theo cụm ngày vs Theo số tiền */}
-            <View style={styles.payModeTabsWrap}>
-              <TouchableOpacity
-                style={[styles.payModeTab, payMode === 'range' && styles.payModeTabActive]}
-                onPress={() => setPayMode('range')}
-                activeOpacity={0.8}
-              >
+          <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+            {/* Thanh công cụ thu nợ nhanh (Mặc định thu gọn tối giản) */}
+            <TouchableOpacity
+              style={[styles.payToolsToggleBar, showPayTools && styles.payToolsToggleBarActive]}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setShowPayTools(!showPayTools);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.payToolsToggleLeft}>
+                <Text style={styles.payToolsToggleIcon}>⚡</Text>
+                <Text style={styles.payToolsToggleText}>
+                  Thu nợ nhanh (cụm ngày / số tiền)
+                </Text>
+              </View>
+              <Text style={styles.payToolsToggleChevron}>
+                {showPayTools ? '▲ Thu gọn' : '▼ Mở công cụ'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Khối công cụ thu nợ chỉ mở rộng khi người dùng chủ động bấm */}
+            {showPayTools && (
+              <View style={styles.payToolsWrapper}>
+                {/* Thanh chuyển đổi chế độ trả nợ: Theo cụm ngày vs Theo số tiền */}
+                <View style={styles.payModeTabsWrap}>
+                  <TouchableOpacity
+                    style={[styles.payModeTab, payMode === 'range' && styles.payModeTabActive]}
+                    onPress={() => setPayMode('range')}
+                    activeOpacity={0.8}
+                  >
                 <Text style={[styles.payModeTabText, payMode === 'range' && styles.payModeTabTextActive]}>
                   📅 Trả nợ theo cụm ngày
                 </Text>
@@ -1147,7 +1400,6 @@ const CustomerDebtHistoryModal = forwardRef(({
             )}
 
             <Text style={styles.helperText}>• Bấm vào từng tháng để xem chi tiết</Text>
-            <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
             {monthGroups.map((month) => {
               const isExpanded = expandedMonth === month.monthKey;
               const hasDebt = month.remainingDebt > 0;
@@ -1177,6 +1429,13 @@ const CustomerDebtHistoryModal = forwardRef(({
                     <View style={styles.monthHeaderLeft}>
                       <Text style={styles.chevronIcon}>{isExpanded ? '▼' : '▶'}</Text>
                       <Text style={styles.monthTitleText}>{month.monthLabel}</Text>
+                      {month.meatSummary && month.meatSummary.grandTotalQty > 0 && (
+                        <View style={styles.monthMeatBadge}>
+                          <Text style={styles.monthMeatBadgeText}>
+                            🥩 {Number(month.meatSummary.grandTotalQty.toFixed(1)).toLocaleString('vi-VN')} kg
+                          </Text>
+                        </View>
+                      )}
                     </View>
 
                     {isSimActive && hasDebt ? (
@@ -1243,6 +1502,70 @@ const CustomerDebtHistoryModal = forwardRef(({
                           </View>
                         )}
                       </View>
+
+                      {/* KHỐI TỔNG HỢP SẢN LƯỢNG THỊT TRONG THÁNG (VỊ TRÍ 1) */}
+                      {month.meatSummary && month.meatSummary.items && month.meatSummary.items.length > 0 && (
+                        <View style={styles.meatSummaryCard}>
+                          <View style={styles.meatSummaryHeader}>
+                            <View style={styles.meatSummaryTitleGroup}>
+                              <Text style={styles.meatSummaryHeaderIcon}>🥩</Text>
+                              <Text style={styles.meatSummaryHeaderTitle}>
+                                Sản lượng thịt {month.monthLabel}:
+                              </Text>
+                            </View>
+                            <TouchableOpacity
+                              style={[
+                                styles.copyMeatTextBtn,
+                                copiedMonthKey === month.monthKey && styles.copyMeatTextBtnActive
+                              ]}
+                              onPress={() => handleCopyMeatSummary(month)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.copyMeatTextBtnLabel}>
+                                {copiedMonthKey === month.monthKey ? '✓ Đã chép' : '📋 Sao chép text'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          <View style={styles.meatSummaryTable}>
+                            {month.meatSummary.items.map((item, idx) => {
+                              const percent = month.meatSummary.grandTotalQty > 0
+                                ? Math.round((item.quantity / month.meatSummary.grandTotalQty) * 100)
+                                : 0;
+                              return (
+                                <View
+                                  key={idx}
+                                  style={[
+                                    styles.meatSummaryRow,
+                                    idx % 2 === 1 && styles.meatSummaryRowAlt,
+                                    idx === month.meatSummary.items.length - 1 && styles.meatSummaryRowLast
+                                  ]}
+                                >
+                                  <View style={styles.meatSummaryRowLeft}>
+                                    <Text style={styles.meatSummaryItemName}>• {item.name}</Text>
+                                    <View style={styles.meatProgressBarBg}>
+                                      <View style={[styles.meatProgressBarFill, { width: `${Math.min(100, Math.max(6, percent))}%` }]} />
+                                    </View>
+                                  </View>
+                                  <View style={styles.meatSummaryRowRight}>
+                                    <Text style={styles.meatSummaryItemQty}>
+                                      {Number(item.quantity.toFixed(2)).toLocaleString('vi-VN')} {item.unit}
+                                    </Text>
+                                    <Text style={styles.meatSummaryItemPercent}>{percent}%</Text>
+                                  </View>
+                                </View>
+                              );
+                            })}
+
+                            <View style={styles.meatSummaryTotalRow}>
+                              <Text style={styles.meatSummaryTotalLabel}>TỔNG CỘNG:</Text>
+                              <Text style={styles.meatSummaryTotalValue}>
+                                {Number(month.meatSummary.grandTotalQty.toFixed(2)).toLocaleString('vi-VN')} kg thịt
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      )}
 
                       {/* Các nút thao tác nhanh: Ghi nợ / Thu tiền */}
                       <View style={styles.actionsRow}>
@@ -1564,19 +1887,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   closeButton: {
-    backgroundColor: COLORS.inputBg,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: COLORS.border,
-    height: 46,
-    borderRadius: 10,
+    borderColor: '#E2E8F0',
+    height: 34,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 6,
+    marginHorizontal: 20,
   },
   closeButtonText: {
-    color: COLORS.textSecondary,
-    fontSize: 15,
-    fontWeight: 'bold',
+    color: '#64748B',
+    fontSize: 12.5,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   helperText: {
     fontSize: 13,
@@ -2057,5 +2382,218 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontStyle: 'italic',
     paddingVertical: 6,
+  },
+  monthMeatBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginLeft: 6,
+  },
+  monthMeatBadgeText: {
+    fontSize: 11,
+    color: '#047857',
+    fontWeight: 'bold',
+  },
+  meatSummaryCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    padding: 12,
+    marginBottom: 12,
+    ...SHADOWS.card,
+  },
+  meatSummaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  meatSummaryTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  meatSummaryHeaderIcon: {
+    fontSize: 15,
+  },
+  meatSummaryHeaderTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  copyMeatTextBtn: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  copyMeatTextBtnActive: {
+    backgroundColor: '#047857',
+  },
+  copyMeatTextBtnLabel: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  meatSummaryTable: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  meatSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  meatSummaryRowAlt: {
+    backgroundColor: '#F8FAFC',
+  },
+  meatSummaryRowLast: {
+    borderBottomWidth: 0,
+  },
+  meatSummaryRowLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
+  meatSummaryItemName: {
+    fontSize: 12.5,
+    color: '#334155',
+    fontWeight: '500',
+    marginBottom: 3,
+  },
+  meatProgressBarBg: {
+    height: 4,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 2,
+    overflow: 'hidden',
+    width: '100%',
+    maxWidth: 160,
+  },
+  meatProgressBarFill: {
+    height: '100%',
+    backgroundColor: '#059669',
+    borderRadius: 2,
+  },
+  meatSummaryRowRight: {
+    alignItems: 'flex-end',
+  },
+  meatSummaryItemQty: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: 'bold',
+  },
+  meatSummaryItemPercent: {
+    fontSize: 10.5,
+    color: '#64748B',
+  },
+  meatSummaryTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#EFF6FF',
+    borderTopWidth: 1.5,
+    borderTopColor: '#BFDBFE',
+  },
+  meatSummaryTotalLabel: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+    color: '#1E40AF',
+  },
+  meatSummaryTotalValue: {
+    fontSize: 13.5,
+    fontWeight: 'bold',
+    color: '#1D4ED8',
+  },
+  compactHeaderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
+    gap: 12,
+  },
+  compactCustomerCol: {
+    flex: 1,
+  },
+  compactCustomerName: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  compactCustomerPhone: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  compactDebtCol: {
+    alignItems: 'flex-end',
+  },
+  compactDebtLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  compactDebtValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
+  payToolsToggleBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  payToolsToggleBarActive: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+  },
+  payToolsToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  payToolsToggleIcon: {
+    fontSize: 14,
+  },
+  payToolsToggleText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#4338CA',
+  },
+  payToolsToggleChevron: {
+    fontSize: 11.5,
+    fontWeight: 'bold',
+    color: '#6366F1',
+  },
+  payToolsWrapper: {
+    marginBottom: 12,
   },
 });

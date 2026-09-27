@@ -101,13 +101,25 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
 
   const parseDateString = (str) => {
     if (!str) return null;
-    const parts = str.trim().split(/[\/\-]/);
+    const trimmed = str.trim();
+    if (trimmed.includes('-') && !trimmed.includes('/')) {
+      const parts = trimmed.split('-');
+      if (parts.length === 3 && parts[0].length === 4) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const day = parseInt(parts[2], 10);
+        if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+        const dateObj = new Date(year, month - 1, day, 12, 0, 0);
+        return dateObj.toISOString();
+      }
+    }
+    const parts = trimmed.split(/[\/\-]/);
     if (parts.length !== 3) return null;
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10);
     const year = parseInt(parts[2], 10);
     if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-    const dateObj = new Date(year, month - 1, day);
+    const dateObj = new Date(year, month - 1, day, 12, 0, 0);
     if (
       dateObj.getFullYear() !== year ||
       dateObj.getMonth() !== month - 1 ||
