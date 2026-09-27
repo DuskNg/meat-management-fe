@@ -152,6 +152,7 @@ const InvoiceReviewCard = React.memo(
     isMobile,
     isTablet,
     customers,
+    suppliers,
     customerProducts,
     cardRef,
     isReparsing,
@@ -405,31 +406,99 @@ const InvoiceReviewCard = React.memo(
               </View>
             ) : null}
 
-            {/* HÀNG 1: KHÁCH HÀNG */}
+            {/* TAB CHUYỂN ĐỔI: KHÁCH HÀNG HOẶC NHÀ CUNG CẤP */}
+            <View style={styles.partnerTypeTabWrap}>
+              <TouchableOpacity
+                style={[
+                  styles.partnerTypeTabBtn,
+                  (!card.targetType || card.targetType === 'customer') && styles.partnerTypeTabBtnActiveCust,
+                ]}
+                onPress={() => onUpdateField(sub.id, 'targetType', 'customer')}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.partnerTypeTabBtnText,
+                    (!card.targetType || card.targetType === 'customer') && styles.partnerTypeTabBtnTextActive,
+                  ]}
+                >
+                  👥 Khách hàng
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.partnerTypeTabBtn,
+                  card.targetType === 'supplier' && styles.partnerTypeTabBtnActiveSup,
+                ]}
+                onPress={() => onUpdateField(sub.id, 'targetType', 'supplier')}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.partnerTypeTabBtnText,
+                    card.targetType === 'supplier' && styles.partnerTypeTabBtnTextActive,
+                  ]}
+                >
+                  🏭 Nhà cung cấp
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* HÀNG 1: KHÁCH HÀNG HOẶC NHÀ CUNG CẤP */}
             <View style={{ marginBottom: 8, width: '100%' }}>
-              <Text style={styles.cardFieldLabel}>
-                {card.isReturn ? 'Khách hàng trả hàng' : 'Khách hàng ghi nợ'} <Text style={{ color: '#EF4444' }}>*</Text>
-                {sub.detectedCustomerName ? (
-                  <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 11.5 }}>
-                    {' '}(AI: "{sub.detectedCustomerName}")
+              {card.targetType === 'supplier' ? (
+                <>
+                  <Text style={styles.cardFieldLabel}>
+                    Nhà cung cấp nhập thịt <Text style={{ color: '#EF4444' }}>*</Text>
+                    {sub.detectedCustomerName ? (
+                      <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 11.5 }}>
+                        {' '}(AI: "{sub.detectedCustomerName}")
+                      </Text>
+                    ) : null}
                   </Text>
-                ) : null}
-              </Text>
-              <CustomSelect
-                value={card.customer}
-                placeholder="Chọn khách hàng..."
-                options={customers}
-                disabled={card.isLoadingPrice}
-                onOpenChange={onOpenDropdown}
-                onSelect={(c) => onCustomerChange(sub.id, c)}
-                renderSelected={(c) => c?.name || ''}
-                renderOption={(c) => (
-                  <View style={styles.custOptionRow}>
-                    <Text style={styles.custOptionName}>{c.name}</Text>
-                    {c.phone ? <Text style={styles.custOptionPhone}>📞 {c.phone}</Text> : null}
-                  </View>
-                )}
-              />
+                  <CustomSelect
+                    value={card.supplier}
+                    placeholder="Chọn nhà cung cấp nhập thịt..."
+                    options={suppliers || []}
+                    onOpenChange={onOpenDropdown}
+                    onSelect={(s) => onUpdateField(sub.id, 'supplier', s)}
+                    renderSelected={(s) => s?.name || ''}
+                    renderOption={(s) => (
+                      <View style={styles.custOptionRow}>
+                        <Text style={styles.custOptionName}>{s.name}</Text>
+                        {s.phone ? <Text style={styles.custOptionPhone}>📞 {s.phone}</Text> : null}
+                      </View>
+                    )}
+                  />
+                </>
+              ) : (
+                <>
+                  <Text style={styles.cardFieldLabel}>
+                    {card.isReturn ? 'Khách hàng trả hàng' : 'Khách hàng ghi nợ'} <Text style={{ color: '#EF4444' }}>*</Text>
+                    {sub.detectedCustomerName ? (
+                      <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 11.5 }}>
+                        {' '}(AI: "{sub.detectedCustomerName}")
+                      </Text>
+                    ) : null}
+                  </Text>
+                  <CustomSelect
+                    value={card.customer}
+                    placeholder="Chọn khách hàng..."
+                    options={customers}
+                    disabled={card.isLoadingPrice}
+                    onOpenChange={onOpenDropdown}
+                    onSelect={(c) => onCustomerChange(sub.id, c)}
+                    renderSelected={(c) => c?.name || ''}
+                    renderOption={(c) => (
+                      <View style={styles.custOptionRow}>
+                        <Text style={styles.custOptionName}>{c.name}</Text>
+                        {c.phone ? <Text style={styles.custOptionPhone}>📞 {c.phone}</Text> : null}
+                      </View>
+                    )}
+                  />
+                </>
+              )}
             </View>
 
             {/* HÀNG 2: NGÀY GIAO & GHI CHÚ (2 CỘT SONG SONG) */}
@@ -737,6 +806,8 @@ const InvoiceReviewCard = React.memo(
                 <Text style={styles.btnCardSaveText}>
                   {isApproved
                     ? '🔄 CẬP NHẬT LẠI'
+                    : card.targetType === 'supplier'
+                    ? '📦 NHẬP HÀNG NCC'
                     : (card.isReturn ? '↩️ TRỪ NỢ TRẢ HÀNG' : '💾 NHẬP CÔNG NỢ')}
                 </Text>
               )}
@@ -2618,6 +2689,17 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           })());
         const dateStr = applyDateStr;
 
+        // Nhà cung cấp khớp nếu có
+        const matchedSup = sub.matchedSupplier || (suppliers && suppliers.find((s) => {
+          const sClean = removeDiacritics(s.name.toLowerCase().trim());
+          const detectedClean = removeDiacritics((sub.detectedCustomerName || '').toLowerCase().trim());
+          const noteClean = removeDiacritics((sub.note || '').toLowerCase().trim());
+          return (detectedClean && (detectedClean === sClean || detectedClean.includes(sClean) || sClean.includes(detectedClean))) ||
+                 (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
+        })) || null;
+
+        const initialTargetType = sub.targetType || (matchedSup ? 'supplier' : 'customer');
+
         // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp khách hàng đã lưu, không chạy lại regex AI
         const matchedCust = isApproved
           ? (sub.matchedCustomer || (sub.matchedCustomerId ? custList.find((c) => c.id === sub.matchedCustomerId) : null))
@@ -2734,6 +2816,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           }
 
           newMap[sub.id] = {
+            targetType: initialTargetType,
+            supplier: matchedSup,
             customer: matchedCust,
             date: dateStr,
             note: cardNote,
@@ -3021,6 +3105,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         }
 
         newMap[sub.id] = {
+          targetType: initialTargetType,
+          supplier: matchedSup,
           customer: effectiveCustomer,
           date: dateStr,
           note: cardNote,
@@ -3394,6 +3480,41 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         }
       }
 
+      // ─── NẾU LÀ ĐƠN NHẬP HÀNG NHÀ CUNG CẤP ───
+      if (card.targetType === 'supplier') {
+        if (!card.supplier?.id) {
+          showGlobalToast('Vui lòng chọn nhà cung cấp để lên đơn nhập hàng!', 'warning');
+          updateCardField(subId, 'isSaving', false);
+          return false;
+        }
+
+        const supplierPayload = {
+          targetType: 'supplier',
+          supplierId: card.supplier.id,
+          date: isoDate,
+          note: finalNote || 'Nhập hàng từ nhân viên gửi',
+          items: payloadItems,
+        };
+
+        try {
+          const res = await api.post(`/staff-submissions/${subId}/approve`, supplierPayload);
+          if (res.data.success) {
+            showGlobalToast(`🎉 Đã nhập hàng thành công vào nhà cung cấp ${card.supplier.name}!`, 'success');
+            setSubmissions((prev) =>
+              prev.map((s) => (s.id === subId ? { ...s, status: 'APPROVED', matchedSupplier: card.supplier, targetType: 'supplier' } : s))
+            );
+            if (onRefresh) onRefresh();
+            return true;
+          }
+        } catch (supErr) {
+          showGlobalToast(supErr.response?.data?.message || supErr.message || 'Lỗi khi nhập hàng nhà cung cấp.', 'error');
+          return false;
+        } finally {
+          updateCardField(subId, 'isSaving', false);
+        }
+        return false;
+      }
+
       // Nếu khách hàng là pseudo-customer (AI bóc tách nhưng chưa có trong DB) → tạo mới trước
       let resolvedCustomerId = card.customer.id;
       if (!resolvedCustomerId && card.customer.name) {
@@ -3721,14 +3842,27 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               }
             }
 
-            const payload = {
-              customerId: card.customer.id,
-              date: isoDate,
-              note: finalNote,
-              isReturn: Boolean(card.isReturn),
-              orderMode: card.orderMode,
-              items: payloadItems,
-            };
+            let payload = null;
+            if (card.targetType === 'supplier') {
+              if (!card.supplier?.id) return;
+              payload = {
+                targetType: 'supplier',
+                supplierId: card.supplier.id,
+                date: isoDate,
+                note: finalNote || 'Nhập hàng từ nhân viên gửi',
+                items: payloadItems,
+              };
+            } else {
+              if (!card.customer?.id) return;
+              payload = {
+                customerId: card.customer.id,
+                date: isoDate,
+                note: finalNote,
+                isReturn: Boolean(card.isReturn),
+                orderMode: card.orderMode,
+                items: payloadItems,
+              };
+            }
 
             const res = await api.post(`/staff-submissions/${sub.id}/approve`, payload);
             if (res.data.success) {
@@ -4225,6 +4359,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       isMobile={isMobile}
                       isTablet={isTablet}
                       customers={customers}
+                      suppliers={suppliers}
                       customerProducts={custProds}
                       cardRef={(el) => {
                         if (el) cardLayoutRefs.current[sub.id] = el;
@@ -4283,6 +4418,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         submissions={submissions}
         cardDataMap={cardDataMap}
         customers={customers}
+        suppliers={suppliers}
         products={products}
         custProductsMap={custProductsMap}
         fetchProductsForCustomer={fetchProductsForCustomer}
@@ -5809,5 +5945,45 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: 'bold',
     color: '#2563EB',
+  },
+  partnerTypeTabWrap: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 2,
+    marginBottom: 8,
+    gap: 4,
+  },
+  partnerTypeTabBtn: {
+    flex: 1,
+    paddingVertical: 5,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partnerTypeTabBtnActiveCust: {
+    backgroundColor: '#0284C7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  partnerTypeTabBtnActiveSup: {
+    backgroundColor: '#4F46E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  partnerTypeTabBtnText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  partnerTypeTabBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
 });

@@ -76,6 +76,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     submissions = [],
     cardDataMap = {},
     customers = [],
+    suppliers = [],
     products = [],
     custProductsMap = {},
     fetchProductsForCustomer,
@@ -805,72 +806,164 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     </View>
                   ) : null}
 
-                  {/* 1. KHÁCH HÀNG + NGÀY GIAO + GHI CHÚ */}
+                  {/* 1. TAB CHUYỂN ĐỔI: KHÁCH HÀNG HOẶC NHÀ CUNG CẤP */}
+                  <View style={styles.partnerTypeTabWrap}>
+                    <TouchableOpacity
+                      style={[
+                        styles.partnerTypeTabBtn,
+                        (!currentCard.targetType || currentCard.targetType === 'customer') && styles.partnerTypeTabBtnActiveCust,
+                      ]}
+                      onPress={() => updateCardField(currentSub.id, 'targetType', 'customer')}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.partnerTypeTabBtnText,
+                          (!currentCard.targetType || currentCard.targetType === 'customer') && styles.partnerTypeTabBtnTextActive,
+                        ]}
+                      >
+                        👥 Khách hàng (Bán ra / Trả hàng)
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.partnerTypeTabBtn,
+                        currentCard.targetType === 'supplier' && styles.partnerTypeTabBtnActiveSup,
+                      ]}
+                      onPress={() => updateCardField(currentSub.id, 'targetType', 'supplier')}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.partnerTypeTabBtnText,
+                          currentCard.targetType === 'supplier' && styles.partnerTypeTabBtnTextActive,
+                        ]}
+                      >
+                        🏭 Nhà cung cấp (Nhập thịt)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* FORM NHẬP THÔNG TIN TƯƠNG ỨNG */}
                   <View style={[styles.formSectionBox, { zIndex: customerSelectZIndex }]}>
-                    <Text style={styles.formFieldLabel}>
-                      {currentCard.isReturn ? 'Khách hàng trả hàng' : 'Khách hàng ghi nợ'}{' '}
-                      <Text style={{ color: '#EF4444' }}>*</Text>
-                      {currentSub.detectedCustomerName ? (
-                        <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 12 }}>
-                          {' '}(AI bóc tách: "{currentSub.detectedCustomerName}")
-                        </Text>
-                      ) : null}
-                    </Text>
-                    <CustomSelect
-                      value={currentCard.customer}
-                      placeholder="Chọn khách hàng..."
-                      options={customers}
-                      disabled={currentCard.isLoadingPrice}
-                      onSelect={(c) => handleCustomerChange(currentSub.id, c)}
-                      renderSelected={(c) => c?.name || ''}
-                      zIndex={9999999}
-                      onOpenChange={(isOpen) => setCustomerSelectZIndex(isOpen ? 9999999 : 10)}
-                      renderOption={(c) => (
-                        <View style={styles.custOptionRow}>
-                          <Text style={styles.custOptionName}>{c.name}</Text>
-                          {c.phone ? <Text style={styles.custOptionPhone}>📞 {c.phone}</Text> : null}
-                        </View>
-                      )}
-                    />
-
-                    <View style={styles.dateAndNoteRow}>
-                      <View style={{ flex: 1.2 }}>
+                    {currentCard.targetType === 'supplier' ? (
+                      <>
                         <Text style={styles.formFieldLabel}>
-                          {currentCard.isReturn ? 'Ngày trả hàng' : 'Ngày giao hàng'}
-                        </Text>
-                        <DatePickerInput
-                          value={currentCard.date}
-                          onChange={(d) => updateCardField(currentSub.id, 'date', d)}
-                          placeholder="DD/MM/YYYY"
-                          compact={true}
-                          disabled={currentCard.isLoadingPrice}
-                        />
-                      </View>
-
-                      <View style={{ flex: 2 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <Text style={styles.formFieldLabel}>Ghi chú đơn</Text>
-                          <TouchableOpacity
-                            style={[styles.btnToggleOrderType, currentCard.isReturn && styles.btnToggleOrderTypeReturn, currentCard.isLoadingPrice && { opacity: 0.5 }]}
-                            onPress={() => toggleCardReturnType(currentSub.id)}
-                            disabled={currentCard.isLoadingPrice}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={[styles.btnToggleOrderTypeText, currentCard.isReturn && styles.btnToggleOrderTypeTextReturn]}>
-                              {currentCard.isReturn ? '↩️ Trả hàng' : '🥩 Xuất hàng'}
+                          Nhà cung cấp nhập thịt <Text style={{ color: '#EF4444' }}>*</Text>
+                          {currentSub.detectedCustomerName ? (
+                            <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 12 }}>
+                              {' '}(AI bóc tách: "{currentSub.detectedCustomerName}")
                             </Text>
-                          </TouchableOpacity>
-                        </View>
-                        <TextInput
-                          style={[styles.textInputCompact, currentCard.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
-                          value={currentCard.note}
-                          onChangeText={(txt) => updateCardField(currentSub.id, 'note', txt)}
-                          editable={!currentCard.isLoadingPrice}
-                          placeholder="Ghi chú đơn hàng..."
-                          placeholderTextColor="#94A3B8"
+                          ) : null}
+                        </Text>
+                        <CustomSelect
+                          value={currentCard.supplier}
+                          placeholder="Chọn nhà cung cấp nhập thịt..."
+                          options={suppliers}
+                          onSelect={(s) => updateCardField(currentSub.id, 'supplier', s)}
+                          renderSelected={(s) => s?.name || ''}
+                          zIndex={9999999}
+                          onOpenChange={(isOpen) => setCustomerSelectZIndex(isOpen ? 9999999 : 10)}
+                          renderOption={(s) => (
+                            <View style={styles.custOptionRow}>
+                              <Text style={styles.custOptionName}>{s.name}</Text>
+                              {s.phone ? <Text style={styles.custOptionPhone}>📞 {s.phone}</Text> : null}
+                            </View>
+                          )}
                         />
-                      </View>
-                    </View>
+
+                        <View style={styles.dateAndNoteRow}>
+                          <View style={{ flex: 1.2 }}>
+                            <Text style={styles.formFieldLabel}>Ngày nhập hàng</Text>
+                            <DatePickerInput
+                              value={currentCard.date}
+                              onChange={(d) => updateCardField(currentSub.id, 'date', d)}
+                              placeholder="DD/MM/YYYY"
+                              compact={true}
+                            />
+                          </View>
+
+                          <View style={{ flex: 2 }}>
+                            <Text style={styles.formFieldLabel}>Ghi chú nhập hàng</Text>
+                            <TextInput
+                              style={styles.textInputCompact}
+                              value={currentCard.note}
+                              onChangeText={(txt) => updateCardField(currentSub.id, 'note', txt)}
+                              placeholder="Ghi chú nhập thịt từ nhà cung cấp..."
+                              placeholderTextColor="#94A3B8"
+                            />
+                          </View>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={styles.formFieldLabel}>
+                          {currentCard.isReturn ? 'Khách hàng trả hàng' : 'Khách hàng ghi nợ'}{' '}
+                          <Text style={{ color: '#EF4444' }}>*</Text>
+                          {currentSub.detectedCustomerName ? (
+                            <Text style={{ color: '#0EA5E9', fontWeight: 'normal', fontSize: 12 }}>
+                              {' '}(AI bóc tách: "{currentSub.detectedCustomerName}")
+                            </Text>
+                          ) : null}
+                        </Text>
+                        <CustomSelect
+                          value={currentCard.customer}
+                          placeholder="Chọn khách hàng..."
+                          options={customers}
+                          disabled={currentCard.isLoadingPrice}
+                          onSelect={(c) => handleCustomerChange(currentSub.id, c)}
+                          renderSelected={(c) => c?.name || ''}
+                          zIndex={9999999}
+                          onOpenChange={(isOpen) => setCustomerSelectZIndex(isOpen ? 9999999 : 10)}
+                          renderOption={(c) => (
+                            <View style={styles.custOptionRow}>
+                              <Text style={styles.custOptionName}>{c.name}</Text>
+                              {c.phone ? <Text style={styles.custOptionPhone}>📞 {c.phone}</Text> : null}
+                            </View>
+                          )}
+                        />
+
+                        <View style={styles.dateAndNoteRow}>
+                          <View style={{ flex: 1.2 }}>
+                            <Text style={styles.formFieldLabel}>
+                              {currentCard.isReturn ? 'Ngày trả hàng' : 'Ngày giao hàng'}
+                            </Text>
+                            <DatePickerInput
+                              value={currentCard.date}
+                              onChange={(d) => updateCardField(currentSub.id, 'date', d)}
+                              placeholder="DD/MM/YYYY"
+                              compact={true}
+                              disabled={currentCard.isLoadingPrice}
+                            />
+                          </View>
+
+                          <View style={{ flex: 2 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <Text style={styles.formFieldLabel}>Ghi chú đơn</Text>
+                              <TouchableOpacity
+                                style={[styles.btnToggleOrderType, currentCard.isReturn && styles.btnToggleOrderTypeReturn, currentCard.isLoadingPrice && { opacity: 0.5 }]}
+                                onPress={() => toggleCardReturnType(currentSub.id)}
+                                disabled={currentCard.isLoadingPrice}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={[styles.btnToggleOrderTypeText, currentCard.isReturn && styles.btnToggleOrderTypeTextReturn]}>
+                                  {currentCard.isReturn ? '↩️ Trả hàng' : '🥩 Xuất hàng'}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                            <TextInput
+                              style={[styles.textInputCompact, currentCard.isLoadingPrice && { backgroundColor: '#F1F5F9', opacity: 0.7 }]}
+                              value={currentCard.note}
+                              onChangeText={(txt) => updateCardField(currentSub.id, 'note', txt)}
+                              editable={!currentCard.isLoadingPrice}
+                              placeholder="Ghi chú đơn hàng..."
+                              placeholderTextColor="#94A3B8"
+                            />
+                          </View>
+                        </View>
+                      </>
+                    )}
                   </View>
 
                   {/* 2. CHỌN CHẾ ĐỘ: NHẬP NHANH (TIỀN HÀNG) HOẶC CHI TIẾT (MÓN THỊT) */}
@@ -1100,11 +1193,25 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                 {/* ═══ FOOTER CỘT PHẢI: TỔNG TIỀN VÀ NÚT NHẬP CÔNG NỢ ═══ */}
                 <View style={styles.formFooterWrap}>
                   <View style={styles.totalMoneyBox}>
-                    <Text style={[styles.totalMoneyLabel, currentCard.isReturn && { color: '#EA580C' }]}>
-                      {currentCard.isReturn ? 'TIỀN TRẢ LẠI:' : 'TỔNG CỘNG:'}
+                    <Text
+                      style={[
+                        styles.totalMoneyLabel,
+                        currentCard.targetType === 'supplier' && { color: '#4F46E5' },
+                        currentCard.targetType !== 'supplier' && currentCard.isReturn && { color: '#EA580C' },
+                      ]}
+                    >
+                      {currentCard.targetType === 'supplier' ? 'TỔNG TIỀN NHẬP:' : currentCard.isReturn ? 'TIỀN TRẢ LẠI:' : 'TỔNG CỘNG:'}
                     </Text>
-                    <Text style={[styles.totalMoneyValue, currentCard.isReturn && { color: '#F97316' }]}>
-                      {currentCard.isReturn ? `-${formatCurrency(cardTotal)}` : formatCurrency(cardTotal)} đ
+                    <Text
+                      style={[
+                        styles.totalMoneyValue,
+                        currentCard.targetType === 'supplier' && { color: '#4F46E5' },
+                        currentCard.targetType !== 'supplier' && currentCard.isReturn && { color: '#F97316' },
+                      ]}
+                    >
+                      {currentCard.targetType !== 'supplier' && currentCard.isReturn
+                        ? `-${formatCurrency(cardTotal)} đ`
+                        : `${formatCurrency(cardTotal)} đ`}
                     </Text>
                   </View>
 
@@ -1132,7 +1239,13 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                         <ActivityIndicator color="#FFFFFF" size="small" />
                       ) : (
                         <Text style={styles.btnSaveActionText}>
-                          {isApproved ? '🔄 CẬP NHẬT LẠI' : currentCard.isReturn ? '↩️ TRẢ HÀNG (TRỪ NỢ)' : '💾 NHẬP CÔNG NỢ'}
+                          {isApproved
+                            ? '🔄 CẬP NHẬT LẠI'
+                            : currentCard.targetType === 'supplier'
+                            ? '📦 NHẬP HÀNG NCC'
+                            : currentCard.isReturn
+                            ? '↩️ TRẢ HÀNG (TRỪ NỢ)'
+                            : '💾 NHẬP CÔNG NỢ'}
                         </Text>
                       )}
                     </TouchableOpacity>
@@ -1148,6 +1261,46 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
 });
 
 const styles = StyleSheet.create({
+  partnerTypeTabWrap: {
+    flexDirection: 'row',
+    backgroundColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 3,
+    marginBottom: 10,
+    gap: 4,
+  },
+  partnerTypeTabBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partnerTypeTabBtnActiveCust: {
+    backgroundColor: '#0284C7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  partnerTypeTabBtnActiveSup: {
+    backgroundColor: '#4F46E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  partnerTypeTabBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  partnerTypeTabBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
