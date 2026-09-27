@@ -1901,8 +1901,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     return `${d}/${m}/${y}`;
   });
 
-  // Dữ liệu danh bạ khách hàng và sản phẩm
+  // Dữ liệu danh bạ khách hàng, nhà cung cấp và sản phẩm
   const [customers, setCustomers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
 
   // Quản lý dữ liệu form cho TỪNG hóa đơn (Key: sub.id)
@@ -1924,12 +1925,13 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const popupModalRef = useRef(null);
   const isOpenActionRef = useRef(false);
 
-  // Tải danh sách khách hàng và sản phẩm
+  // Tải danh sách khách hàng, sản phẩm và nhà cung cấp
   const fetchMasterData = async () => {
     try {
-      const [custRes, prodRes] = await Promise.all([
+      const [custRes, prodRes, supRes] = await Promise.all([
         api.get('/customers?isBadDebt=false'),
         api.get('/products'),
+        api.get('/suppliers'),
       ]);
       const custList = custRes.data.success ? (custRes.data.data || []) : [];
       const prodList = prodRes.data.success
@@ -1937,12 +1939,14 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
         )
         : [];
+      const supList = supRes?.data?.success ? (supRes.data.data || []) : [];
       if (custRes.data.success) setCustomers(custList);
       if (prodRes.data.success) setProducts(prodList);
-      return { custList, prodList };
+      if (supRes?.data?.success) setSuppliers(supList);
+      return { custList, prodList, supList };
     } catch (err) {
       console.warn('Lỗi khi tải danh bạ:', err);
-      return { custList: [], prodList: [] };
+      return { custList: [], prodList: [], supList: [] };
     }
   };
 
@@ -1950,7 +1954,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const [custProductsMap, setCustProductsMap] = useState({});
 
   // Tải danh sách hóa đơn nhân viên nộp và nạp xong toàn bộ bảng giá riêng mới hiển thị cho chỉnh sửa
-  const fetchSubmissions = async (overrideCustList, overrideProdList) => {
+  const fetchSubmissions = async (overrideCustList, overrideProdList, overrideSupList) => {
     try {
       setLoading(true);
       const params = {};
@@ -1969,6 +1973,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         setSubmissions(list);
         const effectiveCustList = (overrideCustList && overrideCustList.length > 0) ? overrideCustList : customers;
         const effectiveProdList = (overrideProdList && overrideProdList.length > 0) ? overrideProdList : products;
+        const effectiveSupList = (overrideSupList && overrideSupList.length > 0) ? overrideSupList : suppliers;
 
         // 1. Nhận diện khách hàng cho toàn bộ danh sách hóa đơn (lấy cả đơn đã duyệt và chưa duyệt)
         const allCustIds = [
@@ -2011,7 +2016,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         }
 
         // 3. Khởi tạo dữ liệu form với đầy đủ giá riêng đã được tải xong
-        initCardDataMap(list, effectiveCustList, effectiveProdList, latestCustMap);
+        initCardDataMap(list, effectiveCustList, effectiveProdList, latestCustMap, effectiveSupList);
       }
     } catch (err) {
       console.error('Lỗi khi tải hóa đơn nhân viên:', err);
@@ -2642,7 +2647,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   // Khởi tạo trạng thái form cho tất cả các hóa đơn hiển thị (Đã nạp sẵn bảng giá riêng)
-  const initCardDataMap = (subList, custList, prodList, preloadedCustMap = custProductsMap) => {
+  const initCardDataMap = (subList, custList, prodList, preloadedCustMap = custProductsMap, supList = suppliers) => {
     setCardDataMap((prev) => {
       const newMap = { ...prev };
       subList.forEach((sub, idx) => {
@@ -2690,7 +2695,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         const dateStr = applyDateStr;
 
         // Nhà cung cấp khớp nếu có
-        const matchedSup = sub.matchedSupplier || (suppliers && suppliers.find((s) => {
+        const supplierSource = (supList && supList.length > 0) ? supList : suppliers;
+        const matchedSup = sub.matchedSupplier || (supplierSource && supplierSource.find((s) => {
           const sClean = removeDiacritics(s.name.toLowerCase().trim());
           const detectedClean = removeDiacritics((sub.detectedCustomerName || '').toLowerCase().trim());
           const noteClean = removeDiacritics((sub.note || '').toLowerCase().trim());
@@ -3336,8 +3342,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       setCardDataMap({});
       setSearchQuery('');
       try {
-        const { custList, prodList } = await fetchMasterData();
-        await fetchSubmissions(custList, prodList);
+        const { custList, prodList, supList } = await fetchMasterData();
+        await fetchSubmissions(custList, prodList, supList);
       } finally {
         isOpenActionRef.current = false;
       }
