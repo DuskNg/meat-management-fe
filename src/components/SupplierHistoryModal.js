@@ -458,16 +458,14 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     if (isCreatedAfter) {
       return (
         <View style={styles.missingDaysCard}>
-          <View style={styles.missingDaysHeader}>
-            <View style={styles.missingDaysHeaderLeft}>
-              <Text style={styles.missingDaysIcon}>ℹ️</Text>
-              <Text style={styles.missingDaysTitle} numberOfLines={1}>
-                Ngày không có tiền hàng (Tháng {targetMonthKey}):
-              </Text>
-            </View>
+          <View style={styles.missingDaysHeaderRow}>
+            <Text style={styles.missingDaysIcon}>ℹ️</Text>
+            <Text style={styles.missingDaysTitle}>
+              Chưa có giao dịch tháng {targetMonthKey}
+            </Text>
           </View>
           <Text style={styles.missingDaysSubtitle}>
-            * Khách hàng / Nhà cung cấp được tạo sau tháng {targetMonthKey}.
+            NCC được tạo sau tháng này nên chưa có dữ liệu.
           </Text>
         </View>
       );
@@ -475,20 +473,20 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
 
     if (maxEvaluatedDay <= 0) return null;
 
-    const [mNum] = targetMonthKey.split('/').map(Number);
+    const [mNum, yNum] = targetMonthKey.split('/').map(Number);
     const mStr = mNum < 10 ? `0${mNum}` : `${mNum}`;
     const maxDayStr = maxEvaluatedDay < 10 ? `0${maxEvaluatedDay}` : `${maxEvaluatedDay}`;
     const minDayStr = minEvaluatedDay < 10 ? `0${minEvaluatedDay}` : `${minEvaluatedDay}`;
 
     return (
       <View style={styles.missingDaysCard}>
-        <View style={styles.missingDaysHeader}>
-          <View style={styles.missingDaysHeaderLeft}>
-            <Text style={styles.missingDaysIcon}>📌</Text>
-            <Text style={styles.missingDaysTitle} numberOfLines={1}>
-              Ngày không có tiền hàng (Tháng {targetMonthKey}):
-            </Text>
-          </View>
+        {/* Hàng tiêu đề + badge */}
+        <View style={styles.missingDaysHeaderRow}>
+          <Text style={styles.missingDaysIcon}>📌</Text>
+          <Text style={styles.missingDaysTitle} numberOfLines={2}>
+            Ngày thiếu tiền hàng – Tháng {targetMonthKey}
+            {minEvaluatedDay > 1 ? ` (từ ngày ${minDayStr})` : ''}
+          </Text>
           <View style={[
             styles.missingCountBadge,
             missingDays.length > 0 ? styles.missingCountBadgeActive : styles.missingCountBadgeZero
@@ -497,11 +495,12 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
               styles.missingCountText,
               missingDays.length > 0 ? styles.missingCountTextActive : styles.missingCountTextZero
             ]}>
-              {missingDays.length > 0 ? `${missingDays.length} ngày` : 'Đủ các ngày'}
+              {missingDays.length > 0 ? `${missingDays.length} ngày` : '✓ Đủ'}
             </Text>
           </View>
         </View>
 
+        {/* Chips ngày hoặc thông báo đủ */}
         {missingDays.length > 0 ? (
           <>
             <View style={styles.daysChipContainer}>
@@ -514,16 +513,12 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
               ))}
             </View>
             <Text style={styles.missingDaysSubtitle}>
-              {minEvaluatedDay > 1
-                ? `* Tính từ ngày bắt đầu tạo (${minDayStr}/${mStr}) đến ngày ${maxDayStr}/${mStr}, không có tiền hàng nhập vào các ngày trên (không tính ngày tương lai).`
-                : `* Tính đến ngày ${maxDayStr}/${mStr}, không có tiền hàng nhập vào các ngày trên (không tính ngày tương lai).`}
+              {'* Đến ngày '}{maxDayStr}/{mStr}{', các ngày trên chưa có tiền hàng nhập.'}
             </Text>
           </>
         ) : (
           <Text style={styles.allDaysPresentText}>
-            {minEvaluatedDay > 1
-              ? `🎉 Tính từ ngày bắt đầu tạo (${minDayStr}/${mStr}) đến ngày ${maxDayStr}/${mStr}, tất cả các ngày đều có đơn nhập tiền hàng!`
-              : `🎉 Tính đến ngày ${maxDayStr}/${mStr}, tất cả các ngày đều có đơn nhập tiền hàng!`}
+            🎉 Tất cả các ngày đều có đơn nhập hàng (đến ngày {maxDayStr}/{mStr})!
           </Text>
         )}
       </View>
@@ -956,32 +951,26 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 12,
   },
-  missingDaysHeader: {
+  missingDaysHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  missingDaysHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    paddingRight: 6,
+    marginBottom: 8,
+    gap: 6,
   },
   missingDaysIcon: {
     fontSize: 14,
-    marginRight: 6,
   },
   missingDaysTitle: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: 'bold',
     color: '#92400E',
-    flexShrink: 1,
+    flex: 1,
   },
   missingCountBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
+    flexShrink: 0,
   },
   missingCountBadgeActive: {
     backgroundColor: '#FEF08A',
@@ -1002,8 +991,8 @@ const styles = StyleSheet.create({
   daysChipContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginVertical: 4,
+    gap: 5,
+    marginBottom: 6,
   },
   dayChip: {
     backgroundColor: '#FFFFFF',

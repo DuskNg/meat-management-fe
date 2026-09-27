@@ -1088,14 +1088,6 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.btnZaloAction}
-                      onPress={handleShareZalo}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={styles.btnZaloActionText}>💬 Zalo</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
                       style={[
                         styles.btnSaveAction,
                         currentCard.isReturn && styles.btnSaveActionReturn,
