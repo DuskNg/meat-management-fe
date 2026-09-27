@@ -15,6 +15,7 @@ import CustomSelect from './CustomSelect';
 import ExportSupplierHistoryModal from './ExportSupplierHistoryModal';
 import EditSupplierTransactionModal from './EditSupplierTransactionModal';
 import EditSupplierPaymentModal from './EditSupplierPaymentModal';
+import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import PopupModal from './PopupModal';
 import { showGlobalToast } from '../store/toastStore';
 
@@ -31,7 +32,9 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const exportSupplierHistoryModalRef = useRef(null);
   const editSupplierTransactionModalRef = useRef(null);
   const editSupplierPaymentModalRef = useRef(null);
+  const imageViewerRef = useRef(null);
   const popupModalRef = useRef(null);
+  const [expandedTransIds, setExpandedTransIds] = useState(new Set());
 
   // Đồng bộ nhà cung cấp khi prop supplier thay đổi
   useEffect(() => {
@@ -284,8 +287,42 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     if (onRefresh) onRefresh();
   };
 
+  // Mở/thu gọn chi tiết món thịt của đơn nợ
+  const toggleExpandTrans = (id) => {
+    setExpandedTransIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Mở trình xem ảnh/video chứng từ
+  const handleOpenMediaViewer = (mediaUrls, transItem) => {
+    if (!mediaUrls || mediaUrls.length === 0) return;
+    const formattedImages = mediaUrls.map((m, idx) => {
+      const url = m.url || m;
+      const isVideo = m.fileType === 'VIDEO' || /\.(mp4|mov|qt|avi|webm|m4v|3gp|mkv)$/i.test(url);
+      return {
+        id: `media-${idx}`,
+        imageUrl: url,
+        title: isVideo ? `Video chứng từ #${idx + 1}` : `Ảnh chứng từ #${idx + 1}`,
+        isVideo,
+      };
+    });
+
+    imageViewerRef.current?.open({
+      images: formattedImages,
+      title: `Chứng từ NCC: ${currentSupplier?.name || ''}`,
+      subtitle: `Giao dịch ngày ${formatDate(transItem.date)} (${formatCurrency(transItem.amount)}đ)`,
+    });
+  };
+
   const renderHistoryItem = ({ item }) => {
     const isDebt = item.type === 'DEBT';
+    const hasItems = Array.isArray(item.items) && item.items.length > 0;
+    const hasMedia = Array.isArray(item.mediaUrls) && item.mediaUrls.length > 0;
+    const isExpanded = expandedTransIds.has(item.id);
     return (
       <View style={styles.historyCard}>
         <View style={styles.cardMain}>
@@ -305,6 +342,51 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
             {item.note ? <Text style={styles.noteText} numberOfLines={2}>{item.note}</Text> : null}
           </View>
         </View>
+
+        {/* Khối hiển thị chi tiết các món thịt nếu có */}
+        {hasItems && (
+          <View style={styles.detailItemsContainer}>
+            <TouchableOpacity
+              style={styles.btnToggleDetailItems}
+              onPress={() => toggleExpandTrans(item.id)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.btnToggleDetailText}>
+                🥩 Chi tiết: {item.items.length} món thịt {isExpanded ? '▲ Thu gọn' : '▼ Xem chi tiết'}
+              </Text>
+            </TouchableOpacity>
+
+            {isExpanded && (
+              <View style={styles.expandedItemsList}>
+                {item.items.map((it, idx) => (
+                  <View key={idx} style={styles.expandedItemRow}>
+                    <Text style={styles.expandedItemName}>
+                      • {it.productName || 'Thịt'}: {it.quantity || 0}{it.unit || 'kg'} x {formatCurrency(it.price)}đ
+                    </Text>
+                    <Text style={styles.expandedItemAmount}>
+                      {formatCurrency(it.amount || 0)} đ
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Khối nút bấm xem ảnh & video chứng từ nếu có */}
+        {hasMedia && (
+          <View style={styles.mediaContainer}>
+            <TouchableOpacity
+              style={styles.btnViewMedia}
+              onPress={() => handleOpenMediaViewer(item.mediaUrls, item)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.btnViewMediaText}>
+                📸 Xem {item.mediaUrls.length} ảnh/video chứng từ
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Hàng nút bấm thao tác Sửa & Xóa */}
         <View style={styles.cardActions}>
@@ -496,6 +578,9 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
         onRefresh={handleSubModalRefresh}
       />
 
+      {/* Modal xem phóng to ảnh & video chứng từ NCC */}
+      <InvoiceImageViewerModal ref={imageViewerRef} />
+
       {/* Modal xác nhận xóa */}
       <PopupModal ref={popupModalRef} />
     </>
@@ -656,6 +741,62 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 4,
     textAlign: 'right',
+  },
+  detailItemsContainer: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 8,
+    padding: 6,
+  },
+  btnToggleDetailItems: {
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+  },
+  btnToggleDetailText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#0284C7',
+  },
+  expandedItemsList: {
+    marginTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingTop: 6,
+  },
+  expandedItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  expandedItemName: {
+    fontSize: 12,
+    color: '#334155',
+  },
+  expandedItemAmount: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#B91C1C',
+  },
+  mediaContainer: {
+    marginTop: 8,
+  },
+  btnViewMedia: {
+    backgroundColor: '#F0F9FF',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnViewMediaText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#0284C7',
   },
   cardActions: {
     flexDirection: 'row',
