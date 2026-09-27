@@ -79,8 +79,11 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     suppliers = [],
     products = [],
     custProductsMap = {},
+    supProductsMap = {},
     fetchProductsForCustomer,
+    fetchProductsForSupplier,
     handleCustomerChange,
+    handleSupplierChange,
     updateCardField,
     updateCardItem,
     addCardItem,
@@ -802,7 +805,11 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   {currentCard.isLoadingPrice ? (
                     <View style={styles.cardLoadingPriceBanner}>
                       <ActivityIndicator size="small" color="#0284C7" />
-                      <Text style={styles.cardLoadingPriceText}>Đang cập nhật giá riêng khách hàng...</Text>
+                      <Text style={styles.cardLoadingPriceText}>
+                        {currentCard.targetType === 'supplier'
+                          ? 'Đang cập nhật bảng giá riêng nhà cung cấp...'
+                          : 'Đang cập nhật giá riêng khách hàng...'}
+                      </Text>
                     </View>
                   ) : null}
 
@@ -831,7 +838,12 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                         styles.partnerTypeTabBtn,
                         currentCard.targetType === 'supplier' && styles.partnerTypeTabBtnActiveSup,
                       ]}
-                      onPress={() => updateCardField(currentSub.id, 'targetType', 'supplier')}
+                      onPress={() => {
+                        updateCardField(currentSub.id, 'targetType', 'supplier');
+                        if (currentCard.supplier?.id && handleSupplierChange) {
+                          handleSupplierChange(currentSub.id, currentCard.supplier);
+                        }
+                      }}
                       activeOpacity={0.8}
                     >
                       <Text
@@ -861,7 +873,14 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                           value={currentCard.supplier}
                           placeholder="Chọn nhà cung cấp nhập thịt..."
                           options={suppliers}
-                          onSelect={(s) => updateCardField(currentSub.id, 'supplier', s)}
+                          disabled={currentCard.isLoadingPrice}
+                          onSelect={(s) => {
+                            if (handleSupplierChange) {
+                              handleSupplierChange(currentSub.id, s);
+                            } else {
+                              updateCardField(currentSub.id, 'supplier', s);
+                            }
+                          }}
                           renderSelected={(s) => s?.name || ''}
                           zIndex={9999999}
                           onOpenChange={(isOpen) => setCustomerSelectZIndex(isOpen ? 9999999 : 10)}
@@ -1095,13 +1114,21 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                             <CustomSelect
                               value={item.selectedProduct}
                               placeholder="Tên thịt..."
-                              options={(currentCard.customer?.id && custProductsMap[currentCard.customer.id]) || products}
+                              options={
+                                currentCard.targetType === 'supplier'
+                                  ? ((currentCard.supplier?.id && supProductsMap[currentCard.supplier.id]) || products)
+                                  : ((currentCard.customer?.id && custProductsMap[currentCard.customer.id]) || products)
+                              }
                               disabled={currentCard.isLoadingPrice}
                               zIndex={9999999}
                               onOpenChange={(isOpen) => {
                                 setActiveMeatItemIdx(isOpen ? itemIdx : null);
-                                if (isOpen && currentCard.customer?.id && !custProductsMap[currentCard.customer.id]) {
-                                  fetchProductsForCustomer(currentCard.customer.id);
+                                if (isOpen) {
+                                  if (currentCard.targetType === 'supplier' && currentCard.supplier?.id && !supProductsMap[currentCard.supplier.id]) {
+                                    fetchProductsForSupplier && fetchProductsForSupplier(currentCard.supplier.id);
+                                  } else if (currentCard.targetType !== 'supplier' && currentCard.customer?.id && !custProductsMap[currentCard.customer.id]) {
+                                    fetchProductsForCustomer && fetchProductsForCustomer(currentCard.customer.id);
+                                  }
                                 }
                               }}
                               onSelect={(p) => selectProductForCardItem(currentSub.id, itemIdx, p)}

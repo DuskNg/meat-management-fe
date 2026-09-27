@@ -167,6 +167,7 @@ const InvoiceReviewCard = React.memo(
     onSelectProduct,
     onUpdateItem,
     onFetchCustomerProducts,
+    onFetchSupplierProducts,
     onToggleOrderMode,
     onUpdateQuickAmount,
     onAddQuickSubAmount,
@@ -655,8 +656,12 @@ const InvoiceReviewCard = React.memo(
                         disabled={card.isLoadingPrice}
                         zIndex={9999999}
                         onOpenChange={(isOpen) => {
-                          if (isOpen && card.customer?.id) {
-                            onFetchCustomerProducts(card.customer.id);
+                          if (isOpen) {
+                            if (card.targetType === 'supplier' && card.supplier?.id) {
+                              onFetchSupplierProducts && onFetchSupplierProducts(card.supplier.id);
+                            } else if (card.targetType !== 'supplier' && card.customer?.id) {
+                              onFetchCustomerProducts && onFetchCustomerProducts(card.customer.id);
+                            }
                           }
                           onOpenDropdown(isOpen);
                         }}
@@ -1952,6 +1957,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
   // Quản lý giá thịt riêng theo từng khách hàng { [customerId]: productListWithCustomPrices }
   const [custProductsMap, setCustProductsMap] = useState({});
+  // Quản lý giá thịt riêng theo từng nhà cung cấp { [supplierId]: productListWithSupplierPrices }
+  const [supProductsMap, setSupProductsMap] = useState({});
 
   // Tải danh sách hóa đơn nhân viên nộp và nạp xong toàn bộ bảng giá riêng mới hiển thị cho chỉnh sửa
   const fetchSubmissions = async (overrideCustList, overrideProdList, overrideSupList) => {
@@ -1989,7 +1996,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           ),
         ];
 
-        // 2. BẮT BUỘC TẢI XONG BẢNG GIÁ RIÊNG CỦA TẤT CẢ KHÁCH HÀNG TRƯỚC KHI MỞ KHÓA CHO PHÉP CHỈNH SỬA
+        // 2. BẮT BUỘC TẢI XONG BẢNG GIÁ RIÊNG CỦA TẤT CẢ KHÁCH HÀNG & NHÀ CUNG CẤP TRƯỚC KHI MỞ KHÓA CHO PHÉP CHỈNH SỬA
         const latestCustMap = { ...custProductsMap };
         const missingCustIds = allCustIds.filter((id) => !latestCustMap[id] || latestCustMap[id].length === 0);
 
@@ -2015,8 +2022,52 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           setCustProductsMap(latestCustMap);
         }
 
+        // 2.1 Tải trước bảng giá riêng của các Nhà cung cấp có trong danh sách
+        const allSupIds = [
+          ...new Set(
+            list
+              .map((s) => {
+                if (s.matchedSupplier?.id) return s.matchedSupplier.id;
+                const matchedSup = (effectiveSupList || []).find((sup) => {
+                  const sClean = removeDiacritics(sup.name.toLowerCase().trim());
+                  const detectedClean = removeDiacritics((s.detectedCustomerName || '').toLowerCase().trim());
+                  const noteClean = removeDiacritics((s.note || '').toLowerCase().trim());
+                  return (detectedClean && (detectedClean === sClean || detectedClean.includes(sClean) || sClean.includes(detectedClean))) ||
+                         (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
+                });
+                return matchedSup?.id;
+              })
+              .filter(Boolean)
+          ),
+        ];
+
+        const latestSupMap = { ...supProductsMap };
+        const missingSupIds = allSupIds.filter((id) => !latestSupMap[id] || latestSupMap[id].length === 0);
+
+        if (missingSupIds.length > 0) {
+          const fetchSupResults = await Promise.all(
+            missingSupIds.map(async (sId) => {
+              try {
+                const pRes = await api.get(`/products?supplierId=${sId}`);
+                const supProds = (pRes.data?.data || []).filter(
+                  (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+                );
+                return [sId, supProds];
+              } catch {
+                return [sId, []];
+              }
+            })
+          );
+          fetchSupResults.forEach(([sId, prods]) => {
+            if (prods && prods.length > 0) {
+              latestSupMap[sId] = prods;
+            }
+          });
+          setSupProductsMap(latestSupMap);
+        }
+
         // 3. Khởi tạo dữ liệu form với đầy đủ giá riêng đã được tải xong
-        initCardDataMap(list, effectiveCustList, effectiveProdList, latestCustMap, effectiveSupList);
+        initCardDataMap(list, effectiveCustList, effectiveProdList, latestCustMap, effectiveSupList, latestSupMap);
       }
     } catch (err) {
       console.error('Lỗi khi tải hóa đơn nhân viên:', err);
@@ -2384,6 +2435,88 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     });
   };
 
+  // Tải danh sách sản phẩm kèm giá riêng của nhà cung cấp
+  const fetchProductsForSupplier = async (supplierId, forceRefresh = false) => {
+    if (!supplierId) return products || [];
+    if (!forceRefresh && supProductsMap[supplierId] && supProductsMap[supplierId].length > 0) {
+      return supProductsMap[supplierId];
+    }
+    try {
+      const res = await api.get(`/products?supplierId=${supplierId}`);
+      const supProds = (res.data?.data || []).filter(
+        (p) => p.name !== 'Tiền hàng' && !p.name.toLowerCase().startsWith('tiền')
+      );
+      setSupProductsMap((prev) => ({ ...prev, [supplierId]: supProds }));
+      return supProds;
+    } catch (e) {
+      console.warn('[FETCH SUP PRODUCTS ERROR]', e);
+      return products || [];
+    }
+  };
+
+  // Xử lý khi chọn hoặc đổi nhà cung cấp: NẠP VÀ ÁP BẢNG GIÁ RIÊNG CỦA NHÀ CUNG CẤP ĐÓ
+  const handleSupplierChange = async (subId, selectedSupplier) => {
+    if (!selectedSupplier) {
+      updateCardField(subId, 'supplier', null);
+      return;
+    }
+
+    setCardDataMap((prev) => {
+      const card = prev[subId] || {};
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          supplier: selectedSupplier,
+          isLoadingPrice: true,
+        },
+      };
+    });
+
+    try {
+      const supProds = await fetchProductsForSupplier(selectedSupplier.id, true);
+      let customPriceCount = 0;
+
+      setCardDataMap((prev) => {
+        const card = prev[subId];
+        if (!card) return prev;
+
+        const updatedItems = (supProds && supProds.length > 0)
+          ? applyCustPricesToItems(card.items, supProds)
+          : card.items;
+
+        customPriceCount = updatedItems.filter((it) => it.selectedProduct?.hasCustomPrice || it.selectedProduct?.customPrice != null).length;
+
+        return {
+          ...prev,
+          [subId]: {
+            ...card,
+            supplier: selectedSupplier,
+            items: updatedItems,
+            isLoadingPrice: false,
+          },
+        };
+      });
+
+      if (customPriceCount > 0) {
+        showGlobalToast(`Đã áp dụng bảng giá riêng của ${selectedSupplier.name} cho ${customPriceCount} món!`, 'info');
+      }
+    } catch (e) {
+      console.warn('Lỗi khi nạp giá riêng NCC:', e);
+      setCardDataMap((prev) => {
+        const card = prev[subId];
+        if (!card) return prev;
+        return {
+          ...prev,
+          [subId]: {
+            ...card,
+            isLoadingPrice: false,
+          },
+        };
+      });
+    }
+  };
+
   // Chọn 1 món thịt cho dòng dữ liệu: TỰ ĐỘNG CẬP NHẬT ĐƠN GIÁ và TÍNH LẠI THÀNH TIỀN
   const selectProductForCardItem = (subId, itemIdx, p) => {
     if (!p) return;
@@ -2647,7 +2780,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   // Khởi tạo trạng thái form cho tất cả các hóa đơn hiển thị (Đã nạp sẵn bảng giá riêng)
-  const initCardDataMap = (subList, custList, prodList, preloadedCustMap = custProductsMap, supList = suppliers) => {
+  const initCardDataMap = (subList, custList, prodList, preloadedCustMap = custProductsMap, supList = suppliers, preloadedSupMap = supProductsMap) => {
     setCardDataMap((prev) => {
       const newMap = { ...prev };
       subList.forEach((sub, idx) => {
@@ -2711,8 +2844,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           ? (sub.matchedCustomer || (sub.matchedCustomerId ? custList.find((c) => c.id === sub.matchedCustomerId) : null))
           : resolveCustomerForSub(sub, custList);
 
-        // BẢNG GIÁ ĐÃ NẠP SẴN CỦA KHÁCH HÀNG NÀY (Ưu tiên giá riêng cao nhất)
-        const cardProdList = (matchedCust?.id && preloadedCustMap && preloadedCustMap[matchedCust.id]) || prodList;
+        // BẢNG GIÁ ĐÃ NẠP SẴN: NẾU LÀ ĐƠN NHÀ CUNG CẤP THÌ LẤY BẢNG GIÁ RIÊNG CỦA NCC, NGƯỢC LẠI LẤY GIÁ RIÊNG KHÁCH HÀNG
+        const isSupplierInit = initialTargetType === 'supplier' && matchedSup?.id;
+        const cardProdList = isSupplierInit
+          ? ((preloadedSupMap && preloadedSupMap[matchedSup.id]) || prodList)
+          : ((matchedCust?.id && preloadedCustMap && preloadedCustMap[matchedCust.id]) || prodList);
 
         if (isApproved) {
           // ─── ĐỐI VỚI HÓA ĐƠN ĐÃ DUYỆT: TẢI NGUYÊN BẢN CHÍNH XÁC NHỮNG GÌ CHỦ BUÔN ĐÃ LƯU ───
@@ -3134,6 +3270,33 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     if (field === 'customer') {
       handleCustomerChange(subId, value);
       return;
+    }
+    if (field === 'supplier') {
+      handleSupplierChange(subId, value);
+      return;
+    }
+    if (field === 'targetType') {
+      const card = cardDataMap[subId];
+      if (value === 'supplier') {
+        let supToUse = card?.supplier;
+        if (!supToUse?.id && Array.isArray(suppliers) && suppliers.length > 0) {
+          const sub = submissions.find((s) => s.id === subId);
+          const detectedClean = removeDiacritics((sub?.detectedCustomerName || '').toLowerCase().trim());
+          const noteClean = removeDiacritics((sub?.note || '').toLowerCase().trim());
+          if (detectedClean || noteClean) {
+            supToUse = suppliers.find((s) => {
+              const sClean = removeDiacritics(s.name.toLowerCase().trim());
+              return (detectedClean && (detectedClean === sClean || detectedClean.includes(sClean) || sClean.includes(detectedClean))) ||
+                     (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
+            }) || null;
+          }
+        }
+        if (supToUse?.id) {
+          handleSupplierChange(subId, supToUse);
+        }
+      } else if (value === 'customer' && card?.customer?.id) {
+        handleCustomerChange(subId, card.customer);
+      }
     }
 
     setCardDataMap((prev) => {
@@ -4351,7 +4514,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   };
                   const isApproved = sub.status === 'APPROVED';
                   const isDropdownActive = activeDropdownSubId === sub.id;
-                  const custProds = (card.customer?.id && custProductsMap[card.customer.id]) || products;
+                  const custProds = card.targetType === 'supplier'
+                    ? ((card.supplier?.id && supProductsMap[card.supplier.id]) || products)
+                    : ((card.customer?.id && custProductsMap[card.customer.id]) || products);
 
                   return (
                     <InvoiceReviewCard
@@ -4382,6 +4547,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       onSelectProduct={selectProductForCardItem}
                       onUpdateItem={updateCardItem}
                       onFetchCustomerProducts={fetchProductsForCustomer}
+                      onFetchSupplierProducts={fetchProductsForSupplier}
                       onToggleOrderMode={toggleOrderMode}
                       onUpdateQuickAmount={updateQuickAmount}
                       onAddQuickSubAmount={addQuickSubAmount}
@@ -4427,8 +4593,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         suppliers={suppliers}
         products={products}
         custProductsMap={custProductsMap}
+        supProductsMap={supProductsMap}
         fetchProductsForCustomer={fetchProductsForCustomer}
+        fetchProductsForSupplier={fetchProductsForSupplier}
         handleCustomerChange={handleCustomerChange}
+        handleSupplierChange={handleSupplierChange}
         updateCardField={updateCardField}
         updateCardItem={updateCardItem}
         addCardItem={addCardItem}
