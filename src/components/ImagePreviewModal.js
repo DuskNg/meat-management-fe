@@ -89,37 +89,51 @@ const ImagePreviewModal = forwardRef((props, ref) => {
 
   const modalRootRef = useRef(null);
 
-  // Đảm bảo Modal luôn nằm ở tầng zIndex cao nhất trên Web (tránh bị các SmoothModal khác đè lên)
+  // Đảm bảo Modal luôn nằm ở tầng zIndex cao nhất tuyệt đối (9999999) trên Web (tránh bị các SmoothModal khác đè lên)
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     if (!visible) return;
 
+    let isMounted = true;
     const applyPortalZ = () => {
+      if (!isMounted) return;
       const elNode = getDomElement(modalRootRef.current);
       if (!elNode) return;
-      elNode.style.zIndex = '999999';
+      if (elNode.style) {
+        elNode.style.setProperty('z-index', '9999999', 'important');
+      }
       let el = elNode;
       // Đi ngược lên cho đến khi gặp phần tử con trực tiếp của document.body (chính là portal container của modal)
       while (el && el.parentElement && el.parentElement !== document.body) {
+        if (el.style) {
+          el.style.setProperty('z-index', '9999999', 'important');
+        }
         el = el.parentElement;
       }
-      if (el && el.parentElement === document.body) {
-        el.style.zIndex = '999999';
-        if (el.firstElementChild) {
-          el.firstElementChild.style.zIndex = '999999';
+      if (el) {
+        if (el.style) {
+          el.style.setProperty('z-index', '9999999', 'important');
+        }
+        if (el.firstElementChild && el.firstElementChild.style) {
+          el.firstElementChild.style.setProperty('z-index', '9999999', 'important');
         }
       }
     };
 
     applyPortalZ();
+    const t0 = requestAnimationFrame(applyPortalZ);
     const t1 = setTimeout(applyPortalZ, 0);
-    const t2 = setTimeout(applyPortalZ, 30);
-    const t3 = setTimeout(applyPortalZ, 100);
+    const t2 = setTimeout(applyPortalZ, 50);
+    const t3 = setTimeout(applyPortalZ, 150);
+    const t4 = setTimeout(applyPortalZ, 300);
 
     return () => {
+      isMounted = false;
+      cancelAnimationFrame(t0);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+      clearTimeout(t4);
     };
   }, [visible]);
 
@@ -425,8 +439,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0B0F19',
-    zIndex: 999999,
-    elevation: 999999,
+    zIndex: 9999999,
+    elevation: 9999999,
     display: 'flex',
     flexDirection: 'column',
     ...Platform.select({

@@ -366,6 +366,29 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
         maxDay = now.getDate();
       }
 
+      // Xét ngày bắt đầu tạo khách hàng / nhà cung cấp
+      const createdDateRaw = supplier?.createdAt;
+      let minDay = 1;
+      let isCreatedAfter = false;
+
+      if (createdDateRaw) {
+        const cDate = new Date(createdDateRaw);
+        if (!isNaN(cDate.getTime())) {
+          const cYear = cDate.getFullYear();
+          const cMonth = cDate.getMonth() + 1;
+          const cDay = cDate.getDate();
+
+          if (yearNum < cYear || (yearNum === cYear && monthNum < cMonth)) {
+            isCreatedAfter = true;
+            maxDay = 0;
+          } else if (yearNum === cYear && monthNum === cMonth) {
+            minDay = Math.max(1, cDay);
+          } else {
+            minDay = 1;
+          }
+        }
+      }
+
       const daysWithDebt = new Set();
       monthItems.forEach((it) => {
         if (it.type === 'DEBT' && it.date) {
@@ -377,7 +400,7 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
       });
 
       const missingDays = [];
-      for (let day = 1; day <= maxDay; day++) {
+      for (let day = minDay; day <= maxDay; day++) {
         if (!daysWithDebt.has(day)) {
           missingDays.push(day);
         }
@@ -399,14 +422,19 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
       ctx.fillStyle = '#92400E';
       ctx.fillText(`📌 Chú thích: Ngày không có tiền hàng (Tháng ${month}):`, noteBoxX + 12, curY + 22);
 
-      if (maxDay === 0) {
+      if (isCreatedAfter) {
+        ctx.fillStyle = '#64748B';
+        ctx.font = 'italic 12px Arial';
+        ctx.fillText(`Khách hàng / Nhà cung cấp được tạo sau tháng ${month}.`, noteBoxX + 12, curY + 46);
+      } else if (maxDay === 0) {
         ctx.fillStyle = '#64748B';
         ctx.font = 'italic 12px Arial';
         ctx.fillText('Tháng trong tương lai chưa phát sinh giao dịch.', noteBoxX + 12, curY + 46);
       } else if (missingDays.length === 0) {
         ctx.fillStyle = '#166534';
         ctx.font = '12px Arial';
-        ctx.fillText(`🎉 Tính đến ngày ${maxDay < 10 ? '0' + maxDay : maxDay}/${monthNum < 10 ? '0' + monthNum : monthNum}, tất cả các ngày đều có hàng nhập.`, noteBoxX + 12, curY + 48);
+        const startText = minDay > 1 ? `từ ngày ${minDay < 10 ? '0' + minDay : minDay}/${monthNum < 10 ? '0' + monthNum : monthNum} ` : '';
+        ctx.fillText(`🎉 Tính ${startText}đến ngày ${maxDay < 10 ? '0' + maxDay : maxDay}/${monthNum < 10 ? '0' + monthNum : monthNum}, tất cả các ngày đều có hàng nhập.`, noteBoxX + 12, curY + 48);
       } else {
         const daysStr = missingDays.map((d) => (d < 10 ? `0${d}` : `${d}`)).join(', ');
         ctx.fillStyle = '#DC2626';
@@ -422,7 +450,10 @@ const ExportSupplierHistoryModal = forwardRef((props, ref) => {
 
         ctx.fillStyle = '#78350F';
         ctx.font = 'italic 10.5px Arial';
-        ctx.fillText(`* Tính đến ngày ${maxDay < 10 ? '0' + maxDay : maxDay}/${monthNum < 10 ? '0' + monthNum : monthNum} (không tính ngày tương lai)`, noteBoxX + 12, curY + 96);
+        const subNote = minDay > 1
+          ? `* Tính từ ngày tạo (${minDay < 10 ? '0' + minDay : minDay}/${monthNum < 10 ? '0' + monthNum : monthNum}) đến ngày ${maxDay < 10 ? '0' + maxDay : maxDay}/${monthNum < 10 ? '0' + monthNum : monthNum} (không tính ngày tương lai)`
+          : `* Tính đến ngày ${maxDay < 10 ? '0' + maxDay : maxDay}/${monthNum < 10 ? '0' + monthNum : monthNum} (không tính ngày tương lai)`;
+        ctx.fillText(subNote, noteBoxX + 12, curY + 96);
       }
 
       // Hộp tổng kết tài chính (bên phải)

@@ -155,35 +155,50 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     setIsDragging(false);
   };
 
-  // Đảm bảo Modal nằm ở tầng zIndex (999999) trên Web
+  // Đảm bảo Modal nằm ở tầng zIndex cao nhất tuyệt đối (9999999) trên Web
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     if (!visible) return;
 
+    let isMounted = true;
     const applyPortalZ = () => {
+      if (!isMounted) return;
       const elNode = getDomElement(modalRootRef.current);
       if (!elNode) return;
+      if (elNode.style) {
+        elNode.style.setProperty('z-index', '9999999', 'important');
+      }
       let el = elNode;
       while (el && el.parentElement && el.parentElement !== document.body) {
+        if (el.style) {
+          el.style.setProperty('z-index', '9999999', 'important');
+        }
         el = el.parentElement;
       }
-      if (el && el.parentElement === document.body) {
-        el.style.setProperty('z-index', '999999', 'important');
-        if (el.firstElementChild) {
-          el.firstElementChild.style.setProperty('z-index', '999999', 'important');
+      if (el) {
+        if (el.style) {
+          el.style.setProperty('z-index', '9999999', 'important');
+        }
+        if (el.firstElementChild && el.firstElementChild.style) {
+          el.firstElementChild.style.setProperty('z-index', '9999999', 'important');
         }
       }
     };
 
     applyPortalZ();
+    const t0 = requestAnimationFrame(applyPortalZ);
     const t1 = setTimeout(applyPortalZ, 0);
     const t2 = setTimeout(applyPortalZ, 50);
     const t3 = setTimeout(applyPortalZ, 150);
+    const t4 = setTimeout(applyPortalZ, 300);
 
     return () => {
+      isMounted = false;
+      cancelAnimationFrame(t0);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+      clearTimeout(t4);
     };
   }, [visible]);
 
@@ -1117,6 +1132,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 12,
+    zIndex: 9999999,
+    elevation: 9999999,
   },
   mainDialogContainer: {
     width: '96%',
@@ -1128,6 +1145,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
+    zIndex: 9999999,
+    elevation: 9999999,
     ...SHADOWS.card,
   },
   mainDialogContainerMobile: {

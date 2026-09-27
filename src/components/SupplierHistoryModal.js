@@ -87,6 +87,12 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
       if (activeSupplierIdRef.current === id) {
         if (response.data?.success) {
           setHistory(response.data.data || []);
+          if (response.data?.supplier) {
+            setCurrentSupplier((prev) => ({
+              ...(prev || {}),
+              ...response.data.supplier,
+            }));
+          }
         } else {
           setError(response.data?.message || 'Không thể tải lịch sử giao dịch.');
         }
@@ -173,8 +179,8 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     };
   }, [filteredHistory]);
 
-  // Tính toán danh sách các ngày trong tháng không có tiền hàng nhập (DEBT) tính đến ngày hiện tại
-  const { targetMonthKey, missingDays, maxEvaluatedDay } = useMemo(() => {
+  // Tính toán danh sách các ngày trong tháng không có tiền hàng nhập (DEBT) tính từ ngày tạo khách/NCC đến ngày hiện tại
+  const { targetMonthKey, missingDays, maxEvaluatedDay, minEvaluatedDay, isCreatedAfter } = useMemo(() => {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1; // 1 - 12
@@ -187,7 +193,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     }
 
     if (!targetM || !targetM.includes('/')) {
-      return { targetMonthKey: '', missingDays: [], maxEvaluatedDay: 0 };
+      return { targetMonthKey: '', missingDays: [], maxEvaluatedDay: 0, minEvaluatedDay: 0, isCreatedAfter: false };
     }
 
     const [monthNum, yearNum] = targetM.split('/').map(Number);
@@ -203,6 +209,39 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     } else {
       // Tháng trong tương lai -> không tính
       maxDay = 0;
+    }
+
+    // Xét ngày bắt đầu tạo khách hàng / nhà cung cấp:
+    // Nếu khách mới tạo giữa tháng thì các ngày trước ngày tạo tất nhiên không có đơn, không tính là ngày thiếu!
+    const createdDateRaw = currentSupplier?.createdAt || supplier?.createdAt;
+    let minDay = 1;
+    let isCreatedAfterMonth = false;
+
+    if (createdDateRaw) {
+      const cDate = new Date(createdDateRaw);
+      if (!isNaN(cDate.getTime())) {
+        const cYear = cDate.getFullYear();
+        const cMonth = cDate.getMonth() + 1;
+        const cDay = cDate.getDate();
+
+        if (yearNum < cYear || (yearNum === cYear && monthNum < cMonth)) {
+          // Tháng đang xem diễn ra trước khi khách/NCC được tạo trên hệ thống
+          isCreatedAfterMonth = true;
+          return {
+            targetMonthKey: targetM,
+            missingDays: [],
+            maxEvaluatedDay: 0,
+            minEvaluatedDay: 0,
+            isCreatedAfter: true,
+          };
+        } else if (yearNum === cYear && monthNum === cMonth) {
+          // Khách/NCC được tạo trong chính tháng này -> chỉ xét từ ngày bắt đầu tạo trở đi
+          minDay = Math.max(1, cDay);
+        } else {
+          // Khách/NCC đã được tạo ở các tháng trước đó -> xét từ ngày 1
+          minDay = 1;
+        }
+      }
     }
 
     // Tập hợp các ngày có tiền hàng nhập (DEBT)
@@ -221,7 +260,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     });
 
     const missing = [];
-    for (let day = 1; day <= maxDay; day++) {
+    for (let day = minDay; day <= maxDay; day++) {
       if (!daysWithDebt.has(day)) {
         missing.push(day);
       }
@@ -231,8 +270,10 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
       targetMonthKey: targetM,
       missingDays: missing,
       maxEvaluatedDay: maxDay,
+      minEvaluatedDay: minDay,
+      isCreatedAfter: isCreatedAfterMonth,
     };
-  }, [selectedMonth, availableMonths, history]);
+  }, [selectedMonth, availableMonths, history, currentSupplier?.createdAt, supplier?.createdAt]);
 
   const selectedMonthOption = monthOptions.find((opt) => opt.id === selectedMonth) || monthOptions[0];
 
@@ -412,11 +453,32 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
 
   // Giao diện chú thích các ngày không có tiền hàng
   const renderMissingDaysCard = () => {
-    if (!targetMonthKey || maxEvaluatedDay <= 0) return null;
+    if (!targetMonthKey) return null;
+
+    if (isCreatedAfter) {
+      return (
+        <View style={styles.missingDaysCard}>
+          <View style={styles.missingDaysHeader}>
+            <View style={styles.missingDaysHeaderLeft}>
+              <Text style={styles.missingDaysIcon}>ℹ️</Text>
+              <Text style={styles.missingDaysTitle} numberOfLines={1}>
+                Ngày không có tiền hàng (Tháng {targetMonthKey}):
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.missingDaysSubtitle}>
+            * Khách hàng / Nhà cung cấp được tạo sau tháng {targetMonthKey}.
+          </Text>
+        </View>
+      );
+    }
+
+    if (maxEvaluatedDay <= 0) return null;
 
     const [mNum] = targetMonthKey.split('/').map(Number);
     const mStr = mNum < 10 ? `0${mNum}` : `${mNum}`;
     const maxDayStr = maxEvaluatedDay < 10 ? `0${maxEvaluatedDay}` : `${maxEvaluatedDay}`;
+    const minDayStr = minEvaluatedDay < 10 ? `0${minEvaluatedDay}` : `${minEvaluatedDay}`;
 
     return (
       <View style={styles.missingDaysCard}>
@@ -452,12 +514,16 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
               ))}
             </View>
             <Text style={styles.missingDaysSubtitle}>
-              * Tính đến ngày {maxDayStr}/{mStr}, không có tiền hàng nhập vào các ngày trên (không tính ngày tương lai).
+              {minEvaluatedDay > 1
+                ? `* Tính từ ngày bắt đầu tạo (${minDayStr}/${mStr}) đến ngày ${maxDayStr}/${mStr}, không có tiền hàng nhập vào các ngày trên (không tính ngày tương lai).`
+                : `* Tính đến ngày ${maxDayStr}/${mStr}, không có tiền hàng nhập vào các ngày trên (không tính ngày tương lai).`}
             </Text>
           </>
         ) : (
           <Text style={styles.allDaysPresentText}>
-            🎉 Tính đến ngày {maxDayStr}/{mStr}, tất cả các ngày đều có đơn nhập tiền hàng!
+            {minEvaluatedDay > 1
+              ? `🎉 Tính từ ngày bắt đầu tạo (${minDayStr}/${mStr}) đến ngày ${maxDayStr}/${mStr}, tất cả các ngày đều có đơn nhập tiền hàng!`
+              : `🎉 Tính đến ngày ${maxDayStr}/${mStr}, tất cả các ngày đều có đơn nhập tiền hàng!`}
           </Text>
         )}
       </View>
