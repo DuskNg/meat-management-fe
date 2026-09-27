@@ -83,7 +83,7 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={handleClose}>
+    <SmoothModal visible={visible} onClose={handleClose} zIndex={props.zIndex || 9999999}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ width: '100%' }}

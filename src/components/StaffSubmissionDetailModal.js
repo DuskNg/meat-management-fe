@@ -277,6 +277,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     },
     next: handleNext,
     prev: handlePrev,
+    isOpen: () => visible,
   }));
 
   const handleClose = () => {

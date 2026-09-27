@@ -18,6 +18,7 @@ import DatePickerInput from './DatePickerInput';
 import ImagePreviewModal from './ImagePreviewModal';
 import StaffSubmissionDetailModal from './StaffSubmissionDetailModal';
 import PopupModal from './PopupModal';
+import PriceChangeReasonModal from './PriceChangeReasonModal';
 import MoneyInput from './MoneyInput';
 import { api, API_HOST } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
@@ -1928,6 +1929,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const imagePreviewModalRef = useRef(null);
   const detailModalRef = useRef(null);
   const popupModalRef = useRef(null);
+  const priceChangeReasonModalRef = useRef(null);
   const isOpenActionRef = useRef(false);
 
   // Tải danh sách khách hàng, sản phẩm và nhà cung cấp
@@ -3551,8 +3553,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Lưu nợ cho 1 hóa đơn riêng lẻ
-  const handleSaveCard = async (subId) => {
+  // Lưu nợ cho 1 hóa đơn riêng lẻ (hỗ trợ xác nhận lý do thay đổi đơn giá)
+  const handleSaveCard = async (subId, confirmedReason = undefined) => {
     const card = cardDataMap[subId];
     if (!card) return false;
     if (card.targetType === 'supplier') {
@@ -3602,6 +3604,42 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           amount: amount,
         };
       });
+    }
+
+    // Kiểm tra xem có món thịt nào có đơn giá thay đổi so với bảng giá riêng/giá mặc định của khách hàng không
+    if (card.targetType !== 'supplier' && card.orderMode !== 'quick' && card.customer && confirmedReason === undefined) {
+      const custProds = (card.customer.id && custProductsMap[card.customer.id]) || products || [];
+      const changedPriceItems = [];
+      payloadItems.forEach((it) => {
+        const currentP = parseFloat(it.price) || 0;
+        if (currentP <= 0) return;
+        // Tìm sản phẩm tương ứng trong danh mục của khách hàng
+        const matchedP =
+          (it.matchedProductId && custProds.find((p) => p.id === it.matchedProductId)) ||
+          (it.rawName && custProds.find((p) => p.name?.trim().toLowerCase() === it.rawName.trim().toLowerCase()));
+        if (!matchedP) return;
+        const hasCustom = matchedP.customPrice !== undefined && matchedP.customPrice !== null;
+        const basePrice = Number(hasCustom ? matchedP.customPrice : (matchedP.defaultPrice ?? matchedP.baseDefaultPrice ?? 0));
+        if (basePrice > 0 && Math.abs(currentP - basePrice) > 0.01) {
+          changedPriceItems.push({
+            productName: matchedP.name || it.rawName,
+            oldPrice: basePrice,
+            newPrice: currentP,
+          });
+        }
+      });
+
+      // Nếu có món đổi giá, hiển thị pop-up hỏi lý do trước khi hoàn tất lưu
+      if (changedPriceItems.length > 0) {
+        priceChangeReasonModalRef.current?.open({
+          items: changedPriceItems,
+          customerName: card.customer.name || 'Khách hàng',
+          onConfirm: (reason) => {
+            handleSaveCard(subId, reason !== null ? (reason || '') : null);
+          },
+        });
+        return false;
+      }
     }
 
     try {
@@ -3718,6 +3756,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         isReturn: Boolean(card.isReturn),
         orderMode: card.orderMode,
         items: payloadItems,
+        ...(confirmedReason !== undefined ? { priceChangeReason: confirmedReason } : {}),
       };
 
       const res = await api.post(`/staff-submissions/${subId}/approve`, payload);
@@ -3766,6 +3805,10 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           fetchProductsForCustomer(card.customer.id, true);
         }
         if (onRefresh) onRefresh();
+        // Nếu vừa xác nhận lý do từ pop-up khi đang mở modal chi tiết, tự động chuyển tiếp sang hóa đơn tiếp theo
+        if (confirmedReason !== undefined && detailModalRef.current?.isOpen?.()) {
+          detailModalRef.current?.next?.();
+        }
         return true;
       }
       return false;
@@ -4629,6 +4672,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
       {/* Popup Modal xác nhận - zIndex 9999999 để đè lên StaffSubmissionDetailModal (999999) */}
       <PopupModal ref={popupModalRef} zIndex={9999999} />
+
+      {/* Modal hỏi lý do thay đổi đơn giá - zIndex 9999999 để đè lên StaffSubmissionDetailModal */}
+      <PriceChangeReasonModal ref={priceChangeReasonModalRef} zIndex={9999999} />
     </>
   );
 });
