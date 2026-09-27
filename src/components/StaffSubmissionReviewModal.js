@@ -882,21 +882,39 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace.includes('tuong') ||
       cleanDetectedNoSpace.includes('luyen')
     ) {
-      if (!currentCustClean.includes('tuong') && !currentCustClean.includes('luyen')) {
-        const phoTuongCust = custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
-        }) || custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('tuong') && !cClean.includes('tien');
-        }) || custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('luyen');
-        }) || null;
+      const phoTuongCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('luyen');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('tuong') && !cClean.includes('tien');
+      }) || null;
 
-        if (phoTuongCust) {
-          matchedCust = phoTuongCust;
-        }
+      if (phoTuongCust) {
+        matchedCust = phoTuongCust;
+      }
+    }
+
+    // 1c2. ĐẶC BIỆT: Khớp ưu tiên khách "Trường hoàng(nguyễn khuyến)" nếu AI nhận diện là trường hoàng hoặc nguyễn khuyến trường hoàng
+    if (
+      (cleanDetected.includes('truong') && cleanDetected.includes('hoang')) ||
+      cleanDetected.includes('truong hoang') ||
+      cleanDetectedNoSpace.includes('truonghoang') ||
+      (cleanDetected.includes('khuyen') && cleanDetected.includes('truong'))
+    ) {
+      const truongHoangCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('truong') && cClean.includes('hoang');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('truong') && cClean.includes('khuyen');
+      }) || null;
+
+      if (truongHoangCust) {
+        matchedCust = truongHoangCust;
       }
     }
 
@@ -1406,10 +1424,28 @@ const resolveCustomerForSub = (sub, custList) => {
           return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
         }) || custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('tuong') && !cClean.includes('tien');
+          return cClean.includes('luyen');
         }) || custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('luyen');
+          return cClean.includes('tuong') && !cClean.includes('tien');
+        }) || null;
+      }
+    }
+
+    // 5c2. Ưu tiên khớp khách "Trường hoàng(nguyễn khuyến)" nếu AI nhận diện là trường hoàng hoặc nguyễn khuyến trường hoàng
+    if (!matchedCust) {
+      if (
+        (cleanDetected.includes('truong') && cleanDetected.includes('hoang')) ||
+        cleanDetected.includes('truong hoang') ||
+        cleanDetectedNoSpace.includes('truonghoang') ||
+        (cleanDetected.includes('khuyen') && cleanDetected.includes('truong'))
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('truong') && cClean.includes('hoang');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('truong') && cClean.includes('khuyen');
         }) || null;
       }
     }
@@ -2057,6 +2093,22 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       match = prodList.find((p) => {
         const pClean = removeDiacritics(p.name.toLowerCase());
         return pClean.includes('suon');
+      });
+      if (match) return match;
+    }
+
+    // Lạc vai / Vai / Thịt vai (Khi ghi hoặc đọc là "vai", "thịt vai", "lạc vai")
+    if (
+      cleanRaw === 'vai' || cleanRaw === 'thit vai' || cleanRaw === 'lac vai' || cleanRaw === 'thit lac vai' ||
+      cleanRawNoSpace === 'vai' || cleanRawNoSpace === 'thitvai' || cleanRawNoSpace === 'lacvai' || cleanRawNoSpace === 'thitlacvai' ||
+      (cleanRaw.includes('vai') && !cleanRaw.includes('xay') && !cleanRaw.includes('suon') && !cleanRaw.includes('la ') && !cleanRaw.startsWith('la') && !cleanRaw.includes('u vai'))
+    ) {
+      match = prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase().trim());
+        return pClean === 'lac vai' || pClean.includes('lac vai');
+      }) || prodList.find((p) => {
+        const pClean = removeDiacritics(p.name.toLowerCase().trim());
+        return pClean.includes('vai') && !pClean.includes('xay') && !pClean.includes('suon') && !pClean.includes('la');
       });
       if (match) return match;
     }
@@ -3296,28 +3348,40 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       const isoDate = `${y}-${m}-${d}`;
 
       let finalNote = (card.note || '').trim();
+      let isImportCard = false;
       if (card.isReturn) {
-        const isImport = /\b(nhập hàng|nhập thịt|nhập tái|nhập gầu|nhập kho|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(finalNote);
-        const tag = isImport ? '[Nhập hàng]' : '[Trả lại hàng]';
+        isImportCard = Boolean(
+          card.type === 'nhap_hang' ||
+          card.orderType === 'nhap_hang' ||
+          card.isImport ||
+          /\b(nhập hàng|nhập thịt|nhập tái|nhập gầu|nhập kho|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(finalNote) ||
+          /\b(nhập hàng|nhập thịt|nhap hang)\b/i.test(card.note || '')
+        );
+        const tag = '[Trả lại hàng]';
         if (card.orderMode === 'quick') {
           let cleanNote = finalNote
             .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
-            .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '')
+            .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '')
             .replace(/[-–—:\s]+$/g, '')
             .trim();
-          finalNote = cleanNote ? `${tag} ${cleanNote}` : (isImport ? `[Nhập hàng] Nhập hàng nhanh` : `[Trả lại hàng] Trả hàng nhanh`);
+          if (isImportCard && !/nhập hàng|nhap hang/i.test(cleanNote)) {
+            cleanNote = cleanNote ? `NHẬP HÀNG - ${cleanNote}` : 'NHẬP HÀNG';
+          }
+          finalNote = cleanNote ? `${tag} Trả hàng nhanh - ${cleanNote}` : (isImportCard ? `${tag} Trả hàng nhanh - NHẬP HÀNG` : `${tag} Trả hàng nhanh`);
         } else {
           const itemsDesc = buildReturnNoteFromItems(payloadItems);
           let cleanNote = finalNote
             .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
-            .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '')
+            .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '')
             .trim();
           if (cleanNote.includes('(') && cleanNote.includes(')')) {
             const lastParen = cleanNote.lastIndexOf(')');
             cleanNote = cleanNote.substring(lastParen + 1).replace(/^[-–—:\s]+/, '').trim();
           }
-          cleanNote = cleanNote.replace(/^(?:NHẬP HÀNG|NHẬP THỊT|TRẢ HÀNG|TRẢ LẠI)\s*$/gi, '').trim();
-          finalNote = cleanNote ? `${tag} ${itemsDesc} - ${cleanNote}` : `${tag} ${itemsDesc}`;
+          if (isImportCard && !/nhập hàng|nhap hang/i.test(cleanNote)) {
+            cleanNote = cleanNote ? `NHẬP HÀNG - ${cleanNote}` : 'NHẬP HÀNG';
+          }
+          finalNote = cleanNote ? `${tag} ${itemsDesc} - ${cleanNote}` : (isImportCard ? `${tag} ${itemsDesc} - NHẬP HÀNG` : `${tag} ${itemsDesc}`);
         }
       } else {
         if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
@@ -3611,28 +3675,40 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             }
 
             let finalNote = (card.note || '').trim();
+            let isImportCard = false;
             if (card.isReturn) {
-              const isImport = /\b(nhập hàng|nhập thịt|nhập tái|nhập gầu|nhập kho|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(finalNote);
-              const tag = isImport ? '[Nhập hàng]' : '[Trả lại hàng]';
+              isImportCard = Boolean(
+                card.type === 'nhap_hang' ||
+                card.orderType === 'nhap_hang' ||
+                card.isImport ||
+                /\b(nhập hàng|nhập thịt|nhập tái|nhập gầu|nhập kho|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(finalNote) ||
+                /\b(nhập hàng|nhập thịt|nhap hang)\b/i.test(card.note || '')
+              );
+              const tag = '[Trả lại hàng]';
               if (card.orderMode === 'quick') {
                 let cleanNote = finalNote
                   .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
-                  .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '')
+                  .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '')
                   .replace(/[-–—:\s]+$/g, '')
                   .trim();
-                finalNote = cleanNote ? `${tag} ${cleanNote}` : (isImport ? `[Nhập hàng] Nhập hàng nhanh` : `[Trả lại hàng] Trả hàng nhanh`);
+                if (isImportCard && !/nhập hàng|nhap hang/i.test(cleanNote)) {
+                  cleanNote = cleanNote ? `NHẬP HÀNG - ${cleanNote}` : 'NHẬP HÀNG';
+                }
+                finalNote = cleanNote ? `${tag} Trả hàng nhanh - ${cleanNote}` : (isImportCard ? `${tag} Trả hàng nhanh - NHẬP HÀNG` : `${tag} Trả hàng nhanh`);
               } else {
                 const itemsDesc = buildReturnNoteFromItems(payloadItems);
                 let cleanNote = finalNote
                   .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
-                  .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '')
+                  .replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '')
                   .trim();
                 if (cleanNote.includes('(') && cleanNote.includes(')')) {
                   const lastParen = cleanNote.lastIndexOf(')');
                   cleanNote = cleanNote.substring(lastParen + 1).replace(/^[-–—:\s]+/, '').trim();
                 }
-                cleanNote = cleanNote.replace(/^(?:NHẬP HÀNG|NHẬP THỊT|TRẢ HÀNG|TRẢ LẠI)\s*$/gi, '').trim();
-                finalNote = cleanNote ? `${tag} ${itemsDesc} - ${cleanNote}` : `${tag} ${itemsDesc}`;
+                if (isImportCard && !/nhập hàng|nhap hang/i.test(cleanNote)) {
+                  cleanNote = cleanNote ? `NHẬP HÀNG - ${cleanNote}` : 'NHẬP HÀNG';
+                }
+                finalNote = cleanNote ? `${tag} ${itemsDesc} - ${cleanNote}` : (isImportCard ? `${tag} ${itemsDesc} - NHẬP HÀNG` : `${tag} ${itemsDesc}`);
               }
             } else {
               if (card.orderMode === 'quick' && card.quickSubAmounts && card.quickSubAmounts.length > 1) {
