@@ -998,10 +998,10 @@ const CustomerDebtHistoryModal = forwardRef(({
               /* ─── CHẾ ĐỘ 1: TRẢ NỢ THEO CỤM NGÀY (KHOẢNG NGÀY) ─── */
               <View style={styles.paymentSimCard}>
                 <View style={styles.rangeHeaderRow}>
-                  <Text style={styles.paymentSimTitle}>📅 Chọn khoảng ngày thu nợ:</Text>
+                  <Text style={styles.paymentSimTitle}>📅 Khoảng ngày thu nợ:</Text>
                   {totalAllRemainingDebt > 0 && (
                     <Text style={styles.paymentSimTotalDebt}>
-                      Tổng nợ tất cả: <Text style={styles.paymentSimTotalDebtBold}>{formatCurrency(totalAllRemainingDebt)}</Text>
+                      Tổng nợ: <Text style={styles.paymentSimTotalDebtBold}>{formatCurrency(totalAllRemainingDebt)}</Text>
                     </Text>
                   )}
                 </View>
@@ -1029,8 +1029,13 @@ const CustomerDebtHistoryModal = forwardRef(({
                   </View>
                 </View>
 
-                {/* Phím chọn nhanh khoảng ngày */}
-                <View style={styles.quickChipsWrap}>
+                {/* Phím chọn nhanh khoảng ngày (Cuộn ngang 1 dòng mượt mà) */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.quickChipsScrollContainer}
+                  style={styles.quickChipsScrollView}
+                >
                   {allDebtDaysInHistory.length > 0 && (
                     <TouchableOpacity
                       style={[styles.quickChip, styles.quickChipDebtHighlight]}
@@ -1038,7 +1043,7 @@ const CustomerDebtHistoryModal = forwardRef(({
                       activeOpacity={0.7}
                     >
                       <Text style={styles.quickChipDebtHighlightText}>
-                        ⚡ Chọn ngày còn nợ ({allDebtDaysInHistory.length})
+                        ⚡ Ngày còn nợ ({allDebtDaysInHistory.length})
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -1082,215 +1087,95 @@ const CustomerDebtHistoryModal = forwardRef(({
                   >
                     <Text style={styles.quickChipText}>Tháng này</Text>
                   </TouchableOpacity>
-                </View>
+                </ScrollView>
 
                 {/* Kết quả xác thực & tính toán của cụm ngày đã chọn */}
                 <View style={styles.rangeResultBox}>
                   {selectedRangeData.validationError ? (
-                    <View style={styles.rangeValidationErrorBox}>
-                      <Text style={styles.rangeValidationErrorText}>
-                        ⚠️ {selectedRangeData.validationError}
-                      </Text>
-                    </View>
+                    <Text style={styles.rangeValidationErrorText}>
+                      ⚠️ {selectedRangeData.validationError}
+                    </Text>
                   ) : selectedRangeData.matchedDays.length === 0 ? (
                     <Text style={styles.rangeEmptyHint}>
                       🔍 Không có đơn nợ nào phát sinh từ ngày {rangeFromDate} đến {rangeToDate}.
                     </Text>
                   ) : (
                     <>
-                      {/* Thẻ trạng thái xác thực các ngày còn nợ */}
-                      {selectedRangeData.debtDays.length > 0 ? (
-                        <View style={styles.rangeValidationStatusWarn}>
-                          <Text style={styles.rangeValidationStatusWarnText}>
-                            ⚠️ <Text style={{ fontWeight: 'bold' }}>XÁC THỰC CÔNG NỢ:</Text> Có{' '}
-                            <Text style={{ fontWeight: 'bold', color: '#DC2626' }}>
-                              {selectedRangeData.debtDays.length} ngày CÒN NỢ
-                            </Text>{' '}
-                            (trên tổng {selectedRangeData.matchedDays.length} ngày giao dịch). Còn thiếu:{' '}
-                            <Text style={{ fontWeight: 'bold', color: '#DC2626' }}>
-                              {formatCurrency(selectedRangeData.remainingDebt)}
-                            </Text>
-                          </Text>
+                      {/* Dòng tóm tắt 3 chỉ số mỏng tinh gọn (thay thế 3 ô to và hộp vàng) */}
+                      <View style={styles.rangeCompactStatsRow}>
+                        <View style={styles.rangeCompactStatCol}>
+                          <Text style={styles.rangeCompactStatLabel}>Mua nợ ({selectedRangeData.matchedDays.length}n):</Text>
+                          <Text style={styles.rangeCompactStatVal}>{formatCurrency(selectedRangeData.totalDebt)}</Text>
                         </View>
-                      ) : (
-                        <View style={styles.rangeValidationStatusSuccess}>
-                          <Text style={styles.rangeValidationStatusSuccessText}>
-                            ✅ <Text style={{ fontWeight: 'bold' }}>ĐÃ ĐỐI SOÁT:</Text> Toàn bộ{' '}
-                            <Text style={{ fontWeight: 'bold' }}>
-                              {selectedRangeData.matchedDays.length} ngày
-                            </Text>{' '}
-                            trong khoảng này ĐÃ THANH TOÁN HẾT NỢ!
-                          </Text>
-                        </View>
-                      )}
-
-                      {/* Khối thống kê 3 cột */}
-                      <View style={styles.rangeStatsGrid}>
-                        <View style={styles.rangeStatCell}>
-                          <Text style={styles.rangeStatLabel}>
-                            Mua nợ ({selectedRangeData.matchedDays.length} ngày):
-                          </Text>
-                          <Text style={styles.rangeStatValue}>{formatCurrency(selectedRangeData.totalDebt)}</Text>
-                        </View>
-                        <View style={styles.rangeStatCell}>
-                          <Text style={styles.rangeStatLabel}>
-                            Đã trả ({selectedRangeData.paidDays.length} ngày):
-                          </Text>
-                          <Text style={[styles.rangeStatValue, { color: '#059669' }]}>
+                        <View style={styles.rangeCompactDivider} />
+                        <View style={styles.rangeCompactStatCol}>
+                          <Text style={styles.rangeCompactStatLabel}>Đã trả:</Text>
+                          <Text style={[styles.rangeCompactStatVal, { color: '#059669' }]}>
                             {formatCurrency(selectedRangeData.totalPaid)}
                           </Text>
                         </View>
-                        <View style={[styles.rangeStatCell, styles.rangeStatCellHighlight]}>
-                          <Text style={styles.rangeStatLabelBold}>
-                            Còn nợ ({selectedRangeData.debtDays.length} ngày):
-                          </Text>
+                        <View style={styles.rangeCompactDivider} />
+                        <View style={styles.rangeCompactStatCol}>
+                          <Text style={styles.rangeCompactStatLabelBold}>Còn nợ ({selectedRangeData.debtDays.length}n):</Text>
                           <Text
                             style={[
-                              styles.rangeStatValueBold,
+                              styles.rangeCompactStatValBold,
                               selectedRangeData.remainingDebt > 0 ? styles.textDebt : styles.textSuccessBold,
                             ]}
                           >
                             {selectedRangeData.remainingDebt > 0
                               ? formatCurrency(selectedRangeData.remainingDebt)
-                              : '0 đ (Hết nợ ✅)'}
+                              : '0 đ'}
                           </Text>
                         </View>
                       </View>
 
-                      {/* Bộ lọc danh sách ngày: Chỉ ngày còn nợ / Tất cả / Đã trả */}
-                      <View style={styles.rangeDaysListWrap}>
-                        <View style={styles.rangeFilterTabsHeader}>
-                          <Text style={styles.rangeDaysListTitle}>Danh sách chi tiết các ngày:</Text>
-                          <View style={styles.rangeFilterSubTabsRow}>
-                            <TouchableOpacity
-                              style={[
-                                styles.rangeFilterSubTab,
-                                rangeViewFilter === 'debt_only' && styles.rangeFilterSubTabActiveDebt,
-                              ]}
-                              onPress={() => setRangeViewFilter('debt_only')}
-                              activeOpacity={0.7}
-                            >
-                              <Text
-                                style={[
-                                  styles.rangeFilterSubTabText,
-                                  rangeViewFilter === 'debt_only' && styles.rangeFilterSubTabTextActiveDebt,
-                                ]}
+                      {/* Danh sách chip các ngày còn nợ (cuộn ngang gọn gàng) */}
+                      {selectedRangeData.debtDays.length > 0 && (
+                        <View style={styles.rangeCompactChipsWrap}>
+                          <Text style={styles.rangeCompactChipsTitle}>
+                            {selectedRangeData.debtDays.length} ngày nợ:
+                          </Text>
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.rangeCompactChipsScroll}
+                          >
+                            {selectedRangeData.debtDays.map((g) => (
+                              <TouchableOpacity
+                                key={g.dateKey}
+                                style={styles.rangeDayChipCompact}
+                                onPress={() => detailModalRef?.current?.open(g)}
+                                activeOpacity={0.8}
                               >
-                                Còn nợ ({selectedRangeData.debtDays.length})
-                              </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={[
-                                styles.rangeFilterSubTab,
-                                rangeViewFilter === 'all' && styles.rangeFilterSubTabActive,
-                              ]}
-                              onPress={() => setRangeViewFilter('all')}
-                              activeOpacity={0.7}
-                            >
-                              <Text
-                                style={[
-                                  styles.rangeFilterSubTabText,
-                                  rangeViewFilter === 'all' && styles.rangeFilterSubTabTextActive,
-                                ]}
-                              >
-                                Tất cả ({selectedRangeData.matchedDays.length})
-                              </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={[
-                                styles.rangeFilterSubTab,
-                                rangeViewFilter === 'paid_only' && styles.rangeFilterSubTabActivePaid,
-                              ]}
-                              onPress={() => setRangeViewFilter('paid_only')}
-                              activeOpacity={0.7}
-                            >
-                              <Text
-                                style={[
-                                  styles.rangeFilterSubTabText,
-                                  rangeViewFilter === 'paid_only' && styles.rangeFilterSubTabTextActivePaid,
-                                ]}
-                              >
-                                Đã trả ({selectedRangeData.paidDays.length})
-                              </Text>
-                            </TouchableOpacity>
-                          </View>
+                                <Text style={styles.rangeDayChipDateCompact}>{formatShortDate(g.date)}</Text>
+                                <Text style={styles.rangeDayChipAmtCompact}>{formatAmountShort(g.remainingDebt)}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
                         </View>
-
-                        {/* Danh sách chip ngày theo bộ lọc */}
-                        {(() => {
-                          const displayDays =
-                            rangeViewFilter === 'debt_only'
-                              ? selectedRangeData.debtDays
-                              : rangeViewFilter === 'paid_only'
-                              ? selectedRangeData.paidDays
-                              : selectedRangeData.matchedDays;
-
-                          if (displayDays.length === 0) {
-                            return (
-                              <Text style={styles.rangeFilterEmptyText}>
-                                {rangeViewFilter === 'debt_only'
-                                  ? '🎉 Không có ngày nào còn nợ trong khoảng này!'
-                                  : 'Không có ngày nào phù hợp bộ lọc.'}
-                              </Text>
-                            );
-                          }
-
-                          return (
-                            <View style={styles.rangeDaysChipsRow}>
-                              {displayDays.slice(0, 12).map((g) => {
-                                const hasDayDebt = (g.remainingDebt || 0) > 0;
-                                return (
-                                  <TouchableOpacity
-                                    key={g.dateKey}
-                                    style={[
-                                      styles.rangeDayChip,
-                                      hasDayDebt ? styles.rangeDayChipDebt : styles.rangeDayChipPaid,
-                                    ]}
-                                    onPress={() => detailModalRef?.current?.open(g)}
-                                    activeOpacity={0.8}
-                                    title="Bấm để xem chi tiết hóa đơn ngày này"
-                                  >
-                                    <Text style={styles.rangeDayChipDate}>{formatShortDate(g.date)}</Text>
-                                    <Text
-                                      style={[
-                                        styles.rangeDayChipAmt,
-                                        hasDayDebt ? styles.textDebt : styles.textSuccessBold,
-                                      ]}
-                                    >
-                                      {hasDayDebt ? formatAmountShort(g.remainingDebt) : '✓'}
-                                    </Text>
-                                  </TouchableOpacity>
-                                );
-                              })}
-                              {displayDays.length > 12 && (
-                                <Text style={styles.rangeMoreDaysHint}>
-                                  +{displayDays.length - 12} ngày khác
-                                </Text>
-                              )}
-                            </View>
-                          );
-                        })()}
-                      </View>
+                      )}
 
                       {/* Nút hành động thu nợ cụm ngày */}
                       {selectedRangeData.remainingDebt > 0 ? (
                         <TouchableOpacity
-                          style={styles.rangePayActionBtn}
+                          style={styles.rangePayActionBtnCompact}
                           onPress={handleRangePaySubmit}
                           activeOpacity={0.85}
                         >
-                          <Text style={styles.rangePayActionBtnText}>
-                            💵 THU NỢ {selectedRangeData.debtDays.length} NGÀY CÒN LẠI ({formatCurrency(selectedRangeData.remainingDebt)})
+                          <Text style={styles.rangePayActionBtnTextCompact}>
+                            💵 THU NỢ {selectedRangeData.debtDays.length} NGÀY ({formatCurrency(selectedRangeData.remainingDebt)})
                           </Text>
                         </TouchableOpacity>
                       ) : (
-                        <View style={styles.rangePaidOffBanner}>
-                          <Text style={styles.rangePaidOffText}>🎉 Cụm ngày này đã được thanh toán hết nợ!</Text>
+                        <View style={styles.rangePaidOffBannerCompact}>
+                          <Text style={styles.rangePaidOffTextCompact}>🎉 Toàn bộ các ngày trong khoảng này đã hết nợ!</Text>
                         </View>
                       )}
                     </>
                   )}
                 </View>
+
               </View>
             ) : (
               /* ─── CHẾ ĐỘ 2: TRẢ NỢ THEO SỐ TIỀN (FIFO CŨ NHẤT) ─── */
@@ -2596,5 +2481,126 @@ const styles = StyleSheet.create({
   },
   payToolsWrapper: {
     marginBottom: 12,
+  },
+  quickChipsScrollView: {
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  quickChipsScrollContainer: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingRight: 10,
+  },
+  rangeCompactStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  rangeCompactStatCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  rangeCompactStatLabel: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginBottom: 1,
+  },
+  rangeCompactStatVal: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  rangeCompactDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 4,
+  },
+  rangeCompactStatLabelBold: {
+    fontSize: 10.5,
+    color: '#991B1B',
+    fontWeight: 'bold',
+    marginBottom: 1,
+  },
+  rangeCompactStatValBold: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+  },
+  rangeCompactChipsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 6,
+  },
+  rangeCompactChipsTitle: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  rangeCompactChipsScroll: {
+    flexDirection: 'row',
+    gap: 5,
+    paddingRight: 10,
+  },
+  rangeDayChipCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFF1F1',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  rangeDayChipDateCompact: {
+    fontSize: 10.5,
+    color: '#334155',
+    fontWeight: '600',
+  },
+  rangeDayChipAmtCompact: {
+    fontSize: 10.5,
+    color: '#DC2626',
+    fontWeight: 'bold',
+  },
+  rangePayActionBtnCompact: {
+    backgroundColor: '#059669',
+    height: 38,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 4,
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  rangePayActionBtnTextCompact: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: 'bold',
+  },
+  rangePaidOffBannerCompact: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  rangePaidOffTextCompact: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#065F46',
   },
 });
