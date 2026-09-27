@@ -1398,6 +1398,8 @@ const CustomerDebtHistoryModal = forwardRef(({
                 )}
               </View>
             )}
+            </View>
+          )}
 
             <Text style={styles.helperText}>• Bấm vào từng tháng để xem chi tiết</Text>
             {monthGroups.map((month) => {
@@ -1641,7 +1643,6 @@ const CustomerDebtHistoryModal = forwardRef(({
               );
             })}
           </ScrollView>
-          </>
         )}
 
         <TouchableOpacity
