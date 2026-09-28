@@ -951,12 +951,15 @@ const resolveCustomerForSub = (sub, custList) => {
     }
 
     // 1c. ĐẶC BIỆT: Khớp ưu tiên khách "Phở tưởng chị luyến" nếu AI nhận diện là "phở tưởng" hoặc "chị luyến"
+    // LƯU Ý: TUYỆT ĐỐI không để "anh tường mỗ" bị nhầm vào rule này!
     if (
       cleanDetected.includes('pho tuong') ||
-      cleanDetected.includes('tuong') ||
+      // Chỉ match 'tuong' khi KHÔNG có 'tuong mo' hoặc 'anh tuong' (để phân biệt "Anh tường mỗ")
+      (cleanDetected.includes('tuong') && !cleanDetected.includes('tuong mo') && !cleanDetected.includes('anh tuong')) ||
       cleanDetected.includes('luyen') ||
       cleanDetectedNoSpace.includes('photuong') ||
-      cleanDetectedNoSpace.includes('tuong') ||
+      // Tương tự với no-space: loại trừ 'anhtuong' và 'tuongmo'
+      (cleanDetectedNoSpace.includes('tuong') && !cleanDetectedNoSpace.includes('tuongmo') && !cleanDetectedNoSpace.includes('anhtuong')) ||
       cleanDetectedNoSpace.includes('luyen')
     ) {
       const phoTuongCust = custList.find((c) => {
@@ -1372,6 +1375,30 @@ const resolveCustomerForSub = (sub, custList) => {
       if (custGiaHungCs2) matchedCust = custGiaHungCs2;
     }
 
+    // 1p. ĐẶC BIỆT: Khi AI chỉ đọc được "Hạnh" / "Chị Hạnh" / "hanh" -> ưu tiên khách "Chị hạnh sân bóng hà trì" (hoạt động, không nợ xấu)
+    // TUYỆT ĐỐI không để khớp nhầm sang khách "Hạnh" (isBadDebt=true)
+    if (
+      cleanDetected === 'hanh' ||
+      cleanDetected === 'chi hanh' ||
+      cleanDetectedNoSpace === 'hanh' ||
+      cleanDetectedNoSpace === 'chihanh' ||
+      cleanDetected.includes('hanh san bong') ||
+      cleanDetectedNoSpace.includes('hanhsanbong') ||
+      (cleanDetected.includes('hanh') && !cleanDetected.includes('khanh'))
+    ) {
+      const hanhSanBongCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('hanh') && (cClean.includes('san bong') || cClean.includes('ha tri')) && c.isActive && !c.isBadDebt;
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('hanh') && (cClean.includes('san bong') || cClean.includes('ha tri'));
+      }) || null;
+
+      if (hanhSanBongCust) {
+        matchedCust = hanhSanBongCust;
+      }
+    }
+
     // 2. Nếu khách trước đó bị gán nhầm thành tên quá ngắn (1-2 ký tự như "N") trong khi AI đọc tên dài, hủy bỏ để tìm lại
     if (matchedCust && currentCustClean.length <= 2 && cleanDetected.length > 2) {
       matchedCust = null;
@@ -1487,13 +1514,16 @@ const resolveCustomerForSub = (sub, custList) => {
     }
 
     // 5c. Ưu tiên khớp khách Phở tưởng (chị Luyến) nếu AI nhận diện là phở tưởng hoặc luyến
+    // LƯU Ý: TUYỆT ĐỐI không để "anh tường mỗ" bị nhầm vào rule này!
     if (!matchedCust) {
       if (
         cleanDetected.includes('pho tuong') ||
-        cleanDetected.includes('tuong') ||
+        // Chỉ match 'tuong' khi KHÔNG có 'tuong mo' hoặc 'anh tuong' (để phân biệt "Anh tường mỗ")
+        (cleanDetected.includes('tuong') && !cleanDetected.includes('tuong mo') && !cleanDetected.includes('anh tuong')) ||
         cleanDetected.includes('luyen') ||
         cleanDetectedNoSpace.includes('photuong') ||
-        cleanDetectedNoSpace.includes('tuong') ||
+        // Tương tự với no-space: loại trừ 'anhtuong' và 'tuongmo'
+        (cleanDetectedNoSpace.includes('tuong') && !cleanDetectedNoSpace.includes('tuongmo') && !cleanDetectedNoSpace.includes('anhtuong')) ||
         cleanDetectedNoSpace.includes('luyen')
       ) {
         matchedCust = custList.find((c) => {
@@ -1623,6 +1653,28 @@ const resolveCustomerForSub = (sub, custList) => {
         }) || custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
           return cClean.includes('binh da');
+        }) || null;
+      }
+    }
+
+    // 5f2. Ưu tiên khớp khách "Chị hạnh sân bóng hà trì" khi AI nhận diện "hanh" / "chi hanh"
+    // TUYỆT ĐỐI không để khớp nhầm sang khách "Hạnh" (isBadDebt=true)
+    if (!matchedCust) {
+      if (
+        cleanDetected === 'hanh' ||
+        cleanDetected === 'chi hanh' ||
+        cleanDetectedNoSpace === 'hanh' ||
+        cleanDetectedNoSpace === 'chihanh' ||
+        cleanDetected.includes('hanh san bong') ||
+        cleanDetectedNoSpace.includes('hanhsanbong') ||
+        (cleanDetected.includes('hanh') && !cleanDetected.includes('khanh'))
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('hanh') && (cClean.includes('san bong') || cClean.includes('ha tri')) && c.isActive && !c.isBadDebt;
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('hanh') && (cClean.includes('san bong') || cClean.includes('ha tri'));
         }) || null;
       }
     }
@@ -3567,6 +3619,16 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         showGlobalToast('Vui lòng chọn khách hàng để ghi nợ.', 'warning');
         return false;
       }
+      // Kiểm tra khách hàng phải có id hợp lệ (tồn tại trong DB)
+      // Trường hợp AI phân tích ra tên nhưng không khớp được khách nào trong hệ thống
+      if (!card.customer.id) {
+        const detectedName = card.customer.name || card.detectedCustomerName || 'không xác định';
+        showGlobalToast(
+          `Khách hàng "${detectedName}" không tồn tại trong hệ thống. Vui lòng chọn đúng khách hàng trước khi lưu.`,
+          'error'
+        );
+        return false;
+      }
     }
     let payloadItems = [];
     if (card.orderMode === 'quick') {
@@ -3952,7 +4014,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     return unapprovedSubs.filter((s) => {
       const card = cardDataMap[s.id];
       if (!card) return false;
-      const hasPartner = card.targetType === 'supplier' ? Boolean(card.supplier?.id) : Boolean(card.customer);
+      // Khách phải có id hợp lệ (tồn tại trong DB) - loại đơn AI không khớp được khách
+      const hasPartner = card.targetType === 'supplier' ? Boolean(card.supplier?.id) : Boolean(card.customer?.id);
       if (!hasPartner) return false;
       return card.items.some((it) => parseFloat(it.amount || 0) > 0);
     }).length;
@@ -3964,7 +4027,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     const validSubs = unapprovedSubs.filter((s) => {
       const card = cardDataMap[s.id];
       if (!card) return false;
-      const hasPartner = card.targetType === 'supplier' ? Boolean(card.supplier?.id) : Boolean(card.customer);
+      // Khách phải có id hợp lệ (tồn tại trong DB) - loại đơn AI không khớp được khách
+      const hasPartner = card.targetType === 'supplier' ? Boolean(card.supplier?.id) : Boolean(card.customer?.id);
       if (!hasPartner) return false;
       return card.items.some((it) => parseFloat(it.amount || 0) > 0);
     });
