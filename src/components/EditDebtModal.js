@@ -674,14 +674,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
                 </View>
               ) : null}
 
-              <Text style={[styles.label, { marginTop: 12 }]}>📝 Ghi chú bổ sung (tuỳ chọn):</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Ví dụ: Nợ tiền thịt giao buổi sáng..."
-                placeholderTextColor={COLORS.textLight}
-                value={note}
-                onChangeText={setNote}
-              />
+              {/* Ghi chú bổ sung - Đã bỏ theo yêu cầu người dùng */}
             </View>
           ) : (
             /* ── GIAO DIỆN SỬA ĐƠN NỢ CHI TIẾT ── */
@@ -830,20 +823,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
                 </Text>
               ) : null}
 
-              {/* ── GHI CHÚ CHUNG CHO CẢ ĐƠN ── */}
-              {(cartItems.length > 0 || currentProduct) && (
-                <View style={styles.sharedFields}>
-                  <View style={styles.divider} />
-                  <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
-                    placeholderTextColor={COLORS.textLight}
-                    value={note}
-                    onChangeText={setNote}
-                  />
-                </View>
-              )}
+              {/* ── GHI CHÚ CHUNG CHO CẢ ĐƠN - Đã bỏ theo yêu cầu người dùng ── */}
             </View>
           )}
         </ScrollView>

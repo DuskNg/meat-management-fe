@@ -720,20 +720,7 @@ const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRe
                   </Text>
                 ) : null}
 
-                {/* ── GHI CHÚ CHUNG CHO CẢ ĐƠN ── */}
-                {(cartItems.length > 0 || currentProduct) && (
-                  <View style={styles.sharedFields}>
-                    <View style={styles.divider} />
-                    <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Ví dụ: Lấy nạc vai làm phở chiều"
-                      placeholderTextColor={COLORS.textLight}
-                      value={note}
-                      onChangeText={setNote}
-                    />
-                  </View>
-                )}
+                {/* ── GHI CHÚ CHUNG CHO CẢ ĐƠN - Đã bỏ theo yêu cầu người dùng ── */}
               </>
             </>
           ) : (
@@ -817,15 +804,7 @@ const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRe
                   </View>
                 ) : null}
 
-                {/* Ghi chú thêm cho nợ nhanh */}
-                <Text style={styles.label}>📝 Ghi chú đơn hàng (Có thể bỏ qua):</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ví dụ: Tiền hàng sáng nay"
-                  placeholderTextColor={COLORS.textLight}
-                  value={note}
-                  onChangeText={setNote}
-                />
+                {/* Ghi chú thêm cho nợ nhanh - Đã bỏ theo yêu cầu người dùng */}
               </>
             </>
           )}
