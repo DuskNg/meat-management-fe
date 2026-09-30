@@ -51,6 +51,12 @@ const parseDateString = (str) => {
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('vi-VN').format(Math.round(amount || 0));
 
+const parseDecimalNumber = (value) => {
+  const normalized = String(value ?? '').trim().replace(',', '.');
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 // Tạo dòng món thịt rỗng
 const createEmptyItem = () => ({
   id: Date.now() + Math.random(),
@@ -66,6 +72,7 @@ const createEmptyItem = () => ({
 const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [transactionId, setTransactionId] = useState(null);
+  const [supplierId, setSupplierId] = useState(null);
   const [supplierName, setSupplierName] = useState('');
   const [dateStr, setDateStr] = useState('');
   const [note, setNote] = useState('');
@@ -87,9 +94,12 @@ const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
   const isSubmittingRef = useRef(false);
 
   // Tải danh mục sản phẩm khi mở modal
-  const fetchProducts = async () => {
+  const fetchProducts = async (targetSupplierId) => {
     try {
-      const res = await api.get('/products');
+      const endpoint = targetSupplierId
+        ? `/products?supplierId=${encodeURIComponent(targetSupplierId)}`
+        : '/products';
+      const res = await api.get(endpoint);
       if (res.data?.success && Array.isArray(res.data?.data)) {
         setProducts(res.data.data);
       }
@@ -99,9 +109,10 @@ const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   useImperativeHandle(ref, () => ({
-    open: (transaction, name = '') => {
+    open: (transaction, name = '', targetSupplierId = null) => {
       if (!transaction) return;
       setTransactionId(transaction.id);
+      setSupplierId(targetSupplierId || transaction.supplierId || null);
       setSupplierName(name || transaction.supplierName || '');
       setDateStr(formatDateToDisplay(transaction.date || transaction.createdAt));
       setNote(transaction.note || '');
@@ -143,7 +154,7 @@ const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
       }
 
       setVisible(true);
-      fetchProducts();
+      fetchProducts(targetSupplierId || transaction.supplierId);
     },
     close: () => {
       setVisible(false);
@@ -240,7 +251,7 @@ const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
       if (product?.costPrice && parseFloat(product.costPrice) > 0) {
         cur.price = String(parseFloat(product.costPrice));
       }
-      const q = parseFloat(cur.quantity) || 0;
+      const q = parseDecimalNumber(cur.quantity);
       const p = parseFloat(cur.price) || 0;
       cur.amount = q * p;
       next[index] = cur;
@@ -253,7 +264,7 @@ const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
       const next = [...prev];
       const cur = { ...next[index] };
       cur.quantity = val;
-      const q = parseFloat(val) || 0;
+      const q = parseDecimalNumber(val);
       const p = parseFloat(cur.price) || 0;
       cur.amount = q * p;
       next[index] = cur;
@@ -266,7 +277,7 @@ const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
       const next = [...prev];
       const cur = { ...next[index] };
       cur.price = val > 0 ? String(val) : '';
-      const q = parseFloat(cur.quantity) || 0;
+      const q = parseDecimalNumber(cur.quantity);
       const p = val > 0 ? val : 0;
       cur.amount = q * p;
       next[index] = cur;
@@ -345,7 +356,7 @@ const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
           .map((it) => ({
             productId: it.productId || null,
             productName: it.productName.trim(),
-            quantity: parseFloat(it.quantity) || 0,
+            quantity: parseDecimalNumber(it.quantity),
             price: parseFloat(it.price) || 0,
             unit: it.unit || 'kg',
             amount: parseFloat(it.amount) || 0,

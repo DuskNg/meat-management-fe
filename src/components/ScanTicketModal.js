@@ -32,6 +32,12 @@ const parseNumberString = (formatted) => {
   return clean ? parseInt(clean, 10) : 0;
 };
 
+const parseDecimalNumber = (value) => {
+  const normalized = String(value ?? '').trim().replace(',', '.');
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 // --- Helper: định dạng tiền VNĐ ---
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
@@ -372,7 +378,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
 
       // Ánh xạ từng item về cấu trúc có thể chỉnh sửa
       const mappedItems = items.map((item, idx) => {
-        const qty = parseFloat(item.quantity) || 0;
+        const qty = parseDecimalNumber(item.quantity);
         const prc = parseInt(item.price, 10) || 0;
         const amt = parseInt(item.amount, 10) || Math.round(qty * prc);
         
@@ -439,7 +445,7 @@ const ScanTicketModal = forwardRef(({ customerId: propCustomerId, onRefresh }, r
           );
           if (match) {
             const finalPrice = item.price > 0 ? item.price : (match.defaultPrice || 0);
-            const finalAmt = item.amount > 0 ? item.amount : Math.round(item.quantity * finalPrice);
+            const finalAmt = item.amount > 0 ? item.amount : Math.round(parseDecimalNumber(item.quantity) * finalPrice);
             return {
               ...item,
               selectedProductId: match.id,

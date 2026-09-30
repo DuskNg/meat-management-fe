@@ -61,6 +61,7 @@ import { useCustomerGroups } from '../src/hooks/useCustomerGroups';
 import QuickNoteModal from '../src/components/QuickNoteModal';
 import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewModal';
 import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
+import BankTransactionsView from '../src/components/BankTransactionsView';
 import { showGlobalToast } from '../src/store/toastStore';
 import { isMobileDevice } from '../src/utils/imageShareHelper';
 import { exportDailyReportBundle } from '../src/utils/dailyBundleExportHelper';
@@ -2309,6 +2310,25 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
+            {/* Chức năng: Quản lý giao dịch ngân hàng (SePay Webhook) */}
+            {auth.hasPermission('canManageDebt') && (
+              <TouchableOpacity
+                style={[styles.menuCard, { borderColor: '#10B981', backgroundColor: '#ECFDF5' }]}
+                onPress={() => {
+                  router.replace({ pathname: '/', params: { view: 'bank_transactions' } });
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.menuCardIconBg, { backgroundColor: '#D1FAE5' }]}>
+                  <Text style={styles.menuCardIcon}>💳</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={[styles.menuCardTitle, { color: '#047857' }]}>Quản lý giao dịch</Text>
+                  <Text style={styles.menuCardDesc}>Tự động nhận biến động số dư SePay, gán khách hàng và cấn trừ công nợ</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
             {auth.hasPermission('canManageStore') && (
               <TouchableOpacity
                 style={[styles.menuCard, styles.menuCardActiveStore]}
@@ -2471,6 +2491,16 @@ export default function DashboardScreen() {
         {/* Popup Thông báo */}
         <PopupModal ref={popupModalRef} />
       </SafeAreaView>
+    );
+  }
+
+  // MÀN HÌNH QUẢN LÝ GIAO DỊCH NGÂN HÀNG (SEPAY WEBHOOK)
+  if (currentView === 'bank_transactions') {
+    return (
+      <BankTransactionsView
+        onBack={() => router.replace({ pathname: '/', params: { view: 'menu' } })}
+        auth={auth}
+      />
     );
   }
 

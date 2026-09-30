@@ -998,7 +998,7 @@ const resolveCustomerForSub = (sub, custList) => {
       }
     }
 
-    // 1d. ĐẶC BIỆT: Khớp ưu tiên khách "Chị Thúy Nga" nếu AI nhận diện là "chinga", "chị nga", "nga"
+    // 1d. ĐẶC BIỆT: Khớp ưu tiên khách "Chị Thúy Nga" nếu AI nhận diện là "chinga", "chị nga", "nga", "thuy nga"
     if (
       cleanDetected.includes('chinga') ||
       cleanDetected.includes('chi nga') ||
@@ -1008,13 +1008,18 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace === 'nga' ||
       cleanDetected === 'nga'
     ) {
-      if (!currentCustClean.includes('nga')) {
+      const isAlreadyThuyNga = currentCustClean.includes('thuy') && currentCustClean.includes('nga');
+      // Nếu khách hiện tại không phải Thúy Nga hoặc đang bị gán nhầm sang Chị Tuyết -> cập nhật lại
+      if (!isAlreadyThuyNga || currentCustClean.includes('tuyet')) {
         const thuyNgaCust = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('thuy') && cClean.includes('nga');
+          return (cClean.includes('thuy') && cClean.includes('nga')) || cClean === 'chinga';
         }) || custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('nga');
+          return (cClean.includes('chi nga') || cClean === 'nga' || cClean.startsWith('nga ')) && !cClean.includes('tuyet') && !cClean.includes('toan nga');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('nga') && !cClean.includes('tuyet') && !cClean.includes('toan nga');
         }) || null;
 
         if (thuyNgaCust) {
@@ -1557,7 +1562,7 @@ const resolveCustomerForSub = (sub, custList) => {
       }
     }
 
-    // 5d. Ưu tiên khớp khách Chị Thúy Nga nếu AI nhận diện là chinga, chị nga, nga
+    // 5d. Ưu tiên khớp khách Chị Thúy Nga nếu AI nhận diện là chinga, chị nga, nga, thuy nga
     if (!matchedCust) {
       if (
         cleanDetected.includes('chinga') ||
@@ -1570,10 +1575,13 @@ const resolveCustomerForSub = (sub, custList) => {
       ) {
         matchedCust = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('thuy') && cClean.includes('nga');
+          return (cClean.includes('thuy') && cClean.includes('nga')) || cClean === 'chinga';
         }) || custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('nga');
+          return (cClean.includes('chi nga') || cClean === 'nga' || cClean.startsWith('nga ')) && !cClean.includes('tuyet') && !cClean.includes('toan nga');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('nga') && !cClean.includes('tuyet') && !cClean.includes('toan nga');
         }) || null;
       }
     }

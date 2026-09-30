@@ -50,6 +50,12 @@ const parseDateString = (str) => {
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('vi-VN').format(Math.round(amount || 0));
 
+const parseDecimalNumber = (value) => {
+  const normalized = String(value ?? '').trim().replace(',', '.');
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 // Tạo dòng món thịt rỗng
 const createEmptyItem = () => ({
   id: Date.now() + Math.random(),
@@ -97,10 +103,13 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
   }, [supplier]);
 
   // Tải danh mục sản phẩm khi mở modal
-  const fetchProducts = async () => {
+  const fetchProducts = async (supplierId) => {
     try {
       setLoadingProducts(true);
-      const res = await api.get('/products');
+      const endpoint = supplierId
+        ? `/products?supplierId=${encodeURIComponent(supplierId)}`
+        : '/products';
+      const res = await api.get(endpoint);
       if (res.data?.success && Array.isArray(res.data?.data)) {
         setProducts(res.data.data);
       }
@@ -124,7 +133,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
       setMediaList([]);
       setNote('');
       setError('');
-      fetchProducts();
+      fetchProducts(targetSupplier?.id || supplier?.id);
     },
     close: () => {
       setVisible(false);
@@ -229,7 +238,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
       if (product?.costPrice && parseFloat(product.costPrice) > 0) {
         cur.price = String(parseFloat(product.costPrice));
       }
-      const q = parseFloat(cur.quantity) || 0;
+      const q = parseDecimalNumber(cur.quantity);
       const p = parseFloat(cur.price) || 0;
       cur.amount = q * p;
       next[index] = cur;
@@ -243,7 +252,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
       const next = [...prev];
       const cur = { ...next[index] };
       cur.quantity = val;
-      const q = parseFloat(val) || 0;
+      const q = parseDecimalNumber(val);
       const p = parseFloat(cur.price) || 0;
       cur.amount = q * p;
       next[index] = cur;
@@ -257,7 +266,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
       const next = [...prev];
       const cur = { ...next[index] };
       cur.price = val > 0 ? String(val) : '';
-      const q = parseFloat(cur.quantity) || 0;
+      const q = parseDecimalNumber(cur.quantity);
       const p = val > 0 ? val : 0;
       cur.amount = q * p;
       next[index] = cur;
@@ -355,7 +364,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
           .map((it) => ({
             productId: it.productId || null,
             productName: it.productName.trim(),
-            quantity: parseFloat(it.quantity) || 0,
+            quantity: parseDecimalNumber(it.quantity),
             price: parseFloat(it.price) || 0,
             unit: it.unit || 'kg',
             amount: parseFloat(it.amount) || 0,

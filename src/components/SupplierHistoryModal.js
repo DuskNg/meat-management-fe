@@ -281,7 +281,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const handleEditItem = (item) => {
     const sName = currentSupplier?.name || supplier?.name || '';
     if (item.type === 'DEBT') {
-      editSupplierTransactionModalRef.current?.open(item, sName);
+      editSupplierTransactionModalRef.current?.open(item, sName, currentSupplier?.id || supplier?.id);
     } else {
       editSupplierPaymentModalRef.current?.open(item, sName);
     }
@@ -1088,4 +1088,3 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
-
