@@ -9,12 +9,15 @@ import {
   Platform,
   Dimensions,
   ActivityIndicator,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { API_HOST } from '../api/client';
 import { api } from '../api/client';
 import axios from 'axios';
 import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
+import { showGlobalToast } from '../store/toastStore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -26,6 +29,26 @@ const checkIsVideoUrl = (url) => {
   return /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(url);
 };
 
+// Định dạng tiền tệ VND
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+  }).format(amount || 0).replace('₫', 'đ');
+};
+
+// Sao chép nội dung vào Clipboard
+const copyTextToClipboard = async (text) => {
+  if (!text) return false;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) {}
+  return false;
+};
+
 /**
  * Modal xem ảnh hóa đơn phóng to:
  * - Hỗ trợ Zoom in (+) / Zoom out (-) đa cấp độ từ 0.5x -> 4.0x.
@@ -33,11 +56,15 @@ const checkIsVideoUrl = (url) => {
  * - Hỗ trợ cuộn chuột (Mouse wheel) để zoom nhanh.
  * - Hỗ trợ xoay ảnh 90 độ (Rotate) và nhấp đúp để phóng to / đặt lại 100%.
  * - Hỗ trợ chuyển đổi giữa nhiều ảnh hóa đơn (Next/Prev).
+ * - Hỗ trợ hiển thị bảng số liệu chi tiết ngày đó song song với ảnh (Side-by-side).
+ * - Hỗ trợ nút chuyển nhanh sang hóa đơn hôm trước / hôm sau.
  */
 const InvoiceImageViewerModal = forwardRef((props, ref) => {
   // portalToken + portalSessionToken: chỉ truyền vào khi dùng trong portal khách hàng (không có auth Bearer)
   const { portalToken, portalSessionToken } = props;
   const isPortalMode = Boolean(portalToken);
+  const { width: windowWidth } = useWindowDimensions();
+  const isWide = windowWidth >= 840;
 
   const [visible, setVisible] = useState(false);
   const [images, setImages] = useState([]);
@@ -45,6 +72,15 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   const [title, setTitle] = useState('Ảnh hóa đơn');
   const [subtitle, setSubtitle] = useState('');
   const [onDeleteCallback, setOnDeleteCallback] = useState(null);
+
+  // State hỗ trợ hiển thị số liệu ngày và điều hướng Hôm trước / Hôm sau
+  const [dayData, setDayData] = useState(null);
+  const [hasPrevDay, setHasPrevDay] = useState(false);
+  const [hasNextDay, setHasNextDay] = useState(false);
+  const [prevDayLabel, setPrevDayLabel] = useState('');
+  const [nextDayLabel, setNextDayLabel] = useState('');
+  const [onPrevDayCallback, setOnPrevDayCallback] = useState(null);
+  const [onNextDayCallback, setOnNextDayCallback] = useState(null);
 
   // State điều khiển Zoom, Kéo ảnh và Xoay ảnh
   const [scale, setScale] = useState(1);
@@ -89,6 +125,13 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
       title: modalTitle = 'Ảnh hóa đơn',
       subtitle: modalSubtitle = '',
       onDelete = null,
+      dayData: inputDayData = null,
+      hasPrevDay: inputHasPrev = false,
+      hasNextDay: inputHasNext = false,
+      prevDayLabel: inputPrevLabel = '',
+      nextDayLabel: inputNextLabel = '',
+      onPrevDay = null,
+      onNextDay = null,
     }) => {
       const formatted = (inputImages || []).map((img, idx) => {
         if (typeof img === 'string') {
@@ -102,6 +145,13 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
       setTitle(modalTitle);
       setSubtitle(modalSubtitle);
       setOnDeleteCallback(() => onDelete);
+      setDayData(inputDayData || null);
+      setHasPrevDay(Boolean(inputHasPrev));
+      setHasNextDay(Boolean(inputHasNext));
+      setPrevDayLabel(inputPrevLabel || '');
+      setNextDayLabel(inputNextLabel || '');
+      setOnPrevDayCallback(() => onPrevDay);
+      setOnNextDayCallback(() => onNextDay);
       resetZoom();
       setImageLoading(true);
       setImageError(false);
@@ -113,12 +163,52 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     close: () => {
       setVisible(false);
       resetZoom();
+      setDayData(null);
+      setOnPrevDayCallback(null);
+      setOnNextDayCallback(null);
     },
   }));
 
   const handleClose = () => {
     setVisible(false);
     resetZoom();
+    setDayData(null);
+    setOnPrevDayCallback(null);
+    setOnNextDayCallback(null);
+  };
+
+  const handlePrevDay = () => {
+    if (onPrevDayCallback) {
+      onPrevDayCallback();
+    }
+  };
+
+  const handleNextDay = () => {
+    if (onNextDayCallback) {
+      onNextDayCallback();
+    }
+  };
+
+  const handleCopyDaySummary = async () => {
+    if (!dayData) return;
+    const lines = [];
+    lines.push(`📅 BẢNG KÊ NGÀY: ${dayData.dateKey}${dayData.displayLunarDate ? ` (${dayData.displayLunarDate} âm)` : ''}`);
+    if (dayData.customerName) lines.push(`🏢 Cơ sở: ${dayData.customerName}`);
+    lines.push('--------------------------------');
+    (dayData.entries || []).forEach((e) => {
+      if (e.type === 'DAY_TOTAL' || e.type === 'DAY_PARTIAL_PAID' || e.type === 'DAY_PARTIAL_REMAINING') return;
+      const isRet = e.type === 'RETURN';
+      const qStr = e.quantity != null ? ` - ${e.quantity}kg` : '';
+      const pStr = e.price != null ? ` x ${formatCurrency(e.price)}` : '';
+      lines.push(`${isRet ? '[-] TRẢ HÀNG: ' : ''}${e.name}${qStr}${pStr} = ${isRet ? '-' : ''}${formatCurrency(e.amount)}`);
+    });
+    lines.push('--------------------------------');
+    if (dayData.totalQty > 0) lines.push(`Tổng kg thịt: ${dayData.totalQty} kg`);
+    lines.push(`TỔNG CỘNG: ${formatCurrency(dayData.totalAmount)}`);
+    const success = await copyTextToClipboard(lines.join('\n'));
+    if (success) {
+      showGlobalToast('Đã sao chép số liệu ngày vào bộ nhớ tạm!', 'success');
+    }
   };
 
   const handlePrev = () => {
@@ -348,7 +438,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
 
   return (
     <SmoothModal visible={visible} onClose={handleClose} centered={true} zIndex={100000}>
-      <View style={styles.container}>
+      <View style={[styles.container, dayData && (isWide ? styles.containerWide : styles.containerMobileWithData)]}>
         {/* Thanh Header */}
         <View style={styles.headerRow}>
           <View style={styles.headerTitleContainer}>
@@ -357,6 +447,33 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
             </Text>
             {subtitle ? <Text style={styles.subText} numberOfLines={1}>{subtitle}</Text> : null}
           </View>
+
+          {/* Cụm điều hướng Hôm trước / Hôm sau trên Desktop */}
+          {isWide && (onPrevDayCallback || onNextDayCallback) && (
+            <View style={styles.dayNavCluster}>
+              <TouchableOpacity
+                style={[styles.dayNavClusterBtn, !hasPrevDay && styles.dayNavClusterBtnDisabled]}
+                onPress={handlePrevDay}
+                disabled={!hasPrevDay}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.dayNavClusterBtnText, !hasPrevDay && styles.dayNavClusterBtnTextDisabled]}>
+                  {prevDayLabel ? `◀ ${prevDayLabel}` : '◀ Hôm trước'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.dayNavClusterBtn, !hasNextDay && styles.dayNavClusterBtnDisabled]}
+                onPress={handleNextDay}
+                disabled={!hasNextDay}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.dayNavClusterBtnText, !hasNextDay && styles.dayNavClusterBtnTextDisabled]}>
+                  {nextDayLabel ? `${nextDayLabel} ▶` : 'Hôm sau ▶'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.headerActions}>
             {Platform.OS === 'web' && currentUrl ? (
@@ -396,10 +513,48 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
           </View>
         </View>
 
-        {/* Khung hiển thị hình ảnh / video có hỗ trợ Zoom & Kéo */}
-        <View
-          ref={containerRef}
-          style={styles.imageViewerBox}
+        {/* Thanh điều hướng Hôm trước / Hôm sau trên Mobile */}
+        {!isWide && (onPrevDayCallback || onNextDayCallback) && (
+          <View style={styles.mobileDayNavRow}>
+            <TouchableOpacity
+              style={[styles.mobileDayNavBtn, !hasPrevDay && styles.dayNavClusterBtnDisabled]}
+              onPress={handlePrevDay}
+              disabled={!hasPrevDay}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.mobileDayNavBtnText, !hasPrevDay && styles.dayNavClusterBtnTextDisabled]}>
+                {prevDayLabel ? `◀ ${prevDayLabel}` : '◀ Hôm trước'}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.mobileDayNavCenter}>
+              <Text style={styles.mobileDayNavCurrentText} numberOfLines={1}>
+                📅 {dayData?.dateKey || ''}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.mobileDayNavBtn, !hasNextDay && styles.dayNavClusterBtnDisabled]}
+              onPress={handleNextDay}
+              disabled={!hasNextDay}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.mobileDayNavBtnText, !hasNextDay && styles.dayNavClusterBtnTextDisabled]}>
+                {nextDayLabel ? `${nextDayLabel} ▶` : 'Hôm sau ▶'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Thân chính modal: Khi có dayData sẽ chia 2 bên (ảnh/video 1 bên, số liệu 1 bên) */}
+        <View style={[styles.viewerMainBody, isWide && dayData && styles.viewerMainBodyWide]}>
+          {/* Khung hiển thị hình ảnh / video có hỗ trợ Zoom & Kéo */}
+          <View
+            ref={containerRef}
+            style={[
+              styles.imageViewerBox,
+              dayData && (isWide ? styles.imageViewerBoxSplit : styles.imageViewerBoxMobileSplit),
+            ]}
           onMouseDown={!isVideo ? handleMouseDown : undefined}
           onMouseMove={!isVideo ? handleMouseMove : undefined}
           onMouseUp={!isVideo ? handleMouseUp : undefined}
@@ -629,6 +784,146 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
           </View>
         </View>
 
+        {/* CỘT PHẢI (HOẶC NỬA DƯỚI TRÊN MOBILE): BẢNG SỐ LIỆU NGÀY ĐÓ */}
+        {dayData && (
+          <View style={[styles.dayDataBox, isWide ? styles.dayDataBoxSplit : styles.dayDataBoxMobileSplit]}>
+            <View style={styles.dayDataHeader}>
+              <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+                <View style={styles.dayDataTitleRow}>
+                  <Text style={styles.dayDataTitle}>📊 SỐ LIỆU NGÀY</Text>
+                  <View style={[
+                    styles.dayDataStatusBadge,
+                    dayData.isPaid
+                      ? styles.statusBadgePaid
+                      : dayData.isPartialPaid
+                      ? styles.statusBadgePartial
+                      : styles.statusBadgeUnpaid,
+                  ]}>
+                    <Text style={[
+                      styles.dayDataStatusBadgeText,
+                      dayData.isPaid
+                        ? styles.statusTextPaid
+                        : dayData.isPartialPaid
+                        ? styles.statusTextPartial
+                        : styles.statusTextUnpaid,
+                    ]}>
+                      {dayData.isPaid
+                        ? '✓ Đã thanh toán'
+                        : dayData.isPartialPaid
+                        ? '⚡ Trả 1 phần'
+                        : '⏳ Còn nợ'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.dayDataDateSubtitle} numberOfLines={1}>
+                  📅 Ngày {dayData.dateKey}
+                  {dayData.displayLunarDate ? ` (${dayData.displayLunarDate} âm)` : ''}
+                  {dayData.customerName ? ` • 🏢 ${dayData.customerName}` : ''}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.copyDayDataBtn}
+                onPress={handleCopyDaySummary}
+                activeOpacity={0.7}
+                title="Sao chép số liệu ngày"
+              >
+                <Text style={styles.copyDayDataBtnText}>📋 Copy</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Bảng danh sách chi tiết các món thịt */}
+            <ScrollView style={styles.dayDataScroll} showsVerticalScrollIndicator={true}>
+              {/* Header bảng */}
+              <View style={styles.dayDataTableHeader}>
+                <Text style={[styles.dayDataTh, styles.dayDataColName]}>TÊN HÀNG</Text>
+                <Text style={[styles.dayDataTh, styles.dayDataColQty]}>KG</Text>
+                <Text style={[styles.dayDataTh, styles.dayDataColPrice]}>ĐƠN GIÁ</Text>
+                <Text style={[styles.dayDataTh, styles.dayDataColAmount]}>THÀNH TIỀN</Text>
+              </View>
+
+              {/* Danh sách các món thịt */}
+              {(dayData.entries || [])
+                .filter((e) => e.type !== 'DAY_TOTAL' && e.type !== 'DAY_PARTIAL_PAID' && e.type !== 'DAY_PARTIAL_REMAINING')
+                .map((item, idx) => {
+                  const isReturn = item.type === 'RETURN';
+                  return (
+                    <View
+                      key={idx}
+                      style={[
+                        styles.dayDataTableRow,
+                        idx % 2 === 1 && styles.dayDataTableRowAlt,
+                        isReturn && styles.dayDataTableRowReturn,
+                      ]}
+                    >
+                      <View style={styles.dayDataColName}>
+                        <Text style={[styles.dayDataCellText, styles.dayDataMeatName, isReturn && styles.textRed]}>
+                          {isReturn ? `[TRẢ HÀNG] ${item.name}` : item.name}
+                        </Text>
+                        {item.customerName && dayData.customerName !== item.customerName ? (
+                          <Text style={styles.dayDataBranchNote}>🏢 {item.customerName}</Text>
+                        ) : null}
+                      </View>
+
+                      <Text style={[styles.dayDataCellText, styles.dayDataColQty, isReturn && styles.textRed]}>
+                        {item.quantity != null ? item.quantity : '-'}
+                      </Text>
+
+                      <Text style={[styles.dayDataCellText, styles.dayDataColPrice, isReturn && styles.textRed]}>
+                        {item.price != null ? formatCurrency(item.price) : '-'}
+                      </Text>
+
+                      <Text style={[styles.dayDataCellText, styles.dayDataColAmount, styles.dayDataAmountText, isReturn && styles.textRed]}>
+                        {isReturn ? '-' : ''}{formatCurrency(item.amount)}
+                      </Text>
+                    </View>
+                  );
+                })}
+
+              {/* Khối tổng kết ngày */}
+              <View style={styles.dayDataSummaryCard}>
+                {dayData.totalQty > 0 && (
+                  <View style={styles.dayDataSummaryRow}>
+                    <Text style={styles.dayDataSummaryLabel}>Tổng khối lượng thịt:</Text>
+                    <Text style={styles.dayDataSummaryValueQty}>{dayData.totalQty} kg</Text>
+                  </View>
+                )}
+
+                {dayData.totalMeat > 0 && dayData.totalReturn > 0 && (
+                  <>
+                    <View style={styles.dayDataSummaryRow}>
+                      <Text style={styles.dayDataSummaryLabel}>Tiền hàng nhập:</Text>
+                      <Text style={styles.dayDataSummaryValue}>+{formatCurrency(dayData.totalMeat)}</Text>
+                    </View>
+                    <View style={styles.dayDataSummaryRow}>
+                      <Text style={styles.dayDataSummaryLabel}>Tiền trả hàng (-):</Text>
+                      <Text style={[styles.dayDataSummaryValue, styles.textRed]}>-{formatCurrency(dayData.totalReturn)}</Text>
+                    </View>
+                  </>
+                )}
+
+                <View style={[styles.dayDataSummaryRow, styles.dayDataTotalGrandRow]}>
+                  <Text style={styles.dayDataTotalGrandLabel}>TỔNG CỘNG:</Text>
+                  <Text style={styles.dayDataTotalGrandValue}>{formatCurrency(dayData.totalAmount)}</Text>
+                </View>
+
+                {dayData.remainingDebt != null && !dayData.isPaid ? (
+                  <View style={[styles.dayDataSummaryRow, styles.dayDataRemainingRow]}>
+                    <Text style={styles.dayDataRemainingLabel}>
+                      {dayData.isPartialPaid ? 'Còn nợ lại ngày này:' : 'Còn nợ ngày này:'}
+                    </Text>
+                    <Text style={styles.dayDataRemainingValue}>
+                      {formatCurrency(dayData.remainingDebt)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </ScrollView>
+          </View>
+        )}
+      </View>
+
         {/* Thanh ghi chú và mẹo tương tác dưới đáy */}
         <View style={styles.viewerFooter}>
           <Text style={styles.interactionHintText} numberOfLines={1}>
@@ -658,6 +953,314 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: { userSelect: 'none' },
     }),
+  },
+  containerWide: {
+    width: Platform.OS === 'web' ? 'min(98vw, 1320px)' : '98%',
+    height: Platform.OS === 'web' ? 'min(94vh, 900px)' : '94%',
+    maxHeight: Platform.OS === 'web' ? '94vh' : '94%',
+  },
+  containerMobileWithData: {
+    width: '98%',
+    height: Platform.OS === 'web' ? 'min(96vh, 920px)' : '96%',
+    maxHeight: Platform.OS === 'web' ? '96vh' : '96%',
+  },
+  dayNavCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 10,
+  },
+  dayNavClusterBtn: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  dayNavClusterBtnDisabled: {
+    borderColor: '#334155',
+    backgroundColor: '#1E293B',
+    opacity: 0.4,
+  },
+  dayNavClusterBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#38BDF8',
+  },
+  dayNavClusterBtnTextDisabled: {
+    color: '#64748B',
+  },
+  mobileDayNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0F172A',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  mobileDayNavBtn: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  mobileDayNavBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#38BDF8',
+  },
+  mobileDayNavCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  mobileDayNavCurrentText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#F8FAFC',
+  },
+  viewerMainBody: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  viewerMainBodyWide: {
+    flexDirection: 'row',
+  },
+  imageViewerBoxSplit: {
+    flex: 1.15,
+    borderRightWidth: 1,
+    borderRightColor: '#334155',
+  },
+  imageViewerBoxMobileSplit: {
+    height: 300,
+    maxHeight: '45%',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  dayDataBox: {
+    backgroundColor: '#FFFFFF',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  dayDataBoxSplit: {
+    flex: 0.85,
+    width: '42%',
+  },
+  dayDataBoxMobileSplit: {
+    flex: 1,
+  },
+  dayDataHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: '#F8FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  dayDataTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
+  dayDataTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 0.3,
+  },
+  dayDataStatusBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  statusBadgePaid: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  statusBadgePartial: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  statusBadgeUnpaid: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  dayDataStatusBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  statusTextPaid: {
+    color: '#15803D',
+  },
+  statusTextPartial: {
+    color: '#B45309',
+  },
+  statusTextUnpaid: {
+    color: '#B91C1C',
+  },
+  dayDataDateSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  copyDayDataBtn: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  copyDayDataBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  dayDataScroll: {
+    flex: 1,
+    padding: 10,
+  },
+  dayDataTableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#0F172A',
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 4,
+  },
+  dayDataTh: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    letterSpacing: 0.3,
+  },
+  dayDataColName: {
+    flex: 2,
+  },
+  dayDataColQty: {
+    flex: 0.8,
+    textAlign: 'center',
+  },
+  dayDataColPrice: {
+    flex: 1.1,
+    textAlign: 'right',
+  },
+  dayDataColAmount: {
+    flex: 1.3,
+    textAlign: 'right',
+  },
+  dayDataTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+  },
+  dayDataTableRowAlt: {
+    backgroundColor: '#F8FAFC',
+  },
+  dayDataTableRowReturn: {
+    backgroundColor: '#FEF2F2',
+  },
+  dayDataCellText: {
+    fontSize: 12,
+    color: '#1E293B',
+  },
+  dayDataMeatName: {
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  dayDataBranchNote: {
+    fontSize: 10,
+    color: '#0284C7',
+    marginTop: 1,
+  },
+  dayDataAmountText: {
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  dayDataSummaryCard: {
+    marginTop: 12,
+    marginBottom: 16,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 10,
+    gap: 5,
+  },
+  dayDataSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dayDataSummaryLabel: {
+    fontSize: 11.5,
+    color: '#64748B',
+  },
+  dayDataSummaryValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  dayDataSummaryValueQty: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  dayDataTotalGrandRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#CBD5E1',
+    paddingTop: 6,
+    marginTop: 3,
+  },
+  dayDataTotalGrandLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  dayDataTotalGrandValue: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#1E3A8A',
+  },
+  dayDataRemainingRow: {
+    marginTop: 3,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  dayDataRemainingLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#991B1B',
+  },
+  dayDataRemainingValue: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#DC2626',
+  },
+  textRed: {
+    color: '#DC2626',
   },
   headerRow: {
     flexDirection: 'row',

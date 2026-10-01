@@ -512,14 +512,6 @@ const RecurringDebtModal = forwardRef(({ onRefresh }, ref) => {
                         {isQuick ? '⚡ Ghi nợ nhanh' : `🥩 ${detailsText}`}
                         {debt.note && debt.note !== 'Đơn nợ nhanh cố định hàng ngày' ? `  ·  📝 ${debt.note}` : ''}
                       </Text>
-                      {parseFloat(debt.totalProfit || 0) > 0 && (
-                        <View style={styles.profitBadge}>
-                          <Text style={styles.profitBadgeText}>
-                            Lãi: +{formatCurrency(debt.totalProfit)}
-                            {debt.profitPercent ? ` (${debt.profitPercent}%)` : ''}
-                          </Text>
-                        </View>
-                      )}
                     </View>
                   </View>
                 );
@@ -594,14 +586,6 @@ const RecurringDebtModal = forwardRef(({ onRefresh }, ref) => {
                   style={styles.moneyInput}
                 />
 
-                <Text style={styles.inputLabel}>% Lợi nhuận ước tính (tùy chọn)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={quickProfitPercent}
-                  onChangeText={setQuickProfitPercent}
-                  placeholder="Ví dụ: 15 (tương đương 15%)"
-                  keyboardType="numeric"
-                />
 
                 <Text style={styles.inputLabel}>Ghi chú đơn hàng (tùy chọn)</Text>
                 <TextInput
@@ -749,9 +733,6 @@ const RecurringDebtModal = forwardRef(({ onRefresh }, ref) => {
                 {cartItems.length > 0 && (
                   <View style={styles.summaryBar}>
                     <Text style={styles.summaryBarTotal}>Tổng tiền: {formatCurrency(detailTotalAmount)}</Text>
-                    {detailTotalProfit > 0 && (
-                      <Text style={styles.summaryBarProfit}>Lãi ước tính: +{formatCurrency(detailTotalProfit)}</Text>
-                    )}
                   </View>
                 )}
 

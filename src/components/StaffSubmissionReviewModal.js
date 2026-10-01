@@ -867,6 +867,18 @@ const resolveCustomerForSub = (sub, custList) => {
     const cleanDetectedNoSpace = cleanDetected.replace(/\s+/g, '');
     const currentCustClean = matchedCust ? removeDiacritics(matchedCust.name.toLowerCase().trim()) : '';
 
+    // 0. BẮT BUỘC ƯU TIÊN KHỚP CHÍNH XÁC 100% (Exact Match) TRƯỚC TIÊN
+    // Nếu tên khách AI bóc tách trùng khớp hoàn toàn với một khách trong DB (ví dụ: "Hồng hạnh hqv")
+    // thì lấy ngay khách này, TUYỆT ĐỐI không để các rule heuristic phía dưới ghi đè!
+    const exactMatchCust = custList.find((c) => {
+      const cClean = removeDiacritics(c.name.toLowerCase().trim());
+      const cNoSpace = cClean.replace(/\s+/g, '');
+      return cClean === cleanDetected || cNoSpace === cleanDetectedNoSpace;
+    });
+    if (exactMatchCust) {
+      return exactMatchCust;
+    }
+
     // 1. ĐẶC BIỆT: Khớp ưu tiên khách "Bún huế văn khê" nếu AI nhận diện có chứa "bun hue" hoặc "van khe"
     if (
       cleanDetected.includes('bun hue') ||
@@ -1385,11 +1397,16 @@ const resolveCustomerForSub = (sub, custList) => {
     if (
       cleanDetected === 'hanh' ||
       cleanDetected === 'chi hanh' ||
+      cleanDetected === 'co hanh' ||
+      cleanDetected === 'ba hanh' ||
+      cleanDetected === 'em hanh' ||
       cleanDetectedNoSpace === 'hanh' ||
       cleanDetectedNoSpace === 'chihanh' ||
       cleanDetected.includes('hanh san bong') ||
+      cleanDetected.includes('san bong ha tri') ||
+      cleanDetected.includes('hanh ha tri') ||
       cleanDetectedNoSpace.includes('hanhsanbong') ||
-      (cleanDetected.includes('hanh') && !cleanDetected.includes('khanh'))
+      cleanDetectedNoSpace.includes('sanbonghatri')
     ) {
       const hanhSanBongCust = custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase());
@@ -3245,10 +3262,18 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         );
 
         let cardNote = '';
-        if (sub.note !== null && sub.note !== undefined && sub.note !== '') {
-          cardNote = sub.note;
-        } else if (sub.status !== 'APPROVED' && isReturn) {
-          cardNote = buildReturnNoteFromItems(rawItems) || '';
+        if (initialTargetType === 'supplier') {
+          cardNote = 'Nhập hàng';
+        } else if (isReturn) {
+          cardNote = 'Trả hàng';
+        } else {
+          // Đơn nợ mới: không cần nhập gì
+          const rawNote = (sub.note || '').trim();
+          if (!rawNote || /^\(HĐ:?\s*[^)]+\)$/i.test(rawNote) || rawNote === 'Lên đơn từ hóa đơn Zalo nhân viên') {
+            cardNote = '';
+          } else {
+            cardNote = rawNote;
+          }
         }
 
         // Tự động nhận diện chế độ Nhập Nhanh:
@@ -3364,6 +3389,16 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     setCardDataMap((prev) => {
       const card = prev[subId] || {};
       const nextCard = { ...card, [field]: value };
+      // Tự động cập nhật ghi chú đơn khi chuyển đổi loại đối tác:
+      // - Sang Nhà cung cấp -> ghi chú "Nhập hàng"
+      // - Sang Khách hàng -> nếu đơn trả hàng thì "Trả hàng", nếu đơn nợ mới thì ""
+      if (field === 'targetType') {
+        if (value === 'supplier') {
+          nextCard.note = 'Nhập hàng';
+        } else {
+          nextCard.note = card.isReturn ? 'Trả hàng' : '';
+        }
+      }
 
       return {
         ...prev,
@@ -3422,11 +3457,10 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       }
 
       if (nextIsReturn) {
-        // Tự động tạo ghi chú từ danh sách items nếu có
-        const autoNote = buildReturnNoteFromItems(nextItems);
-        nextNote = autoNote || nextNote || '';
+        // Đơn trả hàng: ghi chú "Trả hàng"
+        nextNote = 'Trả hàng';
       } else {
-        // Xóa ghi chú tự động khi chuyển về đơn xuất
+        // Đơn nợ mới: không cần nhập gì
         nextNote = '';
       }
       return {

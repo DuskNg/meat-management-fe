@@ -157,6 +157,7 @@ const DatePickerInput = ({
   dense = false, // Chế độ thu gọn chiều cao tối đa cho modal
   showIcon = false, // Hiển thị icon lịch và mũi tên trong chế độ compact
   alignRight = false, // Căn popup lịch sang phải (mở về bên trái) khi input ở sát mép phải
+  placeholder = '', // Nhãn gợi ý khi chưa chọn ngày
   style, // Custom style cho container
 }) => {
   // Tự động inject CSS cho Web để dãn rộng vùng click của bộ chọn ngày
@@ -258,9 +259,10 @@ const DatePickerInput = ({
           <Text style={[
             styles.dateDisplayText,
             compact && styles.dateDisplayTextCompact,
-            dense && styles.dateDisplayTextDense
+            dense && styles.dateDisplayTextDense,
+            !value && placeholder ? { color: '#94A3B8', fontWeight: 'normal' } : null,
           ]}>
-            {value || formatDateToDisplay(new Date())}
+            {value || placeholder || formatDateToDisplay(new Date())}
           </Text>
         </View>
 
@@ -289,7 +291,7 @@ const DatePickerInput = ({
               dir={alignRight ? 'rtl' : 'ltr'}
               type="date"
               disabled={disabled}
-              value={formatDateToISO(parsedDate)}
+              value={value ? formatDateToISO(parsedDate) : ''}
               min={parsedMinDate ? formatDateToISO(parsedMinDate) : undefined}
               max={parsedMaxDate ? formatDateToISO(parsedMaxDate) : undefined}
               onChange={(e) => {

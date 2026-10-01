@@ -12,12 +12,55 @@ import { api } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import CustomSelect from './CustomSelect';
+import DatePickerInput from './DatePickerInput';
 import ExportSupplierHistoryModal from './ExportSupplierHistoryModal';
 import EditSupplierTransactionModal from './EditSupplierTransactionModal';
 import EditSupplierPaymentModal from './EditSupplierPaymentModal';
 import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import PopupModal from './PopupModal';
 import { showGlobalToast } from '../store/toastStore';
+
+// Các hàm tiện ích xử lý định dạng ngày tháng
+const padZero = (n) => String(n).padStart(2, '0');
+
+const formatDateToDDMMYYYY = (dateObj) => {
+  if (!dateObj || isNaN(dateObj.getTime())) return '';
+  return `${padZero(dateObj.getDate())}/${padZero(dateObj.getMonth() + 1)}/${dateObj.getFullYear()}`;
+};
+
+const getDaysInMonth = (year, month) => {
+  return new Date(year, month, 0).getDate();
+};
+
+const parseDDMMYYYYToDate = (str, isEndOfDay = false) => {
+  if (!str) return null;
+  const parts = str.split('/');
+  if (parts.length !== 3) return null;
+  const [d, m, y] = parts.map(Number);
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return null;
+  if (isEndOfDay) {
+    return new Date(y, m - 1, d, 23, 59, 59, 999);
+  }
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
+};
+
+const getTodayStr = () => formatDateToDDMMYYYY(new Date());
+
+const getDaysAgoStr = (days) => {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return formatDateToDDMMYYYY(d);
+};
+
+const getMonthRange = (monthStr) => {
+  // monthStr: "MM/YYYY"
+  const [m, y] = monthStr.split('/').map(Number);
+  const totalDays = getDaysInMonth(y, m);
+  return {
+    from: `01/${padZero(m)}/${y}`,
+    to: `${padZero(totalDays)}/${padZero(m)}/${y}`,
+  };
+};
 
 // Modal xem lịch sử dòng công nợ của nhà cung cấp kèm sửa/xóa giao dịch
 const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
@@ -26,7 +69,9 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState('ALL');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState('ALL');
   const [selectContainerZIndex, setSelectContainerZIndex] = useState(10);
   const activeSupplierIdRef = useRef(null);
   const exportSupplierHistoryModalRef = useRef(null);
@@ -53,7 +98,9 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
       // Dọn dẹp dữ liệu cũ và chuẩn bị tải dữ liệu mới
       setHistory([]);
       setError('');
-      setSelectedMonth('ALL');
+      setSelectedFilter('ALL');
+      setFromDate('');
+      setToDate('');
       setVisible(true);
 
       if (activeSup?.id) {
@@ -142,23 +189,110 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     });
   }, [history]);
 
-  // Tạo options cho CustomSelect
-  const monthOptions = useMemo(() => [
-    { id: 'ALL', name: 'Toàn bộ thời gian' },
-    ...availableMonths.map((m) => ({ id: m, name: `Tháng ${m}` }))
-  ], [availableMonths]);
-
-  // Lọc danh sách giao dịch theo tháng đã chọn
-  const filteredHistory = useMemo(() => {
-    if (!selectedMonth || selectedMonth === 'ALL') return history;
-    return history.filter((item) => {
-      if (!item.date) return false;
-      const d = new Date(item.date);
-      if (isNaN(d.getTime())) return false;
-      const mStr = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-      return mStr === selectedMonth;
+  // Tạo danh sách các tùy chọn lọc thời gian
+  const filterOptions = useMemo(() => {
+    const list = [
+      { id: 'ALL', name: 'Toàn bộ thời gian' },
+      { id: 'TODAY', name: 'Hôm nay' },
+      { id: '7_DAYS', name: '7 ngày gần nhất' },
+      { id: '30_DAYS', name: '30 ngày gần nhất' },
+    ];
+    availableMonths.forEach((m) => {
+      list.push({ id: m, name: `Tháng ${m}` });
     });
-  }, [history, selectedMonth]);
+    if (selectedFilter === 'CUSTOM') {
+      list.push({ id: 'CUSTOM', name: 'Tùy chọn khoảng ngày' });
+    }
+    return list;
+  }, [availableMonths, selectedFilter]);
+
+  const selectedFilterOption = filterOptions.find((opt) => opt.id === selectedFilter) || filterOptions[0];
+
+  // Xử lý khi chọn mốc thời gian từ menu chọn nhanh
+  const handleSelectFilterOption = (item) => {
+    const optId = item.id;
+    setSelectedFilter(optId);
+    if (optId === 'ALL') {
+      setFromDate('');
+      setToDate('');
+    } else if (optId === 'TODAY') {
+      const today = getTodayStr();
+      setFromDate(today);
+      setToDate(today);
+    } else if (optId === '7_DAYS') {
+      setFromDate(getDaysAgoStr(6));
+      setToDate(getTodayStr());
+    } else if (optId === '30_DAYS') {
+      setFromDate(getDaysAgoStr(29));
+      setToDate(getTodayStr());
+    } else if (optId.includes('/')) {
+      const { from, to } = getMonthRange(optId);
+      setFromDate(from);
+      setToDate(to);
+    }
+  };
+
+  // Xử lý khi đổi Từ ngày
+  const handleFromDateChange = (val) => {
+    setFromDate(val);
+    if (val && toDate) {
+      const dFrom = parseDDMMYYYYToDate(val, false);
+      const dTo = parseDDMMYYYYToDate(toDate, true);
+      if (dFrom && dTo && dFrom > dTo) {
+        setToDate(val);
+      }
+    }
+    setSelectedFilter('CUSTOM');
+  };
+
+  // Xử lý khi đổi Đến ngày
+  const handleToDateChange = (val) => {
+    setToDate(val);
+    if (fromDate && val) {
+      const dFrom = parseDDMMYYYYToDate(fromDate, false);
+      const dTo = parseDDMMYYYYToDate(val, true);
+      if (dFrom && dTo && dTo < dFrom) {
+        setFromDate(val);
+      }
+    }
+    setSelectedFilter('CUSTOM');
+  };
+
+  // Xóa toàn bộ bộ lọc ngày để xem toàn bộ thời gian
+  const handleClearDateFilter = () => {
+    setFromDate('');
+    setToDate('');
+    setSelectedFilter('ALL');
+  };
+
+  // Lọc danh sách giao dịch theo khoảng ngày hoặc tháng đã chọn
+  const filteredHistory = useMemo(() => {
+    const parsedFrom = parseDDMMYYYYToDate(fromDate, false);
+    const parsedTo = parseDDMMYYYYToDate(toDate, true);
+
+    if (parsedFrom || parsedTo) {
+      return history.filter((item) => {
+        if (!item.date) return false;
+        const d = new Date(item.date);
+        if (isNaN(d.getTime())) return false;
+        if (parsedFrom && d < parsedFrom) return false;
+        if (parsedTo && d > parsedTo) return false;
+        return true;
+      });
+    }
+
+    if (selectedFilter && selectedFilter !== 'ALL' && selectedFilter.includes('/')) {
+      return history.filter((item) => {
+        if (!item.date) return false;
+        const d = new Date(item.date);
+        if (isNaN(d.getTime())) return false;
+        const mStr = `${padZero(d.getMonth() + 1)}/${d.getFullYear()}`;
+        return mStr === selectedFilter;
+      });
+    }
+
+    return history;
+  }, [history, fromDate, toDate, selectedFilter]);
 
   // Tính tổng nợ nhập hàng, tổng tiền đã trả và chênh lệch cho danh sách đã lọc
   const { totalDebt, totalPayment, balance } = useMemo(() => {
@@ -186,9 +320,19 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     const currentMonth = now.getMonth() + 1; // 1 - 12
     const currentDay = now.getDate();
 
-    let targetM = selectedMonth;
-    if (!targetM || targetM === 'ALL') {
-      const curM = `${String(currentMonth).padStart(2, '0')}/${currentYear}`;
+    let targetM = selectedFilter;
+    if (!targetM || targetM === 'ALL' || targetM === 'CUSTOM' || targetM === 'TODAY' || targetM === '7_DAYS' || targetM === '30_DAYS') {
+      if (fromDate && toDate) {
+        const partsFrom = fromDate.split('/');
+        const partsTo = toDate.split('/');
+        if (partsFrom.length === 3 && partsTo.length === 3 && partsFrom[1] === partsTo[1] && partsFrom[2] === partsTo[2]) {
+          targetM = `${partsFrom[1]}/${partsFrom[2]}`;
+        }
+      }
+    }
+
+    if (!targetM || !targetM.includes('/')) {
+      const curM = `${padZero(currentMonth)}/${currentYear}`;
       targetM = availableMonths.includes(curM) ? curM : (availableMonths[0] || curM);
     }
 
@@ -201,20 +345,25 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
 
     let maxDay = 0;
     if (yearNum < currentYear || (yearNum === currentYear && monthNum < currentMonth)) {
-      // Tháng trong quá khứ -> tính toàn bộ các ngày trong tháng
       maxDay = totalDaysInMonth;
     } else if (yearNum === currentYear && monthNum === currentMonth) {
-      // Tháng hiện tại -> chỉ tính đến ngày hôm nay (không liệt kê ngày tương lai)
       maxDay = currentDay;
     } else {
-      // Tháng trong tương lai -> không tính
       maxDay = 0;
     }
 
-    // Xét ngày bắt đầu tạo khách hàng / nhà cung cấp:
-    // Nếu khách mới tạo giữa tháng thì các ngày trước ngày tạo tất nhiên không có đơn, không tính là ngày thiếu!
-    const createdDateRaw = currentSupplier?.createdAt || supplier?.createdAt;
     let minDay = 1;
+    // Nếu có fromDate/toDate thuộc tháng này thì thu hẹp phạm vi đánh giá
+    if (fromDate && fromDate.endsWith(`/${targetM}`)) {
+      const sDay = parseInt(fromDate.split('/')[0], 10);
+      if (!isNaN(sDay) && sDay >= 1) minDay = Math.max(minDay, sDay);
+    }
+    if (toDate && toDate.endsWith(`/${targetM}`)) {
+      const eDay = parseInt(toDate.split('/')[0], 10);
+      if (!isNaN(eDay) && eDay >= 1 && eDay < maxDay) maxDay = eDay;
+    }
+
+    const createdDateRaw = currentSupplier?.createdAt || supplier?.createdAt;
     let isCreatedAfterMonth = false;
 
     if (createdDateRaw) {
@@ -225,7 +374,6 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
         const cDay = cDate.getDate();
 
         if (yearNum < cYear || (yearNum === cYear && monthNum < cMonth)) {
-          // Tháng đang xem diễn ra trước khi khách/NCC được tạo trên hệ thống
           isCreatedAfterMonth = true;
           return {
             targetMonthKey: targetM,
@@ -235,11 +383,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
             isCreatedAfter: true,
           };
         } else if (yearNum === cYear && monthNum === cMonth) {
-          // Khách/NCC được tạo trong chính tháng này -> chỉ xét từ ngày bắt đầu tạo trở đi
-          minDay = Math.max(1, cDay);
-        } else {
-          // Khách/NCC đã được tạo ở các tháng trước đó -> xét từ ngày 1
-          minDay = 1;
+          minDay = Math.max(minDay, cDay);
         }
       }
     }
@@ -273,9 +417,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
       minEvaluatedDay: minDay,
       isCreatedAfter: isCreatedAfterMonth,
     };
-  }, [selectedMonth, availableMonths, history, currentSupplier?.createdAt, supplier?.createdAt]);
-
-  const selectedMonthOption = monthOptions.find((opt) => opt.id === selectedMonth) || monthOptions[0];
+  }, [selectedFilter, fromDate, toDate, availableMonths, history, currentSupplier?.createdAt, supplier?.createdAt]);
 
   // Mở modal sửa giao dịch
   const handleEditItem = (item) => {
@@ -359,94 +501,134 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     });
   };
 
-  const renderHistoryItem = ({ item }) => {
+  // Header của Bảng lịch sử giao dịch
+  const renderTableHeader = () => {
+    if (!filteredHistory || filteredHistory.length === 0) return null;
+    return (
+      <View style={styles.tableHeaderRow}>
+        <Text style={[styles.tableHeaderCell, styles.colDate]}>NGÀY</Text>
+        <Text style={[styles.tableHeaderCell, styles.colType]}>LOẠI / NỘI DUNG</Text>
+        <Text style={[styles.tableHeaderCell, styles.colAmount]}>SỐ TIỀN</Text>
+        <Text style={[styles.tableHeaderCell, styles.colActions]}>XỬ LÝ</Text>
+      </View>
+    );
+  };
+
+  // Dòng của Bảng lịch sử giao dịch
+  const renderHistoryItem = ({ item, index }) => {
     const isDebt = item.type === 'DEBT';
     const hasItems = Array.isArray(item.items) && item.items.length > 0;
     const hasMedia = Array.isArray(item.mediaUrls) && item.mediaUrls.length > 0;
     const isExpanded = expandedTransIds.has(item.id);
+    const isEven = index % 2 === 0;
+
     return (
-      <View style={styles.historyCard}>
-        <View style={styles.cardMain}>
-          <View style={styles.cardLeft}>
-            <View style={[styles.typeBadge, isDebt ? styles.badgeDebt : styles.badgePayment]}>
-              <Text style={[styles.typeText, isDebt ? styles.textDebt : styles.textPayment]}>
-                {isDebt ? '📥 Nhập nợ' : '💵 Trả tiền'}
-              </Text>
-            </View>
-            <Text style={styles.dateText}>{formatDate(item.date)}</Text>
+      <View style={[styles.tableRowContainer, isEven ? styles.rowEven : styles.rowOdd]}>
+        {/* Dòng dữ liệu chính dạng bảng */}
+        <View style={styles.tableRowMain}>
+          {/* Cột 1: Ngày */}
+          <View style={styles.colDate}>
+            <Text style={styles.tableCellDate}>{formatDate(item.date)}</Text>
           </View>
 
-          <View style={styles.cardRight}>
-            <Text style={[styles.amountText, isDebt ? styles.amountDebt : styles.amountPayment]}>
-              {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
-            </Text>
-            {item.note ? <Text style={styles.noteText} numberOfLines={2}>{item.note}</Text> : null}
-          </View>
-        </View>
-
-        {/* Khối hiển thị chi tiết các món thịt nếu có */}
-        {hasItems && (
-          <View style={styles.detailItemsContainer}>
-            <TouchableOpacity
-              style={styles.btnToggleDetailItems}
-              onPress={() => toggleExpandTrans(item.id)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.btnToggleDetailText}>
-                🥩 Chi tiết: {item.items.length} món thịt {isExpanded ? '▲ Thu gọn' : '▼ Xem chi tiết'}
-              </Text>
-            </TouchableOpacity>
-
-            {isExpanded && (
-              <View style={styles.expandedItemsList}>
-                {item.items.map((it, idx) => (
-                  <View key={idx} style={styles.expandedItemRow}>
-                    <Text style={styles.expandedItemName}>
-                      • {it.productName || 'Thịt'}: {it.quantity || 0}{it.unit || 'kg'} x {formatCurrency(it.price)}đ
-                    </Text>
-                    <Text style={styles.expandedItemAmount}>
-                      {formatCurrency(it.amount || 0)} đ
-                    </Text>
-                  </View>
-                ))}
+          {/* Cột 2: Loại giao dịch, món thịt, ghi chú, chứng từ */}
+          <View style={styles.colType}>
+            <View style={styles.typeBadgeRow}>
+              <View style={[styles.typeBadge, isDebt ? styles.badgeDebt : styles.badgePayment]}>
+                <Text style={[styles.typeText, isDebt ? styles.textDebt : styles.textPayment]}>
+                  {isDebt ? '📥 Nhập nợ' : '💵 Trả tiền'}
+                </Text>
               </View>
+
+              {hasMedia && (
+                <TouchableOpacity
+                  style={styles.miniMediaBtn}
+                  onPress={() => handleOpenMediaViewer(item.mediaUrls, item)}
+                  activeOpacity={0.7}
+                  title="Xem ảnh chứng từ"
+                >
+                  <Text style={styles.miniMediaBtnText}>📸 {item.mediaUrls.length}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Ghi chú giao dịch nếu có */}
+            {item.note ? (
+              <Text style={styles.tableCellNote} numberOfLines={1}>
+                {item.note}
+              </Text>
+            ) : null}
+
+            {/* Nút bấm xem chi tiết các món thịt nếu có */}
+            {hasItems && (
+              <TouchableOpacity
+                style={styles.miniToggleItemsBtn}
+                onPress={() => toggleExpandTrans(item.id)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.miniToggleItemsText}>
+                  🥩 {item.items.length} món thịt {isExpanded ? '▲' : '▼'}
+                </Text>
+              </TouchableOpacity>
             )}
           </View>
-        )}
 
-        {/* Khối nút bấm xem ảnh & video chứng từ nếu có */}
-        {hasMedia && (
-          <View style={styles.mediaContainer}>
+          {/* Cột 3: Số tiền */}
+          <View style={styles.colAmount}>
+            <Text style={[styles.tableCellAmount, isDebt ? styles.amountDebt : styles.amountPayment]}>
+              {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
+            </Text>
+          </View>
+
+          {/* Cột 4: Nút Sửa & Xóa gọn gàng */}
+          <View style={styles.colActions}>
             <TouchableOpacity
-              style={styles.btnViewMedia}
-              onPress={() => handleOpenMediaViewer(item.mediaUrls, item)}
-              activeOpacity={0.8}
+              style={styles.actionBtnEditSmall}
+              onPress={() => handleEditItem(item)}
+              activeOpacity={0.7}
+              title="Chỉnh sửa"
             >
-              <Text style={styles.btnViewMediaText}>
-                📸 Xem {item.mediaUrls.length} ảnh/video chứng từ
-              </Text>
+              <Text style={styles.actionBtnTextSmall}>✏️</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionBtnDeleteSmall}
+              onPress={() => confirmDeleteItem(item)}
+              activeOpacity={0.7}
+              title="Xóa"
+            >
+              <Text style={styles.actionBtnTextSmall}>🗑️</Text>
             </TouchableOpacity>
           </View>
-        )}
-
-        {/* Hàng nút bấm thao tác Sửa & Xóa */}
-        <View style={styles.cardActions}>
-          <TouchableOpacity
-            style={styles.actionBtnEdit}
-            onPress={() => handleEditItem(item)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionBtnEditText}>✏️ Sửa</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionBtnDelete}
-            onPress={() => confirmDeleteItem(item)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionBtnDeleteText}>🗑️ Xóa</Text>
-          </TouchableOpacity>
         </View>
+
+        {/* Khối hiển thị chi tiết các món thịt dạng bảng con khi mở rộng */}
+        {hasItems && isExpanded && (
+          <View style={styles.expandedSubTable}>
+            <View style={styles.subTableHeaderRow}>
+              <Text style={[styles.subTableThCell, { flex: 2.2 }]}>Mặt hàng</Text>
+              <Text style={[styles.subTableThCell, { flex: 1.1, textAlign: 'center' }]}>Số lượng</Text>
+              <Text style={[styles.subTableThCell, { flex: 1.3, textAlign: 'right' }]}>Đơn giá</Text>
+              <Text style={[styles.subTableThCell, { flex: 1.6, textAlign: 'right' }]}>Thành tiền</Text>
+            </View>
+            {item.items.map((it, idx) => (
+              <View key={idx} style={[styles.subTableRow, idx % 2 === 1 && styles.subTableRowAlt]}>
+                <Text style={[styles.subTableTdCell, { flex: 2.2, fontWeight: '600' }]} numberOfLines={1}>
+                  {it.productName || 'Thịt'}
+                </Text>
+                <Text style={[styles.subTableTdCell, { flex: 1.1, textAlign: 'center', color: '#64748B' }]}>
+                  {it.quantity || 0} {it.unit || 'kg'}
+                </Text>
+                <Text style={[styles.subTableTdCell, { flex: 1.3, textAlign: 'right', color: '#64748B' }]}>
+                  {formatCurrency(it.price)}
+                </Text>
+                <Text style={[styles.subTableTdCell, { flex: 1.6, textAlign: 'right', fontWeight: 'bold', color: '#DC2626' }]}>
+                  {formatCurrency(it.amount || 0)} đ
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
     );
   };
@@ -582,10 +764,10 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
           <View style={[styles.filterBar, { zIndex: selectContainerZIndex }]}>
             <View style={styles.selectWrapper}>
               <CustomSelect
-                options={monthOptions}
-                value={selectedMonthOption}
-                placeholder="Lọc theo tháng..."
-                onSelect={(item) => setSelectedMonth(item.id)}
+                options={filterOptions}
+                value={selectedFilterOption}
+                placeholder="Lọc thời gian..."
+                onSelect={handleSelectFilterOption}
                 renderSelected={(m) => m?.name || ''}
                 zIndex={999999}
                 onOpenChange={(isOpen) => setSelectContainerZIndex(isOpen ? 999999 : 10)}
@@ -596,16 +778,61 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
               style={styles.exportBtn}
               onPress={() => {
                 const now = new Date();
-                const currentMonthStr = `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-                const targetMonth = selectedMonth === 'ALL'
-                  ? (availableMonths[0] || currentMonthStr)
-                  : selectedMonth;
+                const currentMonthStr = `${padZero(now.getMonth() + 1)}/${now.getFullYear()}`;
+                const targetMonth = selectedFilter && selectedFilter.includes('/')
+                  ? selectedFilter
+                  : (availableMonths[0] || currentMonthStr);
                 exportSupplierHistoryModalRef.current?.open(currentSupplier || supplier, targetMonth, history);
               }}
               activeOpacity={0.7}
             >
               <Text style={styles.exportBtnText}>🖼️ Xuất ảnh</Text>
             </TouchableOpacity>
+          </View>
+
+          {/* Thanh chọn khoảng ngày từ ngày ➔ đến ngày */}
+          <View style={styles.dateRangeBar}>
+            <View style={styles.dateCol}>
+              <Text style={styles.dateSubLabel}>Từ ngày</Text>
+              <DatePickerInput
+                value={fromDate}
+                onChange={handleFromDateChange}
+                placeholder="Từ ngày"
+                allowFuture={true}
+                compact={true}
+                dense={true}
+                showIcon={true}
+                style={styles.compactDatePicker}
+              />
+            </View>
+
+            <View style={styles.dateArrowWrap}>
+              <Text style={styles.dateArrowText}>➔</Text>
+            </View>
+
+            <View style={styles.dateCol}>
+              <Text style={styles.dateSubLabel}>Đến ngày</Text>
+              <DatePickerInput
+                value={toDate}
+                onChange={handleToDateChange}
+                placeholder="Đến ngày"
+                allowFuture={true}
+                compact={true}
+                dense={true}
+                showIcon={true}
+                style={styles.compactDatePicker}
+              />
+            </View>
+
+            {(fromDate || toDate || selectedFilter !== 'ALL') ? (
+              <TouchableOpacity
+                style={styles.clearDateFilterBtn}
+                onPress={handleClearDateFilter}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.clearDateFilterBtnText}>✕ Xóa</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           {/* Thanh thống kê nhanh theo tháng đang lọc */}
@@ -649,13 +876,27 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
               renderItem={renderHistoryItem}
               keyExtractor={(item) => `${item.type || 'tx'}-${item.id}`}
               contentContainerStyle={styles.listContent}
-              ListHeaderComponent={renderMissingDaysCard}
+              ListHeaderComponent={
+                <>
+                  {renderMissingDaysCard()}
+                  {renderTableHeader()}
+                </>
+              }
+              ListFooterComponent={
+                filteredHistory && filteredHistory.length > 0 ? (
+                  <View style={styles.tableFooterRow}>
+                    <Text style={styles.tableFooterText}>
+                      Tổng cộng: <Text style={styles.tableFooterBold}>{filteredHistory.length}</Text> giao dịch
+                    </Text>
+                  </View>
+                ) : null
+              }
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>
-                    {selectedMonth === 'ALL'
+                    {selectedFilter === 'ALL'
                       ? 'Chưa có giao dịch nhập hàng hay trả tiền nào được ghi nhận.'
-                      : `Không có giao dịch nào trong Tháng ${selectedMonth}.`}
+                      : `Không có giao dịch nào${selectedFilter ? ` trong ${selectedFilter}` : ''}.`}
                   </Text>
                 </View>
               }
@@ -759,6 +1000,59 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
   },
+  dateRangeBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  dateCol: {
+    flex: 1,
+  },
+  dateSubLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  compactDatePicker: {
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+    marginBottom: 0,
+  },
+  dateArrowWrap: {
+    paddingTop: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateArrowText: {
+    fontSize: 14,
+    color: '#94A3B8',
+    fontWeight: 'bold',
+  },
+  clearDateFilterBtn: {
+    paddingTop: 16,
+    paddingHorizontal: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearDateFilterBtnText: {
+    fontSize: 12,
+    color: '#EF4444',
+    fontWeight: '700',
+  },
   summaryBar: {
     flexDirection: 'row',
     backgroundColor: '#F8FAFC',
@@ -803,160 +1097,207 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 20,
   },
-  historyCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
+  // ─── Giao diện Bảng Lịch Sử Giao Dịch ───
+  tableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
     borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    marginBottom: 0,
+  },
+  tableHeaderCell: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
+  },
+  colDate: {
+    width: 76,
+    paddingLeft: 2,
+  },
+  colType: {
+    flex: 1.3,
+    paddingHorizontal: 4,
+  },
+  colAmount: {
+    flex: 1.2,
+    alignItems: 'flex-end',
+    paddingHorizontal: 4,
+  },
+  colActions: {
+    width: 58,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  tableRowContainer: {
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
     borderColor: '#E2E8F0',
   },
-  cardMain: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  rowEven: {
+    backgroundColor: '#FFFFFF',
   },
-  cardLeft: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: 6,
+  rowOdd: {
+    backgroundColor: '#F8FAFC',
+  },
+  tableRowMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+  },
+  tableCellDate: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  typeBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexWrap: 'wrap',
   },
   typeBadge: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 5,
   },
   badgeDebt: {
-    backgroundColor: '#FFE2E2',
+    backgroundColor: '#FEE2E2',
   },
   badgePayment: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: '#DCFCE7',
   },
   typeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: 'bold',
   },
   textDebt: {
-    color: '#D32F2F',
+    color: '#DC2626',
   },
   textPayment: {
-    color: '#388E3C',
+    color: '#16A34A',
   },
-  dateText: {
-    fontSize: 12,
-    color: COLORS.textLight,
-  },
-  cardRight: {
-    flex: 1,
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    paddingLeft: 10,
-  },
-  amountText: {
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  amountDebt: {
-    color: '#D32F2F', // Màu đỏ cho nợ tăng thêm
-  },
-  amountPayment: {
-    color: '#388E3C', // Màu xanh cho khoản đã trả giảm nợ
-  },
-  noteText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-    textAlign: 'right',
-  },
-  detailItemsContainer: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginTop: 8,
-    padding: 6,
-  },
-  btnToggleDetailItems: {
-    paddingVertical: 3,
-    paddingHorizontal: 4,
-  },
-  btnToggleDetailText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#0284C7',
-  },
-  expandedItemsList: {
-    marginTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingTop: 6,
-  },
-  expandedItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 3,
-  },
-  expandedItemName: {
-    fontSize: 12,
-    color: '#334155',
-  },
-  expandedItemAmount: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#B91C1C',
-  },
-  mediaContainer: {
-    marginTop: 8,
-  },
-  btnViewMedia: {
+  miniMediaBtn: {
     backgroundColor: '#F0F9FF',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#BAE6FD',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
   },
-  btnViewMediaText: {
-    fontSize: 12,
+  miniMediaBtnText: {
+    fontSize: 10,
     fontWeight: 'bold',
     color: '#0284C7',
   },
-  cardActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#EDF2F7',
+  tableCellNote: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
   },
-  actionBtnEdit: {
+  miniToggleItemsBtn: {
+    marginTop: 3,
+    alignSelf: 'flex-start',
+  },
+  miniToggleItemsText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#0284C7',
+  },
+  tableCellAmount: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+    textAlign: 'right',
+  },
+  amountDebt: {
+    color: '#DC2626', // Màu đỏ cho nợ tăng thêm
+  },
+  amountPayment: {
+    color: '#16A34A', // Màu xanh cho khoản đã trả giảm nợ
+  },
+  actionBtnEditSmall: {
+    width: 25,
+    height: 25,
+    borderRadius: 5,
     backgroundColor: '#EFF6FF',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#BFDBFE',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  actionBtnEditText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1D4ED8',
-  },
-  actionBtnDelete: {
+  actionBtnDeleteSmall: {
+    width: 25,
+    height: 25,
+    borderRadius: 5,
     backgroundColor: '#FEF2F2',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  actionBtnDeleteText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#DC2626',
+  actionBtnTextSmall: {
+    fontSize: 11,
+  },
+  expandedSubTable: {
+    backgroundColor: '#F1F5F9',
+    marginHorizontal: 6,
+    marginBottom: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    padding: 6,
+  },
+  subTableHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#CBD5E1',
+    paddingBottom: 4,
+    marginBottom: 4,
+  },
+  subTableThCell: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#64748B',
+  },
+  subTableRow: {
+    flexDirection: 'row',
+    paddingVertical: 2.5,
+    alignItems: 'center',
+  },
+  subTableRowAlt: {
+    backgroundColor: '#E2E8F0',
+  },
+  subTableTdCell: {
+    fontSize: 11,
+    color: '#1E293B',
+  },
+  tableFooterRow: {
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderTopWidth: 0,
+  },
+  tableFooterText: {
+    fontSize: 11.5,
+    color: '#64748B',
+  },
+  tableFooterBold: {
+    fontWeight: 'bold',
+    color: '#1E293B',
   },
   errorContainer: {
     paddingVertical: 30,

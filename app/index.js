@@ -62,6 +62,7 @@ import QuickNoteModal from '../src/components/QuickNoteModal';
 import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewModal';
 import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
 import BankTransactionsView from '../src/components/BankTransactionsView';
+import ProfitManagementModal from '../src/components/ProfitManagementModal';
 import { showGlobalToast } from '../src/store/toastStore';
 import { isMobileDevice } from '../src/utils/imageShareHelper';
 import { exportDailyReportBundle } from '../src/utils/dailyBundleExportHelper';
@@ -169,6 +170,7 @@ export default function DashboardScreen() {
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
   const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
   const quickPriceLinkModalRef = useRef(null); // Modal link Zalo cập nhật giá bán cho Anh Chủ
+  const profitManagementModalRef = useRef(null); // Modal quản lý lợi nhuận & đối soát lò
 
   // Nhắc hẹn chốt công nợ định kỳ theo nhóm nhà hàng (ví dụ: nhóm Trường Hoàng từ 15 đến 31)
   const [dismissedReminderGroupIds, setDismissedReminderGroupIds] = useState(new Set());
@@ -2310,6 +2312,25 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
+            {/* Chức năng: Quản lý lợi nhuận */}
+            {auth.hasPermission('canManageDebt') && (
+              <TouchableOpacity
+                style={[styles.menuCard, { borderColor: '#0284C7', backgroundColor: '#F0F9FF' }]}
+                onPress={() => {
+                  profitManagementModalRef.current?.open();
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.menuCardIconBg, { backgroundColor: '#E0F2FE' }]}>
+                  <Text style={styles.menuCardIcon}>📈</Text>
+                </View>
+                <View style={styles.menuCardContent}>
+                  <Text style={[styles.menuCardTitle, { color: '#0369A1' }]}>Quản lý lợi nhuận</Text>
+                  <Text style={styles.menuCardDesc}>Đối soát tiền bán ra, tiền nhập hàng các lò, kết luận lãi lỗ theo tháng và toàn bộ</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
             {/* Chức năng: Quản lý giao dịch ngân hàng (SePay Webhook) */}
             {auth.hasPermission('canManageDebt') && (
               <TouchableOpacity
@@ -2488,6 +2509,19 @@ export default function DashboardScreen() {
         <ProfileModal ref={profileModalRef} />
         {/* Modal Quản lý Workspace */}
         <AdminOwnerDetailModal ref={workspaceModalRef} />
+
+        {/* Modal Quản lý Lợi Nhuận & Đối Soát Lò */}
+        <ProfitManagementModal ref={profitManagementModalRef} />
+
+        {/* Modal Link Zalo Cập Nhật Giá Bán Riêng */}
+        <QuickPriceLinkModal ref={quickPriceLinkModalRef} />
+
+        {/* Modal Duyệt đơn nhân viên */}
+        <StaffSubmissionReviewModal ref={staffSubmissionReviewModalRef} />
+
+        {/* Modal Quản lý Phản Hồi Zalo Portal */}
+        <PortalFeedbackAdminModal ref={portalFeedbackAdminModalRef} />
+
         {/* Popup Thông báo */}
         <PopupModal ref={popupModalRef} />
       </SafeAreaView>
@@ -3056,14 +3090,27 @@ export default function DashboardScreen() {
             <Text style={styles.summaryValueSupplier}>{formatCurrency(totalSupplierDebt)}</Text>
           </View>
 
-          {/* NÚT THÊM NHÀ CUNG CẤP (MỚI DI CHUYỂN LÊN TRÊN) */}
-          <TouchableOpacity
-            style={[styles.addSupplierButtonFull, { marginHorizontal: 16, marginTop: 0, marginBottom: 4 }]}
-            onPress={() => addSupplierModalRef.current?.open()}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.addSupplierButtonFullText}>➕ THÊM NHÀ CUNG CẤP</Text>
-          </TouchableOpacity>
+          {/* NÚT THÊM NHÀ CUNG CẤP & ĐỐI SOÁT LÃI/LỖ */}
+          <View style={{ flexDirection: 'row', marginHorizontal: 16, marginTop: 0, marginBottom: 4, gap: 8 }}>
+            <TouchableOpacity
+              style={[styles.addSupplierButtonFull, { flex: 1, marginHorizontal: 0 }]}
+              onPress={() => addSupplierModalRef.current?.open()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.addSupplierButtonFullText}>➕ THÊM NCC</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.addSupplierButtonFull,
+                { flex: 1, marginHorizontal: 0, backgroundColor: '#0284C7', borderColor: '#0369A1' },
+              ]}
+              onPress={() => profitManagementModalRef.current?.open()}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.addSupplierButtonFullText, { color: '#FFFFFF' }]}>📈 ĐỐI SOÁT LÃI/LỖ</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Ô TÌM KIẾM NHANH NHÀ CUNG CẤP */}
           <View style={styles.searchContainer}>
@@ -3113,6 +3160,7 @@ export default function DashboardScreen() {
         <SupplierDebtModal ref={supplierDebtModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
         <SupplierPaymentModal ref={supplierPaymentModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
         <SupplierHistoryModal ref={supplierHistoryModalRef} supplier={selectedSupplier} onRefresh={refetchSuppliers} />
+        <ProfitManagementModal ref={profitManagementModalRef} />
 
         {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
         {auth.user?.isWorkspaceOwner && (
@@ -3503,6 +3551,22 @@ export default function DashboardScreen() {
                 >
 
 
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    profitManagementModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>📈</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Quản lý lợi nhuận & đối soát lò</Text>
+                    <Text style={styles.smartDebtMenuSub}>Đối soát tiền bán, tiền nhập, kết luận lãi/lỗ theo tháng</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
 
                 <TouchableOpacity
                   style={styles.smartDebtMenuItem}
@@ -4002,6 +4066,9 @@ export default function DashboardScreen() {
 
       {/* MODAL LINK ZALO ANH CHỦ CẬP NHẬT GIÁ BÁN RIÊNG */}
       <QuickPriceLinkModal ref={quickPriceLinkModalRef} />
+
+      {/* MODAL QUẢN LÝ LỢI NHUẬN & ĐỐI SOÁT LÒ */}
+      <ProfitManagementModal ref={profitManagementModalRef} />
 
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />

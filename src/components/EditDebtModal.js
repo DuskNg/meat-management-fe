@@ -630,49 +630,15 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
                 placeholderTextColor={COLORS.textLight}
               />
 
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                <View style={{ flex: 1.5 }}>
-                  <Text style={styles.label}>💵 Số tiền nợ (đ):</Text>
-                  <MoneyInput
-                    value={quickAmountVND}
-                    onChangeValue={setQuickAmountVND}
-                    placeholder="0"
-                    textAlign="left"
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>📈 % Lợi nhuận:</Text>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      {
-                        height: 48,
-                        borderColor: '#C084FC',
-                        backgroundColor: '#FAF5FF',
-                        color: '#7E22CE',
-                        fontWeight: 'bold',
-                        fontSize: 16,
-                        textAlign: 'center',
-                        marginBottom: 0,
-                      },
-                    ]}
-                    placeholder="Ví dụ: 15"
-                    placeholderTextColor="#A855F7"
-                    value={quickProfitPercent}
-                    onChangeText={(txt) => setQuickProfitPercent(txt.replace(/[^0-9.]/g, ''))}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
+              <View style={{ marginTop: 12 }}>
+                <Text style={styles.label}>💵 Số tiền nợ (đ):</Text>
+                <MoneyInput
+                  value={quickAmountVND}
+                  onChangeValue={setQuickAmountVND}
+                  placeholder="0"
+                  textAlign="left"
+                />
               </View>
-
-              {quickAmountVND > 0 && quickProfitPercent ? (
-                <View style={{ backgroundColor: '#FAF5FF', borderColor: '#E9D5FF', borderWidth: 1, borderRadius: 8, padding: 8, marginTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 12, color: '#6B21A8', fontWeight: '600' }}>💵 Tiền lãi ước tính ({quickProfitPercent}%):</Text>
-                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#7E22CE' }}>
-                    +{formatCurrency(Math.round(quickAmountVND * (parseFloat(quickProfitPercent) / 100)))}
-                  </Text>
-                </View>
-              ) : null}
 
               {/* Ghi chú bổ sung - Đã bỏ theo yêu cầu người dùng */}
             </View>
@@ -835,12 +801,6 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
               <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
               <Text style={styles.totalValue}>{formatCurrency(activeTab === 'quick' ? quickAmountVND : cartTotal)}</Text>
             </View>
-            {activeTab === 'manual' && cartTotalCost > 0 && cartTotalProfit > 0 && (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginTop: 4 }}>
-                <Text style={{ fontSize: 12, color: '#0369A1', fontWeight: '600' }}>💰 Lợi nhuận ước tính ({cartProfitMargin}%):</Text>
-                <Text style={{ fontSize: 13, color: '#0369A1', fontWeight: 'bold' }}>+{formatCurrency(cartTotalProfit)}</Text>
-              </View>
-            )}
           </View>
         )}
 

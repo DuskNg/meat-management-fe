@@ -1194,11 +1194,6 @@ const BatchDebtModal = forwardRef(({ onRefresh }, ref) => {
               <Text style={styles.summaryCountBold}>{displayCount}</Text> khách
             </Text>
             <Text style={styles.summaryTotalText}>{formatCurrency(displayTotalAmount)}</Text>
-            {activeTab !== 'return' && totalBatchProfit > 0 && (
-              <Text style={{ fontSize: 11, color: '#0369A1', fontWeight: 'bold', marginTop: 2 }}>
-                💰 Lãi dự tính: +{formatCurrency(totalBatchProfit)}
-              </Text>
-            )}
           </View>
 
           <View style={styles.footerActionsRow}>

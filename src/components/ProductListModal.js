@@ -692,7 +692,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
                   </View>
                 </View>
 
-                {/* Hàng 2: Giá bán + Giá nhập + Nút Thêm / Lưu */}
+                {/* Hàng 2: Giá bán + Nút Thêm / Lưu */}
                 <View style={styles.compactRow2}>
                   <View style={{ flex: 1 }}>
                     <MoneyInput
@@ -704,18 +704,6 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
                         setError('');
                       }}
                       placeholder="Giá bán..."
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <MoneyInput
-                      style={styles.compactMoneyContainer}
-                      inputStyle={styles.compactMoneyField}
-                      value={costPrice}
-                      onChangeValue={(val) => {
-                        setCostPrice(val);
-                        setError('');
-                      }}
-                      placeholder="Giá nhập..."
                     />
                   </View>
 
@@ -800,18 +788,8 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
                           <Text style={styles.productNameText}>{item.name}</Text>
                           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2, alignItems: 'center' }}>
                             <Text style={styles.productPriceText}>
-                              Bán: <Text style={{ color: COLORS.dangerDark, fontWeight: 'bold' }}>{formatCurrency(sellPrice)}</Text>/{item.unit}
+                              Giá bán: <Text style={{ color: COLORS.dangerDark, fontWeight: 'bold' }}>{formatCurrency(sellPrice)}</Text>/{item.unit}
                             </Text>
-                            <Text style={[styles.productPriceText, { color: COLORS.textSecondary }]}>
-                              Nhập: <Text style={{ color: '#0369A1', fontWeight: 'bold' }}>{formatCurrency(importPrice)}</Text>/{item.unit}
-                            </Text>
-                            {importPrice > 0 && (
-                              <View style={{ backgroundColor: '#F0F9FF', borderColor: '#BAE6FD', borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#0369A1' }}>
-                                  Lãi: +{formatCurrency(profitPerUnit)} ({marginPercent}%)
-                                </Text>
-                              </View>
-                            )}
                           </View>
                         </View>
 
@@ -1241,8 +1219,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
           {/* Tiêu đề các cột trong danh sách */}
           <View style={styles.batchTableHead}>
             <Text style={[styles.batchHeadCol, { flex: 1.2 }]}>Loại thịt</Text>
-            <Text style={[styles.batchHeadCol, { width: 110, textAlign: 'center' }]}>Giá bán chung (VND)</Text>
-            <Text style={[styles.batchHeadCol, { width: 110, textAlign: 'center' }]}>Giá nhập (VND)</Text>
+            <Text style={[styles.batchHeadCol, { width: 140, textAlign: 'center' }]}>Giá bán chung (VND)</Text>
           </View>
 
           {/* Danh sách các loại thịt cho nhập 1 thể */}
@@ -1269,7 +1246,7 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
                   </View>
 
                   {/* Cột 2: Ô nhập giá bán mới */}
-                  <View style={{ width: 110 }}>
+                  <View style={{ width: 140 }}>
                     <MoneyInput
                       style={[styles.batchMoneyBox, sellChanged && styles.batchMoneyBoxChanged]}
                       inputStyle={styles.batchMoneyField}
@@ -1280,22 +1257,6 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
                     {sellChanged && (
                       <Text style={[styles.diffBadge, { color: item.defaultPrice > item.originalDefaultPrice ? '#DC2626' : '#16A34A' }]}>
                         {item.defaultPrice > item.originalDefaultPrice ? '↗️' : '↘️'} {formatCurrency(Math.abs(item.defaultPrice - item.originalDefaultPrice))}
-                      </Text>
-                    )}
-                  </View>
-
-                  {/* Cột 3: Ô nhập giá nhập mới */}
-                  <View style={{ width: 110, marginLeft: 6 }}>
-                    <MoneyInput
-                      style={[styles.batchMoneyBox, costChanged && styles.batchMoneyBoxChanged]}
-                      inputStyle={styles.batchMoneyField}
-                      value={item.costPrice}
-                      onChangeValue={(val) => handleBatchPriceChange(item.id, 'costPrice', val)}
-                      placeholder="0"
-                    />
-                    {costChanged && (
-                      <Text style={[styles.diffBadge, { color: '#0369A1' }]}>
-                        {item.costPrice > item.originalCostPrice ? '↗️' : '↘️'} {formatCurrency(Math.abs(item.costPrice - item.originalCostPrice))}
                       </Text>
                     )}
                   </View>

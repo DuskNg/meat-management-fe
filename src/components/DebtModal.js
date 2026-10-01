@@ -769,40 +769,8 @@ const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRe
                       placeholder="Ví dụ: 500"
                     />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>📈 % Lợi nhuận:</Text>
-                    <TextInput
-                      style={[
-                        styles.input,
-                        {
-                          height: 48,
-                          borderColor: '#7DD3FC',
-                          backgroundColor: '#F0F9FF',
-                          color: '#0369A1',
-                          fontWeight: 'bold',
-                          fontSize: 16,
-                          textAlign: 'center',
-                          marginBottom: 0
-                        }
-                      ]}
-                      placeholder="Ví dụ: 15"
-                      placeholderTextColor="#0284C7"
-                      value={quickProfitPercent}
-                      onChangeText={(txt) => setQuickProfitPercent(txt.replace(/[^0-9.]/g, ''))}
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
                 </View>
                 {errorField === 'quickAmount' && <Text style={styles.fieldErrorText}>⚠️ {error}</Text>}
-
-                {quickAmountVND > 0 && quickProfitPercent ? (
-                  <View style={{ backgroundColor: '#F0F9FF', borderColor: '#BAE6FD', borderWidth: 1, borderRadius: 8, padding: 8, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 12, color: '#0369A1', fontWeight: '600' }}>💵 Tiền lãi ước tính ({quickProfitPercent}%):</Text>
-                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0369A1' }}>
-                      +{formatCurrency(Math.round(quickAmountVND * (parseFloat(quickProfitPercent) / 100)))}
-                    </Text>
-                  </View>
-                ) : null}
 
                 {/* Ghi chú thêm cho nợ nhanh - Đã bỏ theo yêu cầu người dùng */}
               </>
@@ -817,12 +785,6 @@ const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRe
               <Text style={styles.totalLabel}>💰 TỔNG ĐƠN HÀNG:</Text>
               <Text style={styles.totalValue}>{formatCurrency(cartTotal)}</Text>
             </View>
-            {cartTotalCost > 0 && cartTotalProfit > 0 && (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginTop: 4 }}>
-                <Text style={{ fontSize: 12, color: '#0369A1', fontWeight: '600' }}>💰 Lợi nhuận ước tính ({cartProfitMargin}%):</Text>
-                <Text style={{ fontSize: 13, color: '#0369A1', fontWeight: 'bold' }}>+{formatCurrency(cartTotalProfit)}</Text>
-              </View>
-            )}
           </View>
         )}
 

@@ -1905,12 +1905,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                 <Text style={styles.summaryBoxLabel}>{activeReportTab === 'day' ? '🟢 Tiền đã thu' : '🟢 Đã thu'}</Text>
                 <Text style={styles.summaryBoxValue}>{formatCurrency(totalPaymentReceived)}</Text>
               </TouchableOpacity>
-              <View style={[styles.summaryBox, styles.profitBox]}>
-                <Text style={[styles.summaryBoxLabel, { color: '#0369A1' }]}>
-                  {`💰 Lợi nhuận${profitMarginPercent > 0 ? ` (${profitMarginPercent}%)` : ''}`}
-                </Text>
-                <Text style={[styles.summaryBoxValue, { color: '#0369A1' }]}>{formatCurrency(totalProfit)}</Text>
-              </View>
             </View>
 
             {/* Banner cảnh báo phát hiện trùng đơn trong ngày */}
@@ -2163,13 +2157,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                             <Text style={[styles.itemDetails, { flex: 1 }]} numberOfLines={2}>
                               {isDebt ? `🥩 ${displayDetails}` : isReturnGoods ? `↩️ ${displayDetails}` : `💵 ${displayDetails}`}
                             </Text>
-                            {isDebt && item.profit > 0 ? (
-                              <View style={styles.itemProfitBadge}>
-                                <Text style={styles.itemProfitBadgeText}>
-                                  Lãi: +{formatCurrency(item.profit)}
-                                </Text>
-                              </View>
-                            ) : null}
                           </View>
                         ) : null}
                       </View>

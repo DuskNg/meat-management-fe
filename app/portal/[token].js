@@ -1424,27 +1424,151 @@ export default function PortalScreen() {
     return [];
   };
 
-  // Mở modal xem phóng to ảnh hóa đơn trên Portal (hỗ trợ cả ngày hoặc từng quán)
-  const handleOpenInvoiceModal = (dayOrInvoices, title, subtitle) => {
-    let images = [];
-    let modalTitle = '';
-    let modalSubtitle = '';
+  // Helper phân tích dateKey thành mili-giây để so sánh ngày trước / ngày sau chính xác
+  const parseDateKeyToMs = (dateKey) => {
+    if (!dateKey) return 0;
+    const str = String(dateKey).trim();
+    if (str.includes('-')) {
+      const parts = str.split('-');
+      if (parts.length === 3) {
+        const [y, m, d] = parts.map(Number);
+        return new Date(y, m - 1, d).getTime();
+      }
+    }
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        const [d, m, y] = parts.map(Number);
+        return new Date(y, m - 1, d).getTime();
+      }
+    }
+    return new Date(str).getTime() || 0;
+  };
 
+  // Mở modal xem phóng to ảnh hóa đơn trên Portal (hỗ trợ cả ngày hoặc từng quán, kèm số liệu ngày & nút chuyển ngày)
+  const openDayInvoice = (targetDay, targetCustomerName = null) => {
+    if (!targetDay) return;
+
+    let images = [];
+    if (targetCustomerName) {
+      images = getInvoicesForCustomer(targetDay, targetCustomerName);
+      if (images.length === 0 && targetDay.invoices) {
+        images = targetDay.invoices;
+      }
+    } else {
+      images = targetDay.invoices || [];
+    }
+
+    if (!images || images.length === 0) {
+      showGlobalToast('Chưa có ảnh chụp hóa đơn đính kèm cho ngày này.', 'info');
+      return;
+    }
+
+    const modalTitle = targetCustomerName
+      ? `Hóa đơn [${targetCustomerName}] - ${targetDay.displayDate || targetDay.dateKey}`
+      : `Hóa đơn ngày ${targetDay.displayDate || targetDay.dateKey}`;
+    const modalSubtitle = targetCustomerName
+      ? `Cơ sở: ${targetCustomerName} | Ngày: ${targetDay.displayDate || targetDay.dateKey}`
+      : `Ngày: ${targetDay.displayDate || targetDay.dateKey}`;
+
+    // Lọc danh sách entries của ngày phù hợp với cơ sở nếu có lọc theo cơ sở
+    let dayEntries = targetDay.entries || [];
+    if (targetCustomerName) {
+      const filteredByCust = dayEntries.filter((e) => !e.customerName || e.customerName === targetCustomerName);
+      if (filteredByCust.length > 0) {
+        dayEntries = filteredByCust;
+      }
+    }
+
+    const dayData = {
+      dateKey: targetDay.dateKey,
+      displayDate: targetDay.displayDate || targetDay.dateKey,
+      displayLunarDate: targetDay.displayLunarDate,
+      isPaid: targetDay.isPaid,
+      isPartialPaid: targetDay.isPartialPaid,
+      customerName: targetCustomerName,
+      entries: dayEntries,
+    };
+
+    // Tìm ngày hôm trước và ngày hôm sau có ảnh hóa đơn trong danh sách ngày
+    const allDays = displayInvoiceData?.sortedDays || invoiceData?.sortedDays || [];
+    const currentMs = parseDateKeyToMs(targetDay.dateKey);
+
+    // Lọc các ngày có ảnh hóa đơn tương ứng
+    const eligibleDays = allDays.filter((d) => {
+      if (targetCustomerName) {
+        const custImgs = getInvoicesForCustomer(d, targetCustomerName);
+        return custImgs && custImgs.length > 0;
+      }
+      return d.invoices && d.invoices.length > 0;
+    });
+
+    // Ngày hôm trước: ngày có timestamp nhỏ hơn gần nhất (quá khứ hơn)
+    let prevDay = null;
+    let prevDayDiff = Infinity;
+
+    // Ngày hôm sau: ngày có timestamp lớn hơn gần nhất (tương lai hơn)
+    let nextDay = null;
+    let nextDayDiff = Infinity;
+
+    eligibleDays.forEach((d) => {
+      const dMs = parseDateKeyToMs(d.dateKey);
+      if (dMs < currentMs) {
+        const diff = currentMs - dMs;
+        if (diff < prevDayDiff) {
+          prevDayDiff = diff;
+          prevDay = d;
+        }
+      } else if (dMs > currentMs) {
+        const diff = dMs - currentMs;
+        if (diff < nextDayDiff) {
+          nextDayDiff = diff;
+          nextDay = d;
+        }
+      }
+    });
+
+    invoiceViewerRef.current?.open({
+      images,
+      title: modalTitle,
+      subtitle: modalSubtitle,
+      dayData,
+      hasPrevDay: Boolean(prevDay),
+      hasNextDay: Boolean(nextDay),
+      prevDayLabel: prevDay ? (prevDay.displayDate || prevDay.dateKey) : '',
+      nextDayLabel: nextDay ? (nextDay.displayDate || nextDay.dateKey) : '',
+      onPrevDay: prevDay ? () => openDayInvoice(prevDay, targetCustomerName) : undefined,
+      onNextDay: nextDay ? () => openDayInvoice(nextDay, targetCustomerName) : undefined,
+    });
+  };
+
+  // Mở modal xem phóng to ảnh hóa đơn trên Portal (hỗ trợ cả ngày hoặc từng quán)
+  const handleOpenInvoiceModal = (dayOrInvoices, title, subtitle, parentDay = null, targetCustomerName = null) => {
+    // Nếu truyền vào một đối tượng ngày (day) có chứa invoices
+    if (dayOrInvoices && !Array.isArray(dayOrInvoices) && dayOrInvoices.dateKey) {
+      openDayInvoice(dayOrInvoices, targetCustomerName);
+      return;
+    }
+
+    // Nếu truyền kèm parentDay (ví dụ từ chuỗi cửa hàng)
+    if (parentDay && parentDay.dateKey) {
+      openDayInvoice(parentDay, targetCustomerName);
+      return;
+    }
+
+    // Trường hợp mảng ảnh độc lập không có dữ liệu ngày đi kèm
+    let images = [];
     if (Array.isArray(dayOrInvoices)) {
       images = dayOrInvoices;
-      modalTitle = title || 'Ảnh hóa đơn';
-      modalSubtitle = subtitle || '';
     } else if (dayOrInvoices?.invoices) {
       images = dayOrInvoices.invoices;
-      modalTitle = title || `Hóa đơn ngày ${dayOrInvoices.dateKey}`;
-      modalSubtitle = subtitle || `Ngày: ${dayOrInvoices.dateKey}`;
     }
 
     if (invoiceViewerRef.current && images.length > 0) {
       invoiceViewerRef.current.open({
         images,
-        title: modalTitle,
-        subtitle: modalSubtitle,
+        title: title || 'Ảnh hóa đơn',
+        subtitle: subtitle || '',
       });
     } else {
       showGlobalToast('Chưa có ảnh chụp hóa đơn đính kèm.', 'info');
@@ -2206,15 +2330,6 @@ export default function PortalScreen() {
         <View style={styles.headerLeft}>
           <Text style={styles.groupNameText} numberOfLines={1}>{portalInfo?.name}</Text>
         </View>
-
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.priceCheckBtn} onPress={handleOpenPriceCheck} activeOpacity={0.8}>
-            <Text style={styles.priceCheckBtnText}>🥩 Giá thịt</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.feedbackBtn} onPress={() => handleOpenFeedback()} activeOpacity={0.8}>
-            <Text style={styles.feedbackBtnText}>💬 Phản ánh</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* KHUNG NỘI DUNG VỪA KHÍT VIEWPORT 100VH */}
@@ -2618,7 +2733,9 @@ export default function PortalScreen() {
                                               handleOpenInvoiceModal(
                                                 custInvoices,
                                                 `Hóa đơn [${entry.customerName}] - ${day.dateKey}`,
-                                                `Cơ sở: ${entry.customerName} | Ngày: ${day.dateKey}`
+                                                `Cơ sở: ${entry.customerName} | Ngày: ${day.dateKey}`,
+                                                day,
+                                                entry.customerName
                                               )
                                             }
                                             activeOpacity={0.7}
