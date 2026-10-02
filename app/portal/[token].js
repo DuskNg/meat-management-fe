@@ -3833,24 +3833,24 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   summaryToggleBtn: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 9,
-    paddingVertical: 3,
+    backgroundColor: '#FEE2E2', // Nền đỏ nhẹ nổi bật dễ nhận dạng cho nút Đóng
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#FCA5A5',
   },
   summaryToggleBtnCollapsed: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
+    backgroundColor: '#0284C7', // Nền xanh dương nổi bật cho nút Mở xem
+    borderColor: '#0284C7',
   },
   summaryToggleBtnText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
+    fontWeight: '800',
+    color: '#DC2626',
   },
   summaryToggleBtnTextCollapsed: {
-    color: '#1D4ED8',
+    color: '#FFFFFF',
     fontWeight: '800',
   },
 
