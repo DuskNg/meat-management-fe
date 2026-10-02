@@ -2,7 +2,7 @@
 // Chiến lược: Network First cho tài nguyên chính, Cache First cho assets tĩnh (ảnh, font)
 // Cơ chế tự cập nhật: So sánh phiên bản cache, phát hiện bản mới và tự reload
 
-const CACHE_VERSION = 'v' + Date.now(); // Tự động tăng phiên bản mỗi lần build
+const CACHE_VERSION = 'v2.1.0'; // Phiên bản tĩnh, chỉ tăng khi deploy bản chính thức
 const CACHE_NAME = 'meat-app-' + CACHE_VERSION;
 const STATIC_CACHE_NAME = 'meat-app-static-' + CACHE_VERSION;
 
@@ -68,8 +68,15 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
-  // Bỏ qua các yêu cầu đến API backend và Portal link (luôn lấy trực tiếp từ mạng, không cache)
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/portal') || url.hostname !== self.location.hostname) {
+  // Bỏ qua môi trường phát triển localhost và các API / Portal link
+  if (
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
+    url.hostname === '0.0.0.0' ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/portal') ||
+    url.hostname !== self.location.hostname
+  ) {
     return;
   }
   
