@@ -1635,11 +1635,11 @@ export default function PortalScreen() {
 
   const handleToggleSummary = () => {
     if (isSummaryOpen) {
-      // Đóng lại: trượt từ từ xuống bottom
+      // Đóng lại: chuyển động animation mượt mà từ trên xuống dưới
       Animated.timing(summarySlideAnim, {
         toValue: 0,
-        duration: 320,
-        easing: Easing.bezier(0.4, 0, 0.2, 1),
+        duration: 380,
+        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
         useNativeDriver: false,
       }).start(() => {
         setIsSummaryOpen(false);
@@ -1649,8 +1649,8 @@ export default function PortalScreen() {
       setIsSummaryOpen(true);
       Animated.timing(summarySlideAnim, {
         toValue: 1,
-        duration: 320,
-        easing: Easing.bezier(0.4, 0, 0.2, 1),
+        duration: 380,
+        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
         useNativeDriver: false,
       }).start();
     }
@@ -1702,7 +1702,13 @@ export default function PortalScreen() {
     try {
       setLoading(true);
       setError(null);
-      const res = await axios.get(`${API_HOST}/api/v1/portal/info/${token}`);
+      const res = await axios.get(`${API_HOST}/api/v1/portal/info/${token}`, {
+        params: { _t: Date.now() },
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+        },
+      });
       const data = res.data?.data;
       setPortalInfo(data);
 
@@ -1786,8 +1792,11 @@ export default function PortalScreen() {
       );
       headers['x-portal-env'] = isDev ? 'development' : 'production';
 
+      headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      headers['Pragma'] = 'no-cache';
+
       const res = await axios.get(`${API_HOST}/api/v1/portal/data/${token}`, {
-        params: { customerId: custParam },
+        params: { customerId: custParam, _t: Date.now() },
         headers,
       });
 
@@ -2887,18 +2896,31 @@ export default function PortalScreen() {
                         </View>
                       </TouchableOpacity>
 
-                      {/* Phần nội dung chi tiết: đi từ từ xuống bottom khi bấm Đóng */}
+                      {/* Phần nội dung chi tiết: hiệu ứng animation trượt từ từ từ trên xuống khi bấm Đóng */}
                       <Animated.View
                         style={{
                           maxHeight: summarySlideAnim.interpolate({
                             inputRange: [0, 1],
-                            outputRange: [0, 240],
+                            outputRange: [0, 260],
                           }),
                           opacity: summarySlideAnim.interpolate({
-                            inputRange: [0, 0.4, 1],
-                            outputRange: [0, 0.5, 1],
+                            inputRange: [0, 0.35, 1],
+                            outputRange: [0, 0.6, 1],
                           }),
+                          transform: [
+                            {
+                              translateY: summarySlideAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [25, 0],
+                              }),
+                            },
+                          ],
                           overflow: 'hidden',
+                          ...(Platform.OS === 'web'
+                            ? {
+                                transition: 'all 0.38s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                              }
+                            : {}),
                         }}
                       >
                         <View style={styles.invSumRow}>

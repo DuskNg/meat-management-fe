@@ -61,10 +61,12 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        var swUrl = '/sw.js';
+        var swUrl = '/sw.js?t=' + Date.now();
         navigator.serviceWorker.register(swUrl)
           .then(function (registration) {
             console.log('[App] Service Worker đăng ký thành công:', registration.scope);
+            // Ép kiểm tra bản cập nhật mới ngay lập tức
+            registration.update();
 
             // Lắng nghe khi có Service Worker mới đang chờ kích hoạt
             registration.addEventListener('updatefound', function () {

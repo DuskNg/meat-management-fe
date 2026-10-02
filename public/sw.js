@@ -68,8 +68,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
-  // Bỏ qua các yêu cầu đến API backend (không cache)
-  if (url.pathname.startsWith('/api/') || url.hostname !== self.location.hostname) {
+  // Bỏ qua các yêu cầu đến API backend và Portal link (luôn lấy trực tiếp từ mạng, không cache)
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/portal') || url.hostname !== self.location.hostname) {
     return;
   }
   
@@ -98,21 +98,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // Chiến lược cho assets tĩnh (_expo/static, assets): Stale-While-Revalidate
+  // Chiến lược cho assets tĩnh (_expo/static, assets): ƯU TIÊN NETWORK FIRST để luôn nhận code mới nhất tức thì
   if (url.pathname.startsWith('/_expo/static/') || 
       url.pathname.startsWith('/assets/')) {
     event.respondWith(
-      caches.open(STATIC_CACHE_NAME).then((cache) => {
-        return cache.match(event.request).then((cached) => {
-          const networkFetch = fetch(event.request).then((response) => {
-            if (response.ok) {
-              cache.put(event.request, response.clone());
-            }
-            return response;
-          });
-          return cached || networkFetch;
-        });
-      })
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const responseClone = response.clone();
+            caches.open(STATIC_CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(() => {
+          // Fallback về cache chỉ khi mất mạng
+          return caches.match(event.request);
+        })
     );
     return;
   }
