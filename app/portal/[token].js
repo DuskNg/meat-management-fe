@@ -2551,8 +2551,52 @@ export default function PortalScreen() {
 
               {/* BẢNG DỮ LIỆU INVOICE - VỪA KHÍT 100% CHIỀU RỘNG, KHÔNG SCROLL NGANG */}
               {displayInvoiceData?.sortedDays && displayInvoiceData.sortedDays.length > 0 ? (
-                <View style={styles.tableScrollWrapper}>
-                  <View style={styles.invoiceTableContainer}>
+                <>
+                  {/* THANH TÓM TẮT NHANH CÔNG NỢ KỲ LỌC NGAY ĐẦU (KHÔNG CẦN KÉO XUỐNG CUỐI) */}
+                  {displayInvoiceData?.totals && (
+                    <View style={styles.periodQuickSummaryBar}>
+                      <View style={styles.periodQuickSummaryCol}>
+                        <Text style={styles.periodQuickSummaryLabel}>TỔNG TIỀN HÀNG:</Text>
+                        <Text style={styles.periodQuickSummaryValue}>
+                          {formatCurrency(displayInvoiceData.totals.totalMeat)}
+                        </Text>
+                      </View>
+
+                      {displayInvoiceData.totals.totalReturn > 0 ? (
+                        <View style={styles.periodQuickSummaryColCenter}>
+                          <Text style={[styles.periodQuickSummaryLabel, { color: '#C2410C' }]}>TRẢ HÀNG:</Text>
+                          <Text style={[styles.periodQuickSummarySubText, { color: '#DC2626' }]}>
+                            -{formatCurrency(displayInvoiceData.totals.totalReturn)}
+                          </Text>
+                        </View>
+                      ) : displayInvoiceData.totals.totalPaid > 0 ? (
+                        <View style={styles.periodQuickSummaryColCenter}>
+                          <Text style={[styles.periodQuickSummaryLabel, { color: '#047857' }]}>ĐÃ TRẢ:</Text>
+                          <Text style={[styles.periodQuickSummarySubText, { color: '#059669' }]}>
+                            -{formatCurrency(displayInvoiceData.totals.totalPaid)}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      <View style={[styles.periodQuickSummaryCol, styles.periodQuickSummaryRightCol]}>
+                        <Text style={styles.periodQuickSummaryDebtLabel}>CÒN LẠI PHẢI THU:</Text>
+                        <Text
+                          style={[
+                            styles.periodQuickSummaryDebtValue,
+                            {
+                              color:
+                                displayInvoiceData.totals.finalDebt > 0 ? '#DC2626' : '#059669',
+                            },
+                          ]}
+                        >
+                          {formatCurrency(displayInvoiceData.totals.finalDebt)}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={styles.tableScrollWrapper}>
+                    <View style={styles.invoiceTableContainer}>
                     {/* Tiêu đề các cột - Cố định ở trên cùng, không bị cuộn hay hở viền trên */}
                     <View style={styles.tableHeaderRowStyle}>
                       <Text style={[styles.thCell, styles.thDate]}>NGÀY</Text>
@@ -2822,80 +2866,81 @@ export default function PortalScreen() {
                         </View>
                       );
                     })}
-
-                      {/* Khối tổng kết cuối bảng chuẩn đồ họa cao cấp */}
-                      <View style={styles.invoiceSummaryCard}>
-                        <View style={styles.invSumRow}>
-                          <Text style={styles.invSumLabel}>TỔNG TIỀN HÀNG:</Text>
-                          <Text style={styles.invSumValue}>
-                            {formatCurrency(displayInvoiceData.totals.totalMeat)}
-                          </Text>
-                        </View>
-
-                        {displayInvoiceData.totals.totalReturn > 0 && (
-                          <View style={[styles.invSumRow, styles.invSumReturnRow]}>
-                            <Text style={[styles.invSumLabel, { color: '#C2410C' }]}>
-                              TIỀN HÀNG TRẢ VỀ:
-                            </Text>
-                            <Text style={[styles.invSumValue, { color: '#DC2626' }]}>
-                              - {formatCurrency(displayInvoiceData.totals.totalReturn)}
-                            </Text>
-                          </View>
-                        )}
-
-                        {(displayInvoiceData.totals.totalPaid > 0 || displayInvoiceData.totals.paidBreakdownNote) && (
-                          <View
-                            style={[
-                              styles.invSumRow,
-                              styles.invSumPaidRow,
-                              displayInvoiceData.totals.paidBreakdownNote && {
-                                flexDirection: 'column',
-                                alignItems: 'stretch',
-                              },
-                            ]}
-                          >
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                width: '100%',
-                              }}
-                            >
-                              <Text style={[styles.invSumLabel, { color: '#047857' }]}>
-                                ĐÃ THANH TOÁN:
-                              </Text>
-                              <Text style={[styles.invSumValue, { color: '#059669' }]}>
-                                - {formatCurrency(displayInvoiceData.totals.totalPaid)}
-                              </Text>
-                            </View>
-                            {displayInvoiceData.totals.paidBreakdownNote ? (
-                              <Text style={styles.invSumPaidBreakdownText}>
-                                {displayInvoiceData.totals.paidBreakdownNote}
-                              </Text>
-                            ) : null}
-                          </View>
-                        )}
-
-                        <View style={[styles.invSumRow, styles.invSumFinalRow]}>
-                          <Text style={styles.invSumFinalLabel}>CÒN LẠI PHẢI THU:</Text>
-                          <Text
-                            style={[
-                              styles.invSumFinalValue,
-                              {
-                                color:
-                                  displayInvoiceData.totals.finalDebt > 0 ? '#DC2626' : '#059669',
-                              },
-                            ]}
-                          >
-                            {formatCurrency(displayInvoiceData.totals.finalDebt)}
-                          </Text>
-                        </View>
-                      </View>
                     </ScrollView>
+
+                    {/* Khối tổng kết ghim cố định ở đáy bảng (Sticky Footer - Không cần cuộn xuống cuối mới thấy) */}
+                    <View style={styles.invoiceSummaryCard}>
+                      <View style={styles.invSumRow}>
+                        <Text style={styles.invSumLabel}>TỔNG TIỀN HÀNG:</Text>
+                        <Text style={styles.invSumValue}>
+                          {formatCurrency(displayInvoiceData.totals.totalMeat)}
+                        </Text>
+                      </View>
+
+                      {displayInvoiceData.totals.totalReturn > 0 && (
+                        <View style={[styles.invSumRow, styles.invSumReturnRow]}>
+                          <Text style={[styles.invSumLabel, { color: '#C2410C' }]}>
+                            TIỀN HÀNG TRẢ VỀ:
+                          </Text>
+                          <Text style={[styles.invSumValue, { color: '#DC2626' }]}>
+                            - {formatCurrency(displayInvoiceData.totals.totalReturn)}
+                          </Text>
+                        </View>
+                      )}
+
+                      {(displayInvoiceData.totals.totalPaid > 0 || displayInvoiceData.totals.paidBreakdownNote) && (
+                        <View
+                          style={[
+                            styles.invSumRow,
+                            styles.invSumPaidRow,
+                            displayInvoiceData.totals.paidBreakdownNote && {
+                              flexDirection: 'column',
+                              alignItems: 'stretch',
+                            },
+                          ]}
+                        >
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              width: '100%',
+                            }}
+                          >
+                            <Text style={[styles.invSumLabel, { color: '#047857' }]}>
+                              ĐÃ THANH TOÁN:
+                            </Text>
+                            <Text style={[styles.invSumValue, { color: '#059669' }]}>
+                              - {formatCurrency(displayInvoiceData.totals.totalPaid)}
+                            </Text>
+                          </View>
+                          {displayInvoiceData.totals.paidBreakdownNote ? (
+                            <Text style={styles.invSumPaidBreakdownText}>
+                              {displayInvoiceData.totals.paidBreakdownNote}
+                            </Text>
+                          ) : null}
+                        </View>
+                      )}
+
+                      <View style={[styles.invSumRow, styles.invSumFinalRow]}>
+                        <Text style={styles.invSumFinalLabel}>CÒN LẠI PHẢI THU:</Text>
+                        <Text
+                          style={[
+                            styles.invSumFinalValue,
+                            {
+                              color:
+                                displayInvoiceData.totals.finalDebt > 0 ? '#DC2626' : '#059669',
+                            },
+                          ]}
+                        >
+                          {formatCurrency(displayInvoiceData.totals.finalDebt)}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
                 </View>
-              ) : (
+              </>
+            ) : (
                 <View style={styles.emptyCard}>
                   <Text style={styles.emptyText}>
                     {searchKeyword.trim()
@@ -3727,19 +3772,74 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#DC2626',
   },
+
+  // ─── THANH TÓM TẮT NHANH CÔNG NỢ KỲ LỌC (NGAY ĐẦU - KHÔNG CẦN CUỘN) ───
+  periodQuickSummaryBar: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderLeftWidth: 4,
+    borderLeftColor: '#EF4444',
+    paddingHorizontal: 10,
+    paddingVertical: 5.5,
+    marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  periodQuickSummaryCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  periodQuickSummaryColCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  periodQuickSummaryRightCol: {
+    justifyContent: 'flex-end',
+  },
+  periodQuickSummaryLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  periodQuickSummaryValue: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  periodQuickSummaryDebtLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B91C1C',
+    textTransform: 'uppercase',
+  },
+  periodQuickSummaryDebtValue: {
+    fontSize: 14.5,
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
+  periodQuickSummarySubText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
   tableScrollWrapper: {
     flex: 1,
     minHeight: 0,
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: '#94A3B8',
     overflow: 'hidden',
-    width: '100%',
-  },
-  tableScrollWrapper: {
-    flex: 1,
-    minHeight: 0,
     width: '100%',
   },
   tableVerticalScroll: {
@@ -3755,8 +3855,7 @@ const styles = StyleSheet.create({
     minHeight: 0,
     width: '100%',
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 9,
-    borderTopRightRadius: 9,
+    borderRadius: 9,
     overflow: 'hidden',
   },
   tableHeaderRowStyle: {
@@ -4009,23 +4108,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1.5,
     borderTopColor: '#64748B',
+    borderBottomLeftRadius: 9,
+    borderBottomRightRadius: 9,
+    overflow: 'hidden',
   },
   invSumRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
   invSumLabel: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#334155',
   },
   invSumValue: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: 'bold',
     color: '#0F172A',
   },
@@ -4038,25 +4140,25 @@ const styles = StyleSheet.create({
     borderBottomColor: '#BBF7D0',
   },
   invSumPaidBreakdownText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontStyle: 'italic',
     color: '#047857',
-    marginTop: 4,
+    marginTop: 3,
     textAlign: 'right',
     fontWeight: '500',
   },
   invSumFinalRow: {
     backgroundColor: '#EFF6FF',
     borderBottomWidth: 0,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   invSumFinalLabel: {
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#1E3A8A',
   },
   invSumFinalValue: {
-    fontSize: 18,
+    fontSize: 16.5,
     fontWeight: 'bold',
   },
 });
