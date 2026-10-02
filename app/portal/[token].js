@@ -11,6 +11,8 @@ import {
   Platform,
   SafeAreaView,
   StatusBar,
+  Animated,
+  Easing,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import axios from 'axios';
@@ -1627,6 +1629,33 @@ export default function PortalScreen() {
   const [expandedTxId, setExpandedTxId] = useState(null);
   const [branchSelectOpen, setBranchSelectOpen] = useState(false);
 
+  // Trạng thái mở / đóng khối tổng kết công nợ ở chân bảng (mặc định ban đầu mở ra)
+  const [isSummaryOpen, setIsSummaryOpen] = useState(true);
+  const summarySlideAnim = useRef(new Animated.Value(1)).current; // 1 = mở, 0 = đóng
+
+  const handleToggleSummary = () => {
+    if (isSummaryOpen) {
+      // Đóng lại: trượt từ từ xuống bottom
+      Animated.timing(summarySlideAnim, {
+        toValue: 0,
+        duration: 320,
+        easing: Easing.bezier(0.4, 0, 0.2, 1),
+        useNativeDriver: false,
+      }).start(() => {
+        setIsSummaryOpen(false);
+      });
+    } else {
+      // Mở ra: trượt từ từ lên
+      setIsSummaryOpen(true);
+      Animated.timing(summarySlideAnim, {
+        toValue: 1,
+        duration: 320,
+        easing: Easing.bezier(0.4, 0, 0.2, 1),
+        useNativeDriver: false,
+      }).start();
+    }
+  };
+
   // Danh sách các cơ sở/chi nhánh dạng options cho CustomSelect
   const branchOptions = useMemo(() => {
     if (!portalInfo?.customers || portalInfo.customers.length === 0) return [];
@@ -2551,52 +2580,8 @@ export default function PortalScreen() {
 
               {/* BẢNG DỮ LIỆU INVOICE - VỪA KHÍT 100% CHIỀU RỘNG, KHÔNG SCROLL NGANG */}
               {displayInvoiceData?.sortedDays && displayInvoiceData.sortedDays.length > 0 ? (
-                <>
-                  {/* THANH TÓM TẮT NHANH CÔNG NỢ KỲ LỌC NGAY ĐẦU (KHÔNG CẦN KÉO XUỐNG CUỐI) */}
-                  {displayInvoiceData?.totals && (
-                    <View style={styles.periodQuickSummaryBar}>
-                      <View style={styles.periodQuickSummaryCol}>
-                        <Text style={styles.periodQuickSummaryLabel}>TỔNG TIỀN HÀNG:</Text>
-                        <Text style={styles.periodQuickSummaryValue}>
-                          {formatCurrency(displayInvoiceData.totals.totalMeat)}
-                        </Text>
-                      </View>
-
-                      {displayInvoiceData.totals.totalReturn > 0 ? (
-                        <View style={styles.periodQuickSummaryColCenter}>
-                          <Text style={[styles.periodQuickSummaryLabel, { color: '#C2410C' }]}>TRẢ HÀNG:</Text>
-                          <Text style={[styles.periodQuickSummarySubText, { color: '#DC2626' }]}>
-                            -{formatCurrency(displayInvoiceData.totals.totalReturn)}
-                          </Text>
-                        </View>
-                      ) : displayInvoiceData.totals.totalPaid > 0 ? (
-                        <View style={styles.periodQuickSummaryColCenter}>
-                          <Text style={[styles.periodQuickSummaryLabel, { color: '#047857' }]}>ĐÃ TRẢ:</Text>
-                          <Text style={[styles.periodQuickSummarySubText, { color: '#059669' }]}>
-                            -{formatCurrency(displayInvoiceData.totals.totalPaid)}
-                          </Text>
-                        </View>
-                      ) : null}
-
-                      <View style={[styles.periodQuickSummaryCol, styles.periodQuickSummaryRightCol]}>
-                        <Text style={styles.periodQuickSummaryDebtLabel}>CÒN LẠI PHẢI THU:</Text>
-                        <Text
-                          style={[
-                            styles.periodQuickSummaryDebtValue,
-                            {
-                              color:
-                                displayInvoiceData.totals.finalDebt > 0 ? '#DC2626' : '#059669',
-                            },
-                          ]}
-                        >
-                          {formatCurrency(displayInvoiceData.totals.finalDebt)}
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  <View style={styles.tableScrollWrapper}>
-                    <View style={styles.invoiceTableContainer}>
+                <View style={styles.tableScrollWrapper}>
+                  <View style={styles.invoiceTableContainer}>
                     {/* Tiêu đề các cột - Cố định ở trên cùng, không bị cuộn hay hở viền trên */}
                     <View style={styles.tableHeaderRowStyle}>
                       <Text style={[styles.thCell, styles.thDate]}>NGÀY</Text>
@@ -2868,79 +2853,125 @@ export default function PortalScreen() {
                     })}
                     </ScrollView>
 
-                    {/* Khối tổng kết ghim cố định ở đáy bảng (Sticky Footer - Không cần cuộn xuống cuối mới thấy) */}
+                    {/* Khối tổng kết ghim cố định ở đáy bảng dạng Mở ra / Đóng lại (đi từ từ xuống bottom) */}
                     <View style={styles.invoiceSummaryCard}>
-                      <View style={styles.invSumRow}>
-                        <Text style={styles.invSumLabel}>TỔNG TIỀN HÀNG:</Text>
-                        <Text style={styles.invSumValue}>
-                          {formatCurrency(displayInvoiceData.totals.totalMeat)}
-                        </Text>
-                      </View>
-
-                      {displayInvoiceData.totals.totalReturn > 0 && (
-                        <View style={[styles.invSumRow, styles.invSumReturnRow]}>
-                          <Text style={[styles.invSumLabel, { color: '#C2410C' }]}>
-                            TIỀN HÀNG TRẢ VỀ:
+                      {/* Thanh điều khiển mở/đóng: có text "Đóng" khi đang mở và "Mở xem" khi đóng */}
+                      <TouchableOpacity
+                        style={styles.summaryToggleBar}
+                        onPress={handleToggleSummary}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.summaryToggleLeft}>
+                          <Text style={styles.summaryToggleTitle}>
+                            {isSummaryOpen ? '📊 TỔNG HỢP CÔNG NỢ' : '💰 CÒN LẠI PHẢI THU:'}
                           </Text>
-                          <Text style={[styles.invSumValue, { color: '#DC2626' }]}>
-                            - {formatCurrency(displayInvoiceData.totals.totalReturn)}
+                          {!isSummaryOpen && (
+                            <Text
+                              style={[
+                                styles.summaryToggleCollapsedValue,
+                                {
+                                  color:
+                                    displayInvoiceData.totals.finalDebt > 0 ? '#DC2626' : '#059669',
+                                },
+                              ]}
+                            >
+                              {formatCurrency(displayInvoiceData.totals.finalDebt)}
+                            </Text>
+                          )}
+                        </View>
+
+                        <View style={[styles.summaryToggleBtn, !isSummaryOpen && styles.summaryToggleBtnCollapsed]}>
+                          <Text style={[styles.summaryToggleBtnText, !isSummaryOpen && styles.summaryToggleBtnTextCollapsed]}>
+                            {isSummaryOpen ? 'Đóng ✕' : 'Mở xem ⬆'}
                           </Text>
                         </View>
-                      )}
+                      </TouchableOpacity>
 
-                      {(displayInvoiceData.totals.totalPaid > 0 || displayInvoiceData.totals.paidBreakdownNote) && (
-                        <View
-                          style={[
-                            styles.invSumRow,
-                            styles.invSumPaidRow,
-                            displayInvoiceData.totals.paidBreakdownNote && {
-                              flexDirection: 'column',
-                              alignItems: 'stretch',
-                            },
-                          ]}
-                        >
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              width: '100%',
-                            }}
-                          >
-                            <Text style={[styles.invSumLabel, { color: '#047857' }]}>
-                              ĐÃ THANH TOÁN:
+                      {/* Phần nội dung chi tiết: đi từ từ xuống bottom khi bấm Đóng */}
+                      <Animated.View
+                        style={{
+                          maxHeight: summarySlideAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 240],
+                          }),
+                          opacity: summarySlideAnim.interpolate({
+                            inputRange: [0, 0.4, 1],
+                            outputRange: [0, 0.5, 1],
+                          }),
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <View style={styles.invSumRow}>
+                          <Text style={styles.invSumLabel}>TỔNG TIỀN HÀNG:</Text>
+                          <Text style={styles.invSumValue}>
+                            {formatCurrency(displayInvoiceData.totals.totalMeat)}
+                          </Text>
+                        </View>
+
+                        {displayInvoiceData.totals.totalReturn > 0 && (
+                          <View style={[styles.invSumRow, styles.invSumReturnRow]}>
+                            <Text style={[styles.invSumLabel, { color: '#C2410C' }]}>
+                              TIỀN HÀNG TRẢ VỀ:
                             </Text>
-                            <Text style={[styles.invSumValue, { color: '#059669' }]}>
-                              - {formatCurrency(displayInvoiceData.totals.totalPaid)}
+                            <Text style={[styles.invSumValue, { color: '#DC2626' }]}>
+                              - {formatCurrency(displayInvoiceData.totals.totalReturn)}
                             </Text>
                           </View>
-                          {displayInvoiceData.totals.paidBreakdownNote ? (
-                            <Text style={styles.invSumPaidBreakdownText}>
-                              {displayInvoiceData.totals.paidBreakdownNote}
-                            </Text>
-                          ) : null}
-                        </View>
-                      )}
+                        )}
 
-                      <View style={[styles.invSumRow, styles.invSumFinalRow]}>
-                        <Text style={styles.invSumFinalLabel}>CÒN LẠI PHẢI THU:</Text>
-                        <Text
-                          style={[
-                            styles.invSumFinalValue,
-                            {
-                              color:
-                                displayInvoiceData.totals.finalDebt > 0 ? '#DC2626' : '#059669',
-                            },
-                          ]}
-                        >
-                          {formatCurrency(displayInvoiceData.totals.finalDebt)}
-                        </Text>
-                      </View>
+                        {(displayInvoiceData.totals.totalPaid > 0 || displayInvoiceData.totals.paidBreakdownNote) && (
+                          <View
+                            style={[
+                              styles.invSumRow,
+                              styles.invSumPaidRow,
+                              displayInvoiceData.totals.paidBreakdownNote && {
+                                flexDirection: 'column',
+                                alignItems: 'stretch',
+                              },
+                            ]}
+                          >
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                width: '100%',
+                              }}
+                            >
+                              <Text style={[styles.invSumLabel, { color: '#047857' }]}>
+                                ĐÃ THANH TOÁN:
+                              </Text>
+                              <Text style={[styles.invSumValue, { color: '#059669' }]}>
+                                - {formatCurrency(displayInvoiceData.totals.totalPaid)}
+                              </Text>
+                            </View>
+                            {displayInvoiceData.totals.paidBreakdownNote ? (
+                              <Text style={styles.invSumPaidBreakdownText}>
+                                {displayInvoiceData.totals.paidBreakdownNote}
+                              </Text>
+                            ) : null}
+                          </View>
+                        )}
+
+                        <View style={[styles.invSumRow, styles.invSumFinalRow]}>
+                          <Text style={styles.invSumFinalLabel}>CÒN LẠI PHẢI THU:</Text>
+                          <Text
+                            style={[
+                              styles.invSumFinalValue,
+                              {
+                                color:
+                                  displayInvoiceData.totals.finalDebt > 0 ? '#DC2626' : '#059669',
+                              },
+                            ]}
+                          >
+                            {formatCurrency(displayInvoiceData.totals.finalDebt)}
+                          </Text>
+                        </View>
+                      </Animated.View>
                     </View>
                   </View>
                 </View>
-              </>
-            ) : (
+              ) : (
                 <View style={styles.emptyCard}>
                   <Text style={styles.emptyText}>
                     {searchKeyword.trim()
@@ -3773,63 +3804,54 @@ const styles = StyleSheet.create({
     color: '#DC2626',
   },
 
-  // ─── THANH TÓM TẮT NHANH CÔNG NỢ KỲ LỌC (NGAY ĐẦU - KHÔNG CẦN CUỘN) ───
-  periodQuickSummaryBar: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderLeftWidth: 4,
-    borderLeftColor: '#EF4444',
-    paddingHorizontal: 10,
-    paddingVertical: 5.5,
-    marginBottom: 6,
+  // ─── THANH ĐIỀU KHIỂN MỞ / ĐÓNG KHỐI TỔNG KẾT Ở BOTTOM ───
+  summaryToggleBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    elevation: 1,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 10,
+    paddingVertical: 5.5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#CBD5E1',
+    cursor: 'pointer',
   },
-  periodQuickSummaryCol: {
+  summaryToggleLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    flex: 1,
   },
-  periodQuickSummaryColCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  periodQuickSummaryRightCol: {
-    justifyContent: 'flex-end',
-  },
-  periodQuickSummaryLabel: {
-    fontSize: 10,
+  summaryToggleTitle: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#64748B',
-    textTransform: 'uppercase',
+    color: '#334155',
+    letterSpacing: 0.2,
   },
-  periodQuickSummaryValue: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#0F172A',
-  },
-  periodQuickSummaryDebtLabel: {
-    fontSize: 10,
+  summaryToggleCollapsedValue: {
+    fontSize: 13.5,
     fontWeight: '800',
-    color: '#B91C1C',
-    textTransform: 'uppercase',
   },
-  periodQuickSummaryDebtValue: {
-    fontSize: 14.5,
-    fontWeight: 'bold',
-    color: '#DC2626',
+  summaryToggleBtn: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
   },
-  periodQuickSummarySubText: {
-    fontSize: 10,
+  summaryToggleBtnCollapsed: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+  },
+  summaryToggleBtnText: {
+    fontSize: 11,
     fontWeight: '700',
+    color: '#475569',
+  },
+  summaryToggleBtnTextCollapsed: {
+    color: '#1D4ED8',
+    fontWeight: '800',
   },
 
   tableScrollWrapper: {
