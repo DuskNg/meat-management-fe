@@ -2412,7 +2412,7 @@ export default function PortalScreen() {
               <View style={styles.debtCardMainRow}>
                 <View style={styles.debtTitleAndAmount}>
                   <Text style={styles.debtCardLabel}>
-                    TỔNG TIỀN NỢ:
+                    TỔNG NỢ CÁC THÁNG:
                   </Text>
                   <Text style={styles.debtMainAmount}>
                     {formatCurrency(portalData?.summary?.totalDebt || portalData?.summary?.debt || 0)}
@@ -2863,7 +2863,7 @@ export default function PortalScreen() {
                       >
                         <View style={styles.summaryToggleLeft}>
                           <Text style={styles.summaryToggleTitle}>
-                            {isSummaryOpen ? '📊 TỔNG HỢP CÔNG NỢ' : '💰 CÒN LẠI PHẢI THU:'}
+                            {isSummaryOpen ? '📊 TỔNG NỢ KỲ' : '💰 TỔNG NỢ KỲ:'}
                           </Text>
                           {!isSummaryOpen && (
                             <Text
@@ -2954,7 +2954,7 @@ export default function PortalScreen() {
                         )}
 
                         <View style={[styles.invSumRow, styles.invSumFinalRow]}>
-                          <Text style={styles.invSumFinalLabel}>CÒN LẠI PHẢI THU:</Text>
+                          <Text style={styles.invSumFinalLabel}>TỔNG NỢ KỲ:</Text>
                           <Text
                             style={[
                               styles.invSumFinalValue,
