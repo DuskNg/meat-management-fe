@@ -1635,22 +1635,21 @@ export default function PortalScreen() {
 
   const handleToggleSummary = () => {
     if (isSummaryOpen) {
-      // Đóng lại: chuyển động animation mượt mà từ trên xuống dưới
+      // Đóng lại: phản hồi trạng thái nút ngay lập tức, animation trượt xuống nhanh gọn (180ms)
+      setIsSummaryOpen(false);
       Animated.timing(summarySlideAnim, {
         toValue: 0,
-        duration: 380,
-        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
-      }).start(() => {
-        setIsSummaryOpen(false);
-      });
+      }).start();
     } else {
-      // Mở ra: trượt từ từ lên
+      // Mở ra: phản hồi trạng thái nút ngay lập tức, animation trượt lên nhanh gọn (180ms)
       setIsSummaryOpen(true);
       Animated.timing(summarySlideAnim, {
         toValue: 1,
-        duration: 380,
-        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }).start();
     }
@@ -2904,23 +2903,18 @@ export default function PortalScreen() {
                             outputRange: [0, 260],
                           }),
                           opacity: summarySlideAnim.interpolate({
-                            inputRange: [0, 0.35, 1],
-                            outputRange: [0, 0.6, 1],
+                            inputRange: [0, 1],
+                            outputRange: [0, 1],
                           }),
                           transform: [
                             {
                               translateY: summarySlideAnim.interpolate({
                                 inputRange: [0, 1],
-                                outputRange: [25, 0],
+                                outputRange: [16, 0],
                               }),
                             },
                           ],
                           overflow: 'hidden',
-                          ...(Platform.OS === 'web'
-                            ? {
-                                transition: 'all 0.38s cubic-bezier(0.25, 0.1, 0.25, 1)',
-                              }
-                            : {}),
                         }}
                       >
                         <View style={styles.invSumRow}>
