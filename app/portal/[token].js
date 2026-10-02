@@ -1629,9 +1629,9 @@ export default function PortalScreen() {
   const [expandedTxId, setExpandedTxId] = useState(null);
   const [branchSelectOpen, setBranchSelectOpen] = useState(false);
 
-  // Trạng thái mở / đóng khối tổng kết công nợ ở chân bảng (mặc định ban đầu mở ra)
-  const [isSummaryOpen, setIsSummaryOpen] = useState(true);
-  const summarySlideAnim = useRef(new Animated.Value(1)).current; // 1 = mở, 0 = đóng
+  // Trạng thái mở / đóng khối tổng kết công nợ ở chân bảng (mặc định ban đầu chưa mở)
+  const [isSummaryOpen, setIsSummaryOpen] = useState(false);
+  const summarySlideAnim = useRef(new Animated.Value(0)).current; // 1 = mở, 0 = đóng
 
   const handleToggleSummary = () => {
     if (isSummaryOpen) {
