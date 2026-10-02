@@ -18,10 +18,12 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
 import ImagePreviewModal from './ImagePreviewModal';
+import PopupModal from './PopupModal';
 import { showGlobalToast } from '../store/toastStore';
 import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../utils/debtMessageHelper';
 import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
 import { getLunarDateString } from '../utils/lunarCalendar';
+import { auditExportDebtData } from '../utils/debtExportAuditHelper';
 
 // Helper: lấy ngày hôm nay dạng DD/MM/YYYY
 const getTodayFormatted = () => {
@@ -543,6 +545,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
   // Ref điều khiển modal phóng to ảnh xem trước
   const imagePreviewModalRef = useRef(null);
+  // Ref điều khiển modal cảnh báo kiểm tra đơn hàng (trùng đơn, thiếu lịch)
+  const popupRef = useRef(null);
 
   // 1. Phơi bày các hàm điều khiển ra bên ngoài
   useImperativeHandle(ref, () => ({
@@ -1766,10 +1770,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
-  // Xử lý tải ảnh hoặc chuyển tiếp Zalo:
-  // - Trên PC: Luôn tải file ảnh trực tiếp về máy tính.
-  // - Trên Mobile: Luôn chuyển tiếp ảnh vào Zalo (qua Web Share hoặc mở Zalo chat).
-  const handleDownloadImage = async () => {
+  // Thực hiện tải file ảnh về máy tính hoặc chuyển tiếp vào Zalo
+  const doActualDownloadImage = async () => {
     if (!imageUri) return;
 
     const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
@@ -1790,6 +1792,44 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       phone: customer?.phone,
       customerName: customer?.name,
     });
+  };
+
+  // Xử lý kiểm tra dữ liệu trước khi tải ảnh:
+  // - Trên PC: Tải file ảnh trực tiếp về máy.
+  // - Trên Mobile: Chuyển tiếp ảnh vào Zalo.
+  // - Kiểm tra xem có mục nào trùng tên thịt và số kg (lệch < 0.2kg) trong cùng 1 ngày không.
+  // - Đối với nhà hàng đặt hàng thường xuyên (> 15 lần/tháng), kiểm tra các ngày không có lịch trong tháng (khi lọc theo tháng).
+  // - Nếu có bất thường: hiển thị pop-up cảnh báo để người dùng xác nhận hoặc kiểm tra lại.
+  const handleDownloadImage = async () => {
+    if (!imageUri) return;
+
+    // Kiểm toán dữ liệu xuất công nợ trước khi xuất ảnh
+    const auditResult = auditExportDebtData({
+      days: rows,
+      transactions,
+      activeTab,
+      fromDate,
+      toDate,
+      selectedMonth,
+      isExportMonth,
+    });
+
+    if (auditResult.hasWarning) {
+      popupRef.current?.show({
+        type: 'confirm',
+        title: '⚠️ CẢNH BÁO KIỂM TRA ĐƠN HÀNG',
+        message: auditResult.warningMessage,
+        confirmText: 'Vẫn tải ảnh',
+        cancelText: 'Kiểm tra lại',
+        onConfirm: () => {
+          doActualDownloadImage();
+        },
+      });
+      return;
+    }
+
+    // Không phát hiện bất thường -> tiến hành tải ảnh ngay
+    await doActualDownloadImage();
   };
 
   // Xử lý áp dụng các mốc thời gian chọn nhanh (Tháng này, Tháng trước, 1-15, 16-hết, 7 ngày, Toàn bộ)
@@ -2372,6 +2412,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       {/* Modal hiển thị ảnh phóng to toàn màn hình hỗ trợ zoom đa cấp độ */}
       <ImagePreviewModal ref={imagePreviewModalRef} />
+
+      {/* Modal cảnh báo xác nhận khi phát hiện trùng đơn trong ngày hoặc thiếu lịch trong tháng */}
+      <PopupModal ref={popupRef} />
     </>
   );
 });

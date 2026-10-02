@@ -867,6 +867,52 @@ const resolveCustomerForSub = (sub, custList) => {
     const cleanDetectedNoSpace = cleanDetected.replace(/\s+/g, '');
     const currentCustClean = matchedCust ? removeDiacritics(matchedCust.name.toLowerCase().trim()) : '';
 
+    // 0a. ĐẶC BIỆT: Khớp ưu tiên khách "Bếp trung kính" nếu AI nhận diện là "Trung kính", "trung kh", "tuy kh", "trungkinh"...
+    // BẮT BUỘC ưu tiên tìm khách có chứa "bep trung kinh" / "bep" + "trung" + "kinh" trước,
+    // TUYỆT ĐỐI không để Rule 0 (Exact Match) khớp nhầm vào khách "Trungkinh"!
+    const isDetectedTrungKinh =
+      cleanDetected.includes('trung kinh') ||
+      cleanDetected.includes('bep trung kinh') ||
+      cleanDetected.includes('tuy kinh') ||
+      cleanDetected.includes('tung kinh') ||
+      cleanDetected.includes('truy kinh') ||
+      cleanDetected.includes('tug kinh') ||
+      cleanDetected.includes('trung kh') ||
+      cleanDetected.includes('tuy kh') ||
+      cleanDetected.includes('tuy ks') ||
+      cleanDetected.includes('tug kh') ||
+      cleanDetected.includes('tung kh') ||
+      cleanDetected.includes('truy kh') ||
+      cleanDetectedNoSpace === 'trungkinh' ||
+      cleanDetectedNoSpace === 'tuykinh' ||
+      cleanDetectedNoSpace === 'tungkinh' ||
+      cleanDetectedNoSpace === 'truykinh' ||
+      cleanDetectedNoSpace === 'tugkinh' ||
+      cleanDetectedNoSpace === 'tuykh' ||
+      cleanDetectedNoSpace === 'tuykhs' ||
+      cleanDetectedNoSpace === 'tuyks' ||
+      cleanDetectedNoSpace === 'tugkh' ||
+      cleanDetectedNoSpace === 'tungkh' ||
+      cleanDetectedNoSpace === 'truykh' ||
+      cleanDetectedNoSpace.includes('trungkinh') ||
+      cleanDetectedNoSpace.includes('tuykinh') ||
+      cleanDetectedNoSpace.includes('beptrungkinh') ||
+      (cleanDetected.includes('trung') && cleanDetected.includes('kinh'));
+
+    if (isDetectedTrungKinh) {
+      const bepTrungKinhCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('bep trung kinh') || (cClean.includes('bep') && cClean.includes('trung') && cClean.includes('kinh'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('trung kinh') || cClean === 'trungkinh';
+      }) || null;
+
+      if (bepTrungKinhCust) {
+        return bepTrungKinhCust;
+      }
+    }
+
     // 0. BẮT BUỘC ƯU TIÊN KHỚP CHÍNH XÁC 100% (Exact Match) TRƯỚC TIÊN
     // Nếu tên khách AI bóc tách trùng khớp hoàn toàn với một khách trong DB (ví dụ: "Hồng hạnh hqv")
     // thì lấy ngay khách này, TUYỆT ĐỐI không để các rule heuristic phía dưới ghi đè!
@@ -1262,11 +1308,15 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetectedNoSpace.includes('trungkinh') ||
       cleanDetectedNoSpace.includes('beptrungkinh')
     ) {
-      if (!currentCustClean.includes('trung') || !currentCustClean.includes('kinh')) {
+      // Luôn ưu tiên đổi sang "Bếp trung kính" nếu tìm thấy khách "Bếp trung kính"
+      const bepTrungKinhCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('bep trung kinh') || (cClean.includes('bep') && cClean.includes('trung') && cClean.includes('kinh'));
+      });
+      if (bepTrungKinhCust) {
+        matchedCust = bepTrungKinhCust;
+      } else if (!currentCustClean.includes('trung') || !currentCustClean.includes('kinh')) {
         const custTrungKinh = custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('bep trung kinh') || (cClean.includes('trung') && cClean.includes('kinh'));
-        }) || custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
           return cClean.includes('trung kinh') || cClean === 'trungkinh';
         }) || null;
@@ -1798,7 +1848,7 @@ const resolveCustomerForSub = (sub, custList) => {
       ) {
         matchedCust = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('bep trung kinh') || (cClean.includes('trung') && cClean.includes('kinh'));
+          return cClean.includes('bep trung kinh') || (cClean.includes('bep') && cClean.includes('trung') && cClean.includes('kinh'));
         }) || custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
           return cClean.includes('trung kinh') || cClean === 'trungkinh';

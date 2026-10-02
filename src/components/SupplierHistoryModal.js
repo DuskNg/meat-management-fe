@@ -72,6 +72,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('ALL');
+  const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'DEBT' | 'PAYMENT'
   const [selectContainerZIndex, setSelectContainerZIndex] = useState(10);
   const activeSupplierIdRef = useRef(null);
   const exportSupplierHistoryModalRef = useRef(null);
@@ -99,6 +100,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
       setHistory([]);
       setError('');
       setSelectedFilter('ALL');
+      setTypeFilter('ALL');
       setFromDate('');
       setToDate('');
       setVisible(true);
@@ -266,7 +268,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
   };
 
   // Lọc danh sách giao dịch theo khoảng ngày hoặc tháng đã chọn
-  const filteredHistory = useMemo(() => {
+  const dateFilteredHistory = useMemo(() => {
     const parsedFrom = parseDDMMYYYYToDate(fromDate, false);
     const parsedTo = parseDDMMYYYYToDate(toDate, true);
 
@@ -294,24 +296,42 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     return history;
   }, [history, fromDate, toDate, selectedFilter]);
 
-  // Tính tổng nợ nhập hàng, tổng tiền đã trả và chênh lệch cho danh sách đã lọc
-  const { totalDebt, totalPayment, balance } = useMemo(() => {
+  // Tính tổng nợ nhập hàng, tổng tiền đã trả, số lượng và chênh lệch cho danh sách đã lọc theo ngày
+  const { totalDebt, totalPayment, balance, countAll, countDebt, countPayment } = useMemo(() => {
     let debt = 0;
     let payment = 0;
-    filteredHistory.forEach((it) => {
+    let cDebt = 0;
+    let cPayment = 0;
+    dateFilteredHistory.forEach((it) => {
       const amt = parseFloat(it.amount || 0);
       if (it.type === 'DEBT') {
         debt += amt;
+        cDebt += 1;
       } else {
         payment += amt;
+        cPayment += 1;
       }
     });
     return {
       totalDebt: debt,
       totalPayment: payment,
       balance: debt - payment,
+      countAll: dateFilteredHistory.length,
+      countDebt: cDebt,
+      countPayment: cPayment,
     };
-  }, [filteredHistory]);
+  }, [dateFilteredHistory]);
+
+  // Áp dụng bộ lọc loại giao dịch (Tất cả / Tiền nhập hàng / Tiền thanh toán)
+  const filteredHistory = useMemo(() => {
+    if (typeFilter === 'DEBT') {
+      return dateFilteredHistory.filter((it) => it.type === 'DEBT');
+    }
+    if (typeFilter === 'PAYMENT') {
+      return dateFilteredHistory.filter((it) => it.type !== 'DEBT');
+    }
+    return dateFilteredHistory;
+  }, [dateFilteredHistory, typeFilter]);
 
   // Tính toán danh sách các ngày trong tháng không có tiền hàng nhập (DEBT) tính từ ngày tạo khách/NCC đến ngày hiện tại
   const { targetMonthKey, missingDays, maxEvaluatedDay, minEvaluatedDay, isCreatedAfter } = useMemo(() => {
@@ -835,27 +855,115 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
             ) : null}
           </View>
 
-          {/* Thanh thống kê nhanh theo tháng đang lọc */}
+          {/* Thanh thống kê nhanh theo tháng đang lọc (bấm vào từng thẻ để lọc nhanh) */}
           <View style={styles.summaryBar}>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Tiền hàng nhập (+)</Text>
+            <TouchableOpacity
+              style={[
+                styles.summaryItem,
+                styles.summaryItemPressable,
+                typeFilter === 'DEBT' && styles.summaryItemActiveDebt,
+              ]}
+              onPress={() => setTypeFilter((prev) => (prev === 'DEBT' ? 'ALL' : 'DEBT'))}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.summaryLabel, typeFilter === 'DEBT' && styles.summaryLabelActiveDebt]}>
+                Tiền hàng nhập (+)
+              </Text>
               <Text style={styles.summaryValueDebt}>+{formatCurrency(totalDebt)}</Text>
-            </View>
+              {typeFilter === 'DEBT' && <Text style={styles.summaryItemBadgeDebt}>● Đang lọc</Text>}
+            </TouchableOpacity>
+
             <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Đã trả (-)</Text>
+
+            <TouchableOpacity
+              style={[
+                styles.summaryItem,
+                styles.summaryItemPressable,
+                typeFilter === 'PAYMENT' && styles.summaryItemActivePayment,
+              ]}
+              onPress={() => setTypeFilter((prev) => (prev === 'PAYMENT' ? 'ALL' : 'PAYMENT'))}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.summaryLabel, typeFilter === 'PAYMENT' && styles.summaryLabelActivePayment]}>
+                Đã trả (-)
+              </Text>
               <Text style={styles.summaryValuePayment}>-{formatCurrency(totalPayment)}</Text>
-            </View>
+              {typeFilter === 'PAYMENT' && <Text style={styles.summaryItemBadgePayment}>● Đang lọc</Text>}
+            </TouchableOpacity>
+
             <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Chênh lệch</Text>
+
+            <TouchableOpacity
+              style={[
+                styles.summaryItem,
+                styles.summaryItemPressable,
+                typeFilter === 'ALL' && styles.summaryItemActiveAll,
+              ]}
+              onPress={() => setTypeFilter('ALL')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.summaryLabel, typeFilter === 'ALL' && styles.summaryLabelActiveAll]}>
+                Chênh lệch
+              </Text>
               <Text style={[
                 styles.summaryValueBalance,
                 balance > 0 ? styles.textDebt : (balance < 0 ? styles.textPayment : styles.textNeutral)
               ]}>
                 {balance > 0 ? '+' : ''}{formatCurrency(balance)}
               </Text>
-            </View>
+              {typeFilter === 'ALL' && <Text style={styles.summaryItemBadgeAll}>Tất cả</Text>}
+            </TouchableOpacity>
+          </View>
+
+          {/* Thanh Tab / Chip lọc theo loại giao dịch: Tất cả, Tiền nhập hàng, Tiền thanh toán */}
+          <View style={styles.typeFilterBar}>
+            <TouchableOpacity
+              style={[
+                styles.typeFilterChip,
+                typeFilter === 'ALL' && styles.typeFilterChipActiveAll,
+              ]}
+              onPress={() => setTypeFilter('ALL')}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.typeFilterChipText,
+                typeFilter === 'ALL' && styles.typeFilterChipTextActiveAll,
+              ]}>
+                Tất cả ({countAll})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.typeFilterChip,
+                typeFilter === 'DEBT' && styles.typeFilterChipActiveDebt,
+              ]}
+              onPress={() => setTypeFilter((prev) => (prev === 'DEBT' ? 'ALL' : 'DEBT'))}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.typeFilterChipText,
+                typeFilter === 'DEBT' && styles.typeFilterChipTextActiveDebt,
+              ]}>
+                📥 Tiền nhập hàng ({countDebt})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.typeFilterChip,
+                typeFilter === 'PAYMENT' && styles.typeFilterChipActivePayment,
+              ]}
+              onPress={() => setTypeFilter((prev) => (prev === 'PAYMENT' ? 'ALL' : 'PAYMENT'))}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.typeFilterChipText,
+                typeFilter === 'PAYMENT' && styles.typeFilterChipTextActivePayment,
+              ]}>
+                💵 Tiền thanh toán ({countPayment})
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {loading ? (
@@ -887,6 +995,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
                   <View style={styles.tableFooterRow}>
                     <Text style={styles.tableFooterText}>
                       Tổng cộng: <Text style={styles.tableFooterBold}>{filteredHistory.length}</Text> giao dịch
+                      {typeFilter === 'DEBT' ? ' (nhập hàng)' : (typeFilter === 'PAYMENT' ? ' (thanh toán)' : '')}
                     </Text>
                   </View>
                 ) : null
@@ -894,9 +1003,13 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>
-                    {selectedFilter === 'ALL'
-                      ? 'Chưa có giao dịch nhập hàng hay trả tiền nào được ghi nhận.'
-                      : `Không có giao dịch nào${selectedFilter ? ` trong ${selectedFilter}` : ''}.`}
+                    {typeFilter === 'DEBT'
+                      ? 'Không có giao dịch nhập hàng nào trong khoảng thời gian đã chọn.'
+                      : typeFilter === 'PAYMENT'
+                      ? 'Không có giao dịch trả tiền / thanh toán nào trong khoảng thời gian đã chọn.'
+                      : (selectedFilter === 'ALL'
+                        ? 'Chưa có giao dịch nhập hàng hay trả tiền nào được ghi nhận.'
+                        : `Không có giao dịch nào${selectedFilter ? ` trong ${selectedFilter}` : ''}.`)}
                   </Text>
                 </View>
               }
@@ -1057,8 +1170,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#F8FAFC',
     borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
+    padding: 6,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     justifyContent: 'space-between',
@@ -1066,6 +1179,102 @@ const styles = StyleSheet.create({
   summaryItem: {
     flex: 1,
     alignItems: 'center',
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  summaryItemPressable: {
+    cursor: 'pointer',
+  },
+  summaryItemActiveDebt: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  summaryItemActivePayment: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  summaryItemActiveAll: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  summaryLabelActiveDebt: {
+    color: '#DC2626',
+    fontWeight: 'bold',
+  },
+  summaryLabelActivePayment: {
+    color: '#16A34A',
+    fontWeight: 'bold',
+  },
+  summaryLabelActiveAll: {
+    color: '#1E293B',
+    fontWeight: 'bold',
+  },
+  summaryItemBadgeDebt: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginTop: 2,
+  },
+  summaryItemBadgePayment: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#16A34A',
+    marginTop: 2,
+  },
+  summaryItemBadgeAll: {
+    fontSize: 9.5,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  typeFilterBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  typeFilterChip: {
+    flex: 1,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  typeFilterChipActiveAll: {
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+  },
+  typeFilterChipActiveDebt: {
+    backgroundColor: '#DC2626',
+    borderColor: '#DC2626',
+  },
+  typeFilterChipActivePayment: {
+    backgroundColor: '#16A34A',
+    borderColor: '#16A34A',
+  },
+  typeFilterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  typeFilterChipTextActiveAll: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  typeFilterChipTextActiveDebt: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  typeFilterChipTextActivePayment: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   summaryLabel: {
     fontSize: 11,

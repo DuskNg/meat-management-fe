@@ -128,6 +128,13 @@ const MonthDetailDrawer = forwardRef(({
             </View>
 
             <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Trả hàng:</Text>
+              <Text style={[styles.summaryValue, { color: '#D97706', fontWeight: '600' }]}>
+                {formatCurrency(month.totalReturn || 0)}
+              </Text>
+            </View>
+
+            <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Đã trả:</Text>
               <Text style={[styles.summaryValue, { color: COLORS.primaryDark }]}>
                 {formatCurrency(month.totalPayment)}

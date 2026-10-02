@@ -71,6 +71,19 @@ const getStartOfMonthDisplay = () => {
   return `01/${mm}/${yy}`;
 };
 
+// Helper nhận diện thanh toán trả lại hàng
+const isReturnPayment = (p) => {
+  if (!p || !p.note) return false;
+  const trimNote = p.note.trim();
+  return (
+    trimNote.includes('[Trả lại hàng]') ||
+    trimNote.includes('[Trả hàng nhanh]') ||
+    trimNote.includes('[Trả hàng]') ||
+    trimNote.includes('Trả hàng') ||
+    trimNote.includes('Trả lại')
+  );
+};
+
 // Helper phân tích danh sách các món thịt trả lại từ ghi chú
 const parseReturnItems = (note, defaultAmount) => {
   if (!note) return [{ type: 'RETURN', name: 'TRẢ HÀNG', quantity: null, price: null, amount: defaultAmount }];
@@ -207,11 +220,7 @@ const computeMeatVolumeSummary = (filteredTrans, filteredPays) => {
   });
 
   (filteredPays || []).forEach(p => {
-    const trimNote = (p.note || '').trim();
-    const isReturn = trimNote.includes('[Trả lại hàng]') ||
-      trimNote.includes('[Trả hàng nhanh]') ||
-      trimNote.includes('Trả hàng') ||
-      trimNote.includes('Trả lại');
+    const isReturn = isReturnPayment(p);
 
     if (isReturn) {
       const returnItems = parseReturnItems(p.note, parseFloat(p.amount || 0));
@@ -544,6 +553,7 @@ const CustomerDebtHistoryModal = forwardRef(({
             totalDebt: 0,
             remainingDebt: 0,
             totalPayment: 0,
+            totalReturn: 0,
           });
         }
         const g = map.get(key);
@@ -584,6 +594,7 @@ const CustomerDebtHistoryModal = forwardRef(({
             const transDateKey = toDateKey(alloc.date);
             if (map.has(transDateKey)) {
               const g = map.get(transDateKey);
+              const isReturn = isReturnPayment(p);
               // Kiểm tra xem lượt trả này đã được thêm vào ngày nợ này chưa (tránh nhân đôi)
               if (!g.payments.some((existingPay) => existingPay.id === p.id)) {
                 g.payments.push({
@@ -593,6 +604,7 @@ const CustomerDebtHistoryModal = forwardRef(({
                   paidAt: p.paidAt,
                   amount: alloc.amount, // Số tiền được phân bổ cho ngày nợ này
                   note: p.note,
+                  isReturn,
                   invoices: p.invoices || [],
                   allocations: [alloc],
                 });
@@ -600,7 +612,11 @@ const CustomerDebtHistoryModal = forwardRef(({
                   g.invoices = g.invoices || [];
                   g.invoices.push(...p.invoices);
                 }
-                g.totalPayment += alloc.amount;
+                if (isReturn) {
+                  g.totalReturn = (g.totalReturn || 0) + alloc.amount;
+                } else {
+                  g.totalPayment += alloc.amount;
+                }
               } else {
                 const existingPay = g.payments.find((existingPay) => existingPay.id === p.id);
                 existingPay.amount += alloc.amount;
@@ -619,7 +635,11 @@ const CustomerDebtHistoryModal = forwardRef(({
                     }
                   });
                 }
-                g.totalPayment += alloc.amount;
+                if (isReturn) {
+                  g.totalReturn = (g.totalReturn || 0) + alloc.amount;
+                } else {
+                  g.totalPayment += alloc.amount;
+                }
               }
             }
           });
@@ -629,6 +649,7 @@ const CustomerDebtHistoryModal = forwardRef(({
         // Tạo nhóm ngày riêng cho ngày nạp tiền đó
         const prepayAmt = remainingPayMap[p.id];
         if (prepayAmt > 0) {
+          const isReturn = isReturnPayment(p);
           const payDateKey = toDateKey(p.paidAt);
           if (!map.has(payDateKey)) {
             map.set(payDateKey, {
@@ -639,6 +660,7 @@ const CustomerDebtHistoryModal = forwardRef(({
               totalDebt: 0,
               remainingDebt: 0,
               totalPayment: 0,
+              totalReturn: 0,
             });
           }
           const g = map.get(payDateKey);
@@ -648,7 +670,8 @@ const CustomerDebtHistoryModal = forwardRef(({
             date: p.paidAt,
             paidAt: p.paidAt,
             amount: prepayAmt,
-            note: p.note || 'Trả trước (dư)',
+            note: p.note || (isReturn ? 'Trả lại hàng (dư)' : 'Trả trước (dư)'),
+            isReturn,
             invoices: p.invoices || [],
             allocations: [],
           });
@@ -656,7 +679,11 @@ const CustomerDebtHistoryModal = forwardRef(({
             g.invoices = g.invoices || [];
             g.invoices.push(...p.invoices);
           }
-          g.totalPayment += prepayAmt;
+          if (isReturn) {
+            g.totalReturn = (g.totalReturn || 0) + prepayAmt;
+          } else {
+            g.totalPayment += prepayAmt;
+          }
         }
       });
 
@@ -679,15 +706,19 @@ const CustomerDebtHistoryModal = forwardRef(({
             totalDebt: 0,
             remainingDebt: 0,
             totalPayment: 0,
+            totalReturn: 0,
           };
         }
         groups[monthKey].days.push(group);
         groups[monthKey].totalDebt += group.totalDebt;
         groups[monthKey].remainingDebt += group.remainingDebt;
+        groups[monthKey].totalReturn += (group.totalReturn || 0);
       });
 
       Object.values(groups).forEach((m) => {
-        m.totalPayment = Math.max(0, m.totalDebt - m.remainingDebt);
+        const totalDeducted = Math.max(0, m.totalDebt - m.remainingDebt);
+        m.totalReturn = groups[m.monthKey].totalReturn || 0;
+        m.totalPayment = Math.max(0, totalDeducted - m.totalReturn);
 
         // Gom toàn bộ transactions và payments của tháng để tính tổng sản lượng thịt
         const allTransInMonth = [];
@@ -877,7 +908,9 @@ const CustomerDebtHistoryModal = forwardRef(({
 
     const totalDebt = matchedDays.reduce((sum, g) => sum + (g.totalDebt || 0), 0);
     const remainingDebt = matchedDays.reduce((sum, g) => sum + (g.remainingDebt || 0), 0);
-    const totalPaid = Math.max(0, totalDebt - remainingDebt);
+    const totalReturn = matchedDays.reduce((sum, g) => sum + (g.totalReturn || 0), 0);
+    const totalDeducted = Math.max(0, totalDebt - remainingDebt);
+    const totalPaid = Math.max(0, totalDeducted - totalReturn);
 
     return {
       matchedDays,
@@ -885,6 +918,7 @@ const CustomerDebtHistoryModal = forwardRef(({
       paidDays,
       totalDebt,
       remainingDebt,
+      totalReturn,
       totalPaid,
       validationError: null,
     };
@@ -1101,13 +1135,24 @@ const CustomerDebtHistoryModal = forwardRef(({
                     </Text>
                   ) : (
                     <>
-                      {/* Dòng tóm tắt 3 chỉ số mỏng tinh gọn (thay thế 3 ô to và hộp vàng) */}
+                      {/* Dòng tóm tắt 3 hoặc 4 chỉ số mỏng tinh gọn */}
                       <View style={styles.rangeCompactStatsRow}>
                         <View style={styles.rangeCompactStatCol}>
                           <Text style={styles.rangeCompactStatLabel}>Mua nợ ({selectedRangeData.matchedDays.length}n):</Text>
                           <Text style={styles.rangeCompactStatVal}>{formatCurrency(selectedRangeData.totalDebt)}</Text>
                         </View>
                         <View style={styles.rangeCompactDivider} />
+                        {selectedRangeData.totalReturn > 0 && (
+                          <>
+                            <View style={styles.rangeCompactStatCol}>
+                              <Text style={styles.rangeCompactStatLabel}>Trả hàng:</Text>
+                              <Text style={[styles.rangeCompactStatVal, { color: '#D97706' }]}>
+                                {formatCurrency(selectedRangeData.totalReturn)}
+                              </Text>
+                            </View>
+                            <View style={styles.rangeCompactDivider} />
+                          </>
+                        )}
                         <View style={styles.rangeCompactStatCol}>
                           <Text style={styles.rangeCompactStatLabel}>Đã trả:</Text>
                           <Text style={[styles.rangeCompactStatVal, { color: '#059669' }]}>
@@ -1356,6 +1401,12 @@ const CustomerDebtHistoryModal = forwardRef(({
                         <View style={styles.summaryRow}>
                           <Text style={styles.summaryLabel}>Mua nợ:</Text>
                           <Text style={styles.summaryValue}>{formatCurrency(month.totalDebt)}</Text>
+                        </View>
+                        <View style={styles.summaryRow}>
+                          <Text style={styles.summaryLabel}>Trả hàng:</Text>
+                          <Text style={[styles.summaryValue, { color: '#D97706', fontWeight: '600' }]}>
+                            {formatCurrency(month.totalReturn || 0)}
+                          </Text>
                         </View>
                         <View style={styles.summaryRow}>
                           <Text style={styles.summaryLabel}>Đã trả:</Text>

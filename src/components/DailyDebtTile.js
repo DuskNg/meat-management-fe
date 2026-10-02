@@ -24,7 +24,8 @@ const formatAmountShort = (amount) => {
 };
 
 const DailyDebtTile = ({ group, tileSize, onPress }) => {
-  const netAmount = group.totalDebt - group.totalPayment;
+  const totalDeducted = (group.totalPayment || 0) + (group.totalReturn || 0);
+  const netAmount = group.totalDebt - totalDeducted;
 
   let dayBgColor, dayBdColor, dayTxtColor, displayAmt;
   if (netAmount > 0) {

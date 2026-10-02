@@ -1,5 +1,4 @@
-// meat-management-fe/src/components/PortalManagementModal.js
-import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -17,7 +16,7 @@ import PopupModal from './PopupModal';
 import { api } from '../api/client';
 import { COLORS, SHADOWS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
-import PortalFeedbackAdminModal from './PortalFeedbackAdminModal';
+import { removeDiacritics } from '../utils/searchHelper';
 
 const formatDateTime = (isoStr) => {
   if (!isoStr) return '';
@@ -72,11 +71,13 @@ const PortalManagementModal = forwardRef((props, ref) => {
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
 
+  // State tìm kiếm & bộ lọc
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState('all'); // 'all' | 'customer' | 'supplier' | 'active'
+  const [copiedLinkId, setCopiedLinkId] = useState(null);
+
   // Ref popup thông báo / xác nhận dùng chung
   const popupRef = useRef(null);
-
-  // Modal phụ xem phản hồi
-  const feedbackModalRef = useRef(null);
 
   // Form tạo / sửa link
   const [isEditing, setIsEditing] = useState(false);
@@ -231,6 +232,8 @@ const PortalManagementModal = forwardRef((props, ref) => {
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(fullUrl);
+        setCopiedLinkId(link.id);
+        setTimeout(() => setCopiedLinkId(null), 2500);
         showGlobalToast(`Đã sao chép link nhóm "${link.name}"! Dán ghim ngay vào Zalo.`);
       } else {
         showGlobalToast(`Link truy cập: ${fullUrl}`, 'info');
@@ -342,17 +345,55 @@ const PortalManagementModal = forwardRef((props, ref) => {
     }
   };
 
-  // Tổng số phản hồi đang chờ xử lý
-  const totalPendingFeedbacks = links.reduce(
-    (sum, l) => sum + (l.pendingFeedbacksCount || 0),
-    0
-  );
-
   // Tổng số đơn nợ mới chưa công bố trên toàn hệ thống
   const totalUnpublishedTxs = links.reduce(
     (sum, l) => sum + (l.unpublishedCount || 0),
     0
   );
+
+  // Lọc danh sách nhóm Zalo theo từ khóa tìm kiếm và tab phân loại
+  const filteredLinks = useMemo(() => {
+    let result = links;
+
+    // Lọc theo tab loại đối tác hoặc trạng thái
+    if (filterType === 'customer') {
+      result = result.filter((l) => l.type === 'customer');
+    } else if (filterType === 'supplier') {
+      result = result.filter((l) => l.type === 'supplier');
+    } else if (filterType === 'active') {
+      result = result.filter((l) => l.isActive);
+    }
+
+    // Lọc theo từ khóa tìm kiếm không dấu
+    if (searchQuery.trim()) {
+      const qClean = removeDiacritics(searchQuery.toLowerCase().trim());
+      result = result.filter((l) => {
+        const nameClean = removeDiacritics((l.name || '').toLowerCase());
+        const noteClean = removeDiacritics((l.note || '').toLowerCase());
+        const supClean = l.supplier ? removeDiacritics((l.supplier.name || '').toLowerCase()) : '';
+        const custsClean = (l.customers || []).map((c) => removeDiacritics((c.name || '').toLowerCase())).join(' ');
+
+        return (
+          nameClean.includes(qClean) ||
+          noteClean.includes(qClean) ||
+          supClean.includes(qClean) ||
+          custsClean.includes(qClean)
+        );
+      });
+    }
+
+    return result;
+  }, [links, filterType, searchQuery]);
+
+  // Thống kê số lượng nhóm theo từng tab
+  const counts = useMemo(() => {
+    return {
+      all: links.length,
+      customer: links.filter((l) => l.type === 'customer').length,
+      supplier: links.filter((l) => l.type === 'supplier').length,
+      active: links.filter((l) => l.isActive).length,
+    };
+  }, [links]);
 
   return (
     <>
@@ -365,9 +406,14 @@ const PortalManagementModal = forwardRef((props, ref) => {
                 <Text style={styles.headerIcon}>🔗</Text>
               </View>
               <View style={styles.modalHeaderTitleCol}>
-                <Text style={styles.modalTitle}>QUẢN LÝ NHÓM ZALO</Text>
+                <View style={styles.headerTitleBadgeRow}>
+                  <Text style={styles.modalTitle}>QUẢN LÝ NHÓM ZALO</Text>
+                  <View style={styles.totalBadge}>
+                    <Text style={styles.totalBadgeText}>{links.length} nhóm</Text>
+                  </View>
+                </View>
                 <Text style={styles.modalSubTitle}>
-                  Tạo link tra cứu công nợ & giá thịt ghim Zalo • ⏰ Tự động công bố 20:00 hàng ngày
+                  Tra cứu công nợ & giá thịt ghim Zalo • ⏰ Tự động công bố 20:00 hàng ngày
                 </Text>
               </View>
             </View>
@@ -380,12 +426,18 @@ const PortalManagementModal = forwardRef((props, ref) => {
             </TouchableOpacity>
           </View>
 
-          {/* THANH ĐIỀU HƯỚNG TRÊN CÙNG */}
-          <View style={styles.topActionsRow}>
-            {!isEditing ? (
-              <>
-                <TouchableOpacity style={styles.createBtn} onPress={handleOpenCreateForm} activeOpacity={0.8}>
-                  <Text style={styles.createBtnText}>➕ Tạo Link Nhóm Mới</Text>
+          {/* THANH ĐIỀU HƯỚNG, TÌM KIẾM & BỘ LỌC TRÊN CÙNG */}
+          {!isEditing ? (
+            <View style={styles.topControlSection}>
+              {/* Hàng 1: Nút tạo link mới & Nút công bố */}
+              <View style={styles.topActionsRow}>
+                <TouchableOpacity
+                  style={styles.createBtn}
+                  onPress={handleOpenCreateForm}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.createBtnIcon}>＋</Text>
+                  <Text style={styles.createBtnText}>Tạo Link Nhóm Mới</Text>
                 </TouchableOpacity>
 
                 {totalUnpublishedTxs > 0 && (
@@ -393,38 +445,98 @@ const PortalManagementModal = forwardRef((props, ref) => {
                     style={[styles.publishAllBtn, styles.publishAllBtnActive]}
                     onPress={handlePublishAll}
                     disabled={publishing}
-                    activeOpacity={0.8}
+                    activeOpacity={0.85}
                   >
                     {publishing ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                      <Text style={styles.publishAllBtnText}>
-                        📢 Công Bố Tất Cả ({totalUnpublishedTxs} đơn mới)
-                      </Text>
+                      <>
+                        <Text style={styles.publishAllBtnIcon}>📢</Text>
+                        <Text style={styles.publishAllBtnText}>
+                          Công Bố Tất Cả ({totalUnpublishedTxs} đơn mới)
+                        </Text>
+                      </>
                     )}
                   </TouchableOpacity>
                 )}
+              </View>
 
+              {/* Hàng 2: Thanh tìm kiếm thông minh */}
+              <View style={styles.searchBarWrapper}>
+                <Text style={styles.searchIcon}>🔍</Text>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Tìm kiếm theo tên nhóm Zalo, cơ sở, khách hàng..."
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  returnKeyType="search"
+                />
+                {searchQuery.trim() ? (
+                  <TouchableOpacity
+                    style={styles.clearSearchBtn}
+                    onPress={() => setSearchQuery('')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.clearSearchText}>✕</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {/* Hàng 3: Tabs phân loại đối tác & trạng thái */}
+              <View style={styles.filterTabsRow}>
                 <TouchableOpacity
-                  style={styles.feedbackListBtn}
-                  onPress={() => feedbackModalRef.current?.open('pending')}
+                  style={[styles.filterTab, filterType === 'all' && styles.filterTabActive]}
+                  onPress={() => setFilterType('all')}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.feedbackListBtnText}>
-                    💬 Khiếu Nại
-                    {totalPendingFeedbacks > 0 ? ` (${totalPendingFeedbacks})` : ''}
+                  <Text style={[styles.filterTabText, filterType === 'all' && styles.filterTabTextActive]}>
+                    Tất cả ({counts.all})
                   </Text>
                 </TouchableOpacity>
-              </>
-            ) : (
+
+                <TouchableOpacity
+                  style={[styles.filterTab, filterType === 'customer' && styles.filterTabActive]}
+                  onPress={() => setFilterType('customer')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.filterTabText, filterType === 'customer' && styles.filterTabTextActive]}>
+                    🥩 Khách mua ({counts.customer})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.filterTab, filterType === 'supplier' && styles.filterTabActive]}
+                  onPress={() => setFilterType('supplier')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.filterTabText, filterType === 'supplier' && styles.filterTabTextActive]}>
+                    🚚 NCC ({counts.supplier})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.filterTab, filterType === 'active' && styles.filterTabActive]}
+                  onPress={() => setFilterType('active')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.filterTabText, filterType === 'active' && styles.filterTabTextActive]}>
+                    ⚡ Đang bật ({counts.active})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.topControlSection}>
               <TouchableOpacity
                 style={styles.backBtn}
                 onPress={() => setIsEditing(false)}
+                activeOpacity={0.8}
               >
                 <Text style={styles.backBtnText}>⬅ Quay lại danh sách</Text>
               </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          )}
 
           {/* FORM TẠO / CHỈNH SỬA LINK */}
           {isEditing ? (
@@ -603,86 +715,133 @@ const PortalManagementModal = forwardRef((props, ref) => {
             <ScrollView
               style={styles.listContainer}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 20 }}
+              contentContainerStyle={{ paddingBottom: 24 }}
             >
               {loading ? (
                 <View style={styles.loadingWrap}>
-                  <ActivityIndicator size="large" color="#10B981" />
-                  <Text style={styles.loadingText}>Đang tải danh sách link...</Text>
+                  <ActivityIndicator size="large" color="#059669" />
+                  <Text style={styles.loadingText}>Đang tải danh sách link ghim Zalo...</Text>
                 </View>
-              ) : links.length === 0 ? (
+              ) : filteredLinks.length === 0 ? (
                 <View style={styles.emptyWrap}>
-                  <Text style={styles.emptyIcon}>🔗</Text>
-                  <Text style={styles.emptyTitle}>Chưa có Link Ghim Zalo nào</Text>
-                  <Text style={styles.emptyDesc}>
-                    Bấm nút "+ Tạo Link Nhóm Mới" phía trên để tạo link ghim vào nhóm Zalo đối soát nợ & giá thịt.
+                  <Text style={styles.emptyIcon}>
+                    {searchQuery.trim() ? '🔍' : '🔗'}
                   </Text>
+                  <Text style={styles.emptyTitle}>
+                    {searchQuery.trim()
+                      ? 'Không tìm thấy nhóm Zalo phù hợp'
+                      : 'Chưa có Link Ghim Zalo nào'}
+                  </Text>
+                  <Text style={styles.emptyDesc}>
+                    {searchQuery.trim()
+                      ? `Không có kết quả nào khớp với từ khóa "${searchQuery}". Hãy thử tìm kiếm bằng từ khóa khác hoặc xóa bộ lọc.`
+                      : 'Bấm nút "+ Tạo Link Nhóm Mới" phía trên để tạo link ghim vào nhóm Zalo đối soát nợ & giá thịt.'}
+                  </Text>
+                  {searchQuery.trim() ? (
+                    <TouchableOpacity
+                      style={styles.clearFilterActionBtn}
+                      onPress={() => {
+                        setSearchQuery('');
+                        setFilterType('all');
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.clearFilterActionText}>Xóa bộ lọc tìm kiếm</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : (
-                links.map((link) => {
+                filteredLinks.map((link) => {
                   const isChainLink = link.customers && link.customers.length > 1;
+                  const isCopied = copiedLinkId === link.id;
 
                   return (
-                    <View key={link.id} style={[styles.linkCard, !link.isActive && styles.linkCardInactive]}>
+                    <View
+                      key={link.id}
+                      style={[styles.linkCard, !link.isActive && styles.linkCardInactive]}
+                    >
                       {/* HEADER CARD */}
                       <View style={styles.cardHeader}>
-                        <View style={{ flex: 1 }}>
+                        <View style={{ flex: 1, paddingRight: 8 }}>
                           <View style={styles.cardTitleRow}>
-                            <Text style={styles.cardGroupName}>{link.name}</Text>
+                            <Text style={styles.cardGroupName} numberOfLines={1}>
+                              {link.name}
+                            </Text>
                             <View
                               style={[
                                 styles.typeBadge,
                                 link.type === 'supplier'
-                                  ? { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }
-                                  : { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
+                                  ? styles.typeBadgeSupplier
+                                  : styles.typeBadgeCustomer,
                               ]}
                             >
                               <Text
                                 style={[
                                   styles.typeBadgeText,
-                                  link.type === 'supplier' ? { color: '#1D4ED8' } : { color: '#065F46' },
+                                  link.type === 'supplier'
+                                    ? styles.typeBadgeTextSupplier
+                                    : styles.typeBadgeTextCustomer,
                                 ]}
                               >
-                                {link.type === 'supplier' ? 'Nhà cung cấp' : 'Khách mua hàng'}
+                                {link.type === 'supplier' ? '🚚 Nhà cung cấp' : '🥩 Khách mua hàng'}
                               </Text>
                             </View>
                           </View>
 
                           {/* Chi tiết cơ sở liên kết */}
                           {link.type === 'customer' && (
-                            <Text style={styles.cardBranchesText}>
-                              📍 {isChainLink ? `Chuỗi ${link.customers.length} cơ sở: ` : 'Cơ sở: '}
-                              <Text style={{ fontWeight: 'bold' }}>
-                                {link.customers.map((c) => c.name).join(', ')}
+                            <View style={styles.cardBranchesBox}>
+                              <Text style={styles.cardBranchesIcon}>📍</Text>
+                              <Text style={styles.cardBranchesText} numberOfLines={2}>
+                                {isChainLink ? `Chuỗi ${link.customers.length} cơ sở: ` : 'Cơ sở: '}
+                                <Text style={styles.branchNameBold}>
+                                  {link.customers.map((c) => c.name).join(', ')}
+                                </Text>
                               </Text>
-                            </Text>
+                            </View>
                           )}
 
                           {link.type === 'supplier' && link.supplier && (
-                            <Text style={styles.cardBranchesText}>
-                              🚚 NCC: <Text style={{ fontWeight: 'bold' }}>{link.supplier.name}</Text>
-                            </Text>
+                            <View style={styles.cardBranchesBox}>
+                              <Text style={styles.cardBranchesIcon}>🚚</Text>
+                              <Text style={styles.cardBranchesText} numberOfLines={2}>
+                                NCC: <Text style={styles.branchNameBold}>{link.supplier.name}</Text>
+                              </Text>
+                            </View>
                           )}
                         </View>
 
-                        {/* Công tắc Bật/Tắt */}
+                        {/* Switch Bật / Tắt trạng thái */}
                         <View style={styles.switchWrap}>
                           <Switch
                             value={link.isActive}
                             onValueChange={() => handleToggleActive(link)}
-                            trackColor={{ false: '#D1D5DB', true: '#A7F3D0' }}
-                            thumbColor={link.isActive ? '#10B981' : '#9CA3AF'}
+                            trackColor={{ false: '#E2E8F0', true: '#BBF7D0' }}
+                            thumbColor={link.isActive ? '#10B981' : '#94A3B8'}
                           />
-                          <Text style={[styles.switchLabel, !link.isActive && { color: '#9CA3AF' }]}>
-                            {link.isActive ? 'Đang bật' : 'Đã khóa'}
-                          </Text>
+                          <View style={styles.statusIndicatorRow}>
+                            <View
+                              style={[
+                                styles.statusDot,
+                                { backgroundColor: link.isActive ? '#10B981' : '#94A3B8' },
+                              ]}
+                            />
+                            <Text
+                              style={[
+                                styles.switchLabel,
+                                { color: link.isActive ? '#047857' : '#94A3B8' },
+                              ]}
+                            >
+                              {link.isActive ? 'Đang bật' : 'Đã khóa'}
+                            </Text>
+                          </View>
                         </View>
                       </View>
 
                       {/* BADGES & STATS */}
                       <View style={styles.cardMetaRow}>
-                        <View style={styles.metaChip}>
-                          <Text style={styles.metaChipText}>
+                        <View style={[styles.metaChip, link.pin && styles.metaChipPinActive]}>
+                          <Text style={[styles.metaChipText, link.pin && styles.metaChipPinText]}>
                             {link.pin ? `🔒 PIN: ${link.pin}` : '🔓 Không có PIN'}
                           </Text>
                         </View>
@@ -691,35 +850,21 @@ const PortalManagementModal = forwardRef((props, ref) => {
                           <Text style={styles.metaChipText}>👁️ {link.viewCount || 0} lượt xem</Text>
                         </View>
 
-                        {/* HIỂN THỊ LẦN TRUY CẬP MỚI NHẤT */}
                         <View
                           style={[
                             styles.metaChip,
-                            link.lastViewedAt
-                              ? { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }
-                              : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }
+                            link.lastViewedAt ? styles.metaChipRecentView : styles.metaChipNoView,
                           ]}
                         >
                           <Text
                             style={[
                               styles.metaChipText,
-                              link.lastViewedAt ? { color: '#15803D', fontWeight: '600' } : { color: '#94A3B8' }
+                              link.lastViewedAt ? styles.metaChipRecentText : styles.metaChipMutedText,
                             ]}
                           >
-                            🕒 {link.lastViewedAt ? `Xem gần nhất: ${formatLastViewedText(link.lastViewedAt)}` : 'Chưa có lượt truy cập'}
+                            ⏱️ {link.lastViewedAt ? `Xem gần nhất: ${formatLastViewedText(link.lastViewedAt)}` : 'Chưa có lượt truy cập'}
                           </Text>
                         </View>
-
-                        {link.pendingFeedbacksCount > 0 && (
-                          <TouchableOpacity
-                            style={[styles.metaChip, { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' }]}
-                            onPress={() => feedbackModalRef.current?.open('pending')}
-                          >
-                            <Text style={[styles.metaChipText, { color: '#DC2626', fontWeight: 'bold' }]}>
-                              ⚠️ {link.pendingFeedbacksCount} phản hồi mới
-                            </Text>
-                          </TouchableOpacity>
-                        )}
                       </View>
 
                       {/* TRẠNG THÁI CÔNG BỐ SỐ LIỆU CHO KHÁCH */}
@@ -749,16 +894,26 @@ const PortalManagementModal = forwardRef((props, ref) => {
                         </View>
                       )}
 
-                      {/* FOOTER ACTIONS */}
-                      <View style={styles.cardActionsCol}>
-                        {/* NÚT COPY LINK: TO RÕ RÀNG, NẰM ĐỘC LẬP KHÔNG BAO GIỜ BỊ BÓ HẸP */}
-                        <TouchableOpacity
-                          style={styles.copyBtnFull}
-                          onPress={() => handleCopyLink(link)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.copyBtnFullText}>📋 Copy Link Ghim Zalo</Text>
-                        </TouchableOpacity>
+                      {/* HỘP LINK GHIM ZALO HIỆN ĐẠI & HÀNH ĐỘNG */}
+                      <View style={styles.zaloLinkContainer}>
+                        <View style={styles.zaloUrlRow}>
+                          <View style={styles.zaloUrlPrefix}>
+                            <Text style={styles.zaloUrlIcon}>🔗</Text>
+                            <Text style={styles.zaloUrlText} numberOfLines={1}>
+                              portal/{link.token}
+                            </Text>
+                          </View>
+
+                          <TouchableOpacity
+                            style={[styles.copyBtnPill, isCopied && styles.copyBtnPillSuccess]}
+                            onPress={() => handleCopyLink(link)}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={[styles.copyBtnPillText, isCopied && styles.copyBtnPillTextSuccess]}>
+                              {isCopied ? '✓ Đã sao chép link' : '📋 Copy Link Ghim Zalo'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
 
                         {/* CÁC THAO TÁC PHỤ: SỬA, ĐỔI MÃ LINK, XÓA */}
                         <View style={styles.cardSecondaryActionsRow}>
@@ -767,13 +922,12 @@ const PortalManagementModal = forwardRef((props, ref) => {
                             onPress={() => handleOpenEditForm(link)}
                             activeOpacity={0.7}
                           >
-                            <Text style={styles.editBtnText}>✏️ Sửa</Text>
+                            <Text style={styles.editBtnText}>✏️ Chỉnh sửa</Text>
                           </TouchableOpacity>
 
                           <TouchableOpacity
                             style={styles.regenerateBtn}
                             onPress={() => handleRegenerateToken(link)}
-                            title="Đổi mã link mới (Thu hồi link cũ)"
                             activeOpacity={0.7}
                           >
                             <Text style={styles.regenerateBtnText}>🔄 Đổi link</Text>
@@ -797,9 +951,6 @@ const PortalManagementModal = forwardRef((props, ref) => {
         </View>
       </SmoothModal>
 
-      {/* MODAL XEM PHẢN HỒI / KHIẾU NẠI */}
-      <PortalFeedbackAdminModal ref={feedbackModalRef} />
-
       {/* POPUP THÔNG BÁO / XÁC NHẬN CHUẨN */}
       <PopupModal ref={popupRef} />
     </>
@@ -809,16 +960,16 @@ const PortalManagementModal = forwardRef((props, ref) => {
 const styles = StyleSheet.create({
   modalView: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: Platform.OS === 'ios' ? 24 : 16,
     width: '100%',
-    maxWidth: 680,
-    height: '85%',
+    maxWidth: 720,
+    height: '90%',
     maxHeight: '94%',
-    minHeight: 520,
+    minHeight: 540,
     alignSelf: 'center',
     flexDirection: 'column',
     ...SHADOWS.large,
@@ -828,7 +979,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: 14,
-    marginBottom: 12,
+    marginBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
@@ -839,12 +990,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
   },
   headerIcon: {
     fontSize: 20,
@@ -852,16 +1005,35 @@ const styles = StyleSheet.create({
   modalHeaderTitleCol: {
     flex: 1,
   },
+  headerTitleBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '900',
+    fontSize: 16.5,
+    fontWeight: '800',
     color: '#0F172A',
     letterSpacing: 0.2,
+  },
+  totalBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  totalBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
   },
   modalSubTitle: {
     fontSize: 11.5,
     color: '#64748B',
     marginTop: 2,
+    lineHeight: 16,
   },
   closeHeaderBtn: {
     width: 32,
@@ -873,51 +1045,141 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   closeHeaderBtnText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#64748B',
     fontWeight: 'bold',
   },
+
+  // ─── CONTROL SECTION: ACTIONS + SEARCH + TABS ───
+  topControlSection: {
+    marginBottom: 12,
+    gap: 10,
+  },
   topActionsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
     gap: 8,
+    flexWrap: 'wrap',
   },
   createBtn: {
-    backgroundColor: '#10B981',
-    paddingVertical: 9,
+    backgroundColor: '#059669',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: 10,
+    gap: 6,
+    shadowColor: '#059669',
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  createBtnIcon: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    lineHeight: 18,
   },
   createBtnText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
-  feedbackListBtn: {
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    paddingVertical: 9,
+  publishAllBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  feedbackListBtnText: {
-    color: '#374151',
-    fontSize: 12,
-    fontWeight: '600',
+  publishAllBtnActive: {
+    backgroundColor: '#1D4ED8',
+  },
+  publishAllBtnIcon: {
+    fontSize: 13,
+  },
+  publishAllBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
   backBtn: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 6,
+    paddingHorizontal: 14,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   backBtnText: {
-    color: '#374151',
+    color: '#334155',
     fontSize: 13,
     fontWeight: '600',
+  },
+
+  // ─── THANH TÌM KIẾM ───
+  searchBarWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    height: 38,
+  },
+  searchIcon: {
+    fontSize: 14,
+    marginRight: 6,
+    opacity: 0.7,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0F172A',
+    paddingVertical: 0,
+    outlineStyle: 'none',
+    outlineWidth: 0,
+  },
+  clearSearchBtn: {
+    padding: 4,
+    borderRadius: 10,
+  },
+  clearSearchText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: 'bold',
+  },
+
+  // ─── TABS BỘ LỌC ───
+  filterTabsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  filterTab: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  filterTabActive: {
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+  },
+  filterTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  filterTabTextActive: {
+    color: '#FFFFFF',
   },
 
   // ─── LIST CONTAINER ───
@@ -931,46 +1193,62 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 13,
-    color: '#6B7280',
+    color: '#64748B',
   },
   emptyWrap: {
-    padding: 40,
+    padding: 32,
     alignItems: 'center',
   },
   emptyIcon: {
-    fontSize: 48,
-    marginBottom: 10,
+    fontSize: 42,
+    marginBottom: 8,
   },
   emptyTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#1E293B',
     marginBottom: 6,
   },
   emptyDesc: {
-    fontSize: 13,
-    color: '#6B7280',
+    fontSize: 12.5,
+    color: '#64748B',
     textAlign: 'center',
     lineHeight: 18,
+    maxWidth: 420,
+  },
+  clearFilterActionBtn: {
+    marginTop: 14,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  clearFilterActionText: {
+    fontSize: 12.5,
+    color: '#4338CA',
+    fontWeight: '700',
   },
 
-  // ─── LINK CARD ───
+  // ─── LINK CARD HIỆN ĐẠI ───
   linkCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 14,
+    borderColor: '#E2E8F0',
+    padding: 13,
     marginBottom: 12,
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOpacity: 0.04,
-    shadowRadius: 4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
   linkCardInactive: {
-    backgroundColor: '#F9FAFB',
-    borderColor: '#D1D5DB',
-    opacity: 0.7,
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    opacity: 0.72,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -985,55 +1263,120 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardGroupName: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   typeBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 20,
     borderWidth: 1,
   },
+  typeBadgeCustomer: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  typeBadgeSupplier: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
   typeBadgeText: {
-    fontSize: 10,
-    fontWeight: 'bold',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  typeBadgeTextCustomer: {
+    color: '#047857',
+  },
+  typeBadgeTextSupplier: {
+    color: '#1D4ED8',
+  },
+  cardBranchesBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  cardBranchesIcon: {
+    fontSize: 12,
   },
   cardBranchesText: {
     fontSize: 12,
-    color: '#4B5563',
+    color: '#475569',
     lineHeight: 16,
-    marginTop: 2,
+    flex: 1,
   },
+  branchNameBold: {
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+
+  // Trạng thái Switch
   switchWrap: {
     alignItems: 'center',
-    marginLeft: 8,
+    marginLeft: 6,
+  },
+  statusIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   switchLabel: {
     fontSize: 10,
-    color: '#059669',
     fontWeight: '600',
-    marginTop: 2,
   },
+
+  // ─── METADATA BADGES ───
   cardMetaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginVertical: 8,
+    marginTop: 8,
+    marginBottom: 6,
   },
   metaChip: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
+  metaChipPinActive: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#BAE6FD',
+  },
+  metaChipPinText: {
+    color: '#0284C7',
+    fontWeight: '600',
+  },
+  metaChipRecentView: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  metaChipNoView: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
   metaChipText: {
     fontSize: 11,
-    color: '#4B5563',
+    color: '#475569',
   },
-  // ─── CARD FOOTER & ACTIONS ───
+  metaChipRecentText: {
+    color: '#15803D',
+    fontWeight: '600',
+  },
+  metaChipMutedText: {
+    color: '#94A3B8',
+  },
+
+  // Cảnh báo công bố
   unpublishedAlertBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1043,8 +1386,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 7,
-    marginBottom: 8,
+    paddingVertical: 6,
+    marginVertical: 6,
     gap: 8,
   },
   unpublishedAlertTitle: {
@@ -1059,7 +1402,7 @@ const styles = StyleSheet.create({
   },
   publishNowCardBtn: {
     backgroundColor: '#2563EB',
-    paddingVertical: 6,
+    paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 6,
   },
@@ -1069,34 +1412,71 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   publishedGoodLine: {
-    marginBottom: 6,
+    marginVertical: 4,
     paddingHorizontal: 2,
   },
   publishedGoodText: {
     fontSize: 11,
     color: '#64748B',
   },
-  cardActionsCol: {
-    gap: 7,
-    marginTop: 2,
+
+  // ─── HỘP LINK GHIM ZALO & ACTIONS ───
+  zaloLinkContainer: {
+    marginTop: 6,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingTop: 8,
+    gap: 8,
   },
-  copyBtnFull: {
-    backgroundColor: '#059669',
-    paddingVertical: 9,
-    paddingHorizontal: 14,
+  zaloUrlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     borderRadius: 8,
+    paddingLeft: 10,
+    paddingRight: 4,
+    paddingVertical: 4,
+    gap: 8,
+  },
+  zaloUrlPrefix: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    overflow: 'hidden',
+  },
+  zaloUrlIcon: {
+    fontSize: 13,
+  },
+  zaloUrlText: {
+    fontSize: 11.5,
+    color: '#475569',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    flex: 1,
+  },
+  copyBtnPill: {
+    backgroundColor: '#059669',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  copyBtnFullText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.2,
+  copyBtnPillSuccess: {
+    backgroundColor: '#10B981',
   },
+  copyBtnPillText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  copyBtnPillTextSuccess: {
+    color: '#FFFFFF',
+  },
+
   cardSecondaryActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1104,61 +1484,50 @@ const styles = StyleSheet.create({
   },
   editBtn: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 7,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 6,
     paddingHorizontal: 8,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   editBtnText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#334155',
     fontWeight: '600',
   },
   regenerateBtn: {
     flex: 1,
-    backgroundColor: '#FEF3C7',
-    paddingVertical: 7,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingVertical: 6,
     paddingHorizontal: 8,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   regenerateBtnText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#B45309',
     fontWeight: '600',
   },
   deleteBtn: {
-    backgroundColor: '#FEE2E2',
-    paddingVertical: 7,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   deleteBtnText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#DC2626',
     fontWeight: '600',
-  },
-  publishAllBtn: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  publishAllBtnActive: {
-    backgroundColor: '#1D4ED8',
-  },
-  publishAllBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
 
   // ─── FORM STYLES ───
@@ -1285,7 +1654,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
-    backgroundColor: '#10B981',
+    backgroundColor: '#059669',
   },
   saveFormText: {
     color: '#fff',

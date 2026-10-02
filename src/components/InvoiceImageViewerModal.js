@@ -1,5 +1,4 @@
-// meat-management-fe/src/components/InvoiceImageViewerModal.js
-import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -203,8 +202,8 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
       lines.push(`${isRet ? '[-] TRẢ HÀNG: ' : ''}${e.name}${qStr}${pStr} = ${isRet ? '-' : ''}${formatCurrency(e.amount)}`);
     });
     lines.push('--------------------------------');
-    if (dayData.totalQty > 0) lines.push(`Tổng kg thịt: ${dayData.totalQty} kg`);
-    lines.push(`TỔNG CỘNG: ${formatCurrency(dayData.totalAmount)}`);
+    if (daySummary.totalQty > 0) lines.push(`Tổng kg thịt: ${daySummary.totalQty} kg`);
+    lines.push(`TỔNG CỘNG: ${formatCurrency(daySummary.totalAmount)}`);
     const success = await copyTextToClipboard(lines.join('\n'));
     if (success) {
       showGlobalToast('Đã sao chép số liệu ngày vào bộ nhớ tạm!', 'success');
@@ -435,6 +434,77 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   };
 
   const isVideo = checkIsVideoUrl(currentUrl);
+
+  // Tự động tính toán tổng hợp (Tổng tiền, Tổng kg, Tiền trả hàng) từ danh sách món nếu không được truyền vào
+  const daySummary = useMemo(() => {
+    if (!dayData) {
+      return {
+        totalAmount: 0,
+        totalQty: 0,
+        totalMeat: 0,
+        totalReturn: 0,
+        remainingDebt: null,
+      };
+    }
+
+    let sumMeat = 0;
+    let sumReturn = 0;
+    let sumQty = 0;
+
+    (dayData.entries || []).forEach((e) => {
+      if (
+        e.type === 'DAY_TOTAL' ||
+        e.type === 'DAY_PARTIAL_PAID' ||
+        e.type === 'DAY_PARTIAL_REMAINING'
+      ) {
+        return;
+      }
+
+      const amt = parseFloat(e.amount) || 0;
+      const q = parseFloat(e.quantity) || 0;
+
+      if (e.type === 'RETURN') {
+        sumReturn += Math.abs(amt);
+      } else {
+        sumMeat += Math.abs(amt);
+        sumQty += q;
+      }
+    });
+
+    const netAmount = sumMeat - sumReturn;
+    const finalTotalAmount =
+      dayData.totalAmount != null && dayData.totalAmount > 0
+        ? dayData.totalAmount
+        : (netAmount !== 0 ? netAmount : (dayData.totalAmount || 0));
+
+    const finalTotalQty =
+      dayData.totalQty != null && dayData.totalQty > 0
+        ? dayData.totalQty
+        : Math.round(sumQty * 100) / 100;
+
+    const finalTotalMeat =
+      dayData.totalMeat != null && dayData.totalMeat > 0
+        ? dayData.totalMeat
+        : sumMeat;
+
+    const finalTotalReturn =
+      dayData.totalReturn != null && dayData.totalReturn > 0
+        ? dayData.totalReturn
+        : sumReturn;
+
+    const finalRemainingDebt =
+      dayData.remainingDebt != null
+        ? dayData.remainingDebt
+        : (dayData.isPaid ? 0 : finalTotalAmount);
+
+    return {
+      totalAmount: finalTotalAmount,
+      totalQty: finalTotalQty,
+      totalMeat: finalTotalMeat,
+      totalReturn: finalTotalReturn,
+      remainingDebt: finalRemainingDebt,
+    };
+  }, [dayData]);
 
   return (
     <SmoothModal visible={visible} onClose={handleClose} centered={true} zIndex={100000}>
@@ -883,38 +953,38 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
 
               {/* Khối tổng kết ngày */}
               <View style={styles.dayDataSummaryCard}>
-                {dayData.totalQty > 0 && (
+                {daySummary.totalQty > 0 && (
                   <View style={styles.dayDataSummaryRow}>
                     <Text style={styles.dayDataSummaryLabel}>Tổng khối lượng thịt:</Text>
-                    <Text style={styles.dayDataSummaryValueQty}>{dayData.totalQty} kg</Text>
+                    <Text style={styles.dayDataSummaryValueQty}>{daySummary.totalQty} kg</Text>
                   </View>
                 )}
 
-                {dayData.totalMeat > 0 && dayData.totalReturn > 0 && (
+                {daySummary.totalMeat > 0 && daySummary.totalReturn > 0 && (
                   <>
                     <View style={styles.dayDataSummaryRow}>
                       <Text style={styles.dayDataSummaryLabel}>Tiền hàng nhập:</Text>
-                      <Text style={styles.dayDataSummaryValue}>+{formatCurrency(dayData.totalMeat)}</Text>
+                      <Text style={styles.dayDataSummaryValue}>+{formatCurrency(daySummary.totalMeat)}</Text>
                     </View>
                     <View style={styles.dayDataSummaryRow}>
                       <Text style={styles.dayDataSummaryLabel}>Tiền trả hàng (-):</Text>
-                      <Text style={[styles.dayDataSummaryValue, styles.textRed]}>-{formatCurrency(dayData.totalReturn)}</Text>
+                      <Text style={[styles.dayDataSummaryValue, styles.textRed]}>-{formatCurrency(daySummary.totalReturn)}</Text>
                     </View>
                   </>
                 )}
 
                 <View style={[styles.dayDataSummaryRow, styles.dayDataTotalGrandRow]}>
                   <Text style={styles.dayDataTotalGrandLabel}>TỔNG CỘNG:</Text>
-                  <Text style={styles.dayDataTotalGrandValue}>{formatCurrency(dayData.totalAmount)}</Text>
+                  <Text style={styles.dayDataTotalGrandValue}>{formatCurrency(daySummary.totalAmount)}</Text>
                 </View>
 
-                {dayData.remainingDebt != null && !dayData.isPaid ? (
+                {daySummary.remainingDebt != null && !dayData.isPaid ? (
                   <View style={[styles.dayDataSummaryRow, styles.dayDataRemainingRow]}>
                     <Text style={styles.dayDataRemainingLabel}>
                       {dayData.isPartialPaid ? 'Còn nợ lại ngày này:' : 'Còn nợ ngày này:'}
                     </Text>
                     <Text style={styles.dayDataRemainingValue}>
-                      {formatCurrency(dayData.remainingDebt)}
+                      {formatCurrency(daySummary.remainingDebt)}
                     </Text>
                   </View>
                 ) : null}

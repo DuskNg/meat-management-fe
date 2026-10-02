@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import axios from 'axios';
-import PortalFeedbackModal from '../../src/components/PortalFeedbackModal';
 import BranchDebtModal from '../../src/components/BranchDebtModal';
 import ImagePreviewModal from '../../src/components/ImagePreviewModal';
 import InvoiceImageViewerModal from '../../src/components/InvoiceImageViewerModal';
@@ -1402,7 +1401,6 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
 
 export default function PortalScreen() {
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
-  const feedbackModalRef = useRef(null);
   const imagePreviewModalRef = useRef(null);
   const branchDebtModalRef = useRef(null);
   const invoiceViewerRef = useRef(null);
@@ -1480,6 +1478,24 @@ export default function PortalScreen() {
       }
     }
 
+    let totalMeat = 0;
+    let totalReturn = 0;
+    let totalQty = 0;
+
+    dayEntries.forEach((e) => {
+      if (e.type === 'DAY_TOTAL' || e.type === 'DAY_PARTIAL_PAID' || e.type === 'DAY_PARTIAL_REMAINING') return;
+      const amt = parseFloat(e.amount) || 0;
+      const q = parseFloat(e.quantity) || 0;
+      if (e.type === 'RETURN') {
+        totalReturn += Math.abs(amt);
+      } else {
+        totalMeat += Math.abs(amt);
+        totalQty += q;
+      }
+    });
+
+    const netAmount = totalMeat - totalReturn;
+
     const dayData = {
       dateKey: targetDay.dateKey,
       displayDate: targetDay.displayDate || targetDay.dateKey,
@@ -1488,6 +1504,11 @@ export default function PortalScreen() {
       isPartialPaid: targetDay.isPartialPaid,
       customerName: targetCustomerName,
       entries: dayEntries,
+      totalAmount: netAmount,
+      totalQty: Math.round(totalQty * 100) / 100,
+      totalMeat,
+      totalReturn,
+      remainingDebt: targetDay.remainingDebt != null ? targetDay.remainingDebt : (targetDay.isPaid ? 0 : netAmount),
     };
 
     // Tìm ngày hôm trước và ngày hôm sau có ảnh hóa đơn trong danh sách ngày
@@ -1780,16 +1801,6 @@ export default function PortalScreen() {
     setSelectedCustomerId(cId);
     setExpandedTxId(null);
     fetchPortalData(cId, sessionToken);
-  };
-
-  // Mở modal gửi phản hồi
-  const handleOpenFeedback = (opts = {}) => {
-    feedbackModalRef.current?.open({
-      branches: portalInfo?.customers || [],
-      currentCustomer: portalData?.currentCustomer || null,
-      sessionToken,
-      defaultContent: opts?.defaultContent || '',
-    });
   };
 
   // Mở modal kiểm tra giá các loại thịt thường xuyên lấy
@@ -2907,14 +2918,6 @@ export default function PortalScreen() {
         )}
       </View>
 
-      {/* MODAL GỬI PHẢN HỒI KHIẾU NẠI */}
-      <PortalFeedbackModal
-        ref={feedbackModalRef}
-        token={token}
-        apiHost={API_HOST}
-        onSubmitted={() => fetchPortalData(selectedCustomerId, sessionToken)}
-      />
-
       {/* MODAL PHÓNG TO / LƯU ẢNH BẢNG KÊ */}
       <ImagePreviewModal ref={imagePreviewModalRef} />
 
@@ -2933,10 +2936,9 @@ export default function PortalScreen() {
         portalSessionToken={sessionToken}
       />
 
-      {/* MODAL KIỂM TRA GIÁ THỊT & PHẢN ÁNH GIÁ */}
+      {/* MODAL KIỂM TRA GIÁ THỊT */}
       <CustomerPriceCheckModal
         ref={customerPriceCheckModalRef}
-        onOpenFeedback={handleOpenFeedback}
       />
 
       {/* MODAL CHỌN HÌNH THỨC XUẤT CÔNG NỢ CHUỖI CỬA HÀNG */}
@@ -3108,17 +3110,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: 'bold',
-  },
-  feedbackBtn: {
-    backgroundColor: '#F59E0B',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-  },
-  feedbackBtnText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 11,
   },
 
   // ─── VIEWPORT CONTENT (VỪA KHÍT 100VH) ───

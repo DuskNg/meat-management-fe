@@ -375,10 +375,9 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
     }
   });
 
-  // Hàng tổng tiền: 'tổng [tiền_nghìn_đồng]'
-  const paymentK = Math.round(totalPayment / 1000);
-  const totalK = sumDisplayedK - unallocatedReturnKTotal - paymentK;
-  lines.push(`tổng ${totalK}`);
+  // Hàng tổng tiền thịt trong ngày: 'tổng [tiền_nghìn_đồng]'
+  const dailyMeatTotalK = sumDisplayedK - unallocatedReturnKTotal;
+  lines.push(`tổng ${dailyMeatTotalK}`);
 
   return lines.join('\n');
 };

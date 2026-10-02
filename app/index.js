@@ -52,7 +52,6 @@ import RecurringDebtModal from '../src/components/RecurringDebtModal';
 import RegularCustomersModal from '../src/components/RegularCustomersModal';
 import DailyPriceManagementModal from '../src/components/DailyPriceManagementModal';
 import PortalManagementModal from '../src/components/PortalManagementModal';
-import PortalFeedbackAdminModal from '../src/components/PortalFeedbackAdminModal';
 import InvoiceImageUploadModal from '../src/components/InvoiceImageUploadModal';
 import InvoiceImageViewerModal from '../src/components/InvoiceImageViewerModal';
 import BatchExportDebtModal from '../src/components/BatchExportDebtModal';
@@ -72,6 +71,8 @@ import ResourceLockOverlay from '../src/components/ResourceLockOverlay';
 import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../src/utils/socket';
 import { matchItemSearch } from '../src/utils/searchHelper';
 import { captureTicketImage, selectTicketImages, startNativeRecording, stopNativeRecording } from '../src/utils/mediaActions';
+import useGlobalDuplicateDebtAudit from '../src/hooks/useGlobalDuplicateDebtAudit';
+import GlobalDuplicateDebtBanner from '../src/components/GlobalDuplicateDebtBanner';
 
 // Giữ nguyên markup/action hiện có nhưng bổ sung feedback scale cho toàn bộ nút của dashboard.
 const TouchableOpacity = AnimatedPressable;
@@ -166,7 +167,6 @@ export default function DashboardScreen() {
   const portalManagementModalRef = useRef(null); // Modal quản lý Link Ghim Zalo cho nhóm khách và NCC
   const batchExportDebtModalRef = useRef(null); // Modal xuất công nợ hàng loạt (tải ảnh PC / chuyển tiếp Zalo)
   const customerGroupsModalRef = useRef(null); // Modal quản lý nhóm nhà hàng & chuỗi chi nhánh
-  const portalFeedbackAdminModalRef = useRef(null); // Modal quản lý phản hồi, thắc mắc công nợ từ khách hàng qua Zalo Portal
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
   const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
   const quickPriceLinkModalRef = useRef(null); // Modal link Zalo cập nhật giá bán cho Anh Chủ
@@ -185,18 +185,6 @@ export default function DashboardScreen() {
       return false;
     });
   }, [userCustomerGroups, todayDayOfMonth, dismissedReminderGroupIds]);
-
-  // Lấy số lượng phản hồi đang chờ xử lý từ khách hàng Zalo Portal (cập nhật mỗi 30s)
-  const { data: pendingFeedbacksRes } = useQuery({
-    queryKey: ['portalPendingFeedbacks'],
-    queryFn: async () => {
-      const res = await api.get('/portal/manage/feedbacks', { params: { status: 'pending' } });
-      return res.data;
-    },
-    refetchInterval: 30000,
-    enabled: !!auth.user && !auth.user?.workspaceMember,
-  });
-  const pendingFeedbackCount = pendingFeedbacksRes?.data?.length || 0;
 
   // Lấy số lượng hóa đơn nhân viên nộp chờ duyệt (cập nhật mỗi 20s)
   const { data: pendingStaffSubmissionsRes, refetch: refetchStaffSubmissions } = useQuery({
@@ -438,8 +426,29 @@ export default function DashboardScreen() {
     return `${yyyy}-${mm}-${dd}`;
   };
 
+  // Khởi tạo kiểm tra ngầm toàn cục trùng lặp đơn hàng trong ngày
+  const {
+    globalDuplicates,
+    showDuplicateAlertModal,
+    notifyDebtSubmitted,
+  } = useGlobalDuplicateDebtAudit({
+    transactions: transactionsResponse?.data,
+    customers: customersResponse?.data,
+    popupModalRef,
+    onInspectCustomer: (customerId, customer) => {
+      const targetCust = (customersResponse?.data || []).find((c) => c.id === customerId) || customer;
+      if (targetCust) {
+        setSelectedCustomerId(targetCust.id);
+        customerDebtHistoryModalRef.current?.open(targetCust);
+      }
+    },
+  });
+
   // Các hàm làm mới dữ liệu khách hàng kèm theo lịch sử nợ chi tiết nếu đang mở
-  const handleRefreshAll = () => {
+  const handleRefreshAll = (options = {}) => {
+    if (options?.fromSubmit) {
+      notifyDebtSubmitted();
+    }
     refetch();
     refetchPayments(); // Luôn cập nhật lại cả lịch sử thanh toán để đảm bảo doanh thu mới nhất
     refetchTransactions(); // Luôn cập nhật lại giao dịch để đảm bảo tổng tiền mới nhất
@@ -2203,25 +2212,6 @@ export default function DashboardScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* Nút thông báo phản hồi Portal từ khách hàng */}
-              {!auth.user?.workspaceMember && (
-                <TouchableOpacity
-                  style={styles.portalNotifyBtn}
-                  onPress={() => portalFeedbackAdminModalRef.current?.open('pending')}
-                  activeOpacity={0.7}
-                  title="Kiểm tra phản hồi & khiếu nại từ khách hàng qua Zalo Portal"
-                >
-                  <Text style={styles.portalNotifyIcon}>🔔</Text>
-                  {pendingFeedbackCount > 0 && (
-                    <View style={styles.portalNotifyBadge}>
-                      <Text style={styles.portalNotifyBadgeText}>
-                        {pendingFeedbackCount > 9 ? '9+' : pendingFeedbackCount}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              )}
-
               <TouchableOpacity
                 style={styles.merchantProfileCardRight}
                 onPress={() => profileModalRef.current?.open()}
@@ -2518,9 +2508,6 @@ export default function DashboardScreen() {
 
         {/* Modal Duyệt đơn nhân viên */}
         <StaffSubmissionReviewModal ref={staffSubmissionReviewModalRef} />
-
-        {/* Modal Quản lý Phản Hồi Zalo Portal */}
-        <PortalFeedbackAdminModal ref={portalFeedbackAdminModalRef} />
 
         {/* Popup Thông báo */}
         <PopupModal ref={popupModalRef} />
@@ -3272,25 +3259,6 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
-            {/* Nút thông báo phản hồi Portal từ khách hàng */}
-            {!auth.user?.workspaceMember && (
-              <TouchableOpacity
-                style={styles.portalNotifyBtn}
-                onPress={() => portalFeedbackAdminModalRef.current?.open('pending')}
-                activeOpacity={0.7}
-                title="Kiểm tra phản hồi & khiếu nại từ khách hàng qua Zalo Portal"
-              >
-                <Text style={styles.portalNotifyIcon}>🔔</Text>
-                {pendingFeedbackCount > 0 && (
-                  <View style={styles.portalNotifyBadge}>
-                    <Text style={styles.portalNotifyBadgeText}>
-                      {pendingFeedbackCount > 9 ? '9+' : pendingFeedbackCount}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
-
             <TouchableOpacity
               style={styles.merchantProfileCardRight}
               onPress={() => profileModalRef.current?.open()}
@@ -3855,6 +3823,12 @@ export default function DashboardScreen() {
           ) : null}
         </View>
 
+        {/* BANNER CẢNH BÁO TRÙNG ĐƠN TRONG NGÀY (TỰ ĐỘNG HIỆN KHI KIỂM TRA NGẦM PHÁT HIỆN) */}
+        <GlobalDuplicateDebtBanner
+          duplicates={globalDuplicates}
+          onPress={showDuplicateAlertModal}
+        />
+
         <View style={styles.listHeaderContainer}>
           <Text style={styles.listHeader}>👥 DANH SÁCH KHÁCH ({filteredCustomers.length})</Text>
           <TouchableOpacity
@@ -3919,10 +3893,10 @@ export default function DashboardScreen() {
 
 
       {/* MODAL KẾT QUẢ GHI NỢ GIỌNG NÓI (Ẩn) */}
-      <ScanTicketModal ref={scanTicketModalRef} onRefresh={handleRefreshAll} />
+      <ScanTicketModal ref={scanTicketModalRef} onRefresh={() => handleRefreshAll({ fromSubmit: true })} />
 
       {/* MODAL NHẬP NỢ HÀNG LOẠT (Ẩn) */}
-      <BatchDebtModal ref={batchDebtModalRef} onRefresh={handleRefreshAll} />
+      <BatchDebtModal ref={batchDebtModalRef} onRefresh={() => handleRefreshAll({ fromSubmit: true })} />
 
       {/* MODAL THU NỢ HÀNG LOẠT (Ẩn) */}
       <BatchPaymentModal
@@ -3944,7 +3918,7 @@ export default function DashboardScreen() {
       />
 
       {/* CÁC SUB-MODAL PHỤC VỤ LỊCH SỬ NỢ */}
-      <DebtModal ref={debtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshAll} />
+      <DebtModal ref={debtModalRef} customerId={selectedCustomerId} onRefresh={() => handleRefreshAll({ fromSubmit: true })} />
       <PaymentModal ref={paymentModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshAll} />
       <TransactionDetailModal
         ref={detailModalRef}
@@ -4024,9 +3998,6 @@ export default function DashboardScreen() {
       />
       {/* MODAL QUẢN LÝ LINK GHIM ZALO CHO KHÁCH & NHÀ CUNG CẤP */}
       <PortalManagementModal ref={portalManagementModalRef} />
-
-      {/* MODAL QUẢN LÝ PHẢN HỒI & KHIẾU NẠI TỪ ZALO PORTAL */}
-      <PortalFeedbackAdminModal ref={portalFeedbackAdminModalRef} />
 
       {/* MODAL DUYỆT HÓA ĐƠN & TÍCH KÊ TỪ ZALO NHÂN VIÊN */}
       <StaffSubmissionReviewModal

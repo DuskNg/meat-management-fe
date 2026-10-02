@@ -24,10 +24,10 @@ const formatCurrency = (val) =>
 /**
  * Modal Kiểm Tra Giá Thịt:
  * - Hiển thị danh sách bảng giá thịt đơn giản, trực quan, dễ nhìn.
- * - Không màu mè, phân cột rõ ràng: TÊN THỊT | ĐƠN GIÁ | PHẢN ÁNH.
+ * - Phân cột rõ ràng: TÊN THỊT | ĐƠN GIÁ.
  * - Cho phép tìm kiếm nhanh loại thịt.
  */
-const CustomerPriceCheckModal = forwardRef(({ onOpenFeedback }, ref) => {
+const CustomerPriceCheckModal = forwardRef((props, ref) => {
   const [visible, setVisible] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [items, setItems] = useState([]);
@@ -52,24 +52,6 @@ const CustomerPriceCheckModal = forwardRef(({ onOpenFeedback }, ref) => {
     const q = searchQuery.toLowerCase().trim();
     return items.filter((it) => (it.name || '').toLowerCase().includes(q));
   }, [items, searchQuery]);
-
-  // Xử lý khi bấm nút "Phản ánh" cho một mặt hàng cụ thể
-  const handleFeedbackItem = (item) => {
-    setVisible(false);
-    if (onOpenFeedback) {
-      const priceStr = formatCurrency(item.price);
-      const defaultContent = `[Phản ánh giá] Mặt hàng: ${item.name} (${priceStr}/${item.unit || 'kg'}). Vấn đề cần phản ánh: `;
-      onOpenFeedback({ defaultContent });
-    }
-  };
-
-  // Xử lý khi bấm nút phản ánh chung
-  const handleGeneralFeedback = () => {
-    setVisible(false);
-    if (onOpenFeedback) {
-      onOpenFeedback({ defaultContent: '[Phản ánh giá] Nội dung phản ánh về giá thịt: ' });
-    }
-  };
 
   return (
     <SmoothModal
@@ -124,7 +106,6 @@ const CustomerPriceCheckModal = forwardRef(({ onOpenFeedback }, ref) => {
           <View style={styles.tableHeaderRow}>
             <Text style={[styles.thCell, styles.thName]}>TÊN THỊT</Text>
             <Text style={[styles.thCell, styles.thPrice]}>ĐƠN GIÁ</Text>
-            <Text style={[styles.thCell, styles.thAction]}></Text>
           </View>
 
           {/* Danh sách các dòng mặt hàng */}
@@ -159,14 +140,6 @@ const CustomerPriceCheckModal = forwardRef(({ onOpenFeedback }, ref) => {
                       {formattedPrice}
                       <Text style={styles.tdUnit}>/{item.unit || 'kg'}</Text>
                     </Text>
-
-                    <TouchableOpacity
-                      style={styles.tdActionBtn}
-                      onPress={() => handleFeedbackItem(item)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.tdActionBtnText}>Phản ánh</Text>
-                    </TouchableOpacity>
                   </View>
                 );
               })
@@ -174,16 +147,8 @@ const CustomerPriceCheckModal = forwardRef(({ onOpenFeedback }, ref) => {
           </ScrollView>
         </View>
 
-        {/* Footer: Nút phản ánh khác và đóng */}
+        {/* Footer: Nút đóng */}
         <View style={styles.modalFooter}>
-          <TouchableOpacity
-            style={styles.generalFeedbackBtn}
-            onPress={handleGeneralFeedback}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.generalFeedbackBtnText}>💬 Phản ánh giá khác</Text>
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={styles.closeFooterBtn}
             onPress={() => setVisible(false)}
@@ -308,10 +273,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     paddingRight: 8,
   },
-  thAction: {
-    width: 68,
-    textAlign: 'center',
-  },
   listScrollView: {
     maxHeight: 360,
   },
@@ -346,19 +307,6 @@ const styles = StyleSheet.create({
     fontWeight: 'normal',
     color: '#64748B',
   },
-  tdActionBtn: {
-    width: 68,
-    paddingVertical: 4,
-    borderRadius: 4,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tdActionBtnText: {
-    fontSize: 11,
-    color: '#475569',
-    fontWeight: '600',
-  },
   emptyContainer: {
     paddingVertical: 24,
     alignItems: 'center',
@@ -372,36 +320,19 @@ const styles = StyleSheet.create({
   modalFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingTop: 10,
     marginTop: 4,
-    gap: 8,
-  },
-  generalFeedbackBtn: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 6,
-    paddingVertical: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  generalFeedbackBtnText: {
-    fontSize: 12,
-    color: '#334155',
-    fontWeight: '600',
   },
   closeFooterBtn: {
+    flex: 1,
     backgroundColor: '#F1F5F9',
-    borderRadius: 6,
-    paddingVertical: 7,
-    paddingHorizontal: 16,
+    borderRadius: 8,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeFooterBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#475569',
     fontWeight: '600',
   },
