@@ -488,10 +488,11 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     });
 
     const netAmount = sumMeat - sumReturn;
+    // Sửa: bỏ điều kiện > 0 để tính đúng khi ngày chỉ có trả hàng (net âm)
     const finalTotalAmount =
-      dayData.totalAmount != null && dayData.totalAmount > 0
+      dayData.totalAmount != null
         ? dayData.totalAmount
-        : (netAmount !== 0 ? netAmount : (dayData.totalAmount || 0));
+        : (netAmount !== 0 ? netAmount : 0);
 
     const finalTotalQty =
       dayData.totalQty != null && dayData.totalQty > 0
@@ -981,10 +982,11 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
 
               {/* Khối tổng kết ngày - đã bỏ tổng kg và còn nợ ngày */}
               <View style={styles.dayDataSummaryCard}>
-                {daySummary.totalMeat > 0 && daySummary.totalReturn > 0 && (
+                {/* Hiện dòng tiền mua khi có trả hàng (cần phân biệt 2 số) */}
+                {daySummary.totalReturn > 0 && (
                   <>
                     <View style={styles.dayDataSummaryRow}>
-                      <Text style={styles.dayDataSummaryLabel}>Tiền hàng nhập:</Text>
+                      <Text style={styles.dayDataSummaryLabel}>Tiền mua hàng:</Text>
                       <Text style={styles.dayDataSummaryValue}>+{formatCurrency(daySummary.totalMeat)}</Text>
                     </View>
                     <View style={styles.dayDataSummaryRow}>
