@@ -2960,44 +2960,6 @@ export default function DashboardScreen() {
                   nestedScrollEnabled={true}
                 >
 
-
-
-                <TouchableOpacity
-                  style={styles.smartDebtMenuItem}
-                  onPress={() => {
-                    setShowDebtToolsMenu(false);
-                    periodicDebtReminderModalRef.current?.open();
-                  }}
-                >
-                  <Text style={styles.smartDebtMenuIcon}>📅</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.smartDebtMenuTitle, { color: '#DC2626' }]}>
-                      Lịch gửi công nợ định kỳ (Ngày 1 & 15)
-                    </Text>
-                    <Text style={styles.smartDebtMenuSub}>
-                      Gửi công nợ qua Zalo cho 22 nhà hàng (Trường Hoàng, Bếp hàng xóm...)
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-
-                <View style={styles.smartDebtMenuDivider} />
-
-                <TouchableOpacity
-                  style={styles.smartDebtMenuItem}
-                  onPress={() => {
-                    setShowDebtToolsMenu(false);
-                    profitManagementModalRef.current?.open();
-                  }}
-                >
-                  <Text style={styles.smartDebtMenuIcon}>📈</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.smartDebtMenuTitle}>Quản lý lợi nhuận & đối soát lò</Text>
-                    <Text style={styles.smartDebtMenuSub}>Đối soát tiền bán, tiền nhập, kết luận lãi/lỗ theo tháng</Text>
-                  </View>
-                </TouchableOpacity>
-
-                <View style={styles.smartDebtMenuDivider} />
-
                 <TouchableOpacity
                   style={styles.smartDebtMenuItem}
                   onPress={() => {
@@ -3212,6 +3174,42 @@ export default function DashboardScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.smartDebtMenuTitle}>Tải trọn bộ 3 ảnh báo cáo</Text>
                     <Text style={styles.smartDebtMenuSub}>Công nợ ngày, khách chưa lên đơn & đơn trùng</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    periodicDebtReminderModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>📅</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.smartDebtMenuTitle, { color: '#DC2626' }]}>
+                      Lịch gửi công nợ định kỳ (Ngày 1 & 15)
+                    </Text>
+                    <Text style={styles.smartDebtMenuSub}>
+                      Gửi công nợ qua Zalo cho 22 nhà hàng (Trường Hoàng, Bếp hàng xóm...)
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
+                    profitManagementModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>📈</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartDebtMenuTitle}>Quản lý lợi nhuận & đối soát lò</Text>
+                    <Text style={styles.smartDebtMenuSub}>Đối soát tiền bán, tiền nhập, kết luận lãi/lỗ theo tháng</Text>
                   </View>
                 </TouchableOpacity>
 
