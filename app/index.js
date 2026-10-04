@@ -3826,7 +3826,7 @@ export default function DashboardScreen() {
         {/* BANNER CẢNH BÁO TRÙNG ĐƠN TRONG NGÀY (TỰ ĐỘNG HIỆN KHI KIỂM TRA NGẦM PHÁT HIỆN) */}
         <GlobalDuplicateDebtBanner
           duplicates={globalDuplicates}
-          onPress={showDuplicateAlertModal}
+          onPress={() => showDuplicateAlertModal()}
         />
 
         <View style={styles.listHeaderContainer}>

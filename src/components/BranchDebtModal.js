@@ -44,12 +44,31 @@ const BranchDebtModal = forwardRef(({ token, apiHost, sessionToken }, ref) => {
       const formattedMonth = `${String(m).padStart(2, '0')}/${y}`;
       const host = apiHost || 'http://127.0.0.1:3000';
       const headers = {};
+
+      // Đính kèm sessionToken của portal nếu có
       if (sessionToken) {
+        headers['x-portal-session'] = sessionToken;
+      }
+
+      // Đính kèm Access Token của chủ buôn (nếu đang đăng nhập) để server nhận diện quyền chủ xem real-time
+      const ownerToken = typeof window !== 'undefined' ? localStorage.getItem('meat_manager_access_token') : null;
+      if (ownerToken) {
+        headers['Authorization'] = `Bearer ${ownerToken}`;
+      } else if (sessionToken) {
         headers['Authorization'] = `Bearer ${sessionToken}`;
       }
 
+      // Đánh dấu môi trường và chống cache trình duyệt
+      const isDev = typeof window !== 'undefined' && (
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1'
+      );
+      headers['x-portal-env'] = isDev ? 'development' : 'production';
+      headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      headers['Pragma'] = 'no-cache';
+
       const res = await axios.get(`${host}/api/v1/portal/branches-debt/${token}`, {
-        params: { month: formattedMonth },
+        params: { month: formattedMonth, _t: Date.now() },
         headers,
       });
 
@@ -200,22 +219,43 @@ const BranchDebtModal = forwardRef(({ token, apiHost, sessionToken }, ref) => {
           <View style={[styles.summaryBox, styles.summaryBoxMonth]}>
             <Text style={styles.summaryBoxLabel}>TỔNG NỢ THÁNG {formattedMonthStr}</Text>
             <Text style={[styles.summaryBoxValue, styles.textRed]}>
-              {loading ? '...' : formatCurrency(summary.monthDebt)}
+              {loading ? '...' : formatCurrency(summary.monthPurchase || 0)}
             </Text>
-            <Text style={styles.summaryBoxSubText}>
-              Mua: {formatCurrency(summary.monthPurchase || 0)}
-            </Text>
+            <View style={styles.summaryDetailRows}>
+              <View style={styles.summaryDetailItem}>
+                <Text style={styles.summaryDetailLabel}>Đã thanh toán:</Text>
+                <Text style={[styles.summaryDetailValue, styles.textGreen]}>
+                  {loading ? '...' : formatCurrency(summary.monthPaid || 0)}
+                </Text>
+              </View>
+              <View style={styles.summaryDetailItem}>
+                <Text style={styles.summaryDetailLabel}>Còn lại:</Text>
+                <Text style={[styles.summaryDetailValue, styles.textRedBold]}>
+                  {loading ? '...' : formatCurrency(summary.monthDebt || 0)}
+                </Text>
+              </View>
+            </View>
           </View>
 
           {/* Cột 2: Tổng nợ toàn bộ lũy kế */}
           <View style={[styles.summaryBox, styles.summaryBoxTotal]}>
             <Text style={styles.summaryBoxLabel}>TỔNG NỢ TOÀN BỘ (LŨY KẾ)</Text>
             <Text style={[styles.summaryBoxValue, styles.textDarkRed]}>
-              {loading ? '...' : formatCurrency(summary.totalDebt)}
+              {loading ? '...' : formatCurrency(summary.totalDebt || 0)}
             </Text>
-            <Text style={styles.summaryBoxSubText}>
-              Tất cả {branches.length} cửa hàng
-            </Text>
+            <View style={styles.summaryDetailRows}>
+              <View style={styles.summaryDetailItem}>
+                <Text style={styles.summaryDetailLabel}>Quy mô chuỗi:</Text>
+                <Text style={styles.summaryDetailValue}>
+                  Tất cả {branches.length} quán
+                </Text>
+              </View>
+              <View style={styles.summaryDetailItem}>
+                <Text style={styles.summaryTotalNote} numberOfLines={1}>
+                  (Đã tính nợ cũ & mọi đợt thanh toán)
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -463,6 +503,42 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     color: '#6B7280',
     marginTop: 2,
+  },
+  summaryDetailRows: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.06)',
+    gap: 3,
+  },
+  summaryDetailItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryDetailLabel: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  summaryDetailValue: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  textGreen: {
+    color: '#059669',
+    fontWeight: '700',
+  },
+  textRedBold: {
+    color: '#DC2626',
+    fontWeight: '800',
+  },
+  summaryTotalNote: {
+    fontSize: 10,
+    color: '#64748B',
+    fontStyle: 'italic',
+    marginTop: 1,
   },
 
   // Bảng dữ liệu

@@ -16,7 +16,11 @@ const GlobalDuplicateDebtBanner = ({ duplicates = [], onPress = null }) => {
   return (
     <TouchableOpacity
       style={styles.bannerContainer}
-      onPress={onPress}
+      onPress={() => {
+        if (typeof onPress === 'function') {
+          onPress();
+        }
+      }}
       activeOpacity={0.85}
     >
       <View style={styles.iconWrap}>

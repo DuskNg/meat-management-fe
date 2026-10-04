@@ -41,8 +41,9 @@ export const useGlobalDuplicateDebtAudit = ({
 
   // Mở popup cảnh báo chi tiết các khách hàng bị trùng
   const showDuplicateAlertModal = useCallback((customList = null) => {
-    const targetList = customList || globalDuplicatesRef.current;
-    if (!targetList || targetList.length === 0) return;
+    // Chỉ chấp nhận customList nếu là mảng thực sự (tránh nhận nhầm SyntheticEvent / ClickEvent khi gọi từ onPress)
+    const targetList = Array.isArray(customList) ? customList : globalDuplicatesRef.current;
+    if (!Array.isArray(targetList) || targetList.length === 0) return;
 
     const popupModal = popupModalRefRef.current?.current || popupModalRefRef.current;
     if (!popupModal) return;

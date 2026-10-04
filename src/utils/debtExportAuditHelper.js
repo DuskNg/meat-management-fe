@@ -488,7 +488,8 @@ const tCustomerNameFallback = (entries) => {
  * 6. Tạo chuỗi thông báo pop-up toàn cục khi phát hiện đơn trùng:
  */
 export const buildGlobalAuditWarningMessage = (duplicateResults = []) => {
-  if (!duplicateResults || duplicateResults.length === 0) return '';
+  // Đảm bảo dữ liệu đầu vào là mảng hợp lệ, chống lỗi t.forEach is not a function
+  if (!Array.isArray(duplicateResults) || duplicateResults.length === 0) return '';
 
   const sections = [];
   sections.push('⚠️ PHÁT HIỆN TRÙNG LẶP ĐƠN HÀNG TRONG NGÀY:');
@@ -516,7 +517,7 @@ export const buildGlobalAuditWarningMessage = (duplicateResults = []) => {
  * 7. Tạo chữ ký định danh cho danh sách trùng lặp (dùng để tránh spam popup khi dữ liệu không đổi):
  */
 export const computeDuplicatesSignature = (duplicateResults = []) => {
-  if (!duplicateResults || duplicateResults.length === 0) return '';
+  if (!Array.isArray(duplicateResults) || duplicateResults.length === 0) return '';
   return duplicateResults
     .map((res) => {
       const groupStr = (res.groups || [])
