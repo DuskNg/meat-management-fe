@@ -62,6 +62,7 @@ import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewM
 import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
 import BankTransactionsView from '../src/components/BankTransactionsView';
 import ProfitManagementModal from '../src/components/ProfitManagementModal';
+import PeriodicDebtReminderModal from '../src/components/PeriodicDebtReminderModal';
 import { showGlobalToast } from '../src/store/toastStore';
 import { isMobileDevice } from '../src/utils/imageShareHelper';
 import { exportDailyReportBundle } from '../src/utils/dailyBundleExportHelper';
@@ -171,6 +172,7 @@ export default function DashboardScreen() {
   const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
   const quickPriceLinkModalRef = useRef(null); // Modal link Zalo cập nhật giá bán cho Anh Chủ
   const profitManagementModalRef = useRef(null); // Modal quản lý lợi nhuận & đối soát lò
+  const periodicDebtReminderModalRef = useRef(null); // Modal nhắc gửi công nợ định kỳ Ngày 1 & Ngày 15 hàng tháng qua Zalo
 
   // Nhắc hẹn chốt công nợ định kỳ theo nhóm nhà hàng (ví dụ: nhóm Trường Hoàng từ 15 đến 31)
   const [dismissedReminderGroupIds, setDismissedReminderGroupIds] = useState(new Set());
@@ -557,6 +559,37 @@ export default function DashboardScreen() {
       };
     }
   }, [auth.user?.id, auth.user?.workspaceMember?.workspace?.ownerId]);
+
+  // ─── TỰ ĐỘNG HIỂN THỊ POP-UP NHẮC GỬI CÔNG NỢ ĐỊNH KỲ (NGÀY 1 & NGÀY 15) ───
+  useEffect(() => {
+    // Chỉ kích hoạt khi đã đăng nhập và là chủ buôn / quản lý
+    if (!auth.user || auth.user?.workspaceMember) return;
+
+    const today = new Date();
+    const day = today.getDate();
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1;
+
+    // Kiểm tra đúng ngày 1 (gửi cả tháng trước) hoặc ngày 15 (gửi từ 1->15)
+    const isDay1 = day === 1;
+    const isDay15 = day === 15;
+
+    if (isDay1 || isDay15) {
+      const periodKey = isDay1 ? 'last_month' : 'first_half';
+      const storageKey = `periodic_debt_reminder_${periodKey}_${year}_${month}_${day}`;
+
+      if (typeof window !== 'undefined') {
+        const isDismissed = localStorage.getItem(storageKey);
+        if (!isDismissed) {
+          // Trì hoãn 1.5s để màn hình chính tải xong mượt mà rồi mới mở pop-up
+          const timer = setTimeout(() => {
+            periodicDebtReminderModalRef.current?.open({ periodType: periodKey });
+          }, 1500);
+          return () => clearTimeout(timer);
+        }
+      }
+    }
+  }, [auth.user?.id]);
 
   // 1.8. Dùng React Query tải danh sách nhà cung cấp
   const { data: suppliersResponse, isLoading: isLoadingSuppliers, refetch: refetchSuppliers, isRefetching: isRefetchingSuppliers } = useQuery({
@@ -3524,6 +3557,26 @@ export default function DashboardScreen() {
                   style={styles.smartDebtMenuItem}
                   onPress={() => {
                     setShowDebtToolsMenu(false);
+                    periodicDebtReminderModalRef.current?.open();
+                  }}
+                >
+                  <Text style={styles.smartDebtMenuIcon}>📅</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.smartDebtMenuTitle, { color: '#DC2626' }]}>
+                      Lịch gửi công nợ định kỳ (Ngày 1 & 15)
+                    </Text>
+                    <Text style={styles.smartDebtMenuSub}>
+                      Gửi công nợ qua Zalo cho 22 nhà hàng (Trường Hoàng, Bếp hàng xóm...)
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.smartDebtMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.smartDebtMenuItem}
+                  onPress={() => {
+                    setShowDebtToolsMenu(false);
                     profitManagementModalRef.current?.open();
                   }}
                 >
@@ -4040,6 +4093,9 @@ export default function DashboardScreen() {
 
       {/* MODAL QUẢN LÝ LỢI NHUẬN & ĐỐI SOÁT LÒ */}
       <ProfitManagementModal ref={profitManagementModalRef} />
+
+      {/* MODAL NHẮC GỬI CÔNG NỢ ĐỊNH KỲ (NGÀY 1 & 15 HÀNG THÁNG QUA ZALO) */}
+      <PeriodicDebtReminderModal ref={periodicDebtReminderModalRef} />
 
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />
