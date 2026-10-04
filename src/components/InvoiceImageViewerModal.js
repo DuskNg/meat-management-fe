@@ -17,6 +17,7 @@ import { api } from '../api/client';
 import axios from 'axios';
 import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
 import { showGlobalToast } from '../store/toastStore';
+import { getLunarDateString } from '../utils/lunarCalendar';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -512,10 +513,43 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
         {/* Thanh Header */}
         <View style={styles.headerRow}>
           <View style={styles.headerTitleContainer}>
-            <Text style={styles.titleText} numberOfLines={1}>
-              {isVideo ? '🎬 ' : ''}{title} {images.length > 1 ? `(${currentIndex + 1}/${images.length})` : ''}
-            </Text>
-            {subtitle ? <Text style={styles.subText} numberOfLines={1}>{subtitle}</Text> : null}
+            {dayData ? (
+              <View style={styles.headerStatusRow}>
+                <View style={[
+                  styles.headerStatusBadge,
+                  dayData.isPaid
+                    ? styles.headerStatusBadgePaid
+                    : dayData.isPartialPaid
+                    ? styles.headerStatusBadgePartial
+                    : styles.headerStatusBadgeUnpaid
+                ]}>
+                  <Text style={[
+                    styles.headerStatusBadgeText,
+                    dayData.isPaid
+                      ? styles.headerStatusTextPaid
+                      : dayData.isPartialPaid
+                      ? styles.headerStatusTextPartial
+                      : styles.headerStatusTextUnpaid
+                  ]}>
+                    {dayData.isPaid
+                      ? '✓ ĐÃ THANH TOÁN'
+                      : dayData.isPartialPaid
+                      ? '⚡ TRẢ 1 PHẦN'
+                      : '⏳ CÒN NỢ'}
+                  </Text>
+                </View>
+                {images.length > 1 && (
+                  <Text style={styles.headerImageIndex}>({currentIndex + 1}/{images.length})</Text>
+                )}
+              </View>
+            ) : (
+              <>
+                <Text style={styles.titleText} numberOfLines={1}>
+                  {isVideo ? '🎬 ' : ''}{title} {images.length > 1 ? `(${currentIndex + 1}/${images.length})` : ''}
+                </Text>
+                {subtitle ? <Text style={styles.subText} numberOfLines={1}>{subtitle}</Text> : null}
+              </>
+            )}
           </View>
 
           {/* Cụm điều hướng Hôm trước / Hôm sau trên Desktop */}
@@ -532,6 +566,14 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
                 </Text>
               </TouchableOpacity>
 
+              <View style={styles.desktopDayNavCenter}>
+                {(dayData?.displayLunarDate || (dayData?.dateKey && getLunarDateString(dayData.dateKey))) ? (
+                  <Text style={styles.desktopDayNavCurrentText}>
+                    ({dayData?.displayLunarDate || getLunarDateString(dayData.dateKey)} âm)
+                  </Text>
+                ) : null}
+              </View>
+
               <TouchableOpacity
                 style={[styles.dayNavClusterBtn, !hasNextDay && styles.dayNavClusterBtnDisabled]}
                 onPress={handleNextDay}
@@ -546,26 +588,27 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
           )}
 
           <View style={styles.headerActions}>
-            {Platform.OS === 'web' && currentUrl ? (
-              <>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={handleOpenInNewTab}
-                  title="Mở trong tab mới"
-                >
-                  <Text style={styles.actionBtnText}>🔗 Mở tab</Text>
-                </TouchableOpacity>
+            {/* Nút Sao chép số liệu ngày (thay thế nút Mở tab theo yêu cầu người dùng) */}
+            {dayData && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={handleCopyDaySummary}
+                title="Sao chép số liệu ngày"
+              >
+                <Text style={styles.actionBtnText}>📋 Copy</Text>
+              </TouchableOpacity>
+            )}
 
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={handleDownload}
-                  title={isMobileDevice() ? 'Gửi Zalo' : (isVideo ? 'Tải video về máy' : 'Tải ảnh về máy')}
-                >
-                  <Text style={styles.actionBtnText}>
-                    {isMobileDevice() ? '📲 Gửi Zalo' : (isVideo ? '⬇️ Tải video' : '⬇️ Lưu ảnh')}
-                  </Text>
-                </TouchableOpacity>
-              </>
+            {Platform.OS === 'web' && currentUrl ? (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={handleDownload}
+                title={isMobileDevice() ? 'Gửi Zalo' : (isVideo ? 'Tải video về máy' : 'Tải ảnh về máy')}
+              >
+                <Text style={styles.actionBtnText}>
+                  {isMobileDevice() ? '📲 Gửi Zalo' : (isVideo ? '⬇️ Tải video' : '⬇️ Lưu ảnh')}
+                </Text>
+              </TouchableOpacity>
             ) : null}
 
             {onDeleteCallback && (
@@ -598,9 +641,11 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
             </TouchableOpacity>
 
             <View style={styles.mobileDayNavCenter}>
-              <Text style={styles.mobileDayNavCurrentText} numberOfLines={1}>
-                📅 {dayData?.dateKey || ''}
-              </Text>
+              {(dayData?.displayLunarDate || (dayData?.dateKey && getLunarDateString(dayData.dateKey))) ? (
+                <Text style={styles.mobileDayNavCurrentText} numberOfLines={1}>
+                  ({dayData?.displayLunarDate || getLunarDateString(dayData.dateKey)} âm)
+                </Text>
+              ) : null}
             </View>
 
             <TouchableOpacity
@@ -618,13 +663,15 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
 
         {/* Thân chính modal: Khi có dayData sẽ chia 2 bên (ảnh/video 1 bên, số liệu 1 bên) */}
         <View style={[styles.viewerMainBody, isWide && dayData && styles.viewerMainBodyWide]}>
-          {/* Khung hiển thị hình ảnh / video có hỗ trợ Zoom & Kéo */}
-          <View
-            ref={containerRef}
-            style={[
-              styles.imageViewerBox,
-              dayData && (isWide ? styles.imageViewerBoxSplit : styles.imageViewerBoxMobileSplit),
-            ]}
+          {/* Cụm xem ảnh/video + thanh công cụ riêng biệt không đè lên ảnh */}
+          <View style={[
+            styles.imageViewerSection,
+            dayData && (isWide ? styles.imageViewerSectionSplit : styles.imageViewerSectionMobileSplit),
+          ]}>
+            {/* Khung hiển thị hình ảnh / video có hỗ trợ Zoom & Kéo */}
+            <View
+              ref={containerRef}
+              style={styles.imageViewerBox}
           onMouseDown={!isVideo ? handleMouseDown : undefined}
           onMouseMove={!isVideo ? handleMouseMove : undefined}
           onMouseUp={!isVideo ? handleMouseUp : undefined}
@@ -830,83 +877,39 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
             </>
           )}
 
-          {/* Thanh công cụ Zoom & Xoay ảnh nổi ở đáy khung xem ảnh */}
-          <View style={styles.floatingZoomBar}>
-            <TouchableOpacity style={styles.zoomBtn} onPress={handleZoomOut} title="Thu nhỏ (-)">
-              <Text style={styles.zoomBtnText}>−</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.zoomPercentBtn} onPress={resetZoom} title="Nhấp để về 100%">
-              <Text style={styles.zoomPercentText}>{Math.round(scale * 100)}%</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.zoomBtn} onPress={handleZoomIn} title="Phóng to (+)">
-              <Text style={styles.zoomBtnText}>+</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.zoomToolBtn} onPress={handleRotate} title="Xoay ảnh 90°">
-              <Text style={styles.zoomToolBtnText}>🔄 Xoay</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.zoomToolBtn} onPress={resetZoom} title="Đặt lại ảnh về giữa">
-              <Text style={styles.zoomToolBtnText}>↺ Đặt lại</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* CỘT PHẢI (HOẶC NỬA DƯỚI TRÊN MOBILE): BẢNG SỐ LIỆU NGÀY ĐÓ */}
-        {dayData && (
-          <View style={[styles.dayDataBox, isWide ? styles.dayDataBoxSplit : styles.dayDataBoxMobileSplit]}>
-            <View style={styles.dayDataHeader}>
-              <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
-                <View style={styles.dayDataTitleRow}>
-                  <Text style={styles.dayDataTitle}>📊 SỐ LIỆU NGÀY</Text>
-                  <View style={[
-                    styles.dayDataStatusBadge,
-                    dayData.isPaid
-                      ? styles.statusBadgePaid
-                      : dayData.isPartialPaid
-                      ? styles.statusBadgePartial
-                      : styles.statusBadgeUnpaid,
-                  ]}>
-                    <Text style={[
-                      styles.dayDataStatusBadgeText,
-                      dayData.isPaid
-                        ? styles.statusTextPaid
-                        : dayData.isPartialPaid
-                        ? styles.statusTextPartial
-                        : styles.statusTextUnpaid,
-                    ]}>
-                      {dayData.isPaid
-                        ? '✓ Đã thanh toán'
-                        : dayData.isPartialPaid
-                        ? '⚡ Trả 1 phần'
-                        : '⏳ Còn nợ'}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.dayDataDateSubtitle} numberOfLines={1}>
-                  📅 Ngày {dayData.dateKey}
-                  {dayData.displayLunarDate ? ` (${dayData.displayLunarDate} âm)` : ''}
-                  {dayData.customerName ? ` • 🏢 ${dayData.customerName}` : ''}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.copyDayDataBtn}
-                onPress={handleCopyDaySummary}
-                activeOpacity={0.7}
-                title="Sao chép số liệu ngày"
-              >
-                <Text style={styles.copyDayDataBtnText}>📋 Copy</Text>
-              </TouchableOpacity>
             </View>
 
-            {/* Bảng danh sách chi tiết các món thịt */}
-            <ScrollView style={styles.dayDataScroll} showsVerticalScrollIndicator={true}>
-              {/* Header bảng */}
-              <View style={styles.dayDataTableHeader}>
+            {/* Thanh công cụ Zoom & Xoay ảnh đặt riêng bên dưới, KHÔNG ĐÈ LÊN ẢNH */}
+            <View style={styles.dedicatedZoomBar}>
+              <TouchableOpacity style={styles.zoomBtn} onPress={handleZoomOut} title="Thu nhỏ (-)">
+                <Text style={styles.zoomBtnText}>−</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.zoomPercentBtn} onPress={resetZoom} title="Nhấp để về 100%">
+                <Text style={styles.zoomPercentText}>{Math.round(scale * 100)}%</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.zoomBtn} onPress={handleZoomIn} title="Phóng to (+)">
+                <Text style={styles.zoomBtnText}>+</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.zoomToolBtn} onPress={handleRotate} title="Xoay ảnh 90°">
+                <Text style={styles.zoomToolBtnText}>🔄 Xoay</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.zoomToolBtn} onPress={resetZoom} title="Đặt lại ảnh về giữa">
+                <Text style={styles.zoomToolBtnText}>↺ Đặt lại</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* CỘT PHẢI (HOẶC NỬA DƯỚI TRÊN MOBILE): BẢNG SỐ LIỆU NGÀY ĐÓ */}
+          {dayData && (
+            <View style={[styles.dayDataBox, isWide ? styles.dayDataBoxSplit : styles.dayDataBoxMobileSplit]}>
+              {/* Bảng danh sách chi tiết các món thịt (Đã bỏ khối tiêu đề số liệu ngày thừa) */}
+              <ScrollView style={styles.dayDataScroll} showsVerticalScrollIndicator={true}>
+                {/* Header bảng */}
+                <View style={styles.dayDataTableHeader}>
                 <Text style={[styles.dayDataTh, styles.dayDataColName]}>TÊN HÀNG</Text>
                 <Text style={[styles.dayDataTh, styles.dayDataColQty]}>KG</Text>
                 <Text style={[styles.dayDataTh, styles.dayDataColPrice]}>ĐƠN GIÁ</Text>
@@ -1061,6 +1064,22 @@ const styles = StyleSheet.create({
   dayNavClusterBtnTextDisabled: {
     color: '#64748B',
   },
+  desktopDayNavCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+  },
+  desktopDayNavCurrentText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#F8FAFC',
+  },
+  desktopDayNavLunarText: {
+    fontSize: 10,
+    color: '#94A3B8',
+    fontWeight: '500',
+    marginTop: 1,
+  },
   mobileDayNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1088,11 +1107,18 @@ const styles = StyleSheet.create({
   mobileDayNavCenter: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   mobileDayNavCurrentText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: 'bold',
     color: '#F8FAFC',
+  },
+  mobileDayNavLunarText: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+    fontWeight: '500',
+    marginTop: 1,
   },
   viewerMainBody: {
     flex: 1,
@@ -1103,14 +1129,32 @@ const styles = StyleSheet.create({
   viewerMainBodyWide: {
     flexDirection: 'row',
   },
+  imageViewerSection: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    backgroundColor: '#020617',
+    overflow: 'hidden',
+  },
+  imageViewerSectionSplit: {
+    flex: 1.15,
+    borderRightWidth: 1,
+    borderRightColor: '#334155',
+  },
+  imageViewerSectionMobileSplit: {
+    height: 440,
+    maxHeight: '62%',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
   imageViewerBoxSplit: {
     flex: 1.15,
     borderRightWidth: 1,
     borderRightColor: '#334155',
   },
   imageViewerBoxMobileSplit: {
-    height: 300,
-    maxHeight: '45%',
+    height: 360,
+    maxHeight: '52%',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
   },
@@ -1349,6 +1393,53 @@ const styles = StyleSheet.create({
     marginRight: 8,
     minWidth: 0,
   },
+  headerTitleContainer: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  headerStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerStatusBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 7,
+    borderWidth: 1,
+  },
+  headerStatusBadgePaid: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  headerStatusBadgePartial: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  headerStatusBadgeUnpaid: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  headerStatusBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  headerStatusTextPaid: {
+    color: '#15803D',
+  },
+  headerStatusTextPartial: {
+    color: '#B45309',
+  },
+  headerStatusTextUnpaid: {
+    color: '#B91C1C',
+  },
+  headerImageIndex: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
   titleText: {
     fontSize: 15,
     fontWeight: '700',
@@ -1465,6 +1556,18 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
+  },
+  dedicatedZoomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0F172A',
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    gap: 8,
+    flexShrink: 0,
   },
   zoomBtn: {
     width: 30,
