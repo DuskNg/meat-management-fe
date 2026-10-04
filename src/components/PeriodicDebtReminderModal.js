@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/PeriodicDebtReminderModal.js
-import React, { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
+import AddPeriodicCustomerModal from './AddPeriodicCustomerModal';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import { api } from '../api/client';
 import { showGlobalToast } from '../store/toastStore';
@@ -20,7 +21,7 @@ import {
   isMobileDevice,
 } from '../utils/imageShareHelper';
 
-// Danh sách định danh 22 nhà hàng được áp dụng lịch gửi công nợ tự động
+// Danh sách định danh 22 nhà hàng mặc định ban đầu nếu chưa có cấu hình trong DB
 export const TARGET_RESTAURANTS_CONFIG = [
   // ─── 1. CHUỖI TRƯỜNG HOÀNG (11 NHÀ HÀNG - XUẤT 11 ẢNH RIÊNG) ───
   {
@@ -201,6 +202,17 @@ export const getPeriodicRange = (periodType) => {
     };
   }
 
+  if (periodType === 'all') {
+    // Toàn bộ danh sách khách nhắc nợ
+    return {
+      type: 'all',
+      title: `Tất cả khách nhắc nợ`,
+      subtitle: `Danh sách toàn bộ các quán được cài đặt nhắc nợ định kỳ`,
+      fromDate: `01/${pad(m + 1)}/${y}`,
+      toDate: `${pad(today.getDate())}/${pad(m + 1)}/${y}`,
+    };
+  }
+
   // Mặc định: Kỳ toàn bộ tháng trước (áp dụng vào ngày 1 hàng tháng)
   const firstDayPrevMonth = new Date(y, m - 1, 1);
   const lastDayPrevMonth = new Date(y, m, 0);
@@ -229,63 +241,123 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0, currentName: '' });
 
-  // Quản lý kỳ gửi công nợ (last_month: Tháng trước / first_half: Ngày 1->15)
+  // Ref mở modal thêm khách hàng mới
+  const addCustomerModalRef = useRef(null);
+
+  // Quản lý kỳ gửi công nợ (last_month: Tháng trước / first_half: Ngày 1->15 / all: Tất cả)
   const [periodType, setPeriodType] = useState('last_month');
   const currentRange = useMemo(() => getPeriodicRange(periodType), [periodType]);
 
-  // Danh sách các nhà hàng thực tế ghép với config
+  // Danh sách các cấu hình nhắc nợ từ Backend và danh sách khách hàng
+  const [rawConfigs, setRawConfigs] = useState([]);
   const [matchedItems, setMatchedItems] = useState([]);
   const [selectedKeys, setSelectedKeys] = useState(new Set());
 
-  // Tải danh sách khách hàng và khớp với 22 nhà hàng được cấu hình
+  // Tải danh sách khách hàng được cấu hình nhắc nợ từ Database
   const loadTargetCustomers = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/customers');
-      const allCusts = res.data?.data || [];
+      // Gọi API lấy cấu hình đã lưu trong cơ sở dữ liệu
+      const res = await api.get('/periodic-reminders');
+      const configs = res.data?.data || [];
+      setRawConfigs(configs);
 
-      const list = [];
-      const defaultSelected = new Set();
+      let list = [];
 
-      for (const cfg of TARGET_RESTAURANTS_CONFIG) {
-        // Tìm khách hàng khớp theo expectedId hoặc theo tên
-        let cust = allCusts.find((c) => c.id === cfg.expectedId);
-
-        if (!cust) {
-          const lowerTerms = cfg.matchTerms.map((t) => t.toLowerCase());
-          cust = allCusts.find((c) => {
-            const cName = (c.name || '').toLowerCase();
-            return lowerTerms.some((term) => cName.includes(term));
-          });
-        }
-
-        if (cust) {
-          list.push({
-            config: cfg,
-            customer: cust,
-            key: cfg.key,
-            id: cust.id,
-            name: cust.name,
-            phone: cust.phone,
-            groupName: cfg.groupName,
+      if (configs.length > 0) {
+        list = configs.map((cfg) => {
+          const cust = cfg.customer || {};
+          return {
+            configId: cfg.id,
+            key: cfg.customerId || cfg.id,
+            id: cfg.customerId,
+            name: cust.name || 'Khách chưa đặt tên',
+            phone: cust.phone || '',
+            groupName: cfg.groupName || 'Các nhà hàng riêng lẻ',
+            reminderDays: cfg.reminderDays || '1,15',
+            notes: cfg.notes,
             currentDebt: Number(cust.currentDebt) || 0,
+            customer: cust,
             monthPurchase: 0,
             monthPaid: 0,
             monthDebt: 0,
             loaded: false,
-          });
-          defaultSelected.add(cfg.key);
+          };
+        });
+      } else {
+        // Fallback tự động tìm trong danh bạ nếu DB trống
+        const custRes = await api.get('/customers');
+        const allCusts = custRes.data?.data || [];
+
+        for (const cfg of TARGET_RESTAURANTS_CONFIG) {
+          let cust = allCusts.find((c) => c.id === cfg.expectedId);
+          if (!cust) {
+            const lowerTerms = cfg.matchTerms.map((t) => t.toLowerCase());
+            cust = allCusts.find((c) => {
+              const cName = (c.name || '').toLowerCase();
+              return lowerTerms.some((term) => cName.includes(term));
+            });
+          }
+
+          if (cust) {
+            list.push({
+              configId: null,
+              key: cfg.key,
+              id: cust.id,
+              name: cust.name,
+              phone: cust.phone,
+              groupName: cfg.groupName,
+              reminderDays: '1,15',
+              currentDebt: Number(cust.currentDebt) || 0,
+              customer: cust,
+              monthPurchase: 0,
+              monthPaid: 0,
+              monthDebt: 0,
+              loaded: false,
+            });
+          }
         }
       }
 
       setMatchedItems(list);
-      setSelectedKeys(defaultSelected);
     } catch (err) {
       console.warn('Lỗi tải danh bạ khách hàng cho lịch gửi công nợ:', err);
     } finally {
       setLoading(false);
     }
   };
+
+  // Lọc danh sách hiển thị theo kỳ đối soát (ngày 1, ngày 15 hoặc tất cả)
+  const displayedItems = useMemo(() => {
+    if (periodType === 'all') return matchedItems;
+
+    if (periodType === 'last_month') {
+      // Khách có áp dụng ngày 1
+      return matchedItems.filter((item) => {
+        const days = (item.reminderDays || '1,15')
+          .split(',')
+          .map((d) => d.trim().replace(/^0+/, ''));
+        return days.includes('1');
+      });
+    }
+
+    if (periodType === 'first_half') {
+      // Khách có áp dụng ngày 15
+      return matchedItems.filter((item) => {
+        const days = (item.reminderDays || '1,15')
+          .split(',')
+          .map((d) => d.trim());
+        return days.includes('15');
+      });
+    }
+
+    return matchedItems;
+  }, [matchedItems, periodType]);
+
+  // Cập nhật selectedKeys tự động khi danh sách displayedItems thay đổi
+  useEffect(() => {
+    setSelectedKeys(new Set(displayedItems.map((item) => item.key)));
+  }, [displayedItems]);
 
   useImperativeHandle(ref, () => ({
     open: (opts = {}) => {
@@ -308,7 +380,7 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
     },
   }));
 
-  // Đổi kỳ đối soát (Tháng trước <-> Ngày 1-15)
+  // Đổi kỳ đối soát (Tháng trước <-> Ngày 1-15 <-> Tất cả)
   const handleChangePeriod = (newType) => {
     if (newType === periodType) return;
     setPeriodType(newType);
@@ -327,18 +399,40 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
     });
   };
 
-  // Chọn / bỏ chọn tất cả
+  // Chọn / bỏ chọn tất cả các quán đang hiển thị
   const handleToggleSelectAll = () => {
-    if (selectedKeys.size === matchedItems.length) {
+    if (selectedKeys.size === displayedItems.length) {
       setSelectedKeys(new Set());
     } else {
-      setSelectedKeys(new Set(matchedItems.map((item) => item.key)));
+      setSelectedKeys(new Set(displayedItems.map((item) => item.key)));
+    }
+  };
+
+  // Xóa khách hàng khỏi danh sách nhắc nợ định kỳ
+  const handleDeleteCustomer = async (item) => {
+    if (!item.configId) {
+      setMatchedItems((prev) => prev.filter((i) => i.key !== item.key));
+      showGlobalToast(`Đã gỡ tạm ${item.name}`, 'info');
+      return;
+    }
+
+    try {
+      const res = await api.delete(`/periodic-reminders/${item.configId}`);
+      if (res.data?.success) {
+        showGlobalToast(`Đã gỡ ${item.name} khỏi danh sách nhắc nợ!`, 'success');
+        loadTargetCustomers();
+      } else {
+        showGlobalToast(res.data?.message || 'Không thể xóa cấu hình.', 'error');
+      }
+    } catch (err) {
+      console.error('Lỗi khi xóa cấu hình nhắc nợ:', err);
+      showGlobalToast('Có lỗi xảy ra khi xóa khách hàng.', 'error');
     }
   };
 
   // ─── HÀNH ĐỘNG 1: XUẤT VÀ CHUYỂN TIẾP ZALO TOÀN BỘ CÁC QUÁN ĐÃ CHỌN ───
   const handleExportAllToZalo = async () => {
-    const targets = matchedItems.filter((item) => selectedKeys.has(item.key));
+    const targets = displayedItems.filter((item) => selectedKeys.has(item.key));
     if (targets.length === 0) {
       showGlobalToast('Vui lòng chọn ít nhất một nhà hàng để gửi công nợ.', 'warning');
       return;
@@ -553,20 +647,20 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
     setVisible(false);
   };
 
-  // Phân nhóm hiển thị 22 nhà hàng
+  // Phân nhóm hiển thị các nhà hàng theo displayedItems
   const groupedItems = useMemo(() => {
     const groups = {};
-    for (const item of matchedItems) {
-      const gName = item.groupName;
+    for (const item of displayedItems) {
+      const gName = item.groupName || 'Các nhà hàng riêng lẻ';
       if (!groups[gName]) {
         groups[gName] = [];
       }
       groups[gName].push(item);
     }
     return groups;
-  }, [matchedItems]);
+  }, [displayedItems]);
 
-  const isAllSelected = selectedKeys.size === matchedItems.length && matchedItems.length > 0;
+  const isAllSelected = selectedKeys.size === displayedItems.length && displayedItems.length > 0;
 
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
@@ -612,7 +706,7 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                     periodType === 'last_month' && styles.periodTabBtnTextActive,
                   ]}
                 >
-                  📅 Gửi ngày 1 (Tháng trước)
+                  📅 Ngày 1 (Tháng trước)
                 </Text>
               </TouchableOpacity>
 
@@ -630,7 +724,25 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                     periodType === 'first_half' && styles.periodTabBtnTextActive,
                   ]}
                 >
-                  📅 Gửi ngày 15 (Từ 1 ➔ 15)
+                  📅 Ngày 15 (Từ 1 ➔ 15)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.periodTabBtn,
+                  periodType === 'all' && styles.periodTabBtnActive,
+                ]}
+                onPress={() => handleChangePeriod('all')}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.periodTabBtnText,
+                    periodType === 'all' && styles.periodTabBtnTextActive,
+                  ]}
+                >
+                  📋 Tất cả ({matchedItems.length})
                 </Text>
               </TouchableOpacity>
             </View>
@@ -645,7 +757,7 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
             </View>
           </View>
 
-          {/* THANH CÔNG CỤ CHỌN NHANH */}
+          {/* THANH CÔNG CỤ CHỌN NHANH VÀ NÚT THÊM KHÁCH */}
           <View style={styles.selectionBarRow}>
             <TouchableOpacity
               style={styles.selectAllBtn}
@@ -654,13 +766,18 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
             >
               <Text style={styles.checkboxIcon}>{isAllSelected ? '☑️' : '◻️'}</Text>
               <Text style={styles.selectAllBtnText}>
-                {isAllSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'} ({selectedKeys.size}/{matchedItems.length})
+                {isAllSelected ? 'Bỏ chọn' : 'Chọn tất cả'} ({selectedKeys.size}/{displayedItems.length})
               </Text>
             </TouchableOpacity>
 
-            <Text style={styles.targetCountHint}>
-              Đã nhận diện <Text style={styles.textBold}>{matchedItems.length}</Text> nhà hàng
-            </Text>
+            {/* Nút thêm khách chủ động */}
+            <TouchableOpacity
+              style={styles.addCustomerBtn}
+              onPress={() => addCustomerModalRef.current?.open()}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.addCustomerBtnText}>➕ Thêm khách</Text>
+            </TouchableOpacity>
           </View>
 
           {/* TIẾN TRÌNH XUẤT ẢNH NẾU ĐANG CHẠY */}
@@ -684,6 +801,18 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
               <ActivityIndicator size="small" color="#DC2626" />
               <Text style={styles.loadingText}>Đang tải danh sách nhà hàng...</Text>
             </View>
+          ) : displayedItems.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyIcon}>📭</Text>
+              <Text style={styles.emptyText}>Chưa có quán nào được cấu hình cho kỳ này</Text>
+              <TouchableOpacity
+                style={styles.emptyAddBtn}
+                onPress={() => addCustomerModalRef.current?.open()}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.emptyAddBtnText}>➕ Thêm khách ngay</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             Object.entries(groupedItems).map(([gName, items]) => {
               const selectedInGroup = items.filter((item) => selectedKeys.has(item.key));
@@ -699,7 +828,7 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                         {gName}
                       </Text>
                       <Text style={styles.groupSectionSubTitle}>
-                        {items.length} quán {gName.includes('Trường Hoàng') ? '• Gửi 11 ảnh riêng' : ''}
+                        {items.length} quán
                       </Text>
                     </View>
 
@@ -715,8 +844,8 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                     >
                       <Text style={styles.groupBatchActionBtnText}>
                         {isMobileDevice()
-                          ? `💬 Zalo cùng lúc (${targetItems.length} ảnh)`
-                          : `💾 Tải hàng loạt (${targetItems.length} ảnh)`}
+                          ? `💬 Zalo nhóm (${targetItems.length})`
+                          : `💾 Tải nhóm (${targetItems.length})`}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -742,25 +871,39 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                           <Text style={styles.customerNameText} numberOfLines={1}>
                             {item.name}
                           </Text>
-                          <Text style={styles.customerSubText}>
-                            {item.phone ? `📞 ${item.phone}` : 'Chưa có SĐT'}
-                            {' • Nợ hiện tại: '}
-                            <Text style={styles.textDebt}>{formatCurrency(item.currentDebt)}</Text>
-                          </Text>
+                          {/* Đã bỏ dòng phụ Chưa có SĐT • Nợ hiện tại theo yêu cầu người dùng */}
+                          <View style={styles.daysBadge}>
+                            <Text style={styles.daysBadgeText}>
+                              📅 Ngày {item.reminderDays || '1, 15'}
+                            </Text>
+                          </View>
                         </View>
                       </TouchableOpacity>
 
-                      {/* Nút gửi Zalo / Tải ảnh riêng lẻ */}
-                      <TouchableOpacity
-                        style={styles.singleShareBtn}
-                        onPress={() => handleExportSingleToZalo(item)}
-                        activeOpacity={0.7}
-                        disabled={exporting}
-                      >
-                        <Text style={styles.singleShareBtnText}>
-                          {isMobileDevice() ? '💬 Zalo' : '💾 Tải'}
-                        </Text>
-                      </TouchableOpacity>
+                      <View style={styles.rowRightActions}>
+                        {/* Nút gửi Zalo / Tải ảnh riêng lẻ */}
+                        <TouchableOpacity
+                          style={styles.singleShareBtn}
+                          onPress={() => handleExportSingleToZalo(item)}
+                          activeOpacity={0.7}
+                          disabled={exporting}
+                        >
+                          <Text style={styles.singleShareBtnText}>
+                            {isMobileDevice() ? '💬 Zalo' : '💾 Tải'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {/* Nút gỡ khách khỏi lịch nhắc nợ */}
+                        <TouchableOpacity
+                          style={styles.deleteCustomerBtn}
+                          onPress={() => handleDeleteCustomer(item)}
+                          activeOpacity={0.7}
+                          disabled={exporting}
+                          title="Gỡ khỏi danh sách nhắc nợ"
+                        >
+                          <Text style={styles.deleteCustomerBtnText}>🗑️</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   );
                 })}
@@ -808,6 +951,14 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
         </View>
       </View>
     </SmoothModal>
+
+    {/* Modal thêm khách nhắc nợ ĐỘC LẬP ở tầng cao nhất */}
+    <AddPeriodicCustomerModal
+      ref={addCustomerModalRef}
+      onRefresh={loadTargetCustomers}
+      existingConfigs={rawConfigs}
+    />
+  </>
   );
 });
 
@@ -1095,10 +1246,34 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
-  customerSubText: {
-    fontSize: 10.5,
-    color: '#64748B',
-    marginTop: 1,
+  daysBadge: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  daysBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#0284C7',
+  },
+  rowRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  deleteCustomerBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteCustomerBtnText: {
+    fontSize: 12,
   },
   singleShareBtn: {
     backgroundColor: '#059669',
@@ -1109,6 +1284,50 @@ const styles = StyleSheet.create({
   singleShareBtnText: {
     color: '#FFFFFF',
     fontSize: 11,
+    fontWeight: 'bold',
+  },
+
+  // Nút thêm khách
+  addCustomerBtn: {
+    backgroundColor: '#0284C7',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  addCustomerBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+
+  // Trạng thái trống
+  emptyBox: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  emptyIcon: {
+    fontSize: 32,
+  },
+  emptyText: {
+    fontSize: 12.5,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  emptyAddBtn: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  emptyAddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
     fontWeight: 'bold',
   },
 
