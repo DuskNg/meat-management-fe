@@ -663,7 +663,8 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
   const isAllSelected = selectedKeys.size === displayedItems.length && displayedItems.length > 0;
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         {/* HEADER MODAL CHUẨN */}
         <View style={styles.modalHeaderRow}>
@@ -908,8 +909,9 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                   );
                 })}
               </View>
-            ))
-          )}
+            );
+          })
+        )}
 
           <View style={{ height: 16 }} />
         </ScrollView>
