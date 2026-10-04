@@ -34,11 +34,9 @@ import EditPaymentModal from '../../src/components/EditPaymentModal';
 import EditReturnGoodsModal from '../../src/components/EditReturnGoodsModal';
 import EditCustomerModal from '../../src/components/EditCustomerModal';
 import MonthDetailDrawer from '../../src/components/MonthDetailDrawer';
-import ScanTicketModal from '../../src/components/ScanTicketModal';
 import InvoiceImageUploadModal from '../../src/components/InvoiceImageUploadModal';
 import InvoiceImageViewerModal from '../../src/components/InvoiceImageViewerModal';
 import PopupModal from '../../src/components/PopupModal';
-import { startNativeRecording, stopNativeRecording } from '../../src/utils/mediaActions';
 import { useResourceLock } from '../../src/hooks/useResourceLock';
 
 export default function CustomerDetailScreen() {
@@ -64,321 +62,11 @@ export default function CustomerDetailScreen() {
   const editCustomerModalRef = useRef(null);
   const monthDrawerRef = useRef(null); // Ref điều khiển Sidebar chi tiết tháng
   const scrollViewRef = useRef(null); // Ref để điều khiển cuộn của ScrollView
-  const scanTicketModalRef = useRef(null); // Ref điều khiển Modal kết quả quét tích kê
   const invoiceImageUploadModalRef = useRef(null); // Ref điều khiển Modal tải ảnh hóa đơn
   const invoiceImageViewerModalRef = useRef(null); // Ref điều khiển Modal xem ảnh hóa đơn
   const popupModalRef = useRef(null); // Ref điều khiển Popup thông báo dùng chung
 
-  const [scanning, setScanning] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
 
-  // Hàm xử lý kết quả phân tích chung cho cả giọng nói và nhập chữ
-  const processParseResult = (responseData, sourceTitle) => {
-    const { customerId, customerName, data } = responseData;
-    const results = Array.isArray(data) ? data : [data].filter(Boolean);
-    const firstResult = results[0];
-    if (!firstResult) {
-      popupModalRef.current?.show({
-        title: 'Không có kết quả',
-        message: 'AI không trả về dữ liệu giao dịch để hiển thị.',
-        type: 'warning'
-      });
-      return;
-    }
-
-    if (results.length === 1 && (firstResult.status === 'unrelated' || firstResult.transaction_type === 'unrelated')) {
-      popupModalRef.current?.show({
-        title: 'Không nhận diện được nội dung ghi nợ',
-        message: 'Câu thoại không liên quan đến cấu trúc ghi nợ. Vui lòng nói ngày, tên khách hàng và số tiền (hoặc số kg và loại thịt).',
-        type: 'warning'
-      });
-      return;
-    }
-
-    if (results.length === 1 && firstResult.status === 'incomplete') {
-      popupModalRef.current?.show({
-        title: 'Thông tin chưa đầy đủ',
-        message: `Câu thoại thiếu thông tin bắt buộc: ${(firstResult.missing_fields || []).join(', ')}. Vui lòng bổ sung đầy đủ.`,
-        type: 'warning'
-      });
-      return;
-    }
-
-    const activeCustomerId = id;
-
-    if (results.length === 1 && firstResult.transaction_type === 'tra_tien') {
-      setTimeout(() => {
-        paymentModalRef.current?.open(firstResult.amount || '');
-      }, 100);
-    } else {
-      const items = results.map((result) => {
-        if (result.product) {
-          return {
-            ...result,
-            quantity: Number(result.quantity) || 1,
-            price: Number(result.price) || 0,
-            amount: Number(result.amount) || Math.round((Number(result.quantity) || 1) * (Number(result.price) || 0)),
-            voiceDate: result.voiceDate || responseData.date || firstResult.date,
-            voiceCustomerName: result.voiceCustomerName || customerName || '',
-          };
-        }
-
-        const itemAmt = Number(result.amount) || 0;
-        const hasWeight = Number(result.weight_kg) > 0;
-        const qty = hasWeight ? Number(result.weight_kg) : 1;
-        const prc = hasWeight ? itemAmt / qty : itemAmt;
-        return {
-          product: {
-            name: result.meat_type || 'Tiền hàng',
-            unit: hasWeight ? 'kg' : 'phần',
-            defaultPrice: prc
-          },
-          quantity: qty,
-          price: prc,
-          amount: itemAmt,
-          voiceDate: result.date || responseData.date,
-          voiceCustomerName: result.customer_name || customerName || '',
-          voiceTotalAmount: itemAmt,
-        };
-      });
-
-      const rawNotes = results.map((result) => result.rawTranscript || result.raw_transcript).filter(Boolean).join(' | ');
-
-      scanTicketModalRef.current?.open(
-        items,
-        sourceTitle,
-        rawNotes || responseData.rawTranscript || '',
-        responseData.date || firstResult.date,
-        customerName,
-        activeCustomerId
-      );
-    }
-  };
-
-  // Gửi câu thoại chữ lên AI để phân tích (có cơ chế thử lại nếu lỗi)
-  const submitTypedText = async (text) => {
-    if (!text || !text.trim()) return;
-
-    setScanning(true);
-    try {
-      const response = await api.post('/transactions/voice-to-text', {
-        transcript: text.trim()
-      });
-
-      if (response.data.success) {
-        processParseResult(response.data, '🎤 KẾT QUẢ PHÂN TÍCH AI');
-      } else {
-        popupModalRef.current?.show({
-          title: 'Thất bại',
-          message: (response.data.message || 'Không thể phân tích văn bản.') + '\n\nBạn có muốn thử lại không?',
-          type: 'confirm',
-          confirmText: 'Thử lại',
-          cancelText: 'Hủy bỏ',
-          onConfirm: () => submitTypedText(text)
-        });
-      }
-    } catch (parseErr) {
-      console.error(parseErr);
-      popupModalRef.current?.show({
-        title: 'Lỗi kết nối',
-        message: (parseErr.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ phân tích.') + '\n\nBạn có muốn thử lại không?',
-        type: 'confirm',
-        confirmText: 'Thử lại',
-        cancelText: 'Hủy bỏ',
-        onConfirm: () => submitTypedText(text)
-      });
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  // Phân tích âm thanh giọng nói từ Web (có cơ chế thử lại nếu lỗi)
-  const processVoiceAudio = async (base64Audio) => {
-    setScanning(true);
-    try {
-      const response = await api.post('/transactions/voice-to-text', {
-        audio: base64Audio,
-        mimeType: 'audio/webm'
-      }, { timeout: 120000 });
-
-      if (response.data.success) {
-        processParseResult(response.data, '🎤 KẾT QUẢ GHI NỢ GIỌNG NÓI');
-      } else {
-        popupModalRef.current?.show({
-          title: 'Thất bại',
-          message: (response.data.message || 'Không thể dịch giọng nói.') + '\n\nBạn có muốn thử lại không?',
-          type: 'confirm',
-          confirmText: 'Thử lại',
-          cancelText: 'Hủy bỏ',
-          onConfirm: () => processVoiceAudio(base64Audio)
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      popupModalRef.current?.show({
-        title: err.response?.status === 400 ? 'Lỗi nhận diện' : 'Lỗi kết nối',
-        message: (err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.') + '\n\nBạn có muốn thử lại không?',
-        type: 'confirm',
-        confirmText: 'Thử lại',
-        cancelText: 'Hủy bỏ',
-        onConfirm: () => processVoiceAudio(base64Audio)
-      });
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  // Phân tích âm thanh giọng nói từ thiết bị di động Native (có cơ chế thử lại nếu lỗi)
-  const processNativeVoiceAudio = async (audio) => {
-    setScanning(true);
-    try {
-      const response = await api.post('/transactions/voice-to-text', {
-        audio: audio.dataUri,
-        mimeType: audio.mimeType,
-      }, { timeout: 120000 });
-      if (response.data.success) {
-        processParseResult(response.data, 'KET QUA GHI NO GIONG NOI');
-      } else {
-        popupModalRef.current?.show({
-          title: 'Thất bại',
-          message: (response.data.message || 'Không thể dịch giọng nói.') + '\n\nBạn có muốn thử lại không?',
-          type: 'confirm',
-          confirmText: 'Thử lại',
-          cancelText: 'Hủy bỏ',
-          onConfirm: () => processNativeVoiceAudio(audio),
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      popupModalRef.current?.show({
-        title: 'Lỗi kết nối',
-        message: (err.response?.data?.message || 'Có lỗi xảy ra khi kết nối máy chủ dịch giọng nói.') + '\n\nBạn có muốn thử lại không?',
-        type: 'confirm',
-        confirmText: 'Thử lại',
-        cancelText: 'Hủy bỏ',
-        onConfirm: () => processNativeVoiceAudio(audio),
-      });
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  // Hộp thoại nhập chữ dự phòng khi thiết bị không hỗ trợ hoặc lỗi micro
-  const handleTypeTextFallback = () => {
-    setTimeout(() => {
-      popupModalRef.current?.show({
-        title: 'Nhập câu thoại ghi nợ',
-        message: 'Ví dụ: "Ngày 5 tháng 7, chị Lan, 2 cân ba chỉ, 150 nghìn" hoặc "chị Hoa trả 100 nghìn"',
-        type: 'confirm',
-        confirmText: 'Phân tích',
-        cancelText: 'Hủy',
-        showTextInput: true,
-        textInputPlaceholder: 'Nhập câu nói của bạn tại đây...',
-        onConfirm: (text) => submitTypedText(text)
-      });
-    }, 100);
-  };
-
-  // Xử lý thu âm và chuyển đổi ghi nợ bằng giọng nói tiếng Việt qua Gemini API
-  const handleToggleRecording = async () => {
-    if (Platform.OS !== 'web') {
-      try {
-        if (isRecording) {
-          const audio = await stopNativeRecording(mediaRecorderRef.current);
-          mediaRecorderRef.current = null;
-          setIsRecording(false);
-          await processNativeVoiceAudio(audio);
-        } else {
-          mediaRecorderRef.current = await startNativeRecording();
-          setIsRecording(true);
-        }
-      } catch (err) {
-        mediaRecorderRef.current = null;
-        setIsRecording(false);
-        setScanning(false);
-        popupModalRef.current?.show({
-          title: err.message === 'MIC_PERMISSION_DENIED' ? 'Chưa cấp quyền microphone' : 'Lỗi ghi âm',
-          message: err.message === 'MIC_PERMISSION_DENIED'
-            ? 'Hãy cấp quyền microphone trong Cài đặt để dùng giọng nói.'
-            : 'Không thể ghi âm trên thiết bị này.',
-          type: 'error',
-        });
-      }
-      return;
-      popupModalRef.current?.show({
-        title: 'Thông báo',
-        message: 'Chức năng ghi nợ giọng nói hiện hỗ trợ trên giao diện Web.',
-        type: 'info'
-      });
-      return;
-    }
-
-    if (isRecording) {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-      setIsRecording(false);
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioChunksRef.current = [];
-
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
-          }
-        };
-
-        mediaRecorder.onstop = async () => {
-          stream.getTracks().forEach((track) => track.stop());
-
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-
-          const reader = new FileReader();
-          reader.onloadend = async () => {
-            const base64Audio = reader.result;
-            await processVoiceAudio(base64Audio);
-          };
-          reader.readAsDataURL(audioBlob);
-        };
-
-        mediaRecorder.start();
-        setIsRecording(true);
-      } catch (err) {
-        console.error(err);
-        popupModalRef.current?.show({
-          title: 'Lỗi thiết bị',
-          message: 'Không thể truy cập Micro. Bạn có muốn tự nhập câu thoại bằng chữ để AI phân tích không?',
-          type: 'confirm',
-          confirmText: 'Nhập chữ',
-          cancelText: 'Hủy bỏ',
-          onConfirm: () => handleTypeTextFallback(),
-        });
-      }
-    }
-  };
-
-  const handleVoicePress = () => {
-    if (isRecording) {
-      handleToggleRecording();
-      return;
-    }
-
-    popupModalRef.current?.show({
-      title: 'Hướng dẫn ghi nợ bằng giọng nói',
-      icon: '📸',
-      message: '🎤 HƯỚNG DẪN GHI NỢ GIỌNG NÓI\n\n1. **Ghi nợ thủ công**\nNói: ngày → tên khách → số lượng + loại thịt → giá.\nVí dụ: “Hôm nay, anh Khải, 1,2 cân bắp bò, giá 28.”\n\n2. **Ghi nợ nhanh**\nNói: ngày → tên khách → ghi nợ nhanh → số tiền.\nVí dụ: “Hôm qua, chị Lan, ghi nợ nhanh 500 nghìn.”\n\n💡 Chú thích: Không cần đọc ngày cụ thể, bạn có thể nói "hôm nay", "ngày mai", "hôm qua", "mai"... hoặc bỏ qua ngày (mặc định lấy ngày hôm nay).',
-      type: 'confirm',
-      confirmText: 'Bắt đầu nói',
-      cancelText: 'Để sau',
-      onConfirm: handleToggleRecording,
-    });
-  };
 
   // Xử lý quay lại trang danh sách khách hàng
   const handleBack = () => {
@@ -1185,22 +873,8 @@ export default function CustomerDetailScreen() {
         ) : (
           <View style={styles.bottomBar}>
             <TouchableOpacity
-              style={[
-                styles.actionButton,
-                styles.btnVoice,
-                isRecording && styles.btnRecording,
-              ]}
-              onPress={handleVoicePress}
-              disabled={scanning}
-            >
-              <Text style={styles.actionButtonText}>
-                {isRecording ? '⏹️ DỪNG NÓI' : '🎤 NÓI GHI NỢ'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
               style={[styles.actionButton, styles.btnDebt]}
               onPress={() => debtModalRef.current?.open()}
-              disabled={isRecording || scanning}
             >
               <Text style={styles.actionButtonText}>🔴 GHI NỢ MỚI</Text>
             </TouchableOpacity>
@@ -1210,7 +884,6 @@ export default function CustomerDetailScreen() {
 
       <DebtModal ref={debtModalRef} customerId={id} onRefresh={handleRefreshAll} />
       <PaymentModal ref={paymentModalRef} customerId={id} onRefresh={handleRefreshAll} />
-      <ScanTicketModal ref={scanTicketModalRef} customerId={id} onRefresh={handleRefreshAll} />
       <TransactionDetailModal
         ref={detailModalRef}
         customerId={id}
