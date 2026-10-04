@@ -666,16 +666,14 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
-        {/* HEADER MODAL CHUẨN */}
+        {/* HEADER MODAL TINH GỌN */}
         <View style={styles.modalHeaderRow}>
           <View style={styles.modalHeaderLeft}>
-            <View style={styles.headerIconCircle}>
-              <Text style={styles.headerIcon}>📅</Text>
-            </View>
+            <Text style={styles.headerEmoji}>📅</Text>
             <View style={styles.modalHeaderTitleCol}>
               <Text style={styles.modalTitle}>LỊCH GỬI CÔNG NỢ ĐỊNH KỲ</Text>
               <Text style={styles.modalSubTitle}>
-                Tự động gửi công nợ Ngày 1 & Ngày 15 hàng tháng qua Zalo
+                Tự động gửi công nợ định kỳ theo lịch từng khách qua Zalo
               </Text>
             </View>
           </View>
@@ -690,57 +688,57 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
 
         {/* BODY CUỘN */}
         <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollBody}>
-          {/* THANH CHỌN KỲ ĐỐI SOÁT */}
-          <View style={styles.periodCard}>
-            <View style={styles.periodTabsRow}>
+          {/* THANH CHỌN KỲ (SEGMENTED CONTROL HIỆN ĐẠI & GỌN NHẸ) */}
+          <View style={styles.periodSegmentWrapper}>
+            <View style={styles.periodSegmentBar}>
               <TouchableOpacity
                 style={[
-                  styles.periodTabBtn,
-                  periodType === 'last_month' && styles.periodTabBtnActive,
+                  styles.segmentBtn,
+                  periodType === 'last_month' && styles.segmentBtnActive,
                 ]}
                 onPress={() => handleChangePeriod('last_month')}
                 activeOpacity={0.8}
               >
                 <Text
                   style={[
-                    styles.periodTabBtnText,
-                    periodType === 'last_month' && styles.periodTabBtnTextActive,
+                    styles.segmentBtnText,
+                    periodType === 'last_month' && styles.segmentBtnTextActive,
                   ]}
                 >
-                  📅 Ngày 1 (Tháng trước)
+                  📅 Ngày 1
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
-                  styles.periodTabBtn,
-                  periodType === 'first_half' && styles.periodTabBtnActive,
+                  styles.segmentBtn,
+                  periodType === 'first_half' && styles.segmentBtnActive,
                 ]}
                 onPress={() => handleChangePeriod('first_half')}
                 activeOpacity={0.8}
               >
                 <Text
                   style={[
-                    styles.periodTabBtnText,
-                    periodType === 'first_half' && styles.periodTabBtnTextActive,
+                    styles.segmentBtnText,
+                    periodType === 'first_half' && styles.segmentBtnTextActive,
                   ]}
                 >
-                  📅 Ngày 15 (Từ 1 ➔ 15)
+                  📅 Ngày 15
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
-                  styles.periodTabBtn,
-                  periodType === 'all' && styles.periodTabBtnActive,
+                  styles.segmentBtn,
+                  periodType === 'all' && styles.segmentBtnActive,
                 ]}
                 onPress={() => handleChangePeriod('all')}
                 activeOpacity={0.8}
               >
                 <Text
                   style={[
-                    styles.periodTabBtnText,
-                    periodType === 'all' && styles.periodTabBtnTextActive,
+                    styles.segmentBtnText,
+                    periodType === 'all' && styles.segmentBtnTextActive,
                   ]}
                 >
                   📋 Tất cả ({matchedItems.length})
@@ -748,17 +746,16 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
               </TouchableOpacity>
             </View>
 
-            {/* Thông tin chi tiết kỳ đang chọn */}
-            <View style={styles.periodRangeBadge}>
-              <Text style={styles.periodRangeTitle}>{currentRange.title}</Text>
-              <Text style={styles.periodRangeSub}>
-                Khoảng ngày: <Text style={styles.textBold}>{currentRange.fromDate}</Text> ➔{' '}
-                <Text style={styles.textBold}>{currentRange.toDate}</Text> ({currentRange.subtitle})
+            {/* Dòng khoảng ngày thanh thoát 1 dòng */}
+            <View style={styles.rangeInfoRow}>
+              <Text style={styles.rangeInfoTitle}>{currentRange.title}</Text>
+              <Text style={styles.rangeInfoDates}>
+                {currentRange.fromDate} ➔ {currentRange.toDate}
               </Text>
             </View>
           </View>
 
-          {/* THANH CÔNG CỤ CHỌN NHANH VÀ NÚT THÊM KHÁCH */}
+          {/* THANH THAO TÁC NHANH: CHỌN TẤT CẢ & NÚT THÊM KHÁCH MỎNG NHẸ */}
           <View style={styles.selectionBarRow}>
             <TouchableOpacity
               style={styles.selectAllBtn}
@@ -771,13 +768,13 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
               </Text>
             </TouchableOpacity>
 
-            {/* Nút thêm khách chủ động */}
+            {/* Nút thêm khách dạng pill nhỏ gọn */}
             <TouchableOpacity
-              style={styles.addCustomerBtn}
+              style={styles.addCustomerPillBtn}
               onPress={() => addCustomerModalRef.current?.open()}
               activeOpacity={0.75}
             >
-              <Text style={styles.addCustomerBtnText}>➕ Thêm khách</Text>
+              <Text style={styles.addCustomerPillBtnText}>+ Thêm khách</Text>
             </TouchableOpacity>
           </View>
 
@@ -787,20 +784,20 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
               <ActivityIndicator size="small" color="#D97706" />
               <View style={styles.progressCol}>
                 <Text style={styles.progressTitle}>
-                  Đang tạo ảnh công nợ ({exportProgress.current}/{exportProgress.total})...
+                  Đang tạo ảnh ({exportProgress.current}/{exportProgress.total})...
                 </Text>
                 <Text style={styles.progressSub} numberOfLines={1}>
-                  Khách: {exportProgress.currentName}
+                  {exportProgress.currentName}
                 </Text>
               </View>
             </View>
           )}
 
-          {/* DANH SÁCH 22 NHÀ HÀNG THEO CÁC NHÓM */}
+          {/* DANH SÁCH NHÀ HÀNG THEO CÁC NHÓM */}
           {loading ? (
             <View style={styles.loadingBox}>
               <ActivityIndicator size="small" color="#DC2626" />
-              <Text style={styles.loadingText}>Đang tải danh sách nhà hàng...</Text>
+              <Text style={styles.loadingText}>Đang tải danh sách...</Text>
             </View>
           ) : displayedItems.length === 0 ? (
             <View style={styles.emptyBox}>
@@ -811,13 +808,12 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                 onPress={() => addCustomerModalRef.current?.open()}
                 activeOpacity={0.75}
               >
-                <Text style={styles.emptyAddBtnText}>➕ Thêm khách ngay</Text>
+                <Text style={styles.emptyAddBtnText}>+ Thêm khách ngay</Text>
               </TouchableOpacity>
             </View>
           ) : (
             Object.entries(groupedItems).map(([gName, items]) => {
               const selectedInGroup = items.filter((item) => selectedKeys.has(item.key));
-              // Nếu có ít nhất 1 quán trong nhóm được chọn thì xuất các quán được chọn, ngược lại xuất cả nhóm
               const targetItems = selectedInGroup.length > 0 ? selectedInGroup : items;
 
               return (
@@ -827,13 +823,11 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                       <Text style={styles.groupSectionTitle}>
                         {gName.includes('Trường Hoàng') ? '🏢 ' : gName.includes('Hàng Xóm') ? '🏘️ ' : '🍽️ '}
                         {gName}
-                      </Text>
-                      <Text style={styles.groupSectionSubTitle}>
-                        {items.length} quán
+                        <Text style={styles.groupCountText}> ({items.length})</Text>
                       </Text>
                     </View>
 
-                    {/* Nút Tải hàng loạt (PC) / Chuyển tiếp Zalo cùng lúc (Mobile) */}
+                    {/* Nút Tải nhóm nhỏ gọn thanh lịch */}
                     <TouchableOpacity
                       style={[
                         styles.groupBatchActionBtn,
@@ -851,72 +845,69 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                     </TouchableOpacity>
                   </View>
 
-                {items.map((item, idx) => {
-                  const isChecked = selectedKeys.has(item.key);
-                  return (
-                    <View
-                      key={item.key}
-                      style={[
-                        styles.customerRow,
-                        idx % 2 === 1 && styles.customerRowAlt,
-                        isChecked && styles.customerRowSelected,
-                      ]}
-                    >
-                      <TouchableOpacity
-                        style={styles.customerRowLeft}
-                        onPress={() => handleToggleItem(item.key)}
-                        activeOpacity={0.7}
+                  {items.map((item, idx) => {
+                    const isChecked = selectedKeys.has(item.key);
+                    return (
+                      <View
+                        key={item.key}
+                        style={[
+                          styles.customerRow,
+                          idx % 2 === 1 && styles.customerRowAlt,
+                          isChecked && styles.customerRowSelected,
+                        ]}
                       >
-                        <Text style={styles.customerCheckbox}>{isChecked ? '☑️' : '◻️'}</Text>
-                        <View style={styles.customerInfoCol}>
-                          <Text style={styles.customerNameText} numberOfLines={1}>
-                            {item.name}
-                          </Text>
-                          {/* Đã bỏ dòng phụ Chưa có SĐT • Nợ hiện tại theo yêu cầu người dùng */}
-                          <View style={styles.daysBadge}>
-                            <Text style={styles.daysBadgeText}>
-                              📅 Ngày {item.reminderDays || '1, 15'}
+                        <TouchableOpacity
+                          style={styles.customerRowLeft}
+                          onPress={() => handleToggleItem(item.key)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.customerCheckbox}>{isChecked ? '☑️' : '◻️'}</Text>
+                          <View style={styles.customerInfoCol}>
+                            <Text style={styles.customerNameText} numberOfLines={1}>
+                              {item.name}
+                            </Text>
+                            <Text style={styles.customerReminderSub}>
+                              Lịch: Ngày {item.reminderDays || '1, 15'}
                             </Text>
                           </View>
+                        </TouchableOpacity>
+
+                        <View style={styles.rowRightActions}>
+                          {/* Nút gửi Zalo / Tải ảnh riêng lẻ nhỏ gọn */}
+                          <TouchableOpacity
+                            style={styles.singleShareBtn}
+                            onPress={() => handleExportSingleToZalo(item)}
+                            activeOpacity={0.7}
+                            disabled={exporting}
+                          >
+                            <Text style={styles.singleShareBtnText}>
+                              {isMobileDevice() ? '💬 Zalo' : '💾 Tải'}
+                            </Text>
+                          </TouchableOpacity>
+
+                          {/* Nút xóa icon nhỏ thanh mảnh */}
+                          <TouchableOpacity
+                            style={styles.deleteCustomerBtn}
+                            onPress={() => handleDeleteCustomer(item)}
+                            activeOpacity={0.6}
+                            disabled={exporting}
+                            title="Gỡ khỏi danh sách nhắc nợ"
+                          >
+                            <Text style={styles.deleteCustomerBtnText}>🗑️</Text>
+                          </TouchableOpacity>
                         </View>
-                      </TouchableOpacity>
-
-                      <View style={styles.rowRightActions}>
-                        {/* Nút gửi Zalo / Tải ảnh riêng lẻ */}
-                        <TouchableOpacity
-                          style={styles.singleShareBtn}
-                          onPress={() => handleExportSingleToZalo(item)}
-                          activeOpacity={0.7}
-                          disabled={exporting}
-                        >
-                          <Text style={styles.singleShareBtnText}>
-                            {isMobileDevice() ? '💬 Zalo' : '💾 Tải'}
-                          </Text>
-                        </TouchableOpacity>
-
-                        {/* Nút gỡ khách khỏi lịch nhắc nợ */}
-                        <TouchableOpacity
-                          style={styles.deleteCustomerBtn}
-                          onPress={() => handleDeleteCustomer(item)}
-                          activeOpacity={0.7}
-                          disabled={exporting}
-                          title="Gỡ khỏi danh sách nhắc nợ"
-                        >
-                          <Text style={styles.deleteCustomerBtnText}>🗑️</Text>
-                        </TouchableOpacity>
                       </View>
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          })
-        )}
+                    );
+                  })}
+                </View>
+              );
+            })
+          )}
 
-          <View style={{ height: 16 }} />
+          <View style={{ height: 12 }} />
         </ScrollView>
 
-        {/* FOOTER CHÂN MODAL */}
+        {/* FOOTER CHÂN MODAL TINH TẾ */}
         <View style={styles.modalFooter}>
           <TouchableOpacity
             style={[styles.primaryActionBtn, exporting && styles.primaryActionBtnDisabled]}
@@ -926,10 +917,10 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
           >
             <Text style={styles.primaryActionBtnText}>
               {exporting
-                ? `⏳ Đang vẽ ảnh (${exportProgress.current}/${exportProgress.total})...`
+                ? `⏳ Đang tạo ảnh (${exportProgress.current}/${exportProgress.total})...`
                 : isMobileDevice()
-                ? `🚀 CHUYỂN TIẾP ZALO (${selectedKeys.size} ẢNH)`
-                : `🚀 XUẤT & TẢI VỀ MÁY TÍNH (${selectedKeys.size} ẢNH)`}
+                ? `🚀 Gửi Zalo (${selectedKeys.size} quán)`
+                : `🚀 Xuất & tải về (${selectedKeys.size} quán)`}
             </Text>
           </TouchableOpacity>
 
@@ -939,7 +930,7 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
               onPress={handleDismissToday}
               activeOpacity={0.7}
             >
-              <Text style={styles.dismissBtnText}>Đã gửi xong / Bỏ qua hôm nay</Text>
+              <Text style={styles.dismissBtnText}>Đã gửi / Bỏ qua hôm nay</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -967,14 +958,14 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
 const styles = StyleSheet.create({
   modalView: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 12,
     maxHeight: '92%',
     width: '100%',
-    maxWidth: 620,
+    maxWidth: 520,
     alignSelf: 'center',
     flexDirection: 'column',
     ...SHADOWS.large,
@@ -983,187 +974,185 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
   modalHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     flex: 1,
   },
-  headerIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerIcon: {
+  headerEmoji: {
     fontSize: 20,
+    marginRight: 8,
   },
   modalHeaderTitleCol: {
     flex: 1,
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 14.5,
+    fontWeight: '700',
     color: '#0F172A',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   modalSubTitle: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#64748B',
-    marginTop: 2,
+    marginTop: 1,
   },
   closeHeaderBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeHeaderBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#64748B',
   },
   scrollBody: {
     flexGrow: 1,
-    marginTop: 10,
+    marginTop: 8,
   },
 
-  // Thẻ chọn kỳ
-  periodCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 10,
+  // Thanh chọn kỳ (Segmented Control tinh gọn)
+  periodSegmentWrapper: {
+    marginBottom: 8,
   },
-  periodTabsRow: {
+  periodSegmentBar: {
     flexDirection: 'row',
-    gap: 6,
-  },
-  periodTabBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
+    backgroundColor: '#F1F5F9',
     borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
+    padding: 3,
+    gap: 2,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 5.5,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  periodTabBtnActive: {
-    backgroundColor: '#DC2626',
-    borderColor: '#DC2626',
+  segmentBtnActive: {
+    backgroundColor: '#FFFFFF',
+    ...SHADOWS.card,
   },
-  periodTabBtnText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  periodTabBtnTextActive: {
-    color: '#FFFFFF',
-  },
-  periodRangeBadge: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-  },
-  periodRangeTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#DC2626',
-  },
-  periodRangeSub: {
+  segmentBtnText: {
     fontSize: 11,
-    color: '#475569',
-    marginTop: 2,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  segmentBtnTextActive: {
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  rangeInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    marginTop: 4,
+  },
+  rangeInfoTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#E11D48',
+  },
+  rangeInfoDates: {
+    fontSize: 10.5,
+    color: '#64748B',
   },
 
-  // Thanh chọn nhanh
+  // Thanh thao tác nhanh
   selectionBarRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 6,
-    marginBottom: 6,
+    marginBottom: 8,
+    paddingHorizontal: 2,
   },
   selectAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    gap: 5,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
     borderRadius: 6,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   checkboxIcon: {
-    fontSize: 14,
+    fontSize: 12,
   },
   selectAllBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  targetCountHint: {
     fontSize: 11,
-    color: '#64748B',
+    fontWeight: '600',
+    color: '#334155',
+  },
+  addCustomerPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3.5,
+    paddingHorizontal: 9,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  addCustomerPillBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
   },
 
   // Tiến trình xuất
   exportProgressCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     backgroundColor: '#FEF3C7',
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#FDE68A',
-    padding: 10,
-    marginBottom: 10,
+    padding: 8,
+    marginBottom: 8,
   },
   progressCol: {
     flex: 1,
   },
   progressTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
+    fontSize: 11.5,
+    fontWeight: '700',
     color: '#92400E',
   },
   progressSub: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#B45309',
     marginTop: 1,
   },
 
   // Danh sách quán
   loadingBox: {
-    paddingVertical: 30,
+    paddingVertical: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
   },
   loadingText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#64748B',
   },
   groupSectionCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 10,
+    marginBottom: 8,
     overflow: 'hidden',
   },
   groupSectionHeader: {
@@ -1171,165 +1160,139 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#F8FAFC',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    gap: 8,
+    borderBottomColor: '#F1F5F9',
   },
   groupHeaderLeftCol: {
     flex: 1,
   },
   groupSectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#1E293B',
   },
-  groupSectionSubTitle: {
-    fontSize: 10.5,
+  groupCountText: {
+    fontSize: 11,
+    fontWeight: 'normal',
     color: '#64748B',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  groupSectionNote: {
-    fontSize: 10.5,
-    color: '#DC2626',
-    fontWeight: '600',
   },
   groupBatchActionBtn: {
-    backgroundColor: '#0284C7',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 4,
-    ...SHADOWS.card,
   },
   groupBatchActionBtnDisabled: {
     opacity: 0.5,
   },
   groupBatchActionBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '700',
+    color: '#1E293B',
+    fontSize: 10.5,
+    fontWeight: '600',
   },
+
+  // Hàng khách hàng
   customerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#F8FAFC',
   },
   customerRowAlt: {
     backgroundColor: '#FAFAFA',
   },
   customerRowSelected: {
-    backgroundColor: '#FFF7ED',
+    backgroundColor: '#FFFBEB',
   },
   customerRowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
     flex: 1,
-    paddingRight: 8,
+    paddingRight: 6,
   },
   customerCheckbox: {
-    fontSize: 15,
+    fontSize: 13,
   },
   customerInfoCol: {
     flex: 1,
   },
   customerNameText: {
     fontSize: 12.5,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#0F172A',
   },
-  daysBadge: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    alignSelf: 'flex-start',
-    marginTop: 2,
-  },
-  daysBadgeText: {
+  customerReminderSub: {
     fontSize: 10,
-    fontWeight: '600',
-    color: '#0284C7',
+    color: '#94A3B8',
+    marginTop: 1,
   },
+
+  // Cụm nút thao tác bên phải của từng hàng
   rowRightActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-  },
-  deleteCustomerBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteCustomerBtnText: {
-    fontSize: 12,
+    gap: 5,
   },
   singleShareBtn: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 5,
   },
   singleShareBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: 'bold',
+    color: '#1E293B',
+    fontSize: 10.5,
+    fontWeight: '600',
   },
-
-  // Nút thêm khách
-  addCustomerBtn: {
-    backgroundColor: '#0284C7',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 7,
-    flexDirection: 'row',
+  deleteCustomerBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
-  addCustomerBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '700',
+  deleteCustomerBtnText: {
+    fontSize: 11,
+    opacity: 0.6,
   },
 
   // Trạng thái trống
   emptyBox: {
-    paddingVertical: 32,
+    paddingVertical: 24,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
   emptyIcon: {
-    fontSize: 32,
+    fontSize: 26,
   },
   emptyText: {
-    fontSize: 12.5,
+    fontSize: 11.5,
     color: '#64748B',
-    fontWeight: '500',
   },
   emptyAddBtn: {
     backgroundColor: '#0284C7',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginTop: 4,
   },
   emptyAddBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
   },
 
@@ -1337,13 +1300,13 @@ const styles = StyleSheet.create({
   modalFooter: {
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingTop: 12,
-    gap: 8,
+    paddingTop: 8,
+    gap: 6,
   },
   primaryActionBtn: {
-    backgroundColor: '#DC2626',
-    borderRadius: 12,
-    height: 48,
+    backgroundColor: '#E11D48',
+    borderRadius: 10,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
     ...SHADOWS.button,
@@ -1353,9 +1316,9 @@ const styles = StyleSheet.create({
   },
   primaryActionBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   footerSecondaryRow: {
     flexDirection: 'row',
@@ -1365,32 +1328,28 @@ const styles = StyleSheet.create({
   },
   dismissBtn: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 6,
     alignItems: 'center',
   },
   dismissBtnText: {
-    fontSize: 11.5,
+    fontSize: 11,
     color: '#64748B',
-    fontWeight: '600',
+    fontWeight: '500',
   },
   closeBtn: {
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 6,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
   },
   closeBtnText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#334155',
-    fontWeight: '700',
+    fontWeight: '600',
   },
 
   textBold: {
-    fontWeight: 'bold',
-  },
-  textDebt: {
-    color: '#DC2626',
     fontWeight: 'bold',
   },
 });
