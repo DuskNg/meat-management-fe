@@ -979,15 +979,8 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
                   );
                 })}
 
-              {/* Khối tổng kết ngày */}
+              {/* Khối tổng kết ngày - đã bỏ tổng kg và còn nợ ngày */}
               <View style={styles.dayDataSummaryCard}>
-                {daySummary.totalQty > 0 && (
-                  <View style={styles.dayDataSummaryRow}>
-                    <Text style={styles.dayDataSummaryLabel}>Tổng khối lượng thịt:</Text>
-                    <Text style={styles.dayDataSummaryValueQty}>{daySummary.totalQty} kg</Text>
-                  </View>
-                )}
-
                 {daySummary.totalMeat > 0 && daySummary.totalReturn > 0 && (
                   <>
                     <View style={styles.dayDataSummaryRow}>
@@ -1003,19 +996,11 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
 
                 <View style={[styles.dayDataSummaryRow, styles.dayDataTotalGrandRow]}>
                   <Text style={styles.dayDataTotalGrandLabel}>TỔNG CỘNG:</Text>
-                  <Text style={styles.dayDataTotalGrandValue}>{formatCurrency(daySummary.totalAmount)}</Text>
+                  <Text style={[
+                    styles.dayDataTotalGrandValue,
+                    dayData.isPaid ? styles.totalGrandPaid : styles.totalGrandUnpaid,
+                  ]}>{formatCurrency(daySummary.totalAmount)}</Text>
                 </View>
-
-                {daySummary.remainingDebt != null && !dayData.isPaid ? (
-                  <View style={[styles.dayDataSummaryRow, styles.dayDataRemainingRow]}>
-                    <Text style={styles.dayDataRemainingLabel}>
-                      {dayData.isPartialPaid ? 'Còn nợ lại ngày này:' : 'Còn nợ ngày này:'}
-                    </Text>
-                    <Text style={styles.dayDataRemainingValue}>
-                      {formatCurrency(daySummary.remainingDebt)}
-                    </Text>
-                  </View>
-                ) : null}
               </View>
             </ScrollView>
           </View>
@@ -1167,8 +1152,8 @@ const styles = StyleSheet.create({
     borderRightColor: '#334155',
   },
   imageViewerSectionMobileSplit: {
-    height: 440,
-    maxHeight: '62%',
+    height: 520,
+    maxHeight: '70%',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
   },
@@ -1377,6 +1362,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: '#1E3A8A',
+  },
+  totalGrandUnpaid: {
+    color: '#DC2626',
+  },
+  totalGrandPaid: {
+    color: '#15803D',
   },
   dayDataRemainingRow: {
     marginTop: 3,
