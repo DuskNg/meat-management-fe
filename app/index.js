@@ -570,26 +570,33 @@ export default function DashboardScreen() {
     const year = today.getFullYear();
     const month = today.getMonth() + 1;
 
-    // Kiểm tra đúng ngày 1 (gửi cả tháng trước) hoặc ngày 15 (gửi từ 1->15)
+    // Kiểm tra đúng ngày 1 (gửi cả tháng trước) hoặc ngày 15 (gửi từ 1->15), hoặc khi truyền query param testReminder
     const isDay1 = day === 1;
     const isDay15 = day === 15;
+    const isTestMode = Boolean(params?.testReminder);
 
-    if (isDay1 || isDay15) {
-      const periodKey = isDay1 ? 'last_month' : 'first_half';
+    if (isDay1 || isDay15 || isTestMode) {
+      let periodKey = isDay1 ? 'last_month' : 'first_half';
+      if (params?.testReminder === 'first_half' || params?.testReminder === '15') {
+        periodKey = 'first_half';
+      } else if (params?.testReminder === 'last_month' || params?.testReminder === '1') {
+        periodKey = 'last_month';
+      }
+
       const storageKey = `periodic_debt_reminder_${periodKey}_${year}_${month}_${day}`;
 
       if (typeof window !== 'undefined') {
-        const isDismissed = localStorage.getItem(storageKey);
+        const isDismissed = !isTestMode && localStorage.getItem(storageKey);
         if (!isDismissed) {
-          // Trì hoãn 1.5s để màn hình chính tải xong mượt mà rồi mới mở pop-up
+          // Trì hoãn 1.2s để màn hình chính tải xong mượt mà rồi mới mở pop-up
           const timer = setTimeout(() => {
             periodicDebtReminderModalRef.current?.open({ periodType: periodKey });
-          }, 1500);
+          }, 1200);
           return () => clearTimeout(timer);
         }
       }
     }
-  }, [auth.user?.id]);
+  }, [auth.user?.id, params?.testReminder]);
 
   // 1.8. Dùng React Query tải danh sách nhà cung cấp
   const { data: suppliersResponse, isLoading: isLoadingSuppliers, refetch: refetchSuppliers, isRefetching: isRefetchingSuppliers } = useQuery({
