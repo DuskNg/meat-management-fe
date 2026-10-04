@@ -26,6 +26,7 @@ const BranchDebtModal = forwardRef(({ token, apiHost, sessionToken }, ref) => {
   const [summary, setSummary] = useState({
     monthDebt: 0,
     monthPurchase: 0,
+    monthReturn: 0,
     monthPaid: 0,
     totalDebt: 0,
   });
@@ -222,6 +223,14 @@ const BranchDebtModal = forwardRef(({ token, apiHost, sessionToken }, ref) => {
               {loading ? '...' : formatCurrency(summary.monthPurchase || 0)}
             </Text>
             <View style={styles.summaryDetailRows}>
+              {Number(summary.monthReturn) > 0 && (
+                <View style={styles.summaryDetailItem}>
+                  <Text style={styles.summaryDetailLabel}>Tiền trả hàng:</Text>
+                  <Text style={[styles.summaryDetailValue, styles.textOrange]}>
+                    -{loading ? '...' : formatCurrency(summary.monthReturn || 0)}
+                  </Text>
+                </View>
+              )}
               <View style={styles.summaryDetailItem}>
                 <Text style={styles.summaryDetailLabel}>Đã thanh toán:</Text>
                 <Text style={[styles.summaryDetailValue, styles.textGreen]}>
@@ -528,6 +537,10 @@ const styles = StyleSheet.create({
   },
   textGreen: {
     color: '#059669',
+    fontWeight: '700',
+  },
+  textOrange: {
+    color: '#D97706',
     fontWeight: '700',
   },
   textRedBold: {
