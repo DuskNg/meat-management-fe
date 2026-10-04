@@ -37,6 +37,21 @@ const formatCurrency = (amount) => {
   }).format(amount || 0).replace('₫', 'đ');
 };
 
+// Format ngắn ngày dương lịch: DD/MM (bỏ năm)
+const formatShortDate = (displayDate, dateKey) => {
+  // displayDate dạng DD/MM/YYYY
+  if (displayDate && displayDate.includes('/')) {
+    const parts = displayDate.split('/');
+    if (parts.length >= 2) return `${parts[0]}/${parts[1]}`;
+  }
+  // dateKey dạng YYYY-MM-DD
+  if (dateKey && dateKey.includes('-')) {
+    const parts = dateKey.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}`;
+  }
+  return displayDate || dateKey || '';
+};
+
 // Sao chép nội dung vào Clipboard
 const copyTextToClipboard = async (text) => {
   if (!text) return false;
@@ -567,8 +582,13 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
               </TouchableOpacity>
 
               <View style={styles.desktopDayNavCenter}>
-                {(dayData?.displayLunarDate || (dayData?.dateKey && getLunarDateString(dayData.dateKey))) ? (
+                {dayData?.dateKey ? (
                   <Text style={styles.desktopDayNavCurrentText}>
+                    📅 {formatShortDate(dayData.displayDate, dayData.dateKey)}
+                  </Text>
+                ) : null}
+                {(dayData?.displayLunarDate || (dayData?.dateKey && getLunarDateString(dayData.dateKey))) ? (
+                  <Text style={styles.desktopDayNavLunarText}>
                     ({dayData?.displayLunarDate || getLunarDateString(dayData.dateKey)} âm)
                   </Text>
                 ) : null}
@@ -641,8 +661,13 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
             </TouchableOpacity>
 
             <View style={styles.mobileDayNavCenter}>
-              {(dayData?.displayLunarDate || (dayData?.dateKey && getLunarDateString(dayData.dateKey))) ? (
+              {dayData?.dateKey ? (
                 <Text style={styles.mobileDayNavCurrentText} numberOfLines={1}>
+                  📅 {formatShortDate(dayData.displayDate, dayData.dateKey)}
+                </Text>
+              ) : null}
+              {(dayData?.displayLunarDate || (dayData?.dateKey && getLunarDateString(dayData.dateKey))) ? (
+                <Text style={styles.mobileDayNavLunarText} numberOfLines={1}>
                   ({dayData?.displayLunarDate || getLunarDateString(dayData.dateKey)} âm)
                 </Text>
               ) : null}
