@@ -93,7 +93,7 @@ const CustomSelect = ({
     if (!open || Platform.OS !== 'web' || typeof document === 'undefined') return undefined;
 
     const closeOnOutsideClick = (event) => {
-      // Đóng nếu click ra ngoài trigger và ngoài portal riêng của instance này
+      // Đóng nếu click/touch ra ngoài trigger và ngoài portal riêng của instance này
       const isInsideTrigger = dropdownRef.current?.contains(event.target);
       const isInsidePortal = portalElRef.current?.contains(event.target);
       if (!isInsideTrigger && !isInsidePortal) {
@@ -104,7 +104,11 @@ const CustomSelect = ({
     };
 
     document.addEventListener('mousedown', closeOnOutsideClick);
-    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('touchstart', closeOnOutsideClick, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('touchstart', closeOnOutsideClick);
+    };
   }, [open, onOpenChange]);
 
   // Cleanup: xóa DOM portal và hủy timeout khi component bị unmount
@@ -118,23 +122,20 @@ const CustomSelect = ({
     };
   }, []);
 
-  // Tính toán vị trí tuyệt đối của dropdown dựa trên vị trí trigger và độ cuộn trang (scroll)
+  // Tính toán vị trí hiển thị dropdown (dùng position: fixed theo viewport để không bị lệch khi modal/container cuộn)
   const measureAndOpen = useCallback(() => {
     if (Platform.OS !== 'web' || !dropdownRef.current) return;
 
     const rect = dropdownRef.current.getBoundingClientRect();
-    const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
-    const scrollX = window.scrollX || window.pageXOffset || document.documentElement.scrollLeft;
-
     const windowHeight = window.innerHeight || document.documentElement.clientHeight;
     const spaceBelow = windowHeight - rect.bottom;
 
-    // Quyết định nảy lên trên hay xuống dưới
+    // Quyết định nảy lên trên hay xuống dưới dựa trên khoảng cách viewport
     let shouldDropUp = dropUp !== undefined ? !!dropUp : (spaceBelow < 220 && rect.top > 220);
 
     setDropdownPos({
-      top: shouldDropUp ? (rect.top + scrollY) : (rect.bottom + scrollY),
-      left: rect.left + scrollX,
+      top: shouldDropUp ? rect.top : rect.bottom,
+      left: rect.left,
       width: rect.width,
       isUp: shouldDropUp,
     });
@@ -251,32 +252,33 @@ const CustomSelect = ({
     if (!open || Platform.OS !== 'web' || !ReactDOM) return null;
     if (typeof document === 'undefined') return null;
 
-    // Mỗi instance CustomSelect có 1 container riêng, luôn đặt pointer-events: none
+    // Mỗi instance CustomSelect có 1 container riêng, luôn đặt pointer-events: none và zIndex cao nhất
+    const effectiveZIndex = Math.max(Number(zIndex) || 999999, 99999999);
     if (!portalElRef.current) {
       const el = document.createElement('div');
       el.id = portalIdRef.current;
-      el.style.cssText = `position:absolute;top:0;left:0;width:0;height:0;z-index:${zIndex};pointer-events:none;`;
+      el.style.cssText = `position:fixed;top:0;left:0;width:0;height:0;z-index:${effectiveZIndex};pointer-events:none;`;
       document.body.appendChild(el);
       portalElRef.current = el;
     } else {
-      // Cập nhật z-index nếu prop thay đổi
-      portalElRef.current.style.zIndex = String(zIndex);
+      // Cập nhật z-index với độ ưu tiên important để không bị bất kỳ modal cha nào đè
+      portalElRef.current.style.setProperty('z-index', String(effectiveZIndex), 'important');
     }
 
-    // Tính vị trí hiển thị dropdown tuyệt đối theo document body (như Antd)
+    // Tính vị trí hiển thị dropdown cố định theo viewport
     const effectiveMinWidth = minWidth !== undefined ? minWidth : 260;
     const calculatedWidth = dropdownStyle?.width || Math.max(dropdownPos.width, effectiveMinWidth);
 
     const dropStyle = {
-      position: 'absolute',
+      position: 'fixed',
       left: dropdownPos.left,
       width: calculatedWidth,
       minWidth: effectiveMinWidth,
-      zIndex: zIndex,
+      zIndex: effectiveZIndex,
       backgroundColor: '#FFFFFF',
-      border: '1px solid #E2E8F0',
+      border: '1px solid #CBD5E1',
       borderRadius: 8,
-      boxShadow: '0px 6px 16px rgba(0,0,0,0.12)',
+      boxShadow: '0px 8px 24px rgba(0,0,0,0.18)',
       overflow: 'hidden',
       maxHeight: 240,
       pointerEvents: 'auto',
@@ -339,6 +341,12 @@ const CustomSelect = ({
         {...(Platform.OS === 'web'
           ? {
               onClick: () => {
+                if (!disabled && !open) {
+                  inputRef.current?.focus();
+                  openDropdown();
+                }
+              },
+              onTouchEnd: () => {
                 if (!disabled && !open) {
                   inputRef.current?.focus();
                   openDropdown();

@@ -46,9 +46,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   const [searchText, setSearchText] = useState('');
   const [bundleExporting, setBundleExporting] = useState(false);
 
-  // 1. Phơi bày hàm open/close ra bên ngoài
+  // 1. Phơi bày hàm open/close ra bên ngoài (hỗ trợ truyền date, month và filter khi mở)
   useImperativeHandle(ref, () => ({
-    open: () => {
+    open: (options = {}) => {
       const today = new Date();
       const dd = String(today.getDate()).padStart(2, '0');
       const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -56,15 +56,37 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       const todayStr = `${dd}/${mm}/${yyyy}`;
       const thisMonthStr = `${mm}/${yyyy}`;
 
-      setSelectedDate(todayStr);
-      setSelectedMonth(thisMonthStr);
+      let targetDate = todayStr;
+      let targetMonth = thisMonthStr;
+      let targetFilter = 'all';
+
+      if (typeof options === 'string') {
+        targetFilter = options;
+      } else if (options && typeof options === 'object') {
+        if (options.date) {
+          targetDate = options.date;
+          const parts = targetDate.split('/');
+          if (parts.length === 3) {
+            targetMonth = `${parts[1]}/${parts[2]}`;
+          }
+        }
+        if (options.month) {
+          targetMonth = options.month;
+        }
+        if (options.filter) {
+          targetFilter = options.filter;
+        }
+      }
+
+      setSelectedDate(targetDate);
+      setSelectedMonth(targetMonth);
       setActiveReportTab('day');
       setVisible(true);
       setError('');
-      // Reset bộ lọc và thanh tìm kiếm khi mở modal
-      setActiveFilter('all');
+      // Áp dụng bộ lọc chỉ định (ví dụ: 'duplicate' khi người dùng bấm xem nợ trùng)
+      setActiveFilter(targetFilter);
       setSearchText('');
-      fetchReportData(todayStr, thisMonthStr, 'day');
+      fetchReportData(targetDate, targetMonth, 'day');
     },
     close: () => {
       setVisible(false);

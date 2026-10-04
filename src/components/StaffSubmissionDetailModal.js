@@ -215,6 +215,11 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     if (targetIdx < 0 || targetIdx >= list.length) return;
     const targetSub = list[targetIdx];
     if (targetSub) {
+      if (typeof document !== 'undefined' && document.activeElement) {
+        document.activeElement.blur?.();
+      }
+      setActiveMeatItemIdx(null);
+      setCustomerSelectZIndex(10);
       setActiveSubId(targetSub.id);
       resetZoom();
       formScrollRef.current?.scrollTo?.({ y: 0, animated: false });
@@ -581,32 +586,53 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
       <View ref={modalRootRef} style={styles.modalOverlay}>
         {/* Khung chứa chính toàn màn hình đối chiếu */}
         <View style={[styles.mainDialogContainer, isMobile && styles.mainDialogContainerMobile]}>
-          {/* ═══ 1. THANH HEADER ĐIỀU HƯỚNG TỔNG ═══ */}
-          <View style={styles.topNavigationHeader}>
+          {/* ═══ 1. THANH HEADER ĐIỀU HƯỚNG TỔNG (TỐI GIẢN & TÍCH HỢP ĐIỀU HƯỚNG) ═══ */}
+          <View style={[styles.topNavigationHeader, isMobile && styles.topNavigationHeaderMobile]}>
             {/* Nút chia sẻ Zalo trên thanh tiêu đề */}
             <TouchableOpacity
-              style={styles.btnHeaderZalo}
+              style={[styles.btnHeaderZalo, isMobile && styles.btnHeaderZaloMobile]}
               onPress={handleShareZalo}
               activeOpacity={0.7}
               accessibilityLabel="Chia sẻ Zalo"
             >
-              <Text style={styles.btnHeaderZaloText}>{isVideo ? '💬 Zalo video' : '💬 Zalo ảnh'}</Text>
+              <Text style={styles.btnHeaderZaloText}>{isVideo ? '💬 Zalo' : '💬 Zalo ảnh'}</Text>
             </TouchableOpacity>
 
-            {/* Thông tin vị trí hóa đơn */}
+            {/* Thông tin vị trí hóa đơn & 2 nút điều hướng chuyển nhanh không che ảnh */}
             <View style={styles.navCenterInfoWrap}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.navCardIndexTitle}>
-                  HÓA ĐƠN #{submissions.length - currentIndex}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 4 : 8 }}>
+                {/* Nút lùi nhanh trên Header */}
+                <TouchableOpacity
+                  style={[styles.headerNavBtn, currentIndex <= 0 && styles.headerNavBtnDisabled]}
+                  onPress={handlePrev}
+                  disabled={currentIndex <= 0}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.headerNavBtnText, currentIndex <= 0 && styles.headerNavBtnTextDisabled]}>◀</Text>
+                </TouchableOpacity>
+
+                <Text style={[styles.navCardIndexTitle, isMobile && styles.navCardIndexTitleMobile]}>
+                  #{submissions.length - currentIndex}
                 </Text>
+
                 <View style={[styles.badgeStatusPill, isApproved ? styles.badgeApproved : styles.badgePending]}>
                   <Text style={[styles.badgeStatusText, isApproved ? styles.badgeTextApproved : styles.badgeTextPending]}>
                     {isApproved ? '✓ ĐÃ LÊN NỢ' : 'CHƯA LÊN NỢ'}
                   </Text>
                 </View>
+
+                {/* Nút tiến nhanh trên Header */}
+                <TouchableOpacity
+                  style={[styles.headerNavBtn, currentIndex >= submissions.length - 1 && styles.headerNavBtnDisabled]}
+                  onPress={handleNext}
+                  disabled={currentIndex >= submissions.length - 1}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.headerNavBtnText, currentIndex >= submissions.length - 1 && styles.headerNavBtnTextDisabled]}>▶</Text>
+                </TouchableOpacity>
               </View>
               <Text style={styles.navCounterSubtitle}>
-                (Đang xem: {currentIndex + 1} / {submissions.length} hóa đơn)
+                ({currentIndex + 1} / {submissions.length})
               </Text>
             </View>
 
@@ -648,18 +674,18 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
 
           {/* ═══ 2. NỘI DUNG CHÍNH CHIA 2 CỘT (SPLIT-VIEW) ═══ */}
           <View style={[styles.splitBodyWrap, isMobile && styles.splitBodyWrapMobile]}>
-            {/* ───── CỘT TRÁI: VIEWER ẢNH / VIDEO PHÓNG TO ───── */}
+            {/* ───── CỘT TRÁI: VIEWER ẢNH / VIDEO PHÓNG TO (TỐI ƯU KHÔNG BỊ NÚT ĐÈ) ───── */}
             {(!isMobile || mobileTab === 'split' || mobileTab === 'image') && (
               <View
                 style={[
                   styles.viewerCol,
-                  isMobile && mobileTab === 'split' && { height: height * 0.38 },
+                  isMobile && mobileTab === 'split' && { height: height * 0.40 },
                   isMobile && mobileTab === 'image' && { flex: 1 },
                 ]}
               >
-                {/* Thanh công cụ xem ảnh */}
+                {/* Thanh công cụ xem ảnh thu nhỏ gọn gàng */}
                 {!isVideo && (
-                  <View style={styles.viewerToolbar}>
+                  <View style={[styles.viewerToolbar, isMobile && styles.viewerToolbarMobile]}>
                     <View style={styles.zoomButtonGroup}>
                       <TouchableOpacity style={styles.toolBtn} onPress={handleZoomOut} activeOpacity={0.7}>
                         <Text style={styles.toolBtnText}>–</Text>
@@ -680,10 +706,10 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   </View>
                 )}
 
-                {/* Khung hiển thị ảnh hoặc video */}
+                {/* Khung hiển thị ảnh hoặc video (padding siêu mỏng trên mobile để ảnh to nhất) */}
                 <View
                   ref={containerRef}
-                  style={styles.imageCanvasWrap}
+                  style={[styles.imageCanvasWrap, isMobile && styles.imageCanvasWrapMobile]}
                   {...(Platform.OS === 'web'
                     ? {
                       onMouseDown: handleMouseDown,
@@ -742,42 +768,45 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   )}
                 </View>
 
-                {/* ═══ 2 NÚT ĐIỀU HƯỚNG CHUYỂN HÓA ĐƠN NỔI 2 BÊN SƯỜN ẢNH ═══ */}
-                {/* Nút lùi hóa đơn trước (nổi ở cạnh trái khung ảnh) */}
-                <TouchableOpacity
-                  style={[
-                    styles.floatingNavBtn,
-                    styles.floatingNavBtnLeft,
-                    currentIndex <= 0 && styles.floatingNavBtnDisabled,
-                  ]}
-                  onPress={handlePrev}
-                  disabled={currentIndex <= 0}
-                  activeOpacity={0.8}
-                  {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
-                >
-                  <Text style={[styles.floatingNavBtnText, currentIndex <= 0 && styles.floatingNavBtnTextDisabled]}>
-                    ◀ Trước
-                  </Text>
-                </TouchableOpacity>
+                {/* NÚT ĐIỀU HƯỚNG NỔI TRÊN ẢNH: Chỉ hiển thị trên PC, mobile dùng nút trên Header để không che chữ trên hóa đơn */}
+                {!isMobile && (
+                  <>
+                    <TouchableOpacity
+                      style={[
+                        styles.floatingNavBtn,
+                        styles.floatingNavBtnLeft,
+                        currentIndex <= 0 && styles.floatingNavBtnDisabled,
+                      ]}
+                      onPress={handlePrev}
+                      disabled={currentIndex <= 0}
+                      activeOpacity={0.8}
+                      {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
+                    >
+                      <Text style={[styles.floatingNavBtnText, currentIndex <= 0 && styles.floatingNavBtnTextDisabled]}>
+                        ◀ Trước
+                      </Text>
+                    </TouchableOpacity>
 
-                {/* Nút tiến hóa đơn sau (nổi ở cạnh phải khung ảnh) */}
-                <TouchableOpacity
-                  style={[
-                    styles.floatingNavBtn,
-                    styles.floatingNavBtnRight,
-                    currentIndex >= submissions.length - 1 && styles.floatingNavBtnDisabled,
-                  ]}
-                  onPress={handleNext}
-                  disabled={currentIndex >= submissions.length - 1}
-                  activeOpacity={0.8}
-                  {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
-                >
-                  <Text style={[styles.floatingNavBtnText, currentIndex >= submissions.length - 1 && styles.floatingNavBtnTextDisabled]}>
-                    Sau ▶
-                  </Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.floatingNavBtn,
+                        styles.floatingNavBtnRight,
+                        currentIndex >= submissions.length - 1 && styles.floatingNavBtnDisabled,
+                      ]}
+                      onPress={handleNext}
+                      disabled={currentIndex >= submissions.length - 1}
+                      activeOpacity={0.8}
+                      {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
+                    >
+                      <Text style={[styles.floatingNavBtnText, currentIndex >= submissions.length - 1 && styles.floatingNavBtnTextDisabled]}>
+                        Sau ▶
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
 
-                {!isVideo && (
+                {/* Dòng mẹo chuột chỉ hiện trên PC, ẩn hoàn toàn trên Mobile để tiết kiệm không gian */}
+                {!isVideo && !isMobile && (
                   <Text style={styles.viewerTipText}>
                     💡 Mẹo: Cuộn chuột để phóng to / thu nhỏ. Nhấn giữ chuột để kéo di chuyển soi từng con số.
                   </Text>
@@ -814,11 +843,12 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     </View>
                   ) : null}
 
-                  {/* 1. TAB CHUYỂN ĐỔI: KHÁCH HÀNG HOẶC NHÀ CUNG CẤP */}
-                  <View style={styles.partnerTypeTabWrap}>
+                  {/* 1. TAB CHUYỂN ĐỔI: KHÁCH HÀNG HOẶC NHÀ CUNG CẤP (TINH GỌN CHO MOBILE) */}
+                  <View style={[styles.partnerTypeTabWrap, isMobile && styles.partnerTypeTabWrapMobile]}>
                     <TouchableOpacity
                       style={[
                         styles.partnerTypeTabBtn,
+                        isMobile && styles.partnerTypeTabBtnMobile,
                         (!currentCard.targetType || currentCard.targetType === 'customer') && styles.partnerTypeTabBtnActiveCust,
                       ]}
                       onPress={() => updateCardField(currentSub.id, 'targetType', 'customer')}
@@ -827,16 +857,18 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                       <Text
                         style={[
                           styles.partnerTypeTabBtnText,
+                          isMobile && styles.partnerTypeTabBtnTextMobile,
                           (!currentCard.targetType || currentCard.targetType === 'customer') && styles.partnerTypeTabBtnTextActive,
                         ]}
                       >
-                        👥 Khách hàng (Bán ra / Trả hàng)
+                        {isMobile ? '👥 Khách (Bán/Trả)' : '👥 Khách hàng (Bán ra / Trả hàng)'}
                       </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={[
                         styles.partnerTypeTabBtn,
+                        isMobile && styles.partnerTypeTabBtnMobile,
                         currentCard.targetType === 'supplier' && styles.partnerTypeTabBtnActiveSup,
                       ]}
                       onPress={() => {
@@ -850,16 +882,17 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                       <Text
                         style={[
                           styles.partnerTypeTabBtnText,
+                          isMobile && styles.partnerTypeTabBtnTextMobile,
                           currentCard.targetType === 'supplier' && styles.partnerTypeTabBtnTextActive,
                         ]}
                       >
-                        🏭 Nhà cung cấp (Nhập thịt)
+                        {isMobile ? '🏭 Nhà CC (Nhập)' : '🏭 Nhà cung cấp (Nhập thịt)'}
                       </Text>
                     </TouchableOpacity>
                   </View>
 
                   {/* FORM NHẬP THÔNG TIN TƯƠNG ỨNG */}
-                  <View style={[styles.formSectionBox, { zIndex: customerSelectZIndex }]}>
+                  <View style={[styles.formSectionBox, isMobile && styles.formSectionBoxMobile, { zIndex: customerSelectZIndex }]}>
                     {currentCard.targetType === 'supplier' ? (
                       <>
                         <Text style={styles.formFieldLabel}>
@@ -871,6 +904,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                           ) : null}
                         </Text>
                         <CustomSelect
+                          key={`supplier-select-${currentSub.id}`}
                           value={currentCard.supplier}
                           placeholder="Chọn nhà cung cấp nhập thịt..."
                           options={suppliers}
@@ -883,7 +917,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                             }
                           }}
                           renderSelected={(s) => s?.name || ''}
-                          zIndex={9999999}
+                          zIndex={100000000}
                           onOpenChange={(isOpen) => setCustomerSelectZIndex(isOpen ? 9999999 : 10)}
                           renderOption={(s) => (
                             <View style={styles.custOptionRow}>
@@ -895,7 +929,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
 
                         <View style={styles.dateAndNoteRow}>
                           <View style={{ flex: 1.2 }}>
-                            <Text style={styles.formFieldLabel}>Ngày nhập hàng</Text>
+                            <Text style={styles.formFieldLabel}>Ngày nhập</Text>
                             <DatePickerInput
                               value={currentCard.date}
                               onChange={(d) => updateCardField(currentSub.id, 'date', d)}
@@ -905,12 +939,12 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                           </View>
 
                           <View style={{ flex: 2 }}>
-                            <Text style={styles.formFieldLabel}>Ghi chú nhập hàng</Text>
+                            <Text style={styles.formFieldLabel}>Ghi chú đơn</Text>
                             <TextInput
                               style={styles.textInputCompact}
                               value={currentCard.note}
                               onChangeText={(txt) => updateCardField(currentSub.id, 'note', txt)}
-                              placeholder="Ghi chú nhập thịt từ nhà cung cấp..."
+                              placeholder="Ghi chú nhập thịt..."
                               placeholderTextColor="#94A3B8"
                             />
                           </View>
@@ -928,13 +962,14 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                           ) : null}
                         </Text>
                         <CustomSelect
+                          key={`cust-select-${currentSub.id}`}
                           value={currentCard.customer}
                           placeholder="Chọn khách hàng..."
                           options={customers}
                           disabled={currentCard.isLoadingPrice}
                           onSelect={(c) => handleCustomerChange(currentSub.id, c)}
                           renderSelected={(c) => c?.name || ''}
-                          zIndex={9999999}
+                          zIndex={100000000}
                           onOpenChange={(isOpen) => setCustomerSelectZIndex(isOpen ? 9999999 : 10)}
                           renderOption={(c) => (
                             <View style={styles.custOptionRow}>
@@ -947,7 +982,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                         <View style={styles.dateAndNoteRow}>
                           <View style={{ flex: 1.2 }}>
                             <Text style={styles.formFieldLabel}>
-                              {currentCard.isReturn ? 'Ngày trả hàng' : 'Ngày giao hàng'}
+                              {currentCard.isReturn ? 'Ngày trả' : 'Ngày giao'}
                             </Text>
                             <DatePickerInput
                               value={currentCard.date}
@@ -1113,6 +1148,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                           {/* Chọn món thịt */}
                           <View style={{ flex: 3.2, zIndex: activeMeatItemIdx === itemIdx ? 9999999 : 1 }}>
                             <CustomSelect
+                              key={`meat-select-${currentSub.id}-${item.id || itemIdx}`}
                               value={item.selectedProduct}
                               placeholder="Tên thịt..."
                               options={
@@ -1121,7 +1157,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                                   : ((currentCard.customer?.id && custProductsMap[currentCard.customer.id]) || products)
                               }
                               disabled={currentCard.isLoadingPrice}
-                              zIndex={9999999}
+                              zIndex={100000000}
                               onOpenChange={(isOpen) => {
                                 setActiveMeatItemIdx(isOpen ? itemIdx : null);
                                 if (isOpen) {
@@ -1255,7 +1291,8 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     <TouchableOpacity
                       style={[
                         styles.btnSaveAction,
-                        currentCard.isReturn && styles.btnSaveActionReturn,
+                        currentCard.targetType === 'supplier' && styles.btnSaveActionSupplier,
+                        currentCard.targetType !== 'supplier' && currentCard.isReturn && styles.btnSaveActionReturn,
                         isApproved && styles.btnSaveActionApproved,
                         (currentCard.isSaving || currentCard.isLoadingPrice) && { opacity: 0.7 },
                       ]}
@@ -1297,12 +1334,22 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 4,
   },
+  partnerTypeTabWrapMobile: {
+    padding: 2,
+    marginBottom: 6,
+    borderRadius: 8,
+    gap: 3,
+  },
   partnerTypeTabBtn: {
     flex: 1,
     paddingVertical: 7,
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  partnerTypeTabBtnMobile: {
+    paddingVertical: 5,
+    borderRadius: 6,
   },
   partnerTypeTabBtnActiveCust: {
     backgroundColor: '#0284C7',
@@ -1324,6 +1371,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#64748B',
+  },
+  partnerTypeTabBtnTextMobile: {
+    fontSize: 11.5,
   },
   partnerTypeTabBtnTextActive: {
     color: '#FFFFFF',
@@ -1368,6 +1418,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
+  },
+  topNavigationHeaderMobile: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  headerNavBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...(Platform.OS === 'web' ? { cursor: 'pointer', userSelect: 'none' } : {}),
+  },
+  headerNavBtnDisabled: {
+    opacity: 0.25,
+    backgroundColor: '#1E293B',
+    ...(Platform.OS === 'web' ? { cursor: 'default' } : {}),
+  },
+  headerNavBtnText: {
+    color: '#38BDF8',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  headerNavBtnTextDisabled: {
+    color: '#64748B',
   },
   floatingNavBtn: {
     position: 'absolute',
@@ -1421,6 +1497,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     letterSpacing: 0.5,
   },
+  navCardIndexTitleMobile: {
+    fontSize: 13,
+  },
   navCounterSubtitle: {
     color: '#94A3B8',
     fontSize: 11,
@@ -1470,6 +1549,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 64,
     height: 30,
+  },
+  btnHeaderZaloMobile: {
+    height: 26,
+    minWidth: 54,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   btnHeaderZaloText: {
     color: '#FFFFFF',
@@ -1536,6 +1621,11 @@ const styles = StyleSheet.create({
     borderBottomColor: '#334155',
     zIndex: 10,
   },
+  viewerToolbarMobile: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    gap: 6,
+  },
   zoomButtonGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1579,6 +1669,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     padding: 10,
+  },
+  imageCanvasWrapMobile: {
+    padding: 2,
   },
   viewerMainImage: {
     width: '100%',
@@ -1641,6 +1734,11 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     padding: 12,
     marginBottom: 12,
+  },
+  formSectionBoxMobile: {
+    padding: 8,
+    marginBottom: 8,
+    borderRadius: 8,
   },
   formFieldLabel: {
     fontSize: 12,
@@ -1880,6 +1978,9 @@ const styles = StyleSheet.create({
   },
   btnSaveActionReturn: {
     backgroundColor: '#F97316',
+  },
+  btnSaveActionSupplier: {
+    backgroundColor: '#4F46E5',
   },
   btnSaveActionApproved: {
     backgroundColor: '#64748B',

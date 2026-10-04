@@ -430,11 +430,11 @@ export default function DashboardScreen() {
     customers: customersResponse?.data,
     popupModalRef,
     onInspectCustomer: (customerId, customer) => {
-      const targetCust = (customersResponse?.data || []).find((c) => c.id === customerId) || customer;
-      if (targetCust) {
-        setSelectedCustomerId(targetCust.id);
-        customerDebtHistoryModalRef.current?.open(targetCust);
-      }
+      const targetDate = globalDuplicates?.[0]?.dateKey;
+      dailyReportModalRef.current?.open({
+        date: targetDate,
+        filter: 'duplicate',
+      });
     },
   });
 
@@ -3254,7 +3254,13 @@ export default function DashboardScreen() {
         {/* BANNER CẢNH BÁO TRÙNG ĐƠN TRONG NGÀY (TỰ ĐỘNG HIỆN KHI KIỂM TRA NGẦM PHÁT HIỆN) */}
         <GlobalDuplicateDebtBanner
           duplicates={globalDuplicates}
-          onPress={() => showDuplicateAlertModal()}
+          onPress={() => {
+            const targetDate = globalDuplicates?.[0]?.dateKey;
+            dailyReportModalRef.current?.open({
+              date: targetDate,
+              filter: 'duplicate',
+            });
+          }}
         />
 
         <View style={styles.listHeaderContainer}>

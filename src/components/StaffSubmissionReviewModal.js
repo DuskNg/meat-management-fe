@@ -756,11 +756,23 @@ const InvoiceReviewCard = React.memo(
           {/* HÀNG 4: TỔNG TIỀN */}
           <View style={[styles.cardFooterRow, styles.cardFooterRowMobile]}>
             <View style={styles.cardTotalWrap}>
-              <Text style={[styles.cardTotalLabel, card.isReturn && { color: '#EA580C' }]}>
-                {card.isReturn ? 'TIỀN TRẢ:' : 'TỔNG CỘNG:'}
+              <Text
+                style={[
+                  styles.cardTotalLabel,
+                  card.targetType === 'supplier' && { color: '#4F46E5' },
+                  card.targetType !== 'supplier' && card.isReturn && { color: '#EA580C' },
+                ]}
+              >
+                {card.targetType === 'supplier' ? 'TIỀN NHẬP:' : card.isReturn ? 'TIỀN TRẢ:' : 'TỔNG CỘNG:'}
               </Text>
-              <Text style={[styles.cardTotalValue, card.isReturn && { color: '#F97316' }]}>
-                {card.isReturn ? `-${formatCurrency(cardTotal)}` : formatCurrency(cardTotal)} đ
+              <Text
+                style={[
+                  styles.cardTotalValue,
+                  card.targetType === 'supplier' && { color: '#4F46E5' },
+                  card.targetType !== 'supplier' && card.isReturn && { color: '#F97316' },
+                ]}
+              >
+                {card.targetType !== 'supplier' && card.isReturn ? `-${formatCurrency(cardTotal)}` : formatCurrency(cardTotal)} đ
               </Text>
             </View>
           </View>
@@ -797,7 +809,8 @@ const InvoiceReviewCard = React.memo(
             <TouchableOpacity
               style={[
                 styles.btnCardSave,
-                card.isReturn && styles.btnCardSaveReturn,
+                card.targetType === 'supplier' && styles.btnCardSaveSupplier,
+                card.targetType !== 'supplier' && card.isReturn && styles.btnCardSaveReturn,
                 isApproved && styles.btnCardSaveApproved,
                 styles.btnCardSaveMobile,
                 (card.isSaving || card.isLoadingPrice) && { opacity: 0.7 },
@@ -2956,17 +2969,47 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           })());
         const dateStr = applyDateStr;
 
+        // Nhận diện đơn NHẬP HÀNG:
+        const importRegex = /(?:nhập hàng|nhap hang|nhập thịt|nhap thit|mua hàng|mua hang|mua thịt|mua thit|nhập vào|nhap vao|mua vào|mua vao|nhập về|nhap ve|mua về|mua ve|lấy vào|lay vao|nhập kho|nhap kho|nhập lò|nhap lo|mua lò|mua lo|lấy thịt về|lay thit ve|lấy hàng về|lay hang ve|nhập lô|nhap lo|\bnhập\b|\bnhap\b|\bmua thịt\b|\bmua hàng\b|\bmua vào\b|\bmua về\b|\bmua\b)/i;
+        let parsedAiData = null;
+        try {
+          if (sub.rawAiResponse) {
+            parsedAiData = JSON.parse(sub.rawAiResponse);
+          }
+        } catch { }
+
+        const isImport = Boolean(
+          (sub.note && /^(nhập hàng|nhap hang)/i.test(sub.note.trim())) ||
+          (sub.note && importRegex.test(sub.note)) ||
+          parsedAiData?.is_import === true ||
+          parsedAiData?.target_type === 'supplier' ||
+          (sub.rawAiResponse && (
+            sub.rawAiResponse.includes('"is_import": true') ||
+            sub.rawAiResponse.includes('"is_import":true') ||
+            sub.rawAiResponse.includes('"target_type": "supplier"') ||
+            sub.rawAiResponse.includes('"target_type":"supplier"')
+          ))
+        );
+
         // Nhà cung cấp khớp nếu có
         const supplierSource = (supList && supList.length > 0) ? supList : suppliers;
-        const matchedSup = sub.matchedSupplier || (supplierSource && supplierSource.find((s) => {
+        let matchedSup = sub.matchedSupplier || (supplierSource && supplierSource.find((s) => {
           const sClean = removeDiacritics(s.name.toLowerCase().trim());
-          const detectedClean = removeDiacritics((sub.detectedCustomerName || '').toLowerCase().trim());
+          const detectedClean = removeDiacritics((sub.detectedCustomerName || parsedAiData?.supplier_name || '').toLowerCase().trim());
           const noteClean = removeDiacritics((sub.note || '').toLowerCase().trim());
           return (detectedClean && (detectedClean === sClean || detectedClean.includes(sClean) || sClean.includes(detectedClean))) ||
                  (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
         })) || null;
 
-        const initialTargetType = sub.targetType || (matchedSup ? 'supplier' : 'customer');
+        // Nếu là đơn nhập hàng nhưng chưa có trong danh mục NCC, tạo pseudo-supplier để điền sẵn tên bóc tách
+        if (isImport && !matchedSup && (sub.detectedCustomerName || parsedAiData?.supplier_name)) {
+          const supName = (sub.detectedCustomerName || parsedAiData?.supplier_name || '').trim();
+          if (supName) {
+            matchedSup = { id: null, name: supName };
+          }
+        }
+
+        const initialTargetType = sub.targetType || (isImport || (matchedSup && matchedSup.id) ? 'supplier' : 'customer');
 
         // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp khách hàng đã lưu, không chạy lại regex AI
         const matchedCust = isApproved
@@ -2981,10 +3024,10 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
         if (isApproved) {
           // ─── ĐỐI VỚI HÓA ĐƠN ĐÃ DUYỆT: TẢI NGUYÊN BẢN CHÍNH XÁC NHỮNG GÌ CHỦ BUÔN ĐÃ LƯU ───
-          const isReturn = Boolean(
+          const isReturn = !isImport && Boolean(
             sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]') || sub.note.includes('Trả lại') || sub.note.includes('Trả hàng') || /trả|tra/i.test(sub.note))
           );
-          const cardNote = sub.note || '';
+          const cardNote = (initialTargetType === 'supplier' || isImport) ? (sub.note || 'Nhập hàng') : (sub.note || '');
 
           let rawItems = (sub.items || [])
             .filter((it) => it.rawName || it.quantity || it.price || it.amount)
@@ -3303,7 +3346,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         }
 
         const returnRegex = /(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang)/i;
-        const isReturn = Boolean(
+        const isReturn = !isImport && Boolean(
           (sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]') || returnRegex.test(sub.note))) ||
           (sub.rawAiResponse && (sub.rawAiResponse.includes('"is_return": true') || sub.rawAiResponse.includes('"is_return":true') || returnRegex.test(sub.rawAiResponse))) ||
           (sub.detectedCustomerName && returnRegex.test(sub.detectedCustomerName)) ||
@@ -3312,7 +3355,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         );
 
         let cardNote = '';
-        if (initialTargetType === 'supplier') {
+        if (initialTargetType === 'supplier' || isImport) {
           cardNote = 'Nhập hàng';
         } else if (isReturn) {
           cardNote = 'Trả hàng';
@@ -3329,12 +3372,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         // Tự động nhận diện chế độ Nhập Nhanh:
         // 1) AI trả về is_quick_debt: true hoặc có danh sách sub_amounts
         // 2) Toàn bộ các dòng món thịt là 'Thịt lẻ', 'Tiền hàng', hoặc tên rỗng VÀ không có số kg hợp lệ (> 0)
-        let parsedAiData = null;
-        try {
-          if (sub.rawAiResponse) {
+        if (!parsedAiData && sub.rawAiResponse) {
+          try {
             parsedAiData = JSON.parse(sub.rawAiResponse);
-          }
-        } catch { }
+          } catch { }
+        }
 
         const isQuickDebtFromAi = Boolean(
           parsedAiData?.is_quick_debt === true ||
@@ -3388,8 +3430,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           supplier: matchedSup,
           customer: effectiveCustomer,
           date: dateStr,
-          note: cardNote,
-          isReturn,
+          note: (initialTargetType === 'supplier' || isImport) ? 'Nhập hàng' : cardNote,
+          isReturn: !isImport && isReturn,
+          isImport,
           orderMode: isQuickMode ? 'quick' : 'detail',
           quickAmount: quickAmount,
           quickSubAmounts,
@@ -6082,6 +6125,9 @@ const styles = StyleSheet.create({
   },
   btnCardSaveReturn: {
     backgroundColor: '#F97316',
+  },
+  btnCardSaveSupplier: {
+    backgroundColor: '#4F46E5',
   },
   btnToggleOrderType: {
     flexDirection: 'row',
