@@ -422,6 +422,80 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
+  // ─── HÀNH ĐỘNG: XUẤT VÀ TẢI/CHUYỂN TIẾP TOÀN BỘ ẢNH CỦA 1 NHÓM (VÍ DỤ CHUỖI 11 QUÁN TRƯỜNG HOÀNG) ───
+  const handleExportGroupImages = async (groupName, targetItems) => {
+    if (!targetItems || targetItems.length === 0) {
+      showGlobalToast('Không có quán nào để xuất ảnh.', 'warning');
+      return;
+    }
+
+    setExporting(true);
+    setExportProgress({ current: 0, total: targetItems.length, currentName: targetItems[0]?.name || '' });
+
+    const imagesToProcess = [];
+    const fromDate = currentRange.fromDate;
+    const toDate = currentRange.toDate;
+
+    try {
+      for (let i = 0; i < targetItems.length; i++) {
+        const item = targetItems[i];
+        setExportProgress({ current: i + 1, total: targetItems.length, currentName: item.name });
+
+        try {
+          const [transRes, payRes] = await Promise.all([
+            api.get(`/transactions?customerId=${item.id}`).catch(() => ({ data: { data: [] } })),
+            api.get(`/payments?customerId=${item.id}`).catch(() => ({ data: { data: [] } })),
+          ]);
+
+          const transList = transRes.data?.data || [];
+          const payList = payRes.data?.data || [];
+
+          const drawResult = await drawDebtImageCanvas({
+            transList,
+            payList,
+            cust: item.customer,
+            fromDate,
+            toDate,
+          });
+
+          if (drawResult?.imageUri) {
+            const cleanCustName = (item.name || 'Khach').replace(/[^a-zA-Z0-9À-ỹ]/g, '_');
+            const cleanFrom = fromDate.replace(/\//g, '-');
+            const cleanTo = toDate.replace(/\//g, '-');
+            const fileName = `Cong_no_${cleanCustName}_${cleanFrom}_${cleanTo}.png`;
+
+            imagesToProcess.push({
+              imageUri: drawResult.imageUri,
+              fileName,
+              customerName: item.name,
+              phone: item.phone,
+            });
+          }
+        } catch (itemErr) {
+          console.error(`Lỗi tạo ảnh công nợ cho ${item.name}:`, itemErr);
+        }
+      }
+
+      if (imagesToProcess.length > 0) {
+        await downloadOrShareMultipleImages({
+          items: imagesToProcess,
+          title: `Công nợ ${groupName} (${currentRange.title})`,
+          text: `Bảng kê công nợ định kỳ (${currentRange.title}) cho ${groupName} (${imagesToProcess.length} quán)`,
+        });
+
+        const actionText = isMobileDevice() ? 'chuyển tiếp Zalo' : 'tải về máy tính';
+        showGlobalToast(`Đã ${actionText} thành công ${imagesToProcess.length} ảnh của ${groupName}!`, 'success');
+      } else {
+        showGlobalToast(`Không thể tạo ảnh công nợ cho nhóm ${groupName}.`, 'warning');
+      }
+    } catch (err) {
+      console.error(`Lỗi khi xuất ảnh nhóm ${groupName}:`, err);
+      showGlobalToast(`Có lỗi xảy ra khi xuất ảnh nhóm ${groupName}.`, 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // ─── HÀNH ĐỘNG 2: XUẤT VÀ CHUYỂN TIẾP ZALO RIÊNG CHO 1 NHÀ HÀNG ───
   const handleExportSingleToZalo = async (item) => {
     try {
@@ -611,17 +685,41 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
               <Text style={styles.loadingText}>Đang tải danh sách nhà hàng...</Text>
             </View>
           ) : (
-            Object.entries(groupedItems).map(([gName, items]) => (
-              <View key={gName} style={styles.groupSectionCard}>
-                <View style={styles.groupSectionHeader}>
-                  <Text style={styles.groupSectionTitle}>
-                    {gName.includes('Trường Hoàng') ? '🏢 ' : gName.includes('Hàng Xóm') ? '🏘️ ' : '🍽️ '}
-                    {gName} ({items.length} quán)
-                  </Text>
-                  {gName.includes('Trường Hoàng') && (
-                    <Text style={styles.groupSectionNote}>(Gửi 11 ảnh riêng)</Text>
-                  )}
-                </View>
+            Object.entries(groupedItems).map(([gName, items]) => {
+              const selectedInGroup = items.filter((item) => selectedKeys.has(item.key));
+              // Nếu có ít nhất 1 quán trong nhóm được chọn thì xuất các quán được chọn, ngược lại xuất cả nhóm
+              const targetItems = selectedInGroup.length > 0 ? selectedInGroup : items;
+
+              return (
+                <View key={gName} style={styles.groupSectionCard}>
+                  <View style={styles.groupSectionHeader}>
+                    <View style={styles.groupHeaderLeftCol}>
+                      <Text style={styles.groupSectionTitle}>
+                        {gName.includes('Trường Hoàng') ? '🏢 ' : gName.includes('Hàng Xóm') ? '🏘️ ' : '🍽️ '}
+                        {gName}
+                      </Text>
+                      <Text style={styles.groupSectionSubTitle}>
+                        {items.length} quán {gName.includes('Trường Hoàng') ? '• Gửi 11 ảnh riêng' : ''}
+                      </Text>
+                    </View>
+
+                    {/* Nút Tải hàng loạt (PC) / Chuyển tiếp Zalo cùng lúc (Mobile) */}
+                    <TouchableOpacity
+                      style={[
+                        styles.groupBatchActionBtn,
+                        exporting && styles.groupBatchActionBtnDisabled,
+                      ]}
+                      onPress={() => handleExportGroupImages(gName, targetItems)}
+                      activeOpacity={0.75}
+                      disabled={exporting}
+                    >
+                      <Text style={styles.groupBatchActionBtnText}>
+                        {isMobileDevice()
+                          ? `💬 Zalo cùng lúc (${targetItems.length} ảnh)`
+                          : `💾 Tải hàng loạt (${targetItems.length} ảnh)`}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
                 {items.map((item, idx) => {
                   const isChecked = selectedKeys.has(item.key);
@@ -921,19 +1019,48 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: '#F8FAFC',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
+    gap: 8,
+  },
+  groupHeaderLeftCol: {
+    flex: 1,
   },
   groupSectionTitle: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '800',
     color: '#1E293B',
+  },
+  groupSectionSubTitle: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '500',
   },
   groupSectionNote: {
     fontSize: 10.5,
     color: '#DC2626',
     fontWeight: '600',
+  },
+  groupBatchActionBtn: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    ...SHADOWS.card,
+  },
+  groupBatchActionBtnDisabled: {
+    opacity: 0.5,
+  },
+  groupBatchActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   customerRow: {
     flexDirection: 'row',
