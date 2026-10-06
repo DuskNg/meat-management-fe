@@ -30,23 +30,29 @@ const formatCurrency = (amount) => {
 };
 
 /**
- * Modal nhập lý do khi thay đổi giá riêng của khách hàng
+ * Modal hỏi phạm vi & nhập lý do khi thay đổi giá riêng của khách hàng
+ * - Bước 1: Hỏi cập nhật từ bây giờ hay chỉ lần này (công nợ lần đó)
+ * - Nếu chọn "Chỉ lần này": áp dụng giá mới cho lần nợ hiện tại, không đổi giá riêng của khách
+ * - Nếu chọn "Cập nhật từ bây giờ": mở logic nhập lý do đổi giá (luồng cũ) và lưu giá mới từ nay về sau
  * - Áp dụng chuẩn Mobile-First Bottom-Sheet
- * - Expose qua ref: open({ items, customerName, onConfirm })
  */
 const PriceChangeReasonModal = forwardRef((props, ref) => {
   const [visible, setVisible] = useState(false);
+  const [step, setStep] = useState('SCOPE'); // 'SCOPE' | 'REASON'
   const [changedItems, setChangedItems] = useState([]);
   const [customerName, setCustomerName] = useState('');
   const [reason, setReason] = useState('');
+  const [canChooseScope, setCanChooseScope] = useState(true);
   const onConfirmCallbackRef = useRef(null);
 
   // Mở modal và nhận thông tin các mặt hàng thay đổi giá cùng callback
   useImperativeHandle(ref, () => ({
-    open: ({ items = [], customerName = '', onConfirm = null }) => {
+    open: ({ items = [], customerName = '', allowScopeSelection = true, onConfirm = null }) => {
       setChangedItems(items);
       setCustomerName(customerName || '');
       setReason('');
+      setCanChooseScope(allowScopeSelection !== false);
+      setStep(allowScopeSelection !== false ? 'SCOPE' : 'REASON');
       onConfirmCallbackRef.current = onConfirm;
       setVisible(true);
     },
@@ -60,21 +66,37 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
     setVisible(false);
   };
 
-  // Xác nhận lưu kèm lý do
-  const handleConfirm = () => {
-    const finalReason = reason.trim();
+  // Trả về kết quả cho component cha
+  const notifyParent = (applyToFuture, finalReason = null) => {
     setVisible(false);
     if (onConfirmCallbackRef.current) {
-      onConfirmCallbackRef.current(finalReason || null);
+      onConfirmCallbackRef.current({
+        applyToFuture,
+        updateCustomPrice: applyToFuture,
+        reason: finalReason ? finalReason.trim() : null,
+      });
     }
   };
 
-  // Bỏ qua (không ghi lý do, vẫn tiếp tục lưu giá)
-  const handleSkip = () => {
-    setVisible(false);
-    if (onConfirmCallbackRef.current) {
-      onConfirmCallbackRef.current(null);
-    }
+  // Chọn: Chỉ áp dụng lần này (không lưu vào bảng giá riêng)
+  const handleSelectOneTimeOnly = () => {
+    notifyParent(false, null);
+  };
+
+  // Chọn: Cập nhật từ bây giờ -> chuyển sang bước nhập lý do (luồng cũ)
+  const handleSelectApplyToFuture = () => {
+    setStep('REASON');
+  };
+
+  // Xác nhận lưu giá kèm lý do
+  const handleConfirmReason = () => {
+    const finalReason = reason.trim();
+    notifyParent(true, finalReason || null);
+  };
+
+  // Bỏ qua lý do nhưng vẫn cập nhật giá mới từ bây giờ
+  const handleSkipReason = () => {
+    notifyParent(true, null);
   };
 
   // Chọn nhanh lý do từ gợi ý
@@ -92,8 +114,21 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
           {/* Header Modal */}
           <View style={styles.header}>
             <View style={styles.headerTitleWrap}>
-              <Text style={styles.headerIcon}>📝</Text>
-              <Text style={styles.headerTitle}>LÝ DO THAY ĐỔI ĐƠN GIÁ</Text>
+              {step === 'REASON' && canChooseScope ? (
+                <TouchableOpacity
+                  style={styles.backBtn}
+                  onPress={() => setStep('SCOPE')}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.backBtnText}>←</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.headerIcon}>{step === 'SCOPE' ? '⚖️' : '📝'}</Text>
+              )}
+              <Text style={styles.headerTitle}>
+                {step === 'SCOPE' ? 'ÁP DỤNG ĐƠN GIÁ MỚI' : 'LÝ DO THAY ĐỔI ĐƠN GIÁ'}
+              </Text>
             </View>
             <TouchableOpacity
               style={styles.closeBtn}
@@ -110,11 +145,13 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.scrollContent}
           >
-            {/* Tên khách hàng (nếu có) */}
+            {/* Tên khách hàng */}
             {customerName ? (
               <View style={styles.customerCard}>
                 <Text style={styles.customerLabel}>Khách hàng:</Text>
-                <Text style={styles.customerValue}>{customerName}</Text>
+                <Text style={styles.customerValue} numberOfLines={1}>
+                  {customerName}
+                </Text>
               </View>
             ) : null}
 
@@ -133,61 +170,147 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
               ))}
             </View>
 
-            {/* Ô nhập lý do */}
-            <View style={styles.inputWrap}>
-              <Text style={styles.inputLabel}>
-                Lý do thay đổi giá <Text style={styles.inputLabelSub}>(lưu lại lý do mới nhất)</Text>:
-              </Text>
-              <TextInput
-                style={styles.textInput}
-                multiline
-                numberOfLines={3}
-                placeholder="Nhập lý do đổi giá (ví dụ: Thịt nhập tăng giá, Khách lấy nhiều ưu đãi...)"
-                placeholderTextColor="#94A3B8"
-                value={reason}
-                onChangeText={setReason}
-                textAlignVertical="top"
-              />
-            </View>
+            {/* ════════════════════ BƯỚC 1: CHỌN PHẠM VI ÁP DỤNG ════════════════════ */}
+            {step === 'SCOPE' ? (
+              <View style={styles.scopeSection}>
+                <Text style={styles.questionText}>
+                  Bạn muốn cập nhật từ bây giờ với giá mới hay là chỉ áp dụng cho lần này?
+                </Text>
 
-            {/* Gợi ý lý do bấm 1 chạm */}
-            <View style={styles.quickWrap}>
-              <Text style={styles.quickTitle}>Gợi ý nhanh:</Text>
-              <View style={styles.chipGrid}>
-                {QUICK_REASONS.map((q, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[styles.chip, reason === q && styles.chipActive]}
-                    onPress={() => handleSelectQuickReason(q)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.chipText, reason === q && styles.chipTextActive]}>
-                      {q}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {/* Lựa chọn 1: Chỉ lần này */}
+                <TouchableOpacity
+                  style={styles.optionCard}
+                  onPress={handleSelectOneTimeOnly}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.optionLeftWrap}>
+                    <View style={[styles.optionIconCircle, styles.optionIconCircleOneTime]}>
+                      <Text style={styles.optionIcon}>⚡</Text>
+                    </View>
+                    <View style={styles.optionInfo}>
+                      <View style={styles.optionTitleRow}>
+                        <Text style={styles.optionTitle}>CHỈ LẦN NÀY</Text>
+                        <View style={styles.oneTimeBadge}>
+                          <Text style={styles.oneTimeBadgeText}>Đơn nợ này</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.optionDesc}>
+                        Chỉ nhân giá mới với công nợ lần này. Bảng giá riêng của khách vẫn giữ nguyên giá cũ.
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.optionChevron}>›</Text>
+                </TouchableOpacity>
+
+                {/* Lựa chọn 2: Cập nhật từ bây giờ */}
+                <TouchableOpacity
+                  style={[styles.optionCard, styles.optionCardFuture]}
+                  onPress={handleSelectApplyToFuture}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.optionLeftWrap}>
+                    <View style={[styles.optionIconCircle, styles.optionIconCircleFuture]}>
+                      <Text style={styles.optionIcon}>🔄</Text>
+                    </View>
+                    <View style={styles.optionInfo}>
+                      <View style={styles.optionTitleRow}>
+                        <Text style={[styles.optionTitle, styles.optionTitleFuture]}>
+                          CẬP NHẬT TỪ BÂY GIỜ
+                        </Text>
+                        <View style={styles.futureBadge}>
+                          <Text style={styles.futureBadgeText}>Lưu giá mới</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.optionDesc}>
+                        Lưu làm giá riêng mới của khách. Các lần ghi nợ sau sẽ tự động áp dụng giá này.
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.optionChevron, styles.optionChevronFuture]}>›</Text>
+                </TouchableOpacity>
               </View>
-            </View>
+            ) : (
+              /* ════════════════════ BƯỚC 2: NHẬP LÝ DO (LUỒNG CŨ) ════════════════════ */
+              <View>
+                {/* Thông báo phạm vi đã chọn */}
+                <View style={styles.scopeNoticeCard}>
+                  <Text style={styles.scopeNoticeText}>
+                    📌 Đang lưu giá mới cho khách từ bây giờ. Bạn có thể ghi lại lý do điều chỉnh:
+                  </Text>
+                </View>
+
+                {/* Ô nhập lý do */}
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>
+                    Lý do thay đổi giá <Text style={styles.inputLabelSub}>(lưu lại lý do mới nhất)</Text>:
+                  </Text>
+                  <TextInput
+                    style={styles.textInput}
+                    multiline
+                    numberOfLines={3}
+                    placeholder="Nhập lý do đổi giá (ví dụ: Thịt nhập tăng giá, Khách lấy nhiều ưu đãi...)"
+                    placeholderTextColor="#94A3B8"
+                    value={reason}
+                    onChangeText={setReason}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                {/* Gợi ý lý do bấm 1 chạm */}
+                <View style={styles.quickWrap}>
+                  <Text style={styles.quickTitle}>Gợi ý nhanh:</Text>
+                  <View style={styles.chipGrid}>
+                    {QUICK_REASONS.map((q, idx) => (
+                      <TouchableOpacity
+                        key={idx}
+                        style={[styles.chip, reason === q && styles.chipActive]}
+                        onPress={() => handleSelectQuickReason(q)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.chipText, reason === q && styles.chipTextActive]}>
+                          {q}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            )}
           </ScrollView>
 
-          {/* Footer nút hành động */}
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={styles.skipBtn}
-              onPress={handleSkip}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.skipBtnText}>BỎ QUA LÝ DO</Text>
-            </TouchableOpacity>
+          {/* Footer nút hành động: chỉ hiển thị ở bước nhập lý do */}
+          {step === 'REASON' && (
+            <View style={styles.footer}>
+              <TouchableOpacity
+                style={styles.skipBtn}
+                onPress={handleSkipReason}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.skipBtnText}>BỎ QUA LÝ DO</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.confirmBtn}
-              onPress={handleConfirm}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.confirmBtnText}>XÁC NHẬN & LƯU</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={styles.confirmBtn}
+                onPress={handleConfirmReason}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.confirmBtnText}>XÁC NHẬN & LƯU</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Footer bước 1: Nút đóng lại */}
+          {step === 'SCOPE' && (
+            <View style={styles.footerSingle}>
+              <TouchableOpacity
+                style={styles.closeFooterBtn}
+                onPress={handleClose}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.closeFooterBtnText}>HỦY THAO TÁC</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SmoothModal>
@@ -217,6 +340,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+  },
+  backBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  backBtnText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#334155',
   },
   headerIcon: {
     fontSize: 20,
@@ -310,6 +447,128 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: 'bold',
     color: '#DC2626',
+  },
+
+  /* Scope Selection Styles */
+  scopeSection: {
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  questionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  optionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  optionCardFuture: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+  },
+  optionLeftWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+    paddingRight: 8,
+  },
+  optionIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  optionIconCircleOneTime: {
+    backgroundColor: '#F1F5F9',
+  },
+  optionIconCircleFuture: {
+    backgroundColor: '#DBEAFE',
+  },
+  optionIcon: {
+    fontSize: 18,
+  },
+  optionInfo: {
+    flex: 1,
+  },
+  optionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  optionTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  optionTitleFuture: {
+    color: '#1D4ED8',
+  },
+  oneTimeBadge: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  oneTimeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  futureBadge: {
+    backgroundColor: '#BFDBFE',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  futureBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  optionDesc: {
+    fontSize: 12.5,
+    color: '#64748B',
+    lineHeight: 18,
+  },
+  optionChevron: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#94A3B8',
+    marginLeft: 6,
+  },
+  optionChevronFuture: {
+    color: '#3B82F6',
+  },
+
+  /* Reason Screen Styles */
+  scopeNoticeCard: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  scopeNoticeText: {
+    fontSize: 12.5,
+    color: '#15803D',
+    fontWeight: '600',
+    lineHeight: 18,
   },
   inputWrap: {
     marginBottom: 14,
@@ -407,6 +666,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  footerSingle: {
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  closeFooterBtn: {
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeFooterBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#64748B',
   },
 });
 

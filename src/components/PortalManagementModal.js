@@ -437,8 +437,22 @@ const PortalManagementModal = forwardRef((props, ref) => {
                   activeOpacity={0.85}
                 >
                   <Text style={styles.createBtnIcon}>＋</Text>
-                  <Text style={styles.createBtnText}>Tạo Link Nhóm Mới</Text>
+                  <Text style={styles.createBtnText}>Tạo Link Nhóm</Text>
                 </TouchableOpacity>
+
+                {props.onOpenDeliveryRequests && (
+                  <TouchableOpacity
+                    style={styles.deliveryRequestsBtn}
+                    onPress={() => {
+                      setVisible(false);
+                      props.onOpenDeliveryRequests();
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.deliveryRequestsBtnIcon}>📋</Text>
+                    <Text style={styles.deliveryRequestsBtnText}>Quản Lý Báo Hàng</Text>
+                  </TouchableOpacity>
+                )}
 
                 {totalUnpublishedTxs > 0 && (
                   <TouchableOpacity
@@ -1083,6 +1097,25 @@ const styles = StyleSheet.create({
   },
   createBtnText: {
     color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  deliveryRequestsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 6,
+  },
+  deliveryRequestsBtnIcon: {
+    fontSize: 14,
+  },
+  deliveryRequestsBtnText: {
+    color: '#0F172A',
     fontSize: 13,
     fontWeight: '700',
   },

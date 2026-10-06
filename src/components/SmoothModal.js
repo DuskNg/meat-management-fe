@@ -7,6 +7,7 @@ import {
   Platform,
   TouchableOpacity,
   Animated,
+  View,
 } from 'react-native';
 
 /**
@@ -53,6 +54,7 @@ const SmoothModal = ({ visible, onClose, children, isToast, centered, animationT
   const backdropModalRef = useRef(null);
   const backdropNodeRef = useRef(null);
   const contentModalRef = useRef(null);
+  const contentRootRef = useRef(null);
   const contentBackdropClickRef = useRef(null);
   const toastAnimRef = useRef(null);
 
@@ -95,14 +97,22 @@ const SmoothModal = ({ visible, onClose, children, isToast, centered, animationT
     const applyPortalZ = (target, zVal) => {
       const elNode = getDomElement(target);
       if (!elNode) return;
+      if (elNode.style) {
+        elNode.style.setProperty('z-index', String(zVal), 'important');
+      }
       let el = elNode;
       // Đi ngược lên cho đến khi gặp phần tử con trực tiếp của document.body (portal container của modal)
       while (el && el.parentElement && el.parentElement !== document.body) {
+        if (el.style) {
+          el.style.setProperty('z-index', String(zVal), 'important');
+        }
         el = el.parentElement;
       }
-      if (el && el.parentElement === document.body) {
-        el.style.setProperty('z-index', String(zVal), 'important');
-        if (el.firstElementChild) {
+      if (el) {
+        if (el.style) {
+          el.style.setProperty('z-index', String(zVal), 'important');
+        }
+        if (el.firstElementChild && el.firstElementChild.style) {
           el.firstElementChild.style.setProperty('z-index', String(zVal), 'important');
         }
       }
@@ -110,21 +120,32 @@ const SmoothModal = ({ visible, onClose, children, isToast, centered, animationT
 
     const targetZ = assignedZRef.current || (zIndex ? zIndex + 100 : (10000 + activeModalStack.indexOf(modalId) * 100));
 
+    let isMounted = true;
     const updateZ = () => {
+      if (!isMounted) return;
       // 1. Áp dụng z-index cho lớp nền Overlay (targetZ - 1)
       const backdropEl = backdropNodeRef.current || backdropModalRef.current;
       applyPortalZ(backdropEl, targetZ - 1);
 
       // 2. Áp dụng z-index cho nội dung Modal (targetZ, cao hơn lớp nền để không bị đè)
-      const contentEl = contentBackdropClickRef.current || contentModalRef.current || toastAnimRef.current;
+      const contentEl = contentRootRef.current || contentBackdropClickRef.current || contentModalRef.current || toastAnimRef.current;
       applyPortalZ(contentEl, targetZ);
     };
 
     updateZ();
-    const timer = setTimeout(updateZ, 0);
+    const rafId = requestAnimationFrame(updateZ);
+    const t0 = setTimeout(updateZ, 0);
+    const t1 = setTimeout(updateZ, 50);
+    const t2 = setTimeout(updateZ, 150);
+    const t3 = setTimeout(updateZ, 300);
 
     return () => {
-      clearTimeout(timer);
+      isMounted = false;
+      cancelAnimationFrame(rafId);
+      clearTimeout(t0);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
       activeModalStack = activeModalStack.filter((id) => id !== modalId);
       if (activeModalStack.length === 0) {
         currentGlobalTopZ = 10000;
@@ -169,12 +190,17 @@ const SmoothModal = ({ visible, onClose, children, isToast, centered, animationT
           animationType="fade"
           onRequestClose={onClose}
         >
-          <TouchableOpacity
+          <View
             ref={backdropNodeRef}
             style={styles.backdropFill}
-            activeOpacity={1}
-            onPress={onClose}
-          />
+            collapsable={false}
+          >
+            <TouchableOpacity
+              style={StyleSheet.absoluteFillObject}
+              activeOpacity={1}
+              onPress={onClose}
+            />
+          </View>
         </Modal>
       )}
 
@@ -186,34 +212,41 @@ const SmoothModal = ({ visible, onClose, children, isToast, centered, animationT
         animationType={resolvedAnimationType}
         onRequestClose={onClose}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={[
-            styles.centeredView,
-            centered && styles.centeredViewCenter,
-            isToast && styles.centeredViewToast,
-          ]}
+        <View
+          ref={contentRootRef}
+          style={StyleSheet.absoluteFillObject}
+          collapsable={false}
           pointerEvents="box-none"
         >
-          {/* Lớp nền trong suốt click ngoài để đóng */}
-          {!isToast && (
-            <TouchableOpacity
-              ref={contentBackdropClickRef}
-              style={styles.backdropClick}
-              activeOpacity={1}
-              onPress={onClose}
-            />
-          )}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[
+              styles.centeredView,
+              centered && styles.centeredViewCenter,
+              isToast && styles.centeredViewToast,
+            ]}
+            pointerEvents="box-none"
+          >
+            {/* Lớp nền trong suốt click ngoài để đóng */}
+            {!isToast && (
+              <TouchableOpacity
+                ref={contentBackdropClickRef}
+                style={styles.backdropClick}
+                activeOpacity={1}
+                onPress={onClose}
+              />
+            )}
 
-          {/* Nội dung modal giữ nguyên nguyên bản 100%, không can thiệp giao diện */}
-          {isToast ? (
-            <Animated.View ref={toastAnimRef} style={{ transform: [{ translateX: slideX }] }}>
-              {children}
-            </Animated.View>
-          ) : (
-            children
-          )}
-        </KeyboardAvoidingView>
+            {/* Nội dung modal giữ nguyên nguyên bản 100%, không can thiệp giao diện */}
+            {isToast ? (
+              <Animated.View ref={toastAnimRef} style={{ transform: [{ translateX: slideX }] }}>
+                {children}
+              </Animated.View>
+            ) : (
+              children
+            )}
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
     </>
   );

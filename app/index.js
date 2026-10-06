@@ -51,6 +51,7 @@ import RecurringDebtModal from '../src/components/RecurringDebtModal';
 import RegularCustomersModal from '../src/components/RegularCustomersModal';
 import DailyPriceManagementModal from '../src/components/DailyPriceManagementModal';
 import PortalManagementModal from '../src/components/PortalManagementModal';
+import DeliveryRequestsModal from '../src/components/DeliveryRequestsModal';
 import InvoiceImageUploadModal from '../src/components/InvoiceImageUploadModal';
 import InvoiceImageViewerModal from '../src/components/InvoiceImageViewerModal';
 import BatchExportDebtModal from '../src/components/BatchExportDebtModal';
@@ -163,6 +164,7 @@ export default function DashboardScreen() {
   const recurringDebtModalRef = useRef(null); // Modal đơn nợ cố định hàng ngày (00:30 mỗi ngày)
   const regularCustomersModalRef = useRef(null); // Modal quản lý khách quen và đối chiếu công nợ tránh sót đơn
   const portalManagementModalRef = useRef(null); // Modal quản lý Link Ghim Zalo cho nhóm khách và NCC
+  const deliveryRequestsModalRef = useRef(null); // Modal quản lý Báo hàng & Chốt đơn từ Zalo Portal
   const batchExportDebtModalRef = useRef(null); // Modal xuất công nợ hàng loạt (tải ảnh PC / chuyển tiếp Zalo)
   const customerGroupsModalRef = useRef(null); // Modal quản lý nhóm nhà hàng & chuỗi chi nhánh
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
@@ -420,7 +422,7 @@ export default function DashboardScreen() {
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  // Khởi tạo kiểm tra ngầm toàn cục trùng lặp đơn hàng trong ngày
+  // Khởi tạo kiểm tra ngầm toàn cục trùng lặp đơn hàng trong ngày (quét định kỳ 30 phút/lần)
   const {
     globalDuplicates,
     showDuplicateAlertModal,
@@ -429,6 +431,7 @@ export default function DashboardScreen() {
     transactions: transactionsResponse?.data,
     customers: customersResponse?.data,
     popupModalRef,
+    onRefetchTransactions: refetchTransactions,
     onInspectCustomer: (customerId, customer) => {
       const targetDate = globalDuplicates?.[0]?.dateKey;
       dailyReportModalRef.current?.open({
@@ -442,6 +445,18 @@ export default function DashboardScreen() {
   const handleRefreshAll = (options = {}) => {
     if (options?.fromSubmit) {
       notifyDebtSubmitted();
+      refetchUnbilledDelivery().then((res) => {
+        const d = res.data;
+        if (d && d.unbilledCount > 0) {
+          const names = (d.unbilledCustomers || []).slice(0, 3).map((c) => c.customerName).join(', ');
+          const extra = d.unbilledCount > 3 ? ` và ${d.unbilledCount - 3} quán khác` : '';
+          showGlobalToast(
+            `⚠️ Còn ${d.unbilledCount} quán đã báo hàng hôm nay nhưng chưa có công nợ: ${names}${extra}!`,
+            'warning',
+            6000
+          );
+        }
+      });
     }
     refetch();
     refetchPayments(); // Luôn cập nhật lại cả lịch sử thanh toán để đảm bảo doanh thu mới nhất
@@ -449,6 +464,8 @@ export default function DashboardScreen() {
     customerDebtHistoryModalRef.current?.refresh();
     // Làm mới danh sách ghi nợ trong ngày của nhân viên nếu đang hiển thị
     employeeDailyDebtModalRef.current?.refresh();
+    deliveryRequestsModalRef.current?.refetch();
+    refetchUnbilledDelivery();
   };
 
   const handleRefreshBadAll = () => {
@@ -598,6 +615,17 @@ export default function DashboardScreen() {
       return response.data;
     },
     enabled: auth.hasPermission('canManageDebt'),
+  });
+
+  // Query kiểm tra danh sách quán đã báo hàng hôm nay nhưng chưa có công nợ
+  const { data: unbilledDeliveryData, refetch: refetchUnbilledDelivery } = useQuery({
+    queryKey: ['unbilledDeliveryRequests'],
+    queryFn: async () => {
+      const res = await api.get('/portal/manage/delivery-requests/unbilled');
+      return res.data?.data;
+    },
+    enabled: Boolean(auth.user && auth.hasPermission('canManageDebt')),
+    refetchInterval: 30000,
   });
 
   // 1.9. Dùng React Query tải danh sách nhân viên (tự động tải lại khi đổi tháng xem lương)
@@ -2670,15 +2698,22 @@ export default function DashboardScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerRightRow}>
-            {/* Nút Link Zalo cập nhật giá bán nhanh */}
+            {/* Nút Báo hàng & Chốt đơn từ Zalo Portal */}
             {!auth.user?.workspaceMember && (
               <TouchableOpacity
                 style={[styles.portalNotifyBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
-                onPress={() => quickPriceLinkModalRef.current?.open()}
+                onPress={() => deliveryRequestsModalRef.current?.open()}
                 activeOpacity={0.7}
-                title="Link Zalo Cập Nhật Giá Bán Nhanh"
+                title="Báo hàng & Chốt đơn (Zalo Portal)"
               >
-                <Text style={styles.portalNotifyIcon}>⚡</Text>
+                <Text style={styles.portalNotifyIcon}>📋</Text>
+                {unbilledDeliveryData?.unbilledCount > 0 && (
+                  <View style={[styles.portalNotifyBadge, { backgroundColor: '#EA580C' }]}>
+                    <Text style={styles.portalNotifyBadgeText}>
+                      {unbilledDeliveryData.unbilledCount > 9 ? '9+' : unbilledDeliveryData.unbilledCount}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
             )}
 
@@ -2747,6 +2782,30 @@ export default function DashboardScreen() {
                 </TouchableOpacity>
               </View>
             ))}
+          </View>
+        )}
+
+        {/* BANNER CẢNH BÁO QUÁN BÁO HÀNG CHƯA CÓ CÔNG NỢ */}
+        {!auth.user?.workspaceMember && unbilledDeliveryData?.unbilledCount > 0 && (
+          <View style={styles.groupReminderBannerContainer}>
+            <TouchableOpacity
+              style={[styles.groupReminderBanner, styles.unbilledDeliveryBanner]}
+              onPress={() => deliveryRequestsModalRef.current?.open()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.groupReminderIcon}>⚠️</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.unbilledDeliveryBannerTitle}>
+                  Có {unbilledDeliveryData.unbilledCount} quán đã báo hàng hôm nay nhưng chưa có công nợ!
+                </Text>
+                <Text style={styles.unbilledDeliveryBannerSub} numberOfLines={1}>
+                  {(unbilledDeliveryData.unbilledCustomers || []).map((c) => c.customerName).join(', ')}
+                </Text>
+              </View>
+              <View style={styles.unbilledDeliveryActionBtn}>
+                <Text style={styles.unbilledDeliveryActionBtnText}>Xem & Chốt ➔</Text>
+              </View>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -3092,6 +3151,8 @@ export default function DashboardScreen() {
 
                 <View style={styles.smartDebtMenuDivider} />
 
+
+
                 <TouchableOpacity
                   style={styles.smartDebtMenuItem}
                   onPress={() => {
@@ -3415,7 +3476,23 @@ export default function DashboardScreen() {
         onRefresh={handleRefreshAll}
       />
       {/* MODAL QUẢN LÝ LINK GHIM ZALO CHO KHÁCH & NHÀ CUNG CẤP */}
-      <PortalManagementModal ref={portalManagementModalRef} />
+      <PortalManagementModal
+        ref={portalManagementModalRef}
+        onOpenDeliveryRequests={() => deliveryRequestsModalRef.current?.open()}
+      />
+
+      {/* MODAL QUẢN LÝ BÁO HÀNG & CHỐT ĐƠN (ZALO PORTAL) */}
+      <DeliveryRequestsModal
+        ref={deliveryRequestsModalRef}
+        onRefresh={() => {
+          handleRefreshAll();
+          refetchUnbilledDelivery();
+        }}
+        onOpenDebt={(customer, dateIso) => {
+          setSelectedCustomerId(customer.id);
+          debtModalRef.current?.open(customer);
+        }}
+      />
 
       {/* MODAL DUYỆT HÓA ĐƠN & TÍCH KÊ TỪ ZALO NHÂN VIÊN */}
       <StaffSubmissionReviewModal
@@ -5690,6 +5767,43 @@ const styles = StyleSheet.create({
   },
   groupReminderDismissBtnText: {
     color: '#78350F',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  unbilledDeliveryBanner: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FB923C',
+    borderWidth: 1.5,
+  },
+  unbilledDeliveryBannerTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#C2410C',
+  },
+  unbilledDeliveryBannerSub: {
+    fontSize: 11.5,
+    color: '#9A3412',
+    marginTop: 2,
+  },
+  unbilledDeliveryActionBtn: {
+    backgroundColor: '#EA580C',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  unbilledDeliveryActionBtnText: {
+    fontSize: 11.5,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  unbilledMenuBadge: {
+    backgroundColor: '#EA580C',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  unbilledMenuBadgeText: {
+    color: '#FFFFFF',
     fontSize: 11,
     fontWeight: 'bold',
   },

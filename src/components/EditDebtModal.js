@@ -460,7 +460,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   };
 
   // ─── Thực thi gửi API cập nhật đơn nợ ─────────────────────────
-  const executeSubmit = async (isoDate, payloadItems, priceChangeReason = null) => {
+  const executeSubmit = async (isoDate, payloadItems, priceChangeReason = null, updateCustomPrice = true) => {
     setError('');
     setLoading(true);
     isSubmittingRef.current = true;
@@ -471,6 +471,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
         profitPercent: activeTab === 'quick' && quickProfitPercent ? parseFloat(quickProfitPercent) : undefined,
         items: payloadItems,
         priceChangeReason: priceChangeReason || null,
+        updateCustomPrice: updateCustomPrice !== false,
       });
 
       if (response.data.success) {
@@ -540,14 +541,17 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
             newPrice: item.price,
           })),
           customerName: customerName || 'Khách hàng',
-          onConfirm: (reason) => {
-            executeSubmit(isoDate, payloadItems, reason);
+          allowScopeSelection: true,
+          onConfirm: (result) => {
+            const applyToFuture = typeof result === 'object' && result !== null ? result.applyToFuture !== false : true;
+            const reason = typeof result === 'object' && result !== null ? result.reason : result;
+            executeSubmit(isoDate, payloadItems, reason, applyToFuture);
           },
         });
         return;
       }
 
-      executeSubmit(isoDate, payloadItems, null);
+      executeSubmit(isoDate, payloadItems, null, true);
     }
   };
 

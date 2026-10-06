@@ -21,6 +21,7 @@ import ImagePreviewModal from '../../src/components/ImagePreviewModal';
 import InvoiceImageViewerModal from '../../src/components/InvoiceImageViewerModal';
 import CustomerPriceCheckModal from '../../src/components/CustomerPriceCheckModal';
 import ExportChainDebtModal from '../../src/components/ExportChainDebtModal';
+import PortalDeliveryModal from '../../src/components/PortalDeliveryModal';
 import DatePickerInput from '../../src/components/DatePickerInput';
 import CustomSelect from '../../src/components/CustomSelect';
 import { showGlobalToast } from '../../src/store/toastStore';
@@ -1408,6 +1409,7 @@ export default function PortalScreen() {
   const invoiceViewerRef = useRef(null);
   const customerPriceCheckModalRef = useRef(null);
   const exportChainDebtModalRef = useRef(null);
+  const portalDeliveryModalRef = useRef(null);
 
   // Helper lấy ảnh hóa đơn cho từng quán trên ngày đó
   const getInvoicesForCustomer = (day, customerName) => {
@@ -2378,6 +2380,20 @@ export default function PortalScreen() {
         <View style={styles.headerLeft}>
           <Text style={styles.groupNameText} numberOfLines={1}>{portalInfo?.name}</Text>
         </View>
+        <TouchableOpacity
+          style={styles.headerDeliveryBtn}
+          onPress={() =>
+            portalDeliveryModalRef.current?.open({
+              token,
+              portalInfo,
+              currentCustomerId: selectedCustomerId,
+              branches: portalData?.branches || portalInfo?.customers || [],
+            })
+          }
+          activeOpacity={0.8}
+        >
+          <Text style={styles.headerDeliveryBtnText}>📦 Báo hàng</Text>
+        </TouchableOpacity>
       </View>
 
       {/* KHUNG NỘI DUNG VỪA KHÍT VIEWPORT 100VH */}
@@ -2571,19 +2587,36 @@ export default function PortalScreen() {
                   ) : null}
                 </View>
 
-                {/* NÚT XUẤT CÔNG NỢ CÙNG HÀNG VỚI THANH TÌM KIẾM */}
-                <TouchableOpacity
-                  style={styles.exportDebtBtn}
-                  onPress={handleExportDebtPress}
-                  disabled={exportingImage}
-                  activeOpacity={0.8}
-                >
-                  {exportingImage ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.exportDebtBtnText}>📊 Xuất công nợ</Text>
-                  )}
-                </TouchableOpacity>
+                {/* NÚT BÁO HÀNG & NÚT XUẤT CÔNG NỢ */}
+                <View style={styles.actionButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.portalDeliveryBtn}
+                    onPress={() =>
+                      portalDeliveryModalRef.current?.open({
+                        token,
+                        portalInfo,
+                        currentCustomerId: selectedCustomerId,
+                        branches: portalData?.branches || portalInfo?.customers || [],
+                      })
+                    }
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.portalDeliveryBtnText}>📦 Báo hàng</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.exportDebtBtn}
+                    onPress={handleExportDebtPress}
+                    disabled={exportingImage}
+                    activeOpacity={0.8}
+                  >
+                    {exportingImage ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.exportDebtBtnText}>📊 Xuất công nợ</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* BẢNG DỮ LIỆU INVOICE - VỪA KHÍT 100% CHIỀU RỘNG, KHÔNG SCROLL NGANG */}
@@ -3035,6 +3068,14 @@ export default function PortalScreen() {
 
       {/* MODAL CHỌN HÌNH THỨC XUẤT CÔNG NỢ CHUỖI CỬA HÀNG */}
       <ExportChainDebtModal ref={exportChainDebtModalRef} />
+
+      {/* MODAL BÁO LẤY HÀNG (HÔM NAY / NGÀY MAI) */}
+      <PortalDeliveryModal
+        ref={portalDeliveryModalRef}
+        onSubmitted={() => {
+          fetchPortalData(selectedCustomerId, sessionToken, true);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -3197,6 +3238,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     marginRight: 6,
+  },
+  headerDeliveryBtn: {
+    backgroundColor: '#059669',
+    borderWidth: 1,
+    borderColor: '#34D399',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerDeliveryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 12.5,
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  portalDeliveryBtn: {
+    backgroundColor: '#059669',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#34D399',
+  },
+  portalDeliveryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 13,
   },
   priceCheckBtnText: {
     color: '#FFFFFF',

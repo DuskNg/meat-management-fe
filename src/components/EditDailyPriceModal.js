@@ -147,7 +147,9 @@ const EditDailyPriceModal = forwardRef(({ onSaveSuccess }, ref) => {
         },
       ],
       customerName: item.customerName,
-      onConfirm: (reason) => {
+      allowScopeSelection: false,
+      onConfirm: (result) => {
+        const reason = typeof result === 'object' && result !== null ? result.reason : result;
         executeSave(reason);
       },
     });

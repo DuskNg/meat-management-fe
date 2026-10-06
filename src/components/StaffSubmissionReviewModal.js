@@ -926,6 +926,28 @@ const resolveCustomerForSub = (sub, custList) => {
       }
     }
 
+    // 0b. Ưu tiên khớp khách "Cuốn an khánh" nếu AI nhận diện là "An Khang", "an khang", "ankhang", "an khanh", "cuon an khang"...
+    if (
+      cleanDetectedNoSpace === 'ankhang' ||
+      cleanDetectedNoSpace === 'ankhanh' ||
+      cleanDetected.includes('an khang') ||
+      cleanDetected.includes('an khanh') ||
+      cleanDetectedNoSpace.includes('ankhang') ||
+      cleanDetectedNoSpace.includes('ankhanh') ||
+      cleanDetected.includes('cuon an khang')
+    ) {
+      const cuonAnKhanhCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('cuon an khanh') || (cClean.includes('an khanh') && cClean.includes('cuon'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('an khanh');
+      });
+      if (cuonAnKhanhCust) {
+        return cuonAnKhanhCust;
+      }
+    }
+
     // 0. BẮT BUỘC ƯU TIÊN KHỚP CHÍNH XÁC 100% (Exact Match) TRƯỚC TIÊN
     // Nếu tên khách AI bóc tách trùng khớp hoàn toàn với một khách trong DB (ví dụ: "Hồng hạnh hqv")
     // thì lấy ngay khách này, TUYỆT ĐỐI không để các rule heuristic phía dưới ghi đè!
@@ -2978,16 +3000,15 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           }
         } catch { }
 
-        const isImport = Boolean(
+        const hasImportKeyword = Boolean(
           (sub.note && /^(nhập hàng|nhap hang)/i.test(sub.note.trim())) ||
           (sub.note && importRegex.test(sub.note)) ||
           parsedAiData?.is_import === true ||
-          parsedAiData?.target_type === 'supplier' ||
+          (parsedAiData?.note && /(?:nhập hàng|nhap hang)/i.test(parsedAiData.note)) ||
           (sub.rawAiResponse && (
             sub.rawAiResponse.includes('"is_import": true') ||
             sub.rawAiResponse.includes('"is_import":true') ||
-            sub.rawAiResponse.includes('"target_type": "supplier"') ||
-            sub.rawAiResponse.includes('"target_type":"supplier"')
+            /(?:nhập hàng|nhap hang)/i.test(sub.rawAiResponse)
           ))
         );
 
@@ -3001,20 +3022,42 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                  (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
         })) || null;
 
-        // Nếu là đơn nhập hàng nhưng chưa có trong danh mục NCC, tạo pseudo-supplier để điền sẵn tên bóc tách
-        if (isImport && !matchedSup && (sub.detectedCustomerName || parsedAiData?.supplier_name)) {
+        // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp khách hàng đã lưu, không chạy lại regex AI
+        const matchedCust = isApproved
+          ? (sub.matchedCustomer || (sub.matchedCustomerId ? custList.find((c) => c.id === sub.matchedCustomerId) : null))
+          : resolveCustomerForSub(sub, custList);
+
+        // NẾU CÓ TỪ KHÓA NHẬP HÀNG:
+        // - Khớp Nhà cung cấp trong DB -> Đơn nhập NCC (targetType = 'supplier', isImport = true)
+        // - Khớp Khách hàng hoặc không khớp NCC -> Đơn của Khách hàng, bản chất là TRẢ HÀNG (targetType = 'customer', isImport = false, isReturn = true)
+        let isImport = false;
+        let initialTargetType = sub.targetType || 'customer';
+
+        if (sub.targetType) {
+          initialTargetType = sub.targetType;
+          isImport = initialTargetType === 'supplier';
+        } else if (matchedSup && matchedSup.id) {
+          initialTargetType = 'supplier';
+          isImport = true;
+        } else if (matchedCust && matchedCust.id) {
+          initialTargetType = 'customer';
+          isImport = false;
+        } else if (hasImportKeyword) {
+          // Khi không có NCC trùng khớp trong DB, mặc định đơn nhập hàng của khách là trả hàng
+          initialTargetType = 'customer';
+          isImport = false;
+        } else {
+          initialTargetType = 'customer';
+          isImport = false;
+        }
+
+        // Nếu là đơn nhập NCC nhưng chưa có trong danh mục NCC, tạo pseudo-supplier
+        if (initialTargetType === 'supplier' && !matchedSup && (sub.detectedCustomerName || parsedAiData?.supplier_name)) {
           const supName = (sub.detectedCustomerName || parsedAiData?.supplier_name || '').trim();
           if (supName) {
             matchedSup = { id: null, name: supName };
           }
         }
-
-        const initialTargetType = sub.targetType || (isImport || (matchedSup && matchedSup.id) ? 'supplier' : 'customer');
-
-        // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp khách hàng đã lưu, không chạy lại regex AI
-        const matchedCust = isApproved
-          ? (sub.matchedCustomer || (sub.matchedCustomerId ? custList.find((c) => c.id === sub.matchedCustomerId) : null))
-          : resolveCustomerForSub(sub, custList);
 
         // BẢNG GIÁ ĐÃ NẠP SẴN: NẾU LÀ ĐƠN NHÀ CUNG CẤP THÌ LẤY BẢNG GIÁ RIÊNG CỦA NCC, NGƯỢC LẠI LẤY GIÁ RIÊNG KHÁCH HÀNG
         const isSupplierInit = initialTargetType === 'supplier' && matchedSup?.id;
@@ -3024,10 +3067,15 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
         if (isApproved) {
           // ─── ĐỐI VỚI HÓA ĐƠN ĐÃ DUYỆT: TẢI NGUYÊN BẢN CHÍNH XÁC NHỮNG GÌ CHỦ BUÔN ĐÃ LƯU ───
-          const isReturn = !isImport && Boolean(
-            sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]') || sub.note.includes('Trả lại') || sub.note.includes('Trả hàng') || /trả|tra/i.test(sub.note))
+          const isReturn = (
+            (initialTargetType === 'customer' && hasImportKeyword) ||
+            (!isImport && Boolean(
+              sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]') || sub.note.includes('Trả lại') || sub.note.includes('Trả hàng') || /trả|tra/i.test(sub.note))
+            ))
           );
-          const cardNote = (initialTargetType === 'supplier' || isImport) ? (sub.note || 'Nhập hàng') : (sub.note || '');
+          const cardNote = (initialTargetType === 'supplier' || (isImport && !isReturn))
+            ? (sub.note || 'Nhập hàng')
+            : (hasImportKeyword ? (sub.note || 'NHẬP HÀNG') : (sub.note || ''));
 
           let rawItems = (sub.items || [])
             .filter((it) => it.rawName || it.quantity || it.price || it.amount)
@@ -3346,17 +3394,22 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         }
 
         const returnRegex = /(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang)/i;
-        const isReturn = !isImport && Boolean(
-          (sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]') || returnRegex.test(sub.note))) ||
-          (sub.rawAiResponse && (sub.rawAiResponse.includes('"is_return": true') || sub.rawAiResponse.includes('"is_return":true') || returnRegex.test(sub.rawAiResponse))) ||
-          (sub.detectedCustomerName && returnRegex.test(sub.detectedCustomerName)) ||
-          rawItems.some((it) => returnRegex.test(it.rawName || '')) ||
-          ((sub.items || []).some((it) => returnRegex.test(it.rawName || '')))
+        const isReturn = (
+          (initialTargetType === 'customer' && hasImportKeyword) ||
+          (!isImport && Boolean(
+            (sub.note && (sub.note.includes('[Trả lại hàng]') || sub.note.includes('[Trả hàng]') || returnRegex.test(sub.note))) ||
+            (sub.rawAiResponse && (sub.rawAiResponse.includes('"is_return": true') || sub.rawAiResponse.includes('"is_return":true') || returnRegex.test(sub.rawAiResponse))) ||
+            (sub.detectedCustomerName && returnRegex.test(sub.detectedCustomerName)) ||
+            rawItems.some((it) => returnRegex.test(it.rawName || '')) ||
+            ((sub.items || []).some((it) => returnRegex.test(it.rawName || '')))
+          ))
         );
 
         let cardNote = '';
-        if (initialTargetType === 'supplier' || isImport) {
+        if (initialTargetType === 'supplier' || (isImport && !isReturn)) {
           cardNote = 'Nhập hàng';
+        } else if (hasImportKeyword) {
+          cardNote = (sub.note && /(?:nhập hàng|nhap hang)/i.test(sub.note)) ? sub.note.trim() : 'NHẬP HÀNG';
         } else if (isReturn) {
           cardNote = 'Trả hàng';
         } else {
@@ -3487,9 +3540,17 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       // - Sang Khách hàng -> nếu đơn trả hàng thì "Trả hàng", nếu đơn nợ mới thì ""
       if (field === 'targetType') {
         if (value === 'supplier') {
+          nextCard.isReturn = false;
           nextCard.note = 'Nhập hàng';
         } else {
-          nextCard.note = card.isReturn ? 'Trả hàng' : '';
+          // Sang Khách hàng: Nếu thẻ có từ khóa nhập hàng -> tự động đổi type thành TRẢ HÀNG, giữ text "NHẬP HÀNG"!
+          const hasImport = /(?:nhập hàng|nhap hang)/i.test(card.note || '');
+          if (hasImport) {
+            nextCard.isReturn = true;
+            nextCard.note = card.note || 'NHẬP HÀNG';
+          } else {
+            nextCard.note = card.isReturn ? 'Trả hàng' : '';
+          }
         }
       }
 
@@ -3550,11 +3611,13 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       }
 
       if (nextIsReturn) {
-        // Đơn trả hàng: ghi chú "Trả hàng"
-        nextNote = 'Trả hàng';
+        // Nếu trước đó đang có ghi chú "nhập hàng", giữ nguyên text "NHẬP HÀNG", không đổi thành "Trả hàng"
+        const hasImport = /(?:nhập hàng|nhap hang)/i.test(card.note || '');
+        nextNote = hasImport ? (card.note || 'NHẬP HÀNG') : 'Trả hàng';
       } else {
-        // Đơn nợ mới: không cần nhập gì
-        nextNote = '';
+        // Đơn nợ mới: nếu ghi chú là "Trả hàng" hoặc "NHẬP HÀNG" thì xóa đi, nếu là ghi chú riêng của người dùng thì giữ lại
+        const isDefaultReturnOrImportNote = /^(?:trả hàng|nhập hàng|\[trả lại hàng\])/i.test((card.note || '').trim());
+        nextNote = isDefaultReturnOrImportNote ? '' : (card.note || '');
       }
       return {
         ...prev,
@@ -3741,7 +3804,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   };
 
   // Lưu nợ cho 1 hóa đơn riêng lẻ (hỗ trợ xác nhận lý do thay đổi đơn giá)
-  const handleSaveCard = async (subId, confirmedReason = undefined) => {
+  const handleSaveCard = async (subId, confirmedReason = undefined, updateCustomPrice = true) => {
     const card = cardDataMap[subId];
     if (!card) return false;
     if (card.targetType === 'supplier') {
@@ -3826,13 +3889,16 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         }
       });
 
-      // Nếu có món đổi giá, hiển thị pop-up hỏi lý do trước khi hoàn tất lưu
+      // Nếu có món đổi giá, hiển thị pop-up hỏi phạm vi áp dụng (Chỉ lần này vs Cập nhật từ bây giờ)
       if (changedPriceItems.length > 0) {
         priceChangeReasonModalRef.current?.open({
           items: changedPriceItems,
           customerName: card.customer.name || 'Khách hàng',
-          onConfirm: (reason) => {
-            handleSaveCard(subId, reason !== null ? (reason || '') : null);
+          allowScopeSelection: true,
+          onConfirm: (result) => {
+            const applyToFuture = typeof result === 'object' && result !== null ? result.applyToFuture !== false : true;
+            const reason = typeof result === 'object' && result !== null ? result.reason : result;
+            handleSaveCard(subId, reason !== null ? (reason || '') : null, applyToFuture);
           },
         });
         return false;
@@ -3953,6 +4019,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         isReturn: Boolean(card.isReturn),
         orderMode: card.orderMode,
         items: payloadItems,
+        updateCustomPrice: updateCustomPrice !== false,
         ...(confirmedReason !== undefined ? { priceChangeReason: confirmedReason } : {}),
       };
 

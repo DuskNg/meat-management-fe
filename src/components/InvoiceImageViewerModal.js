@@ -524,7 +524,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   }, [dayData]);
 
   return (
-    <SmoothModal visible={visible} onClose={handleClose} centered={true} zIndex={100000}>
+    <SmoothModal visible={visible} onClose={handleClose} centered={true} zIndex={50000}>
       <View style={[styles.container, dayData && (isWide ? styles.containerWide : styles.containerMobileWithData)]}>
         {/* Thanh Header */}
         <View style={styles.headerRow}>
@@ -1033,8 +1033,8 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     display: 'flex',
     flexDirection: 'column',
-    zIndex: 100000,
-    elevation: 100000,
+    zIndex: 10,
+    elevation: 10,
     ...Platform.select({
       web: { userSelect: 'none' },
     }),

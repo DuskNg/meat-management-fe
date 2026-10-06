@@ -586,7 +586,9 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
           newPrice: i.customPrice,
         })),
         customerName: targetName,
-        onConfirm: (reason) => {
+        allowScopeSelection: false,
+        onConfirm: (result) => {
+          const reason = typeof result === 'object' && result !== null ? result.reason : result;
           executeSaveCustomPrices(targetCustomerIds, changedItems, reason);
         },
       });

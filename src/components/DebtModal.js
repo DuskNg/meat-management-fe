@@ -317,7 +317,7 @@ const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRe
   };
 
   // ─── Thực thi gửi API tạo đơn nợ thủ công ─────────────────────────────────────
-  const executeManualSubmit = async (isoDate, priceChangeReason = null) => {
+  const executeManualSubmit = async (isoDate, priceChangeReason = null, updateCustomPrice = true) => {
     setError('');
     setErrorField('');
     setLoading(true);
@@ -329,6 +329,7 @@ const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRe
         note: note.trim() || null,
         source: 'MANUAL_SINGLE',
         priceChangeReason: priceChangeReason || null,
+        updateCustomPrice: updateCustomPrice !== false,
         // Gửi toàn bộ mặt hàng trong giỏ hàng lên cùng 1 lần
         items: cartItems.map((item) => ({
           productId: item.product.id,
@@ -398,7 +399,7 @@ const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRe
         return Math.abs(Number(item.price) - origPrice) > 0.01;
       });
 
-      // Nếu có món đổi giá, hiển thị pop-up hỏi lý do đổi giá trước khi hoàn tất
+      // Nếu có món đổi giá, hiển thị pop-up hỏi phạm vi áp dụng (Chỉ lần này vs Cập nhật từ bây giờ)
       if (changedPriceItems.length > 0) {
         priceChangeReasonModalRef.current?.open({
           items: changedPriceItems.map((item) => ({
@@ -407,14 +408,17 @@ const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRe
             newPrice: item.price,
           })),
           customerName: currentCustomerName || 'Khách hàng',
-          onConfirm: (reason) => {
-            executeManualSubmit(isoDate, reason);
+          allowScopeSelection: true,
+          onConfirm: (result) => {
+            const applyToFuture = typeof result === 'object' && result !== null ? result.applyToFuture !== false : true;
+            const reason = typeof result === 'object' && result !== null ? result.reason : result;
+            executeManualSubmit(isoDate, reason, applyToFuture);
           },
         });
         return;
       }
 
-      executeManualSubmit(isoDate, null);
+      executeManualSubmit(isoDate, null, true);
     } else {
       // Logic gửi ghi nợ nhanh
       const qAmt = quickAmountVND;
