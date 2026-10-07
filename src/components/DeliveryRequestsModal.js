@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/DeliveryRequestsModal.js
-import React, { useState, forwardRef, useImperativeHandle, useEffect, useMemo } from 'react';
+import React, { useState, useRef, forwardRef, useImperativeHandle, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,6 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
+import PopupModal from './PopupModal';
 import { api } from '../api/client';
 import { showGlobalToast } from '../store/toastStore';
 import { COLORS } from '../theme';
@@ -59,6 +60,7 @@ const getDateOptions = () => {
 };
 
 const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
+  const popupRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeDateType, setActiveDateType] = useState('today'); // 'today' | 'tomorrow'
@@ -172,6 +174,30 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
     }
   };
 
+  // Xóa lượt báo hàng của quán
+  const confirmDelete = (item) => {
+    if (!item) return;
+    popupRef.current?.show({
+      type: 'confirm',
+      title: 'XÓA BÁO HÀNG',
+      message: `Bạn có chắc chắn muốn xóa lượt báo hàng của [${item.customer?.name || 'khách hàng'}] không?`,
+      confirmText: 'XÓA NGAY',
+      cancelText: 'HỦY BỎ',
+      onConfirm: async () => {
+        try {
+          const res = await api.delete(`/portal/manage/delivery-requests/${item.id}`);
+          if (res.data?.success) {
+            showGlobalToast(res.data.message || 'Đã xóa lượt báo hàng thành công!', 'success');
+            fetchRequests(activeDateType);
+            if (onRefresh) onRefresh();
+          }
+        } catch (err) {
+          showGlobalToast(err.response?.data?.message || 'Lỗi khi xóa lượt báo hàng', 'error');
+        }
+      },
+    });
+  };
+
   // Gọi điện cho quán
   const handleCallCustomer = (phone) => {
     if (!phone) return;
@@ -187,7 +213,8 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         {/* HEADER MODAL */}
         <View style={styles.headerRow}>
@@ -209,7 +236,7 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
 
-        {/* BỘ CHỌN NGÀY NHANH: HÔM NAY / NGÀY MAI */}
+        {/* BỘ CHỌN NGÀY NHANH: HÔM NAY / NGÀY MAI (SIÊU GỌN) */}
         <View style={styles.tabDateRow}>
           <TouchableOpacity
             style={[
@@ -248,23 +275,23 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
 
-        {/* THỐNG KÊ TÓM TẮT 4 KHỐI (2 CỘT x 2 DÒNG MOBILE-FIRST) */}
+        {/* THỐNG KÊ TÓM TẮT 4 CHỈ SỐ: 1 HÀNG DUY NHẤT (SIÊU TIẾT KIỆM DIỆN TÍCH) */}
         <View style={styles.summaryGrid}>
           <View style={styles.summaryItem}>
             <Text style={styles.summaryValue}>{summary.totalRequests}</Text>
-            <Text style={styles.summaryLabel}>Tổng quán báo</Text>
+            <Text style={styles.summaryLabel}>Tổng quán</Text>
           </View>
           <View style={[styles.summaryItem, styles.summaryItemConfirmed]}>
             <Text style={[styles.summaryValue, styles.summaryValueConfirmed]}>
               {summary.confirmedCount}
             </Text>
-            <Text style={styles.summaryLabel}>Đã chốt có hàng</Text>
+            <Text style={styles.summaryLabel}>Đã chốt</Text>
           </View>
           <View style={[styles.summaryItem, styles.summaryItemBilled]}>
             <Text style={[styles.summaryValue, styles.summaryValueBilled]}>
               {summary.billedCount}
             </Text>
-            <Text style={styles.summaryLabel}>Đã có công nợ</Text>
+            <Text style={styles.summaryLabel}>Đã nợ</Text>
           </View>
           <View
             style={[
@@ -280,11 +307,11 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
             >
               {summary.unbilledCount}
             </Text>
-            <Text style={styles.summaryLabel}>⚠️ Chưa có công nợ</Text>
+            <Text style={styles.summaryLabel}>Chưa nợ</Text>
           </View>
         </View>
 
-        {/* THANH TÁC VỤ HÀNG LOẠT */}
+        {/* THANH TÁC VỤ HÀNG LOẠT (TINH GỌN) */}
         {requests.length > 0 && summary.confirmedCount < summary.totalRequests && (
           <View style={styles.bulkActionRow}>
             <TouchableOpacity
@@ -318,99 +345,91 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContainer}
           >
-            {requests.map((item, idx) => {
-              const isConfirmed = item.isConfirmed;
-              const hasDebt = item.hasDebt;
+            {/* BẢNG TINH GỌN VỪA KHÍT 100% VIEWPORT - KHÔNG SCROLL NGANG */}
+            <View style={styles.tableContainer}>
+              {/* HEADER BẢNG */}
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.tableHeaderCell, styles.colStt]}>STT</Text>
+                <Text style={[styles.tableHeaderCell, styles.colCustomer]}>TÊN KHÁCH</Text>
+                <Text style={[styles.tableHeaderCell, styles.colActions]}>THAO TÁC</Text>
+              </View>
 
-              return (
-                <View
-                  key={item.id || idx}
-                  style={[
-                    styles.requestCard,
-                    !hasDebt && styles.requestCardUnbilled,
-                  ]}
-                >
-                  {/* DÒNG TIÊU ĐỀ: TÊN QUÁN + NHÓM */}
-                  <View style={styles.cardHeaderRow}>
-                    <View style={styles.customerNameWrap}>
-                      <Text style={styles.customerNameText}>
-                        {item.customer?.name || 'Khách hàng'}
-                      </Text>
-                      {item.customer?.phone ? (
-                        <TouchableOpacity
-                          style={styles.phoneChip}
-                          onPress={() => handleCallCustomer(item.customer?.phone)}
-                        >
-                          <Text style={styles.phoneChipText}>📞 {item.customer?.phone}</Text>
-                        </TouchableOpacity>
-                      ) : null}
+              {/* NỘI DUNG CÁC DÒNG */}
+              {requests.map((item, idx) => {
+                const hasDebt = item.hasDebt;
+                const isEven = idx % 2 === 0;
+                const isLast = idx === requests.length - 1;
+
+                return (
+                  <View
+                    key={item.id || idx}
+                    style={[
+                      styles.tableRow,
+                      isEven ? styles.tableRowEven : styles.tableRowOdd,
+                      !isLast && styles.tableRowBorder,
+                    ]}
+                  >
+                    {/* CỘT 1: STT */}
+                    <View style={styles.colStt}>
+                      <Text style={styles.sttText}>{idx + 1}</Text>
                     </View>
 
-                    {/* NÚT CHỐT HÀNG */}
-                    <TouchableOpacity
-                      style={[
-                        styles.confirmToggleBtn,
-                        isConfirmed ? styles.confirmToggleBtnDone : styles.confirmToggleBtnPending,
-                      ]}
-                      onPress={() => handleToggleConfirm(item)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.confirmToggleText,
-                          isConfirmed ? styles.confirmToggleTextDone : styles.confirmToggleTextPending,
-                        ]}
-                      >
-                        {isConfirmed ? '✅ Đã chốt' : '⏳ Bấm chốt'}
+                    {/* CỘT 2: TÊN KHÁCH */}
+                    <View style={styles.colCustomer}>
+                      <Text style={styles.customerNameText} numberOfLines={1}>
+                        {item.customer?.name || 'Khách hàng'}
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* THÔNG TIN CHI TIẾT: NHÓM PORTAL + GHI CHÚ */}
-                  <View style={styles.cardDetailCol}>
-                    {item.portalLink?.name ? (
-                      <Text style={styles.portalLinkNameText}>
-                        🔗 Nhóm Zalo: {item.portalLink.name}
-                      </Text>
-                    ) : null}
-
-                    {item.note ? (
-                      <View style={styles.noteBox}>
-                        <Text style={styles.noteLabel}>Ghi chú:</Text>
-                        <Text style={styles.noteContent}>{item.note}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-
-                  {/* KHỐI TRẠNG THÁI CÔNG NỢ */}
-                  <View style={styles.debtStatusRow}>
-                    {hasDebt ? (
-                      <View style={styles.debtStatusBilledBadge}>
-                        <Text style={styles.debtStatusBilledText}>
-                          ✅ Đã có công nợ: {formatCurrency(item.debtAmount)} ({item.debtCount} đơn)
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={styles.debtStatusUnbilledRow}>
-                        <View style={styles.debtStatusUnbilledBadge}>
-                          <Text style={styles.debtStatusUnbilledText}>
-                            ⚠️ Chưa có công nợ!
+                      <View style={styles.customerSubInfoRow}>
+                        {item.customer?.phone ? (
+                          <TouchableOpacity
+                            onPress={() => handleCallCustomer(item.customer?.phone)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.phoneChipText}>📞 {item.customer?.phone}</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                        {item.note ? (
+                          <Text style={styles.noteSnippetText} numberOfLines={1}>
+                            • {item.note}
                           </Text>
-                        </View>
-
-                        <TouchableOpacity
-                          style={styles.quickAddDebtBtn}
-                          onPress={() => handleQuickCreateDebt(item)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.quickAddDebtBtnText}>➕ Ghi nợ ngay</Text>
-                        </TouchableOpacity>
+                        ) : null}
                       </View>
-                    )}
+                    </View>
+
+                    {/* CỘT 3: THAO TÁC (NÚT GHI NỢ & NÚT XÓA) */}
+                    <View style={styles.colActions}>
+                      {/* NÚT GHI NỢ */}
+                      <TouchableOpacity
+                        style={[
+                          styles.actionDebtBtn,
+                          hasDebt ? styles.actionDebtBtnDone : styles.actionDebtBtnPending,
+                        ]}
+                        onPress={() => handleQuickCreateDebt(item)}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.actionDebtBtnText,
+                            hasDebt ? styles.actionDebtBtnTextDone : styles.actionDebtBtnTextPending,
+                          ]}
+                        >
+                          {hasDebt ? '✓ Đã nợ' : '➕ Ghi nợ'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* NÚT XÓA */}
+                      <TouchableOpacity
+                        style={styles.actionDeleteBtn}
+                        onPress={() => confirmDelete(item)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.actionDeleteBtnText}>🗑️ Xóa</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              );
-            })}
+                );
+              })}
+            </View>
           </ScrollView>
         )}
 
@@ -426,6 +445,10 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
         </View>
       </View>
     </SmoothModal>
+
+    {/* POPUP MODAL XÁC NHẬN XÓA Ở TẦNG CAO NHẤT ĐỘC LẬP */}
+    <PopupModal ref={popupRef} />
+    </>
   );
 });
 
@@ -484,27 +507,22 @@ const styles = StyleSheet.create({
   tabDateRow: {
     flexDirection: 'row',
     backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 3,
-    marginVertical: 12,
+    borderRadius: 8,
+    padding: 2,
+    marginVertical: 6,
   },
   tabDateBtn: {
     flex: 1,
-    paddingVertical: 9,
+    paddingVertical: 5,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 9,
+    borderRadius: 6,
   },
   tabDateBtnActive: {
     backgroundColor: '#059669',
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
   },
   tabDateLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#64748B',
   },
@@ -513,15 +531,16 @@ const styles = StyleSheet.create({
   },
   summaryGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
+    gap: 4,
+    marginBottom: 6,
+    width: '100%',
   },
   summaryItem: {
-    width: '48.5%',
+    flex: 1,
     backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -539,7 +558,7 @@ const styles = StyleSheet.create({
     borderColor: '#FECACA',
   },
   summaryValue: {
-    fontSize: 18,
+    fontSize: 13.5,
     fontWeight: 'bold',
     color: '#0F172A',
   },
@@ -553,24 +572,24 @@ const styles = StyleSheet.create({
     color: '#DC2626',
   },
   summaryLabel: {
-    fontSize: 11,
+    fontSize: 9.5,
     color: '#64748B',
-    marginTop: 2,
-    fontWeight: '500',
+    marginTop: 1,
+    fontWeight: '600',
   },
   bulkActionRow: {
-    marginBottom: 10,
+    marginBottom: 6,
   },
   bulkConfirmBtn: {
     backgroundColor: '#10B981',
-    borderRadius: 10,
-    paddingVertical: 8,
+    borderRadius: 6,
+    paddingVertical: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
   bulkConfirmBtnText: {
     color: '#FFFFFF',
-    fontSize: 12.5,
+    fontSize: 11,
     fontWeight: 'bold',
   },
   loadingWrap: {
@@ -605,149 +624,131 @@ const styles = StyleSheet.create({
     maxWidth: 280,
   },
   listContainer: {
-    gap: 10,
     paddingBottom: 10,
   },
-  requestCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
+  tableContainer: {
+    width: '100%',
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 8,
+    borderColor: '#CBD5E1',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
   },
-  requestCardUnbilled: {
-    borderColor: '#FDBA74',
-    backgroundColor: '#FFFBF5',
+  tableHeaderRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderBottomWidth: 1,
+    borderBottomColor: '#CBD5E1',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
   },
-  cardHeaderRow: {
+  tableHeaderCell: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    letterSpacing: 0.3,
+  },
+  colStt: {
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+  },
+  colCustomer: {
+    flex: 1,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+  },
+  colActions: {
+    width: 146,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
+    gap: 6,
+    paddingRight: 4,
   },
-  customerNameWrap: {
-    flex: 1,
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    minHeight: 46,
+  },
+  tableRowEven: {
+    backgroundColor: '#FFFFFF',
+  },
+  tableRowOdd: {
+    backgroundColor: '#F8FAFC',
+  },
+  tableRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  sttText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  customerNameText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  customerSubInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    marginTop: 2,
     flexWrap: 'wrap',
-  },
-  customerNameText: {
-    fontSize: 14.5,
-    fontWeight: 'bold',
-    color: '#0F172A',
-  },
-  phoneChip: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
   },
   phoneChipText: {
     fontSize: 11,
     color: '#059669',
     fontWeight: '600',
   },
-  confirmToggleBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+  noteSnippetText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontStyle: 'italic',
+    maxWidth: 220,
   },
-  confirmToggleBtnDone: {
+  actionDebtBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionDebtBtnPending: {
+    backgroundColor: '#059669',
+  },
+  actionDebtBtnDone: {
     backgroundColor: '#DCFCE7',
     borderWidth: 1,
     borderColor: '#86EFAC',
   },
-  confirmToggleBtnPending: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  confirmToggleText: {
+  actionDebtBtnText: {
     fontSize: 11.5,
     fontWeight: 'bold',
   },
-  confirmToggleTextDone: {
-    color: '#15803D',
-  },
-  confirmToggleTextPending: {
-    color: '#B45309',
-  },
-  cardDetailCol: {
-    gap: 4,
-  },
-  portalLinkNameText: {
-    fontSize: 11.5,
-    color: '#64748B',
-  },
-  noteBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    padding: 6,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginTop: 2,
-  },
-  noteLabel: {
-    fontSize: 10.5,
-    fontWeight: 'bold',
-    color: '#475569',
-  },
-  noteContent: {
-    fontSize: 12,
-    color: '#0F172A',
-    marginTop: 1,
-  },
-  debtStatusRow: {
-    marginTop: 4,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  debtStatusBilledBadge: {
-    backgroundColor: '#F0FDF4',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-  },
-  debtStatusBilledText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#15803D',
-  },
-  debtStatusUnbilledRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  debtStatusUnbilledBadge: {
-    backgroundColor: '#FFF7ED',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-    flex: 1,
-  },
-  debtStatusUnbilledText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#C2410C',
-  },
-  quickAddDebtBtn: {
-    backgroundColor: '#EA580C',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  quickAddDebtBtnText: {
+  actionDebtBtnTextPending: {
     color: '#FFFFFF',
-    fontSize: 12,
+  },
+  actionDebtBtnTextDone: {
+    color: '#15803D',
+  },
+  actionDeleteBtn: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionDeleteBtnText: {
+    color: '#DC2626',
+    fontSize: 11.5,
     fontWeight: 'bold',
   },
   footerWrap: {

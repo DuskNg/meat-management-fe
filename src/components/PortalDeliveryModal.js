@@ -9,12 +9,13 @@ import {
   ScrollView,
   ActivityIndicator,
   Platform,
+  Linking,
 } from 'react-native';
 import axios from 'axios';
 import SmoothModal from './SmoothModal';
-import CustomSelect from './CustomSelect';
 import { showGlobalToast } from '../store/toastStore';
 import { API_HOST } from '../api/client';
+import { isMobileDevice } from '../utils/imageShareHelper';
 
 // Helper lấy thông tin ngày hôm nay và ngày mai theo định dạng tiếng Việt
 const getDateOptions = () => {
@@ -63,6 +64,7 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
   const [portalInfo, setPortalInfo] = useState(null);
   const [branches, setBranches] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
 
   // Lựa chọn ngày: 'today' | 'tomorrow'
   const [selectedDateType, setSelectedDateType] = useState('today');
@@ -101,10 +103,22 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
       const bList = opts.branches || opts.portalInfo?.customers || [];
       setBranches(bList);
 
+      const isMulti = bList.length > 1;
       const initialCustId = opts.currentCustomerId && opts.currentCustomerId !== 'all'
         ? opts.currentCustomerId
         : (bList[0]?.id || '');
       setSelectedCustomerId(initialCustId);
+
+      // Nếu là nhóm nhiều quán: Nếu đang xem quán cụ thể thì pick quán đó, nếu đang xem 'all' thì pick tất cả quán trong nhóm
+      if (isMulti) {
+        if (opts.currentCustomerId && opts.currentCustomerId !== 'all') {
+          setSelectedCustomerIds([opts.currentCustomerId]);
+        } else {
+          setSelectedCustomerIds(bList.map((b) => b.id));
+        }
+      } else {
+        setSelectedCustomerIds(initialCustId ? [initialCustId] : []);
+      }
 
       setSelectedDateType('today');
       setNote('');
@@ -119,11 +133,79 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
     },
   }));
 
+  const isChain = branches.length > 1;
+
+  // Toggle chọn hoặc bỏ chọn một cơ sở trong nhóm
+  const handleToggleCustomer = (customerId) => {
+    setSelectedCustomerIds((prev) => {
+      if (prev.includes(customerId)) {
+        return prev.filter((id) => id !== customerId);
+      }
+      return [...prev, customerId];
+    });
+  };
+
+  // Chọn tất cả cơ sở
+  const handleSelectAll = () => {
+    setSelectedCustomerIds(branches.map((b) => b.id));
+  };
+
+  // Bỏ chọn tất cả cơ sở
+  const handleDeselectAll = () => {
+    setSelectedCustomerIds([]);
+  };
+
+  // Tra cứu trạng thái báo hàng của từng quán trong ngày đang chọn
+  const customerStatusMap = useMemo(() => {
+    const map = {};
+    const targetIso = selectedDateType === 'tomorrow' ? dateOpts.tomorrow.iso : dateOpts.today.iso;
+    recentRequests.forEach((req) => {
+      if (req.dateString === targetIso && req.status !== 'cancelled') {
+        map[req.customerId] = req;
+      }
+    });
+    return map;
+  }, [recentRequests, selectedDateType, dateOpts]);
+
+  // Tự động đóng webview / quay lại ứng dụng Zalo trên thiết bị di động
+  const handleBackToZalo = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      // 1. Zalo In-App Browser (WebView nội bộ Zalo): gọi JS Bridge đóng webview
+      if (window.ZaloJSBridge && typeof window.ZaloJSBridge.call === 'function') {
+        try {
+          window.ZaloJSBridge.call('closeWindow');
+          return;
+        } catch (_) {}
+      }
+
+      // 2. Thử đóng cửa sổ / quay lại history
+      try {
+        window.close();
+      } catch (_) {}
+
+      // 3. Sử dụng deep link zalo:// để switch app quay thẳng về ứng dụng Zalo
+      setTimeout(() => {
+        try {
+          window.location.href = 'zalo://';
+        } catch (_) {
+          Linking.openURL('zalo://').catch(() => {});
+        }
+      }, 300);
+    } else {
+      Linking.openURL('zalo://').catch(() => {});
+    }
+  };
+
   // Gửi báo hàng lên server
   const handleSubmit = async () => {
     if (!portalToken) return;
 
-    if (branches.length > 1 && !selectedCustomerId) {
+    if (isChain && selectedCustomerIds.length === 0) {
+      showGlobalToast('Vui lòng chọn ít nhất 1 cơ sở / nhà hàng cần báo hàng.', 'warning');
+      return;
+    }
+
+    if (!isChain && !selectedCustomerId && branches.length > 0) {
       showGlobalToast('Vui lòng chọn cơ sở / nhà hàng cần báo hàng.', 'warning');
       return;
     }
@@ -132,19 +214,40 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
       setSubmitting(true);
       const targetObj = selectedDateType === 'tomorrow' ? dateOpts.tomorrow : dateOpts.today;
 
-      const res = await axios.post(`${API_HOST}/api/v1/portal/delivery-request/${portalToken}`, {
-        customerId: selectedCustomerId,
+      const payload = {
         dateType: selectedDateType,
         deliveryDate: targetObj.iso,
         note: note.trim(),
-      });
+      };
+
+      if (isChain) {
+        payload.customerIds = selectedCustomerIds;
+        payload.customerId = selectedCustomerIds[0];
+      } else {
+        payload.customerId = selectedCustomerId || branches[0]?.id;
+      }
+
+      const res = await axios.post(`${API_HOST}/api/v1/portal/delivery-request/${portalToken}`, payload);
 
       if (res.data?.success) {
-        showGlobalToast(`Đã báo lấy hàng cho ${targetObj.label} (${targetObj.formatted}) thành công!`, 'success');
+        const isMobile = isMobileDevice();
+        const baseMsg = res.data?.message || `Đã báo lấy hàng cho ${targetObj.label} (${targetObj.formatted}) thành công!`;
+        const successMsg = isMobile ? `${baseMsg} Đang quay lại Zalo...` : baseMsg;
+        showGlobalToast(successMsg, 'success');
         setNote('');
         fetchRecentRequests(portalToken);
         if (props.onSubmitted) {
           props.onSubmitted(res.data.data);
+        }
+
+        // Tự động đóng modal
+        setVisible(false);
+
+        // Ở dạng dùng trên Mobile: tự động back lại Zalo
+        if (isMobile) {
+          setTimeout(() => {
+            handleBackToZalo();
+          }, 800);
         }
       }
     } catch (err) {
@@ -175,26 +278,6 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
     }
   };
 
-  // Lọc chi nhánh dạng options cho CustomSelect
-  const branchOptions = useMemo(() => {
-    return branches.map((b) => ({
-      id: b.id,
-      name: b.name,
-    }));
-  }, [branches]);
-
-  const selectedBranchOption = useMemo(() => {
-    return branchOptions.find((opt) => opt.id === selectedCustomerId) || branchOptions[0] || null;
-  }, [branchOptions, selectedCustomerId]);
-
-  const isChain = branches.length > 1;
-
-  // Lọc các yêu cầu của quán đang chọn
-  const filteredRequests = useMemo(() => {
-    if (!selectedCustomerId) return recentRequests;
-    return recentRequests.filter((r) => r.customerId === selectedCustomerId);
-  }, [recentRequests, selectedCustomerId]);
-
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
@@ -222,23 +305,107 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollBody}
         >
-          {/* NẾU LÀ CHUỖI NHÀ HÀNG: CHỌN CƠ SỞ */}
+          {/* NẾU LÀ NHÓM NHIỀU NHÀ HÀNG: CHỌN DANH SÁCH CÁC CƠ SỞ CÓ BÁO HÀNG */}
           {isChain && (
             <View style={styles.sectionCard}>
-              <Text style={styles.fieldLabel}>Chọn cơ sở / nhà hàng báo hàng:</Text>
-              <CustomSelect
-                value={selectedBranchOption}
-                options={branchOptions}
-                onSelect={(opt) => {
-                  if (opt) setSelectedCustomerId(opt.id);
-                }}
-                renderSelected={(opt) => opt?.name || ''}
-                getOptionLabel={(opt) => opt?.name || ''}
-                placeholder="Chọn cơ sở..."
-                compact={true}
-                zIndex={999999}
-                style={styles.selectInput}
-              />
+              <View style={styles.branchSelectHeader}>
+                <View style={styles.branchSelectTitleWrap}>
+                  <Text style={styles.fieldLabel}>Chọn nhà hàng có báo hàng:</Text>
+                  <View style={styles.selectedCountBadge}>
+                    <Text style={styles.selectedCountText}>
+                      Đã chọn: {selectedCustomerIds.length}/{branches.length}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.branchActionBtns}>
+                  <TouchableOpacity
+                    style={styles.actionPillBtn}
+                    onPress={handleSelectAll}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.actionPillTextActive}>Chọn tất cả</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionPillBtn}
+                    onPress={handleDeselectAll}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.actionPillText}>Bỏ chọn</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* BẢNG / DANH SÁCH CÁC NHÀ HÀNG TRONG NHÓM */}
+              <View style={styles.branchListContainer}>
+                {branches.map((b, idx) => {
+                  const isChecked = selectedCustomerIds.includes(b.id);
+                  const statusInfo = customerStatusMap[b.id];
+                  const isLast = idx === branches.length - 1;
+
+                  return (
+                    <TouchableOpacity
+                      key={b.id || idx}
+                      style={[
+                        styles.branchRowItem,
+                        isChecked && styles.branchRowItemChecked,
+                        !isLast && styles.branchRowItemBorder,
+                      ]}
+                      onPress={() => handleToggleCustomer(b.id)}
+                      activeOpacity={0.7}
+                    >
+                      {/* Checkbox */}
+                      <View style={[styles.checkboxBox, isChecked && styles.checkboxBoxChecked]}>
+                        {isChecked && <Text style={styles.checkboxTick}>✓</Text>}
+                      </View>
+
+                      {/* Tên cơ sở */}
+                      <View style={styles.branchNameWrap}>
+                        <Text
+                          style={[
+                            styles.branchNameText,
+                            isChecked && styles.branchNameTextChecked,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {b.name}
+                        </Text>
+                        {b.phone ? (
+                          <Text style={styles.branchPhoneText} numberOfLines={1}>
+                            SĐT: {b.phone}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      {/* Trạng thái báo hàng trong ngày đã chọn */}
+                      <View style={styles.branchStatusWrap}>
+                        {statusInfo ? (
+                          <View
+                            style={[
+                              styles.miniStatusBadge,
+                              statusInfo.isConfirmed
+                                ? styles.miniStatusConfirmed
+                                : styles.miniStatusPending,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.miniStatusText,
+                                statusInfo.isConfirmed
+                                  ? styles.miniStatusTextConfirmed
+                                  : styles.miniStatusTextPending,
+                              ]}
+                            >
+                              {statusInfo.isConfirmed ? '✅ Đã chốt' : '⏳ Đã báo'}
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.unreportedText}>Chưa báo</Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           )}
 
@@ -338,52 +505,75 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
             />
           </View>
 
-          {/* DANH SÁCH LƯỢT BÁO HÀNG ĐÃ GỬI */}
-          {filteredRequests.length > 0 && (
+          {/* DANH SÁCH LƯỢT BÁO HÀNG ĐÃ GỬI (DẠNG BẢNG ĐỐI SOÁT) */}
+          {recentRequests.length > 0 && (
             <View style={styles.historyCard}>
-              <Text style={styles.historyTitle}>📋 Các lượt báo hàng gần đây:</Text>
-              {filteredRequests.map((req) => {
-                const isConfirmed = req.isConfirmed;
-                return (
-                  <View key={req.id} style={styles.historyItemRow}>
-                    <View style={styles.historyInfo}>
-                      <View style={styles.historyDayRow}>
-                        <Text style={styles.historyDayText}>
-                          {req.formattedDeliveryDate} ({req.dateType === 'tomorrow' ? 'Ngày mai' : 'Hôm nay'})
-                        </Text>
-                        <View
-                          style={[
-                            styles.statusBadge,
-                            isConfirmed ? styles.statusBadgeConfirmed : styles.statusBadgePending,
-                          ]}
-                        >
-                          <Text
+              <View style={styles.historyHeaderRow}>
+                <Text style={styles.historyTitle}>📋 Lịch sử báo hàng gần đây:</Text>
+                <Text style={styles.historySubBadge}>{recentRequests.length} lượt</Text>
+              </View>
+
+              <View style={styles.historyTable}>
+                {recentRequests.map((req, idx) => {
+                  const isConfirmed = req.isConfirmed;
+                  const isLast = idx === recentRequests.length - 1;
+
+                  return (
+                    <View
+                      key={req.id || idx}
+                      style={[
+                        styles.historyItemRow,
+                        !isLast && styles.historyItemRowBorder,
+                      ]}
+                    >
+                      <View style={styles.historyInfo}>
+                        {/* Tên nhà hàng (nếu là nhóm) */}
+                        {isChain && req.customer?.name ? (
+                          <Text style={styles.historyBranchName} numberOfLines={1}>
+                            🏪 {req.customer.name}
+                          </Text>
+                        ) : null}
+
+                        <View style={styles.historyDayRow}>
+                          <Text style={styles.historyDayText}>
+                            {req.formattedDeliveryDate} ({req.dateType === 'tomorrow' ? 'Ngày mai' : 'Hôm nay'})
+                          </Text>
+                          <View
                             style={[
-                              styles.statusBadgeText,
-                              isConfirmed ? styles.statusBadgeTextConfirmed : styles.statusBadgeTextPending,
+                              styles.statusBadge,
+                              isConfirmed ? styles.statusBadgeConfirmed : styles.statusBadgePending,
                             ]}
                           >
-                            {isConfirmed ? '✅ Đã chốt có hàng' : '⏳ Chờ chủ chốt'}
-                          </Text>
+                            <Text
+                              style={[
+                                styles.statusBadgeText,
+                                isConfirmed ? styles.statusBadgeTextConfirmed : styles.statusBadgeTextPending,
+                              ]}
+                            >
+                              {isConfirmed ? '✅ Đã chốt' : '⏳ Chờ chủ chốt'}
+                            </Text>
+                          </View>
                         </View>
+                        {req.note ? (
+                          <Text style={styles.historyNoteText} numberOfLines={2}>
+                            Ghi chú: {req.note}
+                          </Text>
+                        ) : null}
                       </View>
-                      {req.note ? (
-                        <Text style={styles.historyNoteText}>Ghi chú: {req.note}</Text>
-                      ) : null}
-                    </View>
 
-                    {!isConfirmed && (
-                      <TouchableOpacity
-                        style={styles.cancelReqBtn}
-                        onPress={() => handleCancelRequest(req.id)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.cancelReqBtnText}>✕ Hủy</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                );
-              })}
+                      {!isConfirmed && (
+                        <TouchableOpacity
+                          style={styles.cancelReqBtn}
+                          onPress={() => handleCancelRequest(req.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.cancelReqBtnText}>✕ Hủy</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           )}
         </ScrollView>
@@ -391,16 +581,21 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
         {/* FOOTER NÚT BẤM FULL WIDTH */}
         <View style={styles.footerWrap}>
           <TouchableOpacity
-            style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
+            style={[
+              styles.submitBtn,
+              (submitting || (isChain && selectedCustomerIds.length === 0)) && styles.submitBtnDisabled,
+            ]}
             onPress={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || (isChain && selectedCustomerIds.length === 0)}
             activeOpacity={0.8}
           >
             {submitting ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <Text style={styles.submitBtnText}>
-                XÁC NHẬN BÁO HÀNG ({selectedDateType === 'tomorrow' ? 'NGÀY MAI' : 'HÔM NAY'})
+                {isChain
+                  ? `XÁC NHẬN BÁO HÀNG (${selectedCustomerIds.length} CƠ SỞ - ${selectedDateType === 'tomorrow' ? 'NGÀY MAI' : 'HÔM NAY'})`
+                  : `XÁC NHẬN BÁO HÀNG (${selectedDateType === 'tomorrow' ? 'NGÀY MAI' : 'HÔM NAY'})`}
               </Text>
             )}
           </TouchableOpacity>
@@ -557,10 +752,34 @@ const styles = StyleSheet.create({
     borderColor: '#BFDBFE',
     gap: 8,
   },
+  historyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   historyTitle: {
     fontSize: 13,
     fontWeight: 'bold',
     color: '#1E40AF',
+  },
+  historySubBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  historyTable: {
+    gap: 8,
+  },
+  historyBranchName: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1E40AF',
+    marginBottom: 3,
   },
   historyItemRow: {
     flexDirection: 'row',
@@ -571,6 +790,9 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
     borderColor: '#DBEAFE',
+  },
+  historyItemRowBorder: {
+    marginBottom: 2,
   },
   historyInfo: {
     flex: 1,
@@ -623,6 +845,144 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: '#DC2626',
     fontWeight: 'bold',
+  },
+  branchSelectHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  branchSelectTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  selectedCountBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginBottom: 8,
+  },
+  selectedCountText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  branchActionBtns: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 8,
+  },
+  actionPillBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+  },
+  actionPillText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  actionPillTextActive: {
+    fontSize: 11,
+    color: '#2563EB',
+    fontWeight: '700',
+  },
+  branchListContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    overflow: 'hidden',
+  },
+  branchRowItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  branchRowItemChecked: {
+    backgroundColor: '#F8FAFC',
+  },
+  branchRowItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  checkboxBoxChecked: {
+    borderColor: '#2563EB',
+    backgroundColor: '#2563EB',
+  },
+  checkboxTick: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginTop: -1,
+  },
+  branchNameWrap: {
+    flex: 1,
+    marginRight: 8,
+  },
+  branchNameText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  branchNameTextChecked: {
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  branchPhoneText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  branchStatusWrap: {
+    alignItems: 'flex-end',
+  },
+  miniStatusBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  miniStatusConfirmed: {
+    backgroundColor: '#DCFCE7',
+  },
+  miniStatusPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  miniStatusText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  miniStatusTextConfirmed: {
+    color: '#15803D',
+  },
+  miniStatusTextPending: {
+    color: '#B45309',
+  },
+  unreportedText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontStyle: 'italic',
   },
   footerWrap: {
     paddingTop: 10,

@@ -2587,23 +2587,8 @@ export default function PortalScreen() {
                   ) : null}
                 </View>
 
-                {/* NÚT BÁO HÀNG & NÚT XUẤT CÔNG NỢ */}
+                {/* NÚT XUẤT CÔNG NỢ */}
                 <View style={styles.actionButtonsRow}>
-                  <TouchableOpacity
-                    style={styles.portalDeliveryBtn}
-                    onPress={() =>
-                      portalDeliveryModalRef.current?.open({
-                        token,
-                        portalInfo,
-                        currentCustomerId: selectedCustomerId,
-                        branches: portalData?.branches || portalInfo?.customers || [],
-                      })
-                    }
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.portalDeliveryBtnText}>📦 Báo hàng</Text>
-                  </TouchableOpacity>
-
                   <TouchableOpacity
                     style={styles.exportDebtBtn}
                     onPress={handleExportDebtPress}
