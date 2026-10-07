@@ -143,14 +143,17 @@ const CustomSelect = ({
     const spaceBelow = rect ? (windowHeight - rect.bottom) : 300;
     const spaceAbove = rect ? rect.top : 300;
 
-    // Mặc định dropdown luôn hiển thị ngay sát đáy ô input (chỉ dropUp khi được chỉ định tường minh)
-    let shouldDropUp = dropUp !== undefined ? !!dropUp : false;
+    // Tự động Drop Up khi khoảng trống phía dưới không đủ (< 210px) và khoảng trống phía trên nhiều hơn
+    let shouldDropUp = dropUp !== undefined ? !!dropUp : (spaceBelow < 210 && spaceAbove > spaceBelow);
 
     setDropdownPos({
       top: shouldDropUp ? (rect ? rect.top : 0) : (rect ? rect.bottom : 0),
       left: rect ? rect.left : 0,
       width: rect ? rect.width : 0,
       isUp: shouldDropUp,
+      spaceBelow,
+      spaceAbove,
+      windowHeight,
     });
   }, [dropUp]);
 
@@ -246,10 +249,15 @@ const CustomSelect = ({
             style={[styles.selectOption, compact && styles.selectOptionCompact]}
             activeOpacity={0.7}
             onPress={() => handleSelectOption(opt)}
-            // Ngăn mousedown cướp focus và đóng dropdown trên Web
+            // Ngăn mousedown/touch cướp focus và đóng dropdown trên Web (hỗ trợ cả chuột máy tính và chạm cảm ứng mobile)
             {...(Platform.OS === 'web'
               ? {
                 onMouseDown: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSelectOption(opt);
+                },
+                onTouchEnd: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   handleSelectOption(opt);
@@ -292,6 +300,12 @@ const CustomSelect = ({
     const effectiveMinWidth = minWidth !== undefined ? minWidth : 260;
     const calculatedWidth = dropdownStyle?.width || Math.max(dropdownPos.width, effectiveMinWidth);
 
+    // Tính maxHeight động để dropdown không bao giờ bị tràn ra ngoài màn hình hay bị bàn phím ảo/footer che khuất
+    const availableSpace = dropdownPos.isUp
+      ? Math.max(120, (dropdownPos.spaceAbove || 260) - 12)
+      : Math.max(120, (dropdownPos.spaceBelow !== undefined ? dropdownPos.spaceBelow : 260) - 12);
+    const effectiveMaxHeight = Math.min(240, availableSpace);
+
     const dropStyle = {
       position: 'fixed',
       left: dropdownPos.left,
@@ -303,7 +317,7 @@ const CustomSelect = ({
       borderRadius: 8,
       boxShadow: '0px 8px 24px rgba(0,0,0,0.18)',
       overflow: 'hidden',
-      maxHeight: 240,
+      maxHeight: effectiveMaxHeight,
       pointerEvents: 'auto',
     };
 
@@ -438,8 +452,8 @@ const CustomSelect = ({
         </TouchableOpacity>
       </View>
 
-      {/* Dropdown cho Mobile (cả Native và Web Mobile): render inline bám sát input, đồng bộ theo ScrollView và không bị trôi khi bàn phím ảo bật */}
-      {open && isMobile && (
+      {/* Dropdown cho Mobile Native thuần (React Native không có Web DOM) */}
+      {open && Platform.OS !== 'web' && (
         <View
           style={[
             styles.selectDropdown,
@@ -452,8 +466,8 @@ const CustomSelect = ({
         </View>
       )}
 
-      {/* Dropdown cho Desktop Web: render qua Portal ra document.body */}
-      {open && !isMobile && renderDropdownPortal()}
+      {/* Dropdown cho Web (cả Desktop Web và Web Mobile): BẮT BUỘC dùng Portal ra document.body để luôn ở lớp cao nhất tuyệt đối */}
+      {open && Platform.OS === 'web' && renderDropdownPortal()}
     </View>
   );
 };
