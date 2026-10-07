@@ -104,7 +104,7 @@ export const downloadOrShareImage = async ({
   const hasPhone = cleanPhone.length >= 9;
   const isMobile = isMobileDevice();
 
-  // ─── 1. TRƯỜNG HỢP PC: LUÔN TẢI FILE ẢNH VỀ MÁY TÍNH ───
+  // ─── 1. TRƯỜNG HỢP PC: LUÔN TẢI FILE ẢNH VỀ MÁY TÍNH & SAO CHÉP TEXT NẾU CÓ ───
   if (!isMobile) {
     try {
       if (typeof window !== 'undefined') {
@@ -131,7 +131,17 @@ export const downloadOrShareImage = async ({
           setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
         }
 
-        showGlobalToast('Đã tải ảnh về máy tính thành công!', 'success');
+        // Tự động sao chép text hóa đơn vào bộ nhớ tạm nếu có
+        if (text && typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(text);
+            showGlobalToast('Đã tải ảnh về máy tính & sao chép nội dung hóa đơn để dán vào Zalo!', 'success');
+          } catch (_) {
+            showGlobalToast('Đã tải ảnh về máy tính thành công!', 'success');
+          }
+        } else {
+          showGlobalToast('Đã tải ảnh về máy tính thành công!', 'success');
+        }
       }
     } catch (err) {
       console.error('Lỗi khi tải ảnh trên PC:', err);
@@ -140,7 +150,7 @@ export const downloadOrShareImage = async ({
     return;
   }
 
-  // ─── 2. TRƯỜNG HỢP MOBILE: LUÔN CHUYỂN TIẾP ZALO ───
+  // ─── 2. TRƯỜNG HỢP MOBILE: LUÔN CHUYỂN TIẾP ZALO (ẢNH + TEXT HÓA ĐƠN) ───
   try {
     let fileToShare = null;
     let localBlob = null;
@@ -161,6 +171,13 @@ export const downloadOrShareImage = async ({
       }
     }
 
+    // Luôn sao chép trước text hóa đơn vào clipboard trên điện thoại để người dùng có thể Paste ngay vào Zalo chat
+    if (text && typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (_) {}
+    }
+
     // Thử chia sẻ qua Web Share API (mở bảng chia sẻ hệ thống có Zalo)
     if (
       typeof navigator !== 'undefined' &&
@@ -168,23 +185,55 @@ export const downloadOrShareImage = async ({
       fileToShare &&
       navigator.canShare
     ) {
-      let canShareFile = false;
+      let canShareWithText = false;
+      let canShareFileOnly = false;
+      if (text) {
+        try {
+          canShareWithText = navigator.canShare({ files: [fileToShare], text });
+        } catch (_) {
+          canShareWithText = false;
+        }
+      }
       try {
-        canShareFile = navigator.canShare({ files: [fileToShare] });
-      } catch (e) {
-        canShareFile = false;
+        canShareFileOnly = navigator.canShare({ files: [fileToShare] });
+      } catch (_) {
+        canShareFileOnly = false;
       }
 
-      if (canShareFile) {
+      if (canShareWithText || canShareFileOnly) {
         try {
-          // Chỉ truyền files để tránh lỗi tương thích trên iOS Safari khi gửi cùng text
-          await navigator.share({
-            files: [fileToShare],
-          });
-          return; // Người dùng đã chọn Zalo và chia sẻ thành công
+          if (canShareWithText && text) {
+            await navigator.share({
+              files: [fileToShare],
+              text,
+              title: title || 'Hóa đơn giao hàng',
+            });
+            showGlobalToast('Đã chuyển tiếp ảnh & nội dung hóa đơn sang Zalo!', 'success');
+            return;
+          } else {
+            await navigator.share({
+              files: [fileToShare],
+            });
+            if (text) {
+              showGlobalToast('Đã chuyển tiếp ảnh sang Zalo (Nội dung hóa đơn đã sao chép sẵn vào bộ nhớ tạm)!', 'success');
+            }
+            return;
+          }
         } catch (shareErr) {
           if (shareErr.name === 'AbortError') {
             return; // Người dùng chủ động đóng bảng chia sẻ
+          }
+          // Nếu chia sẻ kèm text thất bại do trình duyệt, thử lại chia sẻ riêng file ảnh
+          if (canShareFileOnly && canShareWithText) {
+            try {
+              await navigator.share({ files: [fileToShare] });
+              if (text) {
+                showGlobalToast('Đã chuyển tiếp ảnh sang Zalo (Nội dung hóa đơn đã sao chép sẵn vào bộ nhớ tạm)!', 'success');
+              }
+              return;
+            } catch (retryErr) {
+              if (retryErr.name === 'AbortError') return;
+            }
           }
           console.warn('[WebShare] Bảng chia sẻ file thất bại, chuyển sang lưu ảnh và mở Zalo:', shareErr);
         }
@@ -217,7 +266,9 @@ export const downloadOrShareImage = async ({
         Linking.openURL(zaloUrl).catch(() => {});
       }
       showGlobalToast(
-        customerName ? `Đã lưu ảnh & chuyển tiếp tới Zalo của ${customerName}...` : 'Đã lưu ảnh & chuyển tiếp tới Zalo...',
+        customerName
+          ? `Đã lưu ảnh & chuyển tiếp tới Zalo của ${customerName} (Text hóa đơn đã sao chép sẵn)!`
+          : 'Đã lưu ảnh & chuyển tiếp tới Zalo (Text hóa đơn đã sao chép sẵn)!',
         'info'
       );
       return;

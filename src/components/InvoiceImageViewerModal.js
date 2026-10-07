@@ -204,25 +204,68 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     }
   };
 
+  // Lấy nội dung chi tiết hóa đơn ngày để gửi kèm ảnh hoặc sao chép
+  const getFullDayInvoiceText = () => {
+    if (!dayData) return subtitle || title || '';
+    const lines = [];
+    const displayDate = dayData.displayDate || dayData.dateKey || '';
+    lines.push(`🧾 HÓA ĐƠN GIAO HÀNG NGÀY ${displayDate}${dayData.displayLunarDate ? ` (${dayData.displayLunarDate} âm)` : ''}`);
+    if (dayData.customerName) {
+      lines.push(`🏢 Khách hàng: ${dayData.customerName}`);
+    }
+    lines.push('--------------------------------');
+
+    (dayData.entries || []).forEach((e) => {
+      if (
+        e.type === 'DAY_TOTAL' ||
+        e.type === 'DAY_PARTIAL_PAID' ||
+        e.type === 'DAY_PARTIAL_REMAINING'
+      ) {
+        return;
+      }
+      const isRet = e.type === 'RETURN';
+      const amt = parseFloat(e.amount) || 0;
+      const q = parseFloat(e.quantity) || 0;
+      const p = parseFloat(e.price) || 0;
+
+      let line = isRet ? '[-] TRẢ HÀNG: ' : '• ';
+      line += e.name;
+      if (q > 0) line += `: ${q}kg`;
+      if (p > 0) line += ` x ${formatCurrency(p)}`;
+      line += ` = ${isRet ? '-' : ''}${formatCurrency(Math.abs(amt))}`;
+      lines.push(line);
+    });
+
+    lines.push('--------------------------------');
+    if (daySummary.totalQty > 0) {
+      lines.push(`⚖️ Tổng kg thịt: ${daySummary.totalQty} kg`);
+    }
+    if (daySummary.totalReturn > 0) {
+      lines.push(`💰 Tiền mua hàng: +${formatCurrency(daySummary.totalMeat)}`);
+      lines.push(`↩️ Tiền trả hàng: -${formatCurrency(daySummary.totalReturn)}`);
+    }
+    lines.push(`💵 TỔNG TIỀN: ${formatCurrency(daySummary.totalAmount)}`);
+
+    if (dayData.isPaid) {
+      lines.push('✅ Trạng thái: ĐÃ THANH TOÁN');
+    } else if (dayData.isPartialPaid) {
+      lines.push('⚡ Trạng thái: ĐÃ TRẢ 1 PHẦN');
+      if (dayData.remainingDebt != null) {
+        lines.push(`⏳ Còn nợ lại: ${formatCurrency(dayData.remainingDebt)}`);
+      }
+    } else {
+      lines.push('⏳ Trạng thái: CHƯA THANH TOÁN (GHI NỢ)');
+    }
+
+    return lines.join('\n');
+  };
+
   const handleCopyDaySummary = async () => {
     if (!dayData) return;
-    const lines = [];
-    lines.push(`📅 BẢNG KÊ NGÀY: ${dayData.dateKey}${dayData.displayLunarDate ? ` (${dayData.displayLunarDate} âm)` : ''}`);
-    if (dayData.customerName) lines.push(`🏢 Cơ sở: ${dayData.customerName}`);
-    lines.push('--------------------------------');
-    (dayData.entries || []).forEach((e) => {
-      if (e.type === 'DAY_TOTAL' || e.type === 'DAY_PARTIAL_PAID' || e.type === 'DAY_PARTIAL_REMAINING') return;
-      const isRet = e.type === 'RETURN';
-      const qStr = e.quantity != null ? ` - ${e.quantity}kg` : '';
-      const pStr = e.price != null ? ` x ${formatCurrency(e.price)}` : '';
-      lines.push(`${isRet ? '[-] TRẢ HÀNG: ' : ''}${e.name}${qStr}${pStr} = ${isRet ? '-' : ''}${formatCurrency(e.amount)}`);
-    });
-    lines.push('--------------------------------');
-    if (daySummary.totalQty > 0) lines.push(`Tổng kg thịt: ${daySummary.totalQty} kg`);
-    lines.push(`TỔNG CỘNG: ${formatCurrency(daySummary.totalAmount)}`);
-    const success = await copyTextToClipboard(lines.join('\n'));
+    const text = getFullDayInvoiceText();
+    const success = await copyTextToClipboard(text);
     if (success) {
-      showGlobalToast('Đã sao chép số liệu ngày vào bộ nhớ tạm!', 'success');
+      showGlobalToast('Đã sao chép nội dung hóa đơn vào bộ nhớ tạm!', 'success');
     }
   };
 
@@ -313,14 +356,17 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     }
   };
 
-  // Tải ảnh (PC) hoặc chuyển tiếp Zalo (Mobile)
+  // Tải ảnh (PC) hoặc chuyển tiếp Zalo kèm text hóa đơn (Mobile)
   const handleDownload = async () => {
     if (!currentUrl) return;
+    const invoiceText = getFullDayInvoiceText();
+    const dateStr = dayData?.dateKey || 'ngay';
     await downloadOrShareImage({
       imageUri: currentUrl,
-      fileName: `hoa_don_${currentIndex + 1}.jpg`,
-      title: title || 'Ảnh hóa đơn',
-      text: subtitle || '',
+      fileName: `hoa_don_${dateStr}_${currentIndex + 1}.jpg`,
+      title: title || `Hóa đơn ngày ${dayData?.displayDate || dayData?.dateKey || ''}`,
+      text: invoiceText,
+      customerName: dayData?.customerName || '',
     });
   };
 

@@ -1600,6 +1600,124 @@ export default function PortalScreen() {
     }
   };
 
+  // Tạo nội dung text chi tiết hóa đơn ngày đó
+  const buildPortalDayInvoiceText = (targetDay, targetCustomerName = null) => {
+    if (!targetDay) return '';
+    const displayDate = targetDay.displayDate || targetDay.dateKey || '';
+    const custName = targetCustomerName || portalData?.currentCustomer?.name || portalInfo?.name || '';
+    const lines = [];
+
+    lines.push(`🧾 HÓA ĐƠN GIAO HÀNG NGÀY ${displayDate}${targetDay.displayLunarDate ? ` (${targetDay.displayLunarDate} âm)` : ''}`);
+    if (custName) {
+      lines.push(`🏢 Khách hàng: ${custName}`);
+    }
+    lines.push('--------------------------------');
+
+    let dayEntries = targetDay.entries || [];
+    if (targetCustomerName) {
+      const filteredByCust = dayEntries.filter((e) => !e.customerName || e.customerName === targetCustomerName);
+      if (filteredByCust.length > 0) {
+        dayEntries = filteredByCust;
+      }
+    }
+
+    let totalMeat = 0;
+    let totalReturn = 0;
+    let totalQty = 0;
+
+    dayEntries.forEach((e) => {
+      if (e.type === 'DAY_TOTAL' || e.type === 'DAY_PARTIAL_PAID' || e.type === 'DAY_PARTIAL_REMAINING') return;
+      const isRet = e.type === 'RETURN';
+      const amt = parseFloat(e.amount) || 0;
+      const q = parseFloat(e.quantity) || 0;
+      const p = parseFloat(e.price) || 0;
+
+      let line = isRet ? '[-] TRẢ HÀNG: ' : '• ';
+      line += e.name;
+      if (q > 0) line += `: ${q}kg`;
+      if (p > 0) line += ` x ${formatCurrency(p)}`;
+      line += ` = ${isRet ? '-' : ''}${formatCurrency(Math.abs(amt))}`;
+      lines.push(line);
+
+      if (isRet) {
+        totalReturn += Math.abs(amt);
+      } else {
+        totalMeat += Math.abs(amt);
+        totalQty += q;
+      }
+    });
+
+    lines.push('--------------------------------');
+    if (totalQty > 0) {
+      lines.push(`⚖️ Tổng kg thịt: ${Math.round(totalQty * 100) / 100} kg`);
+    }
+    if (totalReturn > 0) {
+      lines.push(`💰 Tiền mua hàng: +${formatCurrency(totalMeat)}`);
+      lines.push(`↩️ Tiền trả hàng: -${formatCurrency(totalReturn)}`);
+    }
+    const netAmount = totalMeat - totalReturn;
+    lines.push(`💵 TỔNG TIỀN: ${formatCurrency(netAmount)}`);
+
+    if (targetDay.isPaid) {
+      lines.push('✅ Trạng thái: ĐÃ THANH TOÁN');
+    } else if (targetDay.isPartialPaid) {
+      lines.push('⚡ Trạng thái: ĐÃ TRẢ 1 PHẦN');
+      const rem = targetDay.remainingDebt != null ? targetDay.remainingDebt : netAmount;
+      lines.push(`⏳ Còn nợ lại: ${formatCurrency(rem)}`);
+    } else {
+      lines.push('⏳ Trạng thái: CHƯA THANH TOÁN (GHI NỢ)');
+    }
+
+    return lines.join('\n');
+  };
+
+  // Gửi ảnh hóa đơn kèm text hóa đơn ngày đó qua Zalo (Mobile) hoặc tải về (PC)
+  const handleShareDayInvoice = async (targetDay, targetCustomerName = null, overrideInvoices = null) => {
+    if (!targetDay) return;
+
+    let images = overrideInvoices || [];
+    if (!overrideInvoices || overrideInvoices.length === 0) {
+      if (targetCustomerName) {
+        images = getInvoicesForCustomer(targetDay, targetCustomerName);
+        if (images.length === 0 && targetDay.invoices) {
+          images = targetDay.invoices;
+        }
+      } else {
+        images = targetDay.invoices || [];
+      }
+    }
+
+    if (!images || images.length === 0) {
+      showGlobalToast('Chưa có ảnh chụp hóa đơn đính kèm cho ngày này.', 'info');
+      return;
+    }
+
+    const firstImg = images[0];
+    const rawUrl = typeof firstImg === 'string' ? firstImg : (firstImg?.imageUrl || firstImg?.url);
+    if (!rawUrl) {
+      showGlobalToast('Không tìm thấy đường dẫn ảnh hóa đơn.', 'error');
+      return;
+    }
+
+    const fullUrl = rawUrl.startsWith('http') || rawUrl.startsWith('data:')
+      ? rawUrl
+      : `${API_HOST}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+
+    const invoiceText = buildPortalDayInvoiceText(targetDay, targetCustomerName);
+    const dateStr = targetDay.dateKey || 'ngay';
+    const custName = targetCustomerName || portalData?.currentCustomer?.name || portalInfo?.name || '';
+    const fileName = `hoa_don_${dateStr}.jpg`;
+
+    await downloadOrShareImage({
+      imageUri: fullUrl,
+      fileName,
+      title: `Hóa đơn ngày ${targetDay.displayDate || targetDay.dateKey}`,
+      text: invoiceText,
+      customerName: custName,
+      phone: portalData?.currentCustomer?.phone || '',
+    });
+  };
+
   const { token } = useLocalSearchParams();
 
   // Bộ lọc từ ngày - đến ngày và thứ tự sắp xếp bảng kê (mặc định tháng này, tối đa theo tháng)
@@ -2748,25 +2866,46 @@ export default function PortalScreen() {
                                         >
                                           {entry.name}
                                         </Text>
-                                        {/* Chỉ hiển thị xem ảnh ở dòng TỔNG khi lọc theo từng nhà hàng */}
+                                        {/* Chỉ hiển thị xem ảnh và gửi Zalo ở dòng TỔNG khi lọc theo từng nhà hàng */}
                                         {!isChainViewAll && isDayTotal && day.invoices && day.invoices.length > 0 && (
-                                          <TouchableOpacity
-                                            style={[
-                                              styles.dayTotalInvoiceBtn,
-                                              styles.dayTotalInvoiceBtnActive,
-                                            ]}
-                                            onPress={() => handleOpenInvoiceModal(day)}
-                                            activeOpacity={0.7}
-                                          >
-                                            <Text
+                                          <View style={styles.invoiceBtnGroupRow}>
+                                            <TouchableOpacity
                                               style={[
-                                                styles.dayTotalInvoiceBtnText,
-                                                styles.dayTotalInvoiceBtnTextActive,
+                                                styles.dayTotalInvoiceBtn,
+                                                styles.dayTotalInvoiceBtnActive,
                                               ]}
+                                              onPress={() => handleOpenInvoiceModal(day)}
+                                              activeOpacity={0.7}
                                             >
-                                              {`Xem hóa đơn (${day.invoices.length})`}
-                                            </Text>
-                                          </TouchableOpacity>
+                                              <Text
+                                                style={[
+                                                  styles.dayTotalInvoiceBtnText,
+                                                  styles.dayTotalInvoiceBtnTextActive,
+                                                ]}
+                                              >
+                                                {`👁️ Xem (${day.invoices.length})`}
+                                              </Text>
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity
+                                              style={[
+                                                styles.dayTotalInvoiceBtn,
+                                                styles.dayShareInvoiceBtn,
+                                              ]}
+                                              onPress={() => handleShareDayInvoice(day)}
+                                              activeOpacity={0.7}
+                                              title="Gửi ảnh hóa đơn & text ngày này qua Zalo"
+                                            >
+                                              <Text
+                                                style={[
+                                                  styles.dayTotalInvoiceBtnText,
+                                                  styles.dayShareInvoiceBtnText,
+                                                ]}
+                                              >
+                                                📤 Gửi Zalo
+                                              </Text>
+                                            </TouchableOpacity>
+                                          </View>
                                         )}
                                       </View>
                                     ) : (
@@ -2790,52 +2929,94 @@ export default function PortalScreen() {
 
                                         {/* Case 1: Xem toàn bộ chuỗi -> Tách xem ảnh theo từng cửa hàng, đặt ở hàng thịt cuối của quán đó */}
                                         {isChainViewAll && isLastEntryOfRestaurant && custInvoices.length > 0 && (
-                                          <TouchableOpacity
-                                            style={[
-                                              styles.dayTotalInvoiceBtn,
-                                              styles.dayTotalInvoiceBtnActive,
-                                            ]}
-                                            onPress={() =>
-                                              handleOpenInvoiceModal(
-                                                custInvoices,
-                                                `Hóa đơn [${entry.customerName}] - ${day.dateKey}`,
-                                                `Cơ sở: ${entry.customerName} | Ngày: ${day.dateKey}`,
-                                                day,
-                                                entry.customerName
-                                              )
-                                            }
-                                            activeOpacity={0.7}
-                                          >
-                                            <Text
+                                          <View style={styles.invoiceBtnGroupRow}>
+                                            <TouchableOpacity
                                               style={[
-                                                styles.dayTotalInvoiceBtnText,
-                                                styles.dayTotalInvoiceBtnTextActive,
+                                                styles.dayTotalInvoiceBtn,
+                                                styles.dayTotalInvoiceBtnActive,
                                               ]}
+                                              onPress={() =>
+                                                handleOpenInvoiceModal(
+                                                  custInvoices,
+                                                  `Hóa đơn [${entry.customerName}] - ${day.dateKey}`,
+                                                  `Cơ sở: ${entry.customerName} | Ngày: ${day.dateKey}`,
+                                                  day,
+                                                  entry.customerName
+                                                )
+                                              }
+                                              activeOpacity={0.7}
                                             >
-                                              {`Xem hóa đơn (${custInvoices.length})`}
-                                            </Text>
-                                          </TouchableOpacity>
+                                              <Text
+                                                style={[
+                                                  styles.dayTotalInvoiceBtnText,
+                                                  styles.dayTotalInvoiceBtnTextActive,
+                                                ]}
+                                              >
+                                                {`👁️ Xem (${custInvoices.length})`}
+                                              </Text>
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity
+                                              style={[
+                                                styles.dayTotalInvoiceBtn,
+                                                styles.dayShareInvoiceBtn,
+                                              ]}
+                                              onPress={() => handleShareDayInvoice(day, entry.customerName, custInvoices)}
+                                              activeOpacity={0.7}
+                                              title="Gửi ảnh hóa đơn & text ngày này qua Zalo"
+                                            >
+                                              <Text
+                                                style={[
+                                                  styles.dayTotalInvoiceBtnText,
+                                                  styles.dayShareInvoiceBtnText,
+                                                ]}
+                                              >
+                                                📤 Gửi Zalo
+                                              </Text>
+                                            </TouchableOpacity>
+                                          </View>
                                         )}
 
                                         {/* Case 2: Lọc theo từng quán -> Nếu ngày không có dòng TỔNG nhưng có ảnh hóa đơn và đây là món đầu tiên thì hiển thị nút xem ảnh */}
                                         {!isChainViewAll && day.invoices && day.invoices.length > 0 && !day.entries.some(isDaySummaryEntry) && idx === 0 && (
-                                          <TouchableOpacity
-                                            style={[
-                                              styles.dayTotalInvoiceBtn,
-                                              styles.dayTotalInvoiceBtnActive,
-                                            ]}
-                                            onPress={() => handleOpenInvoiceModal(day)}
-                                            activeOpacity={0.7}
-                                          >
-                                            <Text
+                                          <View style={styles.invoiceBtnGroupRow}>
+                                            <TouchableOpacity
                                               style={[
-                                                styles.dayTotalInvoiceBtnText,
-                                                styles.dayTotalInvoiceBtnTextActive,
+                                                styles.dayTotalInvoiceBtn,
+                                                styles.dayTotalInvoiceBtnActive,
                                               ]}
+                                              onPress={() => handleOpenInvoiceModal(day)}
+                                              activeOpacity={0.7}
                                             >
-                                              {`Xem hóa đơn (${day.invoices.length})`}
-                                            </Text>
-                                          </TouchableOpacity>
+                                              <Text
+                                                style={[
+                                                  styles.dayTotalInvoiceBtnText,
+                                                  styles.dayTotalInvoiceBtnTextActive,
+                                                ]}
+                                              >
+                                                {`👁️ Xem (${day.invoices.length})`}
+                                              </Text>
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity
+                                              style={[
+                                                styles.dayTotalInvoiceBtn,
+                                                styles.dayShareInvoiceBtn,
+                                              ]}
+                                              onPress={() => handleShareDayInvoice(day)}
+                                              activeOpacity={0.7}
+                                              title="Gửi ảnh hóa đơn & text ngày này qua Zalo"
+                                            >
+                                              <Text
+                                                style={[
+                                                  styles.dayTotalInvoiceBtnText,
+                                                  styles.dayShareInvoiceBtnText,
+                                                ]}
+                                              >
+                                                📤 Gửi Zalo
+                                              </Text>
+                                            </TouchableOpacity>
+                                          </View>
                                         )}
                                       </View>
                                     )}
@@ -4147,6 +4328,20 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#0F172A',
     fontSize: 11,
+  },
+  invoiceBtnGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexWrap: 'wrap',
+  },
+  dayShareInvoiceBtn: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#86EFAC',
+  },
+  dayShareInvoiceBtnText: {
+    color: '#059669',
+    fontWeight: '700',
   },
   dayTotalInvoiceBtn: {
     flexDirection: 'row',
