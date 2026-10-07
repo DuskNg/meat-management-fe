@@ -96,9 +96,6 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
   // Tháng đang chọn (MM/YYYY)
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthString());
 
-  // Phạm vi lọc: 'up_to_today' (Tính đến hôm nay) | 'all_month' (Toàn bộ tháng)
-  const [rangeMode, setRangeMode] = useState('up_to_today');
-
   // Chế độ xem: 'list' (Chi tiết từng lượt) | 'by_customer' (Gom theo từng khách)
   const [viewMode, setViewMode] = useState('list');
 
@@ -139,7 +136,6 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
     open: (options = {}) => {
       const initialMonth = options.month || getCurrentMonthString();
       setSelectedMonth(initialMonth);
-      setRangeMode(options.rangeMode || 'up_to_today');
       setViewMode(options.viewMode || 'list');
       setSearchText('');
       setVisible(true);
@@ -197,15 +193,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
     return selectedMonth === getCurrentMonthString();
   }, [selectedMonth]);
 
-  // Lấy nhãn ngày hôm nay để hiển thị
-  const todayLabel = useMemo(() => {
-    const now = new Date();
-    const dd = String(now.getDate()).padStart(2, '0');
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    return `${dd}/${mm}`;
-  }, []);
-
-  // Lọc danh sách thanh toán theo điều kiện: phạm vi ngày & từ khóa tìm kiếm
+  // Lọc danh sách thanh toán theo điều kiện: từ khóa tìm kiếm và mặc định tính đến ngày hiện tại
   const filteredPayments = useMemo(() => {
     const now = new Date();
     const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
@@ -216,8 +204,8 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
         return false;
       }
 
-      // 1. Lọc theo phạm vi: nếu chọn "Tính đến hôm nay" và đang ở tháng hiện tại
-      if (rangeMode === 'up_to_today' && isCurrentMonth) {
+      // 1. Mặc định tính đến ngày hiện tại nếu đang ở tháng hiện tại
+      if (isCurrentMonth) {
         const payDate = new Date(p.paidAt);
         if (payDate > endOfToday) return false;
       }
@@ -238,7 +226,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
 
       return true;
     });
-  }, [rawPayments, rangeMode, isCurrentMonth, searchText]);
+  }, [rawPayments, isCurrentMonth, searchText]);
 
   // Tính toán tóm tắt tổng tiền và sản lượng
   const summary = useMemo(() => {
@@ -324,7 +312,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
           </TouchableOpacity>
         </View>
 
-        {/* 1. THANH CHỌN THÁNG & LỌC NGÀY GOM 1 DÒNG DUY NHẤT */}
+        {/* 1. THANH CHỌN THÁNG (CĂN GIỮA, GỌN GÀNG) */}
         <View style={styles.filterBar}>
           <View style={styles.monthNavRow}>
             <TouchableOpacity
@@ -340,7 +328,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
               onPress={handleCurrentMonth}
               activeOpacity={0.7}
             >
-              <Text style={styles.monthCurrentText}>{selectedMonth}</Text>
+              <Text style={styles.monthCurrentText}>Tháng {selectedMonth}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -351,50 +339,6 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
               <Text style={styles.monthNavBtnText}>▶</Text>
             </TouchableOpacity>
           </View>
-
-          {isCurrentMonth ? (
-            <View style={styles.rangeToggleRow}>
-              <TouchableOpacity
-                style={[
-                  styles.rangeToggleBtn,
-                  rangeMode === 'up_to_today' && styles.rangeToggleBtnActive,
-                ]}
-                onPress={() => setRangeMode('up_to_today')}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.rangeToggleText,
-                    rangeMode === 'up_to_today' && styles.rangeToggleTextActive,
-                  ]}
-                >
-                  Đến hôm nay ({todayLabel})
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.rangeToggleBtn,
-                  rangeMode === 'all_month' && styles.rangeToggleBtnActive,
-                ]}
-                onPress={() => setRangeMode('all_month')}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.rangeToggleText,
-                    rangeMode === 'all_month' && styles.rangeToggleTextActive,
-                  ]}
-                >
-                  Cả tháng
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.allMonthBadge}>
-              <Text style={styles.allMonthBadgeText}>Toàn bộ tháng</Text>
-            </View>
-          )}
         </View>
 
         {/* 2. THANH TÓM TẮT THÔNG SỐ SIÊU GỌN (1 DÒNG DUY NHẤT) */}
@@ -710,13 +654,12 @@ const styles = StyleSheet.create({
   filterBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     backgroundColor: '#F8FAFC',
     borderRadius: 8,
     paddingHorizontal: 6,
     paddingVertical: 5,
     marginBottom: 6,
-    gap: 6,
   },
   monthNavRow: {
     flexDirection: 'row',
@@ -739,52 +682,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   monthCurrentBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 6,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#CBD5E1',
   },
   monthCurrentText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#0F172A',
-  },
-  rangeToggleRow: {
-    flexDirection: 'row',
-    backgroundColor: '#E2E8F0',
-    borderRadius: 6,
-    padding: 2,
-    gap: 2,
-  },
-  rangeToggleBtn: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  rangeToggleBtnActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  rangeToggleText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  rangeToggleTextActive: {
-    color: '#15803D',
-    fontWeight: '700',
-  },
-  allMonthBadge: {
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  allMonthBadgeText: {
-    fontSize: 11,
-    color: '#475569',
-    fontWeight: '600',
   },
   summaryBar: {
     flexDirection: 'row',
