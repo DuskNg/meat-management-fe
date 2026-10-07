@@ -376,7 +376,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
               style={styles.searchInput}
-              placeholder="Tìm theo tên khách, SĐT..."
+              placeholder="Tìm theo tên khách, SĐT, ghi chú..."
               placeholderTextColor="#94A3B8"
               value={searchText}
               onChangeText={setSearchText}
@@ -405,7 +405,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
               <Text
                 style={[
                   styles.viewModeTabText,
-                  viewMode === 'list' && styles.viewModeTabTextActive,
+                  viewMode === 'list' && styles.viewModeTabBtnActive,
                 ]}
               >
                 Từng lượt ({filteredPayments.length})
@@ -423,7 +423,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
               <Text
                 style={[
                   styles.viewModeTabText,
-                  viewMode === 'by_customer' && styles.viewModeTabTextActive,
+                  viewMode === 'by_customer' && styles.viewModeTabBtnActive,
                 ]}
               >
                 Gom khách ({groupedByCustomer.length})
@@ -432,7 +432,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
           </View>
         </View>
 
-        {/* 4. NỘI DUNG DẠNG BẢNG (VỪA KHÍT 100% VIEWPORT - KHÔNG SCROLL NGANG - BỎ CỘT CHI TIẾT) */}
+        {/* 4. NỘI DUNG DẠNG BẢNG (VỪA KHÍT 100% VIEWPORT - RỘNG THEO VIEWPORT - BỎ CỘT CHI TIẾT - KHÔNG SCROLL NGANG) */}
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="small" color="#16A34A" />
@@ -453,15 +453,16 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.tableScrollContent}
           >
-            {/* ─── TAB 1: DANH SÁCH CHI TIẾT TỪNG LƯỢT TRẢ TIỀN (KHÔNG SCROLL NGANG) ─── */}
+            {/* ─── TAB 1: DANH SÁCH CHI TIẾT TỪNG LƯỢT TRẢ TIỀN ─── */}
             {viewMode === 'list' ? (
               <View style={styles.tableContainer}>
-                {/* HEADER BẢNG */}
+                {/* HEADER BẢNG (5 CỘT: STT | NGÀY | TÊN KHÁCH | SỐ TIỀN ĐẾN | GHI CHÚ) */}
                 <View style={styles.tableHeaderRow}>
                   <Text style={[styles.tableHeaderCell, styles.colStt]}>STT</Text>
                   <Text style={[styles.tableHeaderCell, styles.colDate]}>NGÀY</Text>
                   <Text style={[styles.tableHeaderCell, styles.colCustomer]}>TÊN KHÁCH</Text>
                   <Text style={[styles.tableHeaderCell, styles.colAmount]}>SỐ TIỀN ĐẾN</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colNote]}>GHI CHÚ</Text>
                 </View>
 
                 {/* NỘI DUNG CÁC DÒNG */}
@@ -493,42 +494,45 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
                         <Text style={styles.timeText}>{formatTimeHM(p.paidAt)}</Text>
                       </View>
 
-                      {/* CỘT 3: TÊN KHÁCH & GHI CHÚ */}
+                      {/* CỘT 3: TÊN KHÁCH (RỘNG THEO VIEWPORT - flex: 1.2) */}
                       <View style={styles.colCustomer}>
-                        <Text style={styles.customerNameText} numberOfLines={1}>
+                        <Text style={styles.customerNameText} numberOfLines={2}>
                           {p.customer?.name || 'Khách vãng lai'}
                         </Text>
-                        <View style={styles.customerSubInfoRow}>
-                          {p.customer?.phone ? (
-                            <Text style={styles.customerPhoneText} numberOfLines={1}>
-                              📞 {p.customer.phone}
-                            </Text>
-                          ) : null}
-                          {p.note ? (
-                            <Text style={styles.noteSnippetText} numberOfLines={1}>
-                              • {p.note}
-                            </Text>
-                          ) : null}
-                        </View>
+                        {p.customer?.phone ? (
+                          <Text style={styles.customerPhoneText} numberOfLines={1}>
+                            📞 {p.customer.phone}
+                          </Text>
+                        ) : null}
                       </View>
 
                       {/* CỘT 4: SỐ TIỀN ĐẾN */}
                       <View style={styles.colAmount}>
                         <Text style={styles.amountText}>{formatCurrency(p.amount)}</Text>
                       </View>
+
+                      {/* CỘT 5: GHI CHÚ (RỘNG THEO VIEWPORT - flex: 1) */}
+                      <View style={styles.colNote}>
+                        <Text style={styles.noteText} numberOfLines={2}>
+                          {p.note || '—'}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
               </View>
             ) : (
-              /* ─── TAB 2: GOM NHÓM THEO TỪNG KHÁCH HÀNG (KHÔNG SCROLL NGANG) ─── */
+              /* ─── TAB 2: GOM NHÓM THEO TỪNG KHÁCH HÀNG ─── */
               <View style={styles.tableContainer}>
                 {/* HEADER BẢNG GOM */}
                 <View style={styles.tableHeaderRow}>
                   <Text style={[styles.tableHeaderCell, styles.colStt]}>STT</Text>
-                  <Text style={[styles.tableHeaderCell, styles.colCustomer]}>KHÁCH HÀNG</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colCustomerGrouped]}>
+                    KHÁCH HÀNG
+                  </Text>
                   <Text style={[styles.tableHeaderCell, styles.colCount]}>SỐ LẦN</Text>
                   <Text style={[styles.tableHeaderCell, styles.colAmount]}>TỔNG TIỀN ĐẾN</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colLatestDate]}>GẦN NHẤT</Text>
                 </View>
 
                 {/* NỘI DUNG DÒNG GOM */}
@@ -558,21 +562,16 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
                         <Text style={styles.sttText}>{idx + 1}</Text>
                       </View>
 
-                      {/* KHÁCH HÀNG */}
-                      <View style={styles.colCustomer}>
-                        <Text style={styles.customerNameText} numberOfLines={1}>
+                      {/* KHÁCH HÀNG (RỘNG THEO VIEWPORT) */}
+                      <View style={styles.colCustomerGrouped}>
+                        <Text style={styles.customerNameText} numberOfLines={2}>
                           {item.customerName}
                         </Text>
-                        <View style={styles.customerSubInfoRow}>
-                          {item.customerPhone ? (
-                            <Text style={styles.customerPhoneText} numberOfLines={1}>
-                              📞 {item.customerPhone}
-                            </Text>
-                          ) : null}
-                          <Text style={styles.latestDateSnippetText}>
-                            • Gần nhất: {formatDateDM(item.latestPaidAt)}
+                        {item.customerPhone ? (
+                          <Text style={styles.customerPhoneText} numberOfLines={1}>
+                            📞 {item.customerPhone}
                           </Text>
-                        </View>
+                        ) : null}
                       </View>
 
                       {/* SỐ LẦN */}
@@ -585,6 +584,11 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
                       {/* TỔNG TIỀN ĐẾN */}
                       <View style={styles.colAmount}>
                         <Text style={styles.amountText}>{formatCurrency(item.totalAmount)}</Text>
+                      </View>
+
+                      {/* GẦN NHẤT */}
+                      <View style={styles.colLatestDate}>
+                        <Text style={styles.dateText}>{formatDateDM(item.latestPaidAt)}</Text>
                       </View>
                     </TouchableOpacity>
                   );
@@ -621,6 +625,9 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     maxHeight: '92%',
     minHeight: 380,
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 1040 : '100%',
+    alignSelf: 'center',
   },
   headerRow: {
     flexDirection: 'row',
@@ -921,7 +928,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
   },
   colStt: {
-    width: 26,
+    width: 28,
     alignItems: 'center',
     justifyContent: 'center',
     textAlign: 'center',
@@ -945,7 +952,12 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
   colCustomer: {
-    flex: 1,
+    flex: 1.2,
+    paddingHorizontal: 4,
+    justifyContent: 'center',
+  },
+  colCustomerGrouped: {
+    flex: 1.5,
     paddingHorizontal: 4,
     justifyContent: 'center',
   },
@@ -954,25 +966,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
-  customerSubInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 1,
-  },
   customerPhoneText: {
     fontSize: 10,
     color: '#64748B',
+    marginTop: 1,
   },
-  noteSnippetText: {
-    fontSize: 10,
+  colAmount: {
+    width: 106,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    textAlign: 'right',
+    paddingHorizontal: 2,
+  },
+  amountText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#16A34A',
+  },
+  colNote: {
+    flex: 1,
+    paddingLeft: 6,
+    justifyContent: 'center',
+  },
+  noteText: {
+    fontSize: 11,
     color: '#64748B',
-    fontStyle: 'italic',
-  },
-  latestDateSnippetText: {
-    fontSize: 10,
-    color: '#475569',
   },
   colCount: {
     width: 50,
@@ -990,16 +1008,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#4338CA',
   },
-  colAmount: {
-    width: 108,
-    alignItems: 'flex-end',
+  colLatestDate: {
+    width: 52,
+    alignItems: 'center',
     justifyContent: 'center',
-    textAlign: 'right',
-  },
-  amountText: {
-    fontSize: 12.5,
-    fontWeight: '800',
-    color: '#16A34A',
   },
   footerWrap: {
     paddingTop: 8,
