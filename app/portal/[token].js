@@ -1604,18 +1604,10 @@ export default function PortalScreen() {
     }
   };
 
-  // Tạo nội dung text chi tiết hóa đơn ngày đó
+  // Tạo nội dung text chi tiết hóa đơn ngày đó: chỉ giữ danh sách món thịt, chia gạch ngang từng cơ sở
   const buildPortalDayInvoiceText = (targetDay, targetCustomerName = null) => {
     if (!targetDay) return '';
-    const displayDate = targetDay.displayDate || targetDay.dateKey || '';
-    const custName = targetCustomerName || portalData?.currentCustomer?.name || portalInfo?.name || '';
     const lines = [];
-
-    lines.push(`🧾 HÓA ĐƠN GIAO HÀNG NGÀY ${displayDate}${targetDay.displayLunarDate ? ` (${targetDay.displayLunarDate} âm)` : ''}`);
-    if (custName) {
-      lines.push(`🏢 Khách hàng: ${custName}`);
-    }
-    lines.push('--------------------------------');
 
     let dayEntries = targetDay.entries || [];
     if (targetCustomerName) {
@@ -1625,9 +1617,12 @@ export default function PortalScreen() {
       }
     }
 
+    // Kiểm tra xem có nhiều cơ sở (dạng nhóm chuỗi) hay không
+    const hasMultipleBranches = !targetCustomerName && dayEntries.some((e) => e.customerName);
+
+    let lastCustName = null;
     let totalMeat = 0;
     let totalReturn = 0;
-    let totalQty = 0;
 
     dayEntries.forEach((e) => {
       if (e.type === 'DAY_TOTAL' || e.type === 'DAY_PARTIAL_PAID' || e.type === 'DAY_PARTIAL_REMAINING') return;
@@ -1635,6 +1630,16 @@ export default function PortalScreen() {
       const amt = parseFloat(e.amount) || 0;
       const q = parseFloat(e.quantity) || 0;
       const p = parseFloat(e.price) || 0;
+
+      const currentCust = (!targetCustomerName && e.customerName) ? e.customerName.trim() : null;
+
+      // Phân tách gạch ngang giữa các cơ sở khác nhau
+      if (hasMultipleBranches && currentCust && lastCustName !== null && currentCust !== lastCustName) {
+        lines.push('--------------------------------');
+      }
+      if (currentCust) {
+        lastCustName = currentCust;
+      }
 
       let line = isRet ? '[-] TRẢ HÀNG: ' : '• ';
       if (!targetCustomerName && e.customerName) {
@@ -1650,29 +1655,16 @@ export default function PortalScreen() {
         totalReturn += Math.abs(amt);
       } else {
         totalMeat += Math.abs(amt);
-        totalQty += q;
       }
     });
 
-    lines.push('--------------------------------');
-    if (totalQty > 0) {
-      lines.push(`⚖️ Tổng kg thịt: ${Math.round(totalQty * 100) / 100} kg`);
-    }
-    if (totalReturn > 0) {
-      lines.push(`💰 Tiền mua hàng: +${formatCurrency(totalMeat)}`);
-      lines.push(`↩️ Tiền trả hàng: -${formatCurrency(totalReturn)}`);
-    }
-    const netAmount = totalMeat - totalReturn;
-    lines.push(`💵 TỔNG TIỀN: ${formatCurrency(netAmount)}`);
-
-    if (targetDay.isPaid) {
-      lines.push('✅ Trạng thái: ĐÃ THANH TOÁN');
-    } else if (targetDay.isPartialPaid) {
-      lines.push('⚡ Trạng thái: ĐÃ TRẢ 1 PHẦN');
-      const rem = targetDay.remainingDebt != null ? targetDay.remainingDebt : netAmount;
-      lines.push(`⏳ Còn nợ lại: ${formatCurrency(rem)}`);
-    } else {
-      lines.push('⏳ Trạng thái: CHƯA THANH TOÁN (GHI NỢ)');
+    // Nếu là đơn lẻ 1 khách hàng (không phải nhóm nhiều cơ sở): hiển thị dòng tổng tiền ngắn gọn ở cuối
+    if (!hasMultipleBranches) {
+      const netAmount = totalMeat - totalReturn;
+      if (netAmount > 0) {
+        lines.push('--------------------------------');
+        lines.push(`💵 TỔNG TIỀN: ${formatCurrency(netAmount)}`);
+      }
     }
 
     return lines.join('\n');
@@ -1696,16 +1688,10 @@ export default function PortalScreen() {
     return isVideoUrl(rawUrl);
   };
 
-  // Tạo nội dung văn bản hóa đơn ngắn gọn cho hóa đơn dạng Video: tên thịt số cân, thành tiền, dòng cuối là tổng tiền
+  // Tạo nội dung văn bản hóa đơn ngắn gọn cho hóa đơn dạng Video: tên thịt số cân, thành tiền, chia gạch ngang từng cơ sở
   const buildVideoInvoiceText = (targetDay, targetCustomerName = null) => {
     if (!targetDay) return '';
-    const displayDate = targetDay.displayDate || targetDay.dateKey || '';
-    const custName = targetCustomerName || portalData?.currentCustomer?.name || portalInfo?.name || '';
-
     const lines = [];
-    if (displayDate) {
-      lines.push(`Hóa đơn ngày ${displayDate}${custName ? ` - ${custName}` : ''}:`);
-    }
 
     let dayEntries = targetDay.entries || [];
     if (targetCustomerName) {
@@ -1715,6 +1701,8 @@ export default function PortalScreen() {
       }
     }
 
+    const hasMultipleBranches = !targetCustomerName && dayEntries.some((e) => e.customerName);
+    let lastCustName = null;
     let totalMeat = 0;
     let totalReturn = 0;
 
@@ -1723,6 +1711,16 @@ export default function PortalScreen() {
       const isRet = e.type === 'RETURN';
       const amt = parseFloat(e.amount) || 0;
       const q = parseFloat(e.quantity) || 0;
+
+      const currentCust = (!targetCustomerName && e.customerName) ? e.customerName.trim() : null;
+
+      // Phân tách gạch ngang giữa các cơ sở khác nhau
+      if (hasMultipleBranches && currentCust && lastCustName !== null && currentCust !== lastCustName) {
+        lines.push('--------------------------------');
+      }
+      if (currentCust) {
+        lastCustName = currentCust;
+      }
 
       let line = '';
       if (!targetCustomerName && e.customerName) {
@@ -1742,8 +1740,10 @@ export default function PortalScreen() {
       }
     });
 
-    const netAmount = totalMeat - totalReturn;
-    lines.push(`Tổng tiền: ${formatCurrency(netAmount)}`);
+    if (!hasMultipleBranches) {
+      const netAmount = totalMeat - totalReturn;
+      lines.push(`Tổng tiền: ${formatCurrency(netAmount)}`);
+    }
 
     return lines.join('\n');
   };
