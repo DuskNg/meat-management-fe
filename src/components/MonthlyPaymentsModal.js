@@ -47,6 +47,21 @@ const formatTimeHM = (isoStr) => {
   return `${hh}:${min}`;
 };
 
+// Helper kiểm tra xem một bản ghi payment có phải là đơn trả hàng hay không
+const isReturnGoodsPayment = (payment) => {
+  if (!payment) return false;
+  const note = (payment.note || '').trim().toLowerCase();
+  if (!note) return false;
+  return (
+    note.includes('[trả lại hàng]') ||
+    note.includes('[trả hàng nhanh]') ||
+    note.includes('trả lại hàng') ||
+    note.includes('trả hàng') ||
+    note.includes('trả lại') ||
+    note.includes('nhập hàng')
+  );
+};
+
 // Helper trích xuất ngày thanh toán nợ cụ thể từ ghi chú (ví dụ: "Thanh toán nợ ngày 21/09/2026" -> "(21/9)")
 const extractPaymentSuffix = (note) => {
   if (!note || typeof note !== 'string') return '';
@@ -61,12 +76,7 @@ const extractPaymentSuffix = (note) => {
     return `(${d}/${m})`;
   }
 
-  // 2. Khớp nếu là đơn trả lại hàng
-  if (trimNote.toLowerCase().includes('trả lại hàng') || trimNote.toLowerCase().includes('trả hàng')) {
-    return '(trả hàng)';
-  }
-
-  // 3. Nếu có dạng ngày DD/MM hoặc DD/MM/YYYY bất kỳ trong ghi chú
+  // 2. Nếu có dạng ngày DD/MM hoặc DD/MM/YYYY bất kỳ trong ghi chú
   const genericMatch = trimNote.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
   if (genericMatch) {
     const d = parseInt(genericMatch[1], 10);
@@ -201,6 +211,11 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
     const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
     return rawPayments.filter((p) => {
+      // 0. LOẠI BỎ HOÀN TOÀN CÁC ĐƠN TRẢ HÀNG (TRẢ LẠI THỊT KHÔNG PHẢI TIỀN ĐẾN THẬT)
+      if (isReturnGoodsPayment(p)) {
+        return false;
+      }
+
       // 1. Lọc theo phạm vi: nếu chọn "Tính đến hôm nay" và đang ở tháng hiện tại
       if (rangeMode === 'up_to_today' && isCurrentMonth) {
         const payDate = new Date(p.paidAt);
