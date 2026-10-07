@@ -221,7 +221,7 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
           <View style={styles.headerTitleWrap}>
             <Text style={styles.headerIcon}>📋</Text>
             <View>
-              <Text style={styles.modalTitle}>DANH SÁCH BÁO HÀNG & CHỐT ĐƠN</Text>
+              <Text style={styles.modalTitle}>DANH SÁCH BÁO HÀNG</Text>
               <Text style={styles.modalSubTitle}>
                 Quản lý các nhà hàng đặt hàng qua Zalo Portal & đối soát nợ
               </Text>
@@ -275,56 +275,23 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
 
-        {/* THỐNG KÊ TÓM TẮT 4 CHỈ SỐ: 1 HÀNG DUY NHẤT (SIÊU TIẾT KIỆM DIỆN TÍCH) */}
+        {/* THỐNG KÊ TÓM TẮT 2 CHỈ SỐ: ĐÃ BÁO HÀNG & ĐÃ NHẬP CÔNG NỢ (BỎ LOGIC CHỐT) */}
         <View style={styles.summaryGrid}>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryValue}>{summary.totalRequests}</Text>
-            <Text style={styles.summaryLabel}>Tổng quán</Text>
-          </View>
-          <View style={[styles.summaryItem, styles.summaryItemConfirmed]}>
-            <Text style={[styles.summaryValue, styles.summaryValueConfirmed]}>
-              {summary.confirmedCount}
+          <View style={[styles.summaryItem, styles.summaryItemReported]}>
+            <Text style={[styles.summaryValue, styles.summaryValueReported]}>
+              {summary.totalRequests}
             </Text>
-            <Text style={styles.summaryLabel}>Đã chốt</Text>
+            <Text style={styles.summaryLabel}>Đã báo hàng</Text>
           </View>
           <View style={[styles.summaryItem, styles.summaryItemBilled]}>
             <Text style={[styles.summaryValue, styles.summaryValueBilled]}>
               {summary.billedCount}
             </Text>
-            <Text style={styles.summaryLabel}>Đã nợ</Text>
-          </View>
-          <View
-            style={[
-              styles.summaryItem,
-              summary.unbilledCount > 0 && styles.summaryItemUnbilled,
-            ]}
-          >
-            <Text
-              style={[
-                styles.summaryValue,
-                summary.unbilledCount > 0 && styles.summaryValueUnbilled,
-              ]}
-            >
-              {summary.unbilledCount}
+            <Text style={styles.summaryLabel}>
+              Đã nhập công nợ {summary.unbilledCount > 0 ? `(còn ${summary.unbilledCount} chưa nợ)` : ''}
             </Text>
-            <Text style={styles.summaryLabel}>Chưa nợ</Text>
           </View>
         </View>
-
-        {/* THANH TÁC VỤ HÀNG LOẠT (TINH GỌN) */}
-        {requests.length > 0 && summary.confirmedCount < summary.totalRequests && (
-          <View style={styles.bulkActionRow}>
-            <TouchableOpacity
-              style={styles.bulkConfirmBtn}
-              onPress={handleBulkConfirm}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.bulkConfirmBtnText}>
-                ✓ Chốt tất cả ({summary.totalRequests - summary.confirmedCount} quán chưa chốt)
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* DANH SÁCH CÁC NHÀ HÀNG BÁO HÀNG */}
         {loading ? (
@@ -531,66 +498,45 @@ const styles = StyleSheet.create({
   },
   summaryGrid: {
     flexDirection: 'row',
-    gap: 4,
-    marginBottom: 6,
+    gap: 8,
+    marginBottom: 8,
     width: '100%',
   },
   summaryItem: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    borderRadius: 6,
-    paddingVertical: 4,
-    paddingHorizontal: 2,
+    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  summaryItemConfirmed: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-  },
-  summaryItemBilled: {
+  summaryItemReported: {
     backgroundColor: '#EFF6FF',
     borderColor: '#BFDBFE',
   },
-  summaryItemUnbilled: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
+  summaryItemBilled: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
   },
   summaryValue: {
-    fontSize: 13.5,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#0F172A',
   },
-  summaryValueConfirmed: {
-    color: '#059669',
+  summaryValueReported: {
+    color: '#1D4ED8',
   },
   summaryValueBilled: {
-    color: '#2563EB',
-  },
-  summaryValueUnbilled: {
-    color: '#DC2626',
+    color: '#059669',
   },
   summaryLabel: {
-    fontSize: 9.5,
-    color: '#64748B',
-    marginTop: 1,
-    fontWeight: '600',
-  },
-  bulkActionRow: {
-    marginBottom: 6,
-  },
-  bulkConfirmBtn: {
-    backgroundColor: '#10B981',
-    borderRadius: 6,
-    paddingVertical: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bulkConfirmBtnText: {
-    color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: 'bold',
+    color: '#475569',
+    marginTop: 2,
+    fontWeight: '600',
   },
   loadingWrap: {
     paddingVertical: 40,

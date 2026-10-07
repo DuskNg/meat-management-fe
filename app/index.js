@@ -2702,7 +2702,7 @@ export default function DashboardScreen() {
                 style={[styles.portalNotifyBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
                 onPress={() => deliveryRequestsModalRef.current?.open()}
                 activeOpacity={0.7}
-                title="Báo hàng & Chốt đơn (Zalo Portal)"
+                title="Danh sách báo hàng (Zalo Portal)"
               >
                 <Text style={styles.portalNotifyIcon}>📋</Text>
                 {unbilledDeliveryData?.unbilledCount > 0 && (
