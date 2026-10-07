@@ -63,6 +63,7 @@ import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
 import BankTransactionsView from '../src/components/BankTransactionsView';
 import ProfitManagementModal from '../src/components/ProfitManagementModal';
 import PeriodicDebtReminderModal from '../src/components/PeriodicDebtReminderModal';
+import MonthlyPaymentsModal from '../src/components/MonthlyPaymentsModal';
 import { showGlobalToast } from '../src/store/toastStore';
 import { isMobileDevice } from '../src/utils/imageShareHelper';
 import { exportDailyReportBundle } from '../src/utils/dailyBundleExportHelper';
@@ -172,6 +173,7 @@ export default function DashboardScreen() {
   const quickPriceLinkModalRef = useRef(null); // Modal link Zalo cập nhật giá bán cho Anh Chủ
   const profitManagementModalRef = useRef(null); // Modal quản lý lợi nhuận & đối soát lò
   const periodicDebtReminderModalRef = useRef(null); // Modal nhắc gửi công nợ định kỳ Ngày 1 & Ngày 15 hàng tháng qua Zalo
+  const monthlyPaymentsModalRef = useRef(null); // Modal xem khách trả tiền trong tháng (dạng bảng)
 
   // Nhắc hẹn chốt công nợ định kỳ theo nhóm nhà hàng (ví dụ: nhóm Trường Hoàng từ 15 đến 31)
   const [dismissedReminderGroupIds, setDismissedReminderGroupIds] = useState(new Set());
@@ -1663,6 +1665,18 @@ export default function DashboardScreen() {
                 </TouchableOpacity>
               )}
 
+              {/* Nút xem khách trả tiền trong tháng */}
+              {auth.hasPermission('canManageDebt') && (
+                <TouchableOpacity
+                  style={[styles.portalNotifyBtn, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC' }]}
+                  onPress={() => monthlyPaymentsModalRef.current?.open()}
+                  activeOpacity={0.7}
+                  title="Khách trả tiền trong tháng (dạng bảng)"
+                >
+                  <Text style={styles.portalNotifyIcon}>💰</Text>
+                </TouchableOpacity>
+              )}
+
               {/* Nút duyệt hóa đơn nhân viên gửi qua Zalo (AI bóc tách) */}
               {!auth.user?.workspaceMember && (
                 <TouchableOpacity
@@ -2717,6 +2731,18 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
+            {/* Nút xem khách trả tiền trong tháng (dạng bảng) */}
+            {auth.hasPermission('canManageDebt') && (
+              <TouchableOpacity
+                style={[styles.portalNotifyBtn, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC' }]}
+                onPress={() => monthlyPaymentsModalRef.current?.open()}
+                activeOpacity={0.7}
+                title="Khách trả tiền trong tháng (dạng bảng)"
+              >
+                <Text style={styles.portalNotifyIcon}>💰</Text>
+              </TouchableOpacity>
+            )}
+
             {/* Nút duyệt hóa đơn nhân viên gửi qua Zalo (AI bóc tách) */}
             {!auth.user?.workspaceMember && (
               <TouchableOpacity
@@ -3491,6 +3517,15 @@ export default function DashboardScreen() {
         onOpenDebt={(customer, dateIso) => {
           setSelectedCustomerId(customer.id);
           debtModalRef.current?.open(customer);
+        }}
+      />
+
+      {/* MODAL XEM KHÁCH TRẢ TIỀN TRONG THÁNG (DẠNG BẢNG) */}
+      <MonthlyPaymentsModal
+        ref={monthlyPaymentsModalRef}
+        onSelectCustomer={(cust) => {
+          setSelectedCustomerId(cust.id);
+          customerDebtHistoryModalRef.current?.open(cust);
         }}
       />
 
