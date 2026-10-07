@@ -598,19 +598,9 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
               <Text style={styles.btnHeaderZaloText}>{isVideo ? '💬 Zalo' : '💬 Zalo ảnh'}</Text>
             </TouchableOpacity>
 
-            {/* Thông tin vị trí hóa đơn & 2 nút điều hướng chuyển nhanh không che ảnh */}
+            {/* Thông tin vị trí hóa đơn */}
             <View style={styles.navCenterInfoWrap}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 4 : 8 }}>
-                {/* Nút lùi nhanh trên Header */}
-                <TouchableOpacity
-                  style={[styles.headerNavBtn, currentIndex <= 0 && styles.headerNavBtnDisabled]}
-                  onPress={handlePrev}
-                  disabled={currentIndex <= 0}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.headerNavBtnText, currentIndex <= 0 && styles.headerNavBtnTextDisabled]}>◀</Text>
-                </TouchableOpacity>
-
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 6 : 8 }}>
                 <Text style={[styles.navCardIndexTitle, isMobile && styles.navCardIndexTitleMobile]}>
                   #{submissions.length - currentIndex}
                 </Text>
@@ -620,16 +610,6 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     {isApproved ? '✓ ĐÃ LÊN NỢ' : 'CHƯA LÊN NỢ'}
                   </Text>
                 </View>
-
-                {/* Nút tiến nhanh trên Header */}
-                <TouchableOpacity
-                  style={[styles.headerNavBtn, currentIndex >= submissions.length - 1 && styles.headerNavBtnDisabled]}
-                  onPress={handleNext}
-                  disabled={currentIndex >= submissions.length - 1}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.headerNavBtnText, currentIndex >= submissions.length - 1 && styles.headerNavBtnTextDisabled]}>▶</Text>
-                </TouchableOpacity>
               </View>
               <Text style={styles.navCounterSubtitle}>
                 ({currentIndex + 1} / {submissions.length})
@@ -768,42 +748,42 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   )}
                 </View>
 
-                {/* NÚT ĐIỀU HƯỚNG NỔI TRÊN ẢNH: Chỉ hiển thị trên PC, mobile dùng nút trên Header để không che chữ trên hóa đơn */}
-                {!isMobile && (
-                  <>
-                    <TouchableOpacity
-                      style={[
-                        styles.floatingNavBtn,
-                        styles.floatingNavBtnLeft,
-                        currentIndex <= 0 && styles.floatingNavBtnDisabled,
-                      ]}
-                      onPress={handlePrev}
-                      disabled={currentIndex <= 0}
-                      activeOpacity={0.8}
-                      {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
-                    >
-                      <Text style={[styles.floatingNavBtnText, currentIndex <= 0 && styles.floatingNavBtnTextDisabled]}>
-                        ◀ Trước
-                      </Text>
-                    </TouchableOpacity>
+                {/* NÚT ĐIỀU HƯỚNG NỔI TRÊN ẢNH: Đè lên 2 góc trái phải giúp bấm chuyển hóa đơn cực tiện bằng ngón tay cái */}
+                <TouchableOpacity
+                  style={[
+                    styles.floatingNavBtn,
+                    styles.floatingNavBtnLeft,
+                    isMobile && styles.floatingNavBtnMobile,
+                    currentIndex <= 0 && styles.floatingNavBtnDisabled,
+                  ]}
+                  onPress={handlePrev}
+                  disabled={currentIndex <= 0}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Hóa đơn trước"
+                  {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
+                >
+                  <Text style={[styles.floatingNavBtnText, isMobile && styles.floatingNavBtnTextMobile, currentIndex <= 0 && styles.floatingNavBtnTextDisabled]}>
+                    {isMobile ? '◀' : '◀ Trước'}
+                  </Text>
+                </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[
-                        styles.floatingNavBtn,
-                        styles.floatingNavBtnRight,
-                        currentIndex >= submissions.length - 1 && styles.floatingNavBtnDisabled,
-                      ]}
-                      onPress={handleNext}
-                      disabled={currentIndex >= submissions.length - 1}
-                      activeOpacity={0.8}
-                      {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
-                    >
-                      <Text style={[styles.floatingNavBtnText, currentIndex >= submissions.length - 1 && styles.floatingNavBtnTextDisabled]}>
-                        Sau ▶
-                      </Text>
-                    </TouchableOpacity>
-                  </>
-                )}
+                <TouchableOpacity
+                  style={[
+                    styles.floatingNavBtn,
+                    styles.floatingNavBtnRight,
+                    isMobile && styles.floatingNavBtnMobile,
+                    currentIndex >= submissions.length - 1 && styles.floatingNavBtnDisabled,
+                  ]}
+                  onPress={handleNext}
+                  disabled={currentIndex >= submissions.length - 1}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Hóa đơn tiếp theo"
+                  {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
+                >
+                  <Text style={[styles.floatingNavBtnText, isMobile && styles.floatingNavBtnTextMobile, currentIndex >= submissions.length - 1 && styles.floatingNavBtnTextDisabled]}>
+                    {isMobile ? '▶' : 'Sau ▶'}
+                  </Text>
+                </TouchableOpacity>
 
                 {/* Dòng mẹo chuột chỉ hiện trên PC, ẩn hoàn toàn trên Mobile để tiết kiệm không gian */}
                 {!isVideo && !isMobile && (
@@ -1449,7 +1429,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '50%',
     transform: [{ translateY: -22 }],
-    zIndex: 30,
+    zIndex: 50,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1466,16 +1446,26 @@ const styles = StyleSheet.create({
     elevation: 8,
     ...(Platform.OS === 'web' ? { cursor: 'pointer', userSelect: 'none' } : {}),
   },
+  floatingNavBtnMobile: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+  },
   floatingNavBtnLeft: {
-    left: 14,
+    left: 8,
   },
   floatingNavBtnRight: {
-    right: 14,
+    right: 8,
   },
   floatingNavBtnDisabled: {
-    opacity: 0.25,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
-    borderColor: 'rgba(71, 85, 105, 0.3)',
+    opacity: 0.2,
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    borderColor: 'rgba(71, 85, 105, 0.2)',
     ...(Platform.OS === 'web' ? { cursor: 'default' } : {}),
   },
   floatingNavBtnText: {
@@ -1483,6 +1473,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 13,
     letterSpacing: 0.5,
+  },
+  floatingNavBtnTextMobile: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   floatingNavBtnTextDisabled: {
     color: '#64748B',
