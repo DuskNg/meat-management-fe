@@ -64,6 +64,7 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeDateType, setActiveDateType] = useState('today'); // 'today' | 'tomorrow'
+  const [debtFilter, setDebtFilter] = useState('all'); // 'all' | 'unbilled' | 'billed'
   const [data, setData] = useState({
     summary: {
       totalRequests: 0,
@@ -212,6 +213,17 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
     unbilledCount: 0,
   };
 
+  // Lọc danh sách theo trạng thái công nợ: 'all' | 'unbilled' | 'billed'
+  const filteredRequests = useMemo(() => {
+    if (debtFilter === 'billed') {
+      return requests.filter((r) => Boolean(r.hasDebt));
+    }
+    if (debtFilter === 'unbilled') {
+      return requests.filter((r) => !r.hasDebt);
+    }
+    return requests;
+  }, [requests, debtFilter]);
+
   return (
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
@@ -275,22 +287,120 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
           </TouchableOpacity>
         </View>
 
-        {/* THỐNG KÊ TÓM TẮT 2 CHỈ SỐ: ĐÃ BÁO HÀNG & ĐÃ NHẬP CÔNG NỢ (BỎ LOGIC CHỐT) */}
+        {/* THỐNG KÊ TÓM TẮT & BỘ LỌC 3 MỤC: TẤT CẢ / CHƯA CÓ NỢ / ĐÃ CÓ NỢ */}
         <View style={styles.summaryGrid}>
-          <View style={[styles.summaryItem, styles.summaryItemReported]}>
+          {/* 1. TẤT CẢ ĐÃ BÁO HÀNG */}
+          <TouchableOpacity
+            style={[
+              styles.summaryItem,
+              styles.summaryItemReported,
+              debtFilter === 'all' && styles.summaryItemActiveReported,
+            ]}
+            onPress={() => setDebtFilter('all')}
+            activeOpacity={0.75}
+          >
             <Text style={[styles.summaryValue, styles.summaryValueReported]}>
               {summary.totalRequests}
             </Text>
-            <Text style={styles.summaryLabel}>Đã báo hàng</Text>
-          </View>
-          <View style={[styles.summaryItem, styles.summaryItemBilled]}>
+            <Text style={[styles.summaryLabel, debtFilter === 'all' && styles.summaryLabelActive]}>
+              {debtFilter === 'all' ? '● Đã báo hàng' : 'Đã báo hàng'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* 2. CHƯA CÓ CÔNG NỢ */}
+          <TouchableOpacity
+            style={[
+              styles.summaryItem,
+              styles.summaryItemUnbilled,
+              debtFilter === 'unbilled' && styles.summaryItemActiveUnbilled,
+            ]}
+            onPress={() => setDebtFilter('unbilled')}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.summaryValue, styles.summaryValueUnbilled]}>
+              {summary.unbilledCount}
+            </Text>
+            <Text style={[styles.summaryLabel, styles.summaryLabelUnbilled, debtFilter === 'unbilled' && styles.summaryLabelActive]}>
+              {debtFilter === 'unbilled' ? '● Chưa có nợ' : 'Chưa có nợ'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* 3. ĐÃ CÓ CÔNG NỢ */}
+          <TouchableOpacity
+            style={[
+              styles.summaryItem,
+              styles.summaryItemBilled,
+              debtFilter === 'billed' && styles.summaryItemActiveBilled,
+            ]}
+            onPress={() => setDebtFilter('billed')}
+            activeOpacity={0.75}
+          >
             <Text style={[styles.summaryValue, styles.summaryValueBilled]}>
               {summary.billedCount}
             </Text>
-            <Text style={styles.summaryLabel}>
-              Đã nhập công nợ {summary.unbilledCount > 0 ? `(còn ${summary.unbilledCount} chưa nợ)` : ''}
+            <Text style={[styles.summaryLabel, styles.summaryLabelBilled, debtFilter === 'billed' && styles.summaryLabelActive]}>
+              {debtFilter === 'billed' ? '● Đã có nợ' : 'Đã có nợ'}
             </Text>
-          </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* THANH BỘ LỌC PHÂN ĐOẠN (FILTER CHIPS) */}
+        <View style={styles.filterChipRow}>
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              debtFilter === 'all' && styles.filterChipActiveAll,
+            ]}
+            onPress={() => setDebtFilter('all')}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.filterChipText,
+                debtFilter === 'all' && styles.filterChipTextActive,
+              ]}
+            >
+              Tất cả ({summary.totalRequests})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              debtFilter === 'unbilled' && styles.filterChipActiveUnbilled,
+            ]}
+            onPress={() => setDebtFilter('unbilled')}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.filterChipText,
+                styles.filterChipTextUnbilled,
+                debtFilter === 'unbilled' && styles.filterChipTextActive,
+              ]}
+            >
+              ⏳ Chưa có nợ ({summary.unbilledCount})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              debtFilter === 'billed' && styles.filterChipActiveBilled,
+            ]}
+            onPress={() => setDebtFilter('billed')}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.filterChipText,
+                styles.filterChipTextBilled,
+                debtFilter === 'billed' && styles.filterChipTextActive,
+              ]}
+            >
+              ✓ Đã có nợ ({summary.billedCount})
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* DANH SÁCH CÁC NHÀ HÀNG BÁO HÀNG */}
@@ -307,6 +417,24 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
               Khi các quán bấm nút "Báo hàng" trên Zalo Portal, danh sách sẽ tự động hiển thị ở đây.
             </Text>
           </View>
+        ) : filteredRequests.length === 0 ? (
+          <View style={styles.emptyFilteredWrap}>
+            <Text style={styles.emptyFilteredIcon}>
+              {debtFilter === 'unbilled' ? '🎉' : '📭'}
+            </Text>
+            <Text style={styles.emptyFilteredTitle}>
+              {debtFilter === 'unbilled'
+                ? 'Tuyệt vời! Tất cả các nhà hàng đã được nhập công nợ'
+                : 'Chưa có nhà hàng nào được nhập công nợ hôm nay'}
+            </Text>
+            <TouchableOpacity
+              style={styles.resetFilterBtn}
+              onPress={() => setDebtFilter('all')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.resetFilterBtnText}>Xem tất cả ({summary.totalRequests})</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -322,10 +450,10 @@ const DeliveryRequestsModal = forwardRef(({ onOpenDebt, onRefresh }, ref) => {
               </View>
 
               {/* NỘI DUNG CÁC DÒNG */}
-              {requests.map((item, idx) => {
+              {filteredRequests.map((item, idx) => {
                 const hasDebt = item.hasDebt;
                 const isEven = idx % 2 === 0;
-                const isLast = idx === requests.length - 1;
+                const isLast = idx === filteredRequests.length - 1;
 
                 return (
                   <View
@@ -505,21 +633,37 @@ const styles = StyleSheet.create({
   summaryItem: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    paddingVertical: 7,
-    paddingHorizontal: 8,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
   },
   summaryItemReported: {
     backgroundColor: '#EFF6FF',
     borderColor: '#BFDBFE',
   },
+  summaryItemActiveReported: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#2563EB',
+  },
+  summaryItemUnbilled: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  summaryItemActiveUnbilled: {
+    backgroundColor: '#FFEDD5',
+    borderColor: '#EA580C',
+  },
   summaryItemBilled: {
     backgroundColor: '#ECFDF5',
     borderColor: '#A7F3D0',
+  },
+  summaryItemActiveBilled: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#059669',
   },
   summaryValue: {
     fontSize: 16,
@@ -529,14 +673,99 @@ const styles = StyleSheet.create({
   summaryValueReported: {
     color: '#1D4ED8',
   },
+  summaryValueUnbilled: {
+    color: '#C2410C',
+  },
   summaryValueBilled: {
     color: '#059669',
   },
   summaryLabel: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#475569',
     marginTop: 2,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  summaryLabelUnbilled: {
+    color: '#9A3412',
+  },
+  summaryLabelBilled: {
+    color: '#047857',
+  },
+  summaryLabelActive: {
+    fontWeight: 'bold',
+  },
+  filterChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+    flexWrap: 'wrap',
+  },
+  filterChip: {
+    paddingVertical: 4.5,
+    paddingHorizontal: 9,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  filterChipActiveAll: {
+    backgroundColor: '#1E293B',
+    borderColor: '#1E293B',
+  },
+  filterChipActiveUnbilled: {
+    backgroundColor: '#EA580C',
+    borderColor: '#EA580C',
+  },
+  filterChipActiveBilled: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  filterChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  filterChipTextUnbilled: {
+    color: '#C2410C',
+  },
+  filterChipTextBilled: {
+    color: '#047857',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  emptyFilteredWrap: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  emptyFilteredIcon: {
+    fontSize: 36,
+    marginBottom: 8,
+  },
+  emptyFilteredTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#334155',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  resetFilterBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+  },
+  resetFilterBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#1E293B',
   },
   loadingWrap: {
     paddingVertical: 40,
