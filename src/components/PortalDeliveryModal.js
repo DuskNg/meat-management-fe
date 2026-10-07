@@ -167,34 +167,7 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
     return map;
   }, [recentRequests, selectedDateType, dateOpts]);
 
-  // Tự động đóng webview / quay lại ứng dụng Zalo trên thiết bị di động
-  const handleBackToZalo = () => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      // 1. Zalo In-App Browser (WebView nội bộ Zalo): gọi JS Bridge đóng webview
-      if (window.ZaloJSBridge && typeof window.ZaloJSBridge.call === 'function') {
-        try {
-          window.ZaloJSBridge.call('closeWindow');
-          return;
-        } catch (_) {}
-      }
 
-      // 2. Thử đóng cửa sổ / quay lại history
-      try {
-        window.close();
-      } catch (_) {}
-
-      // 3. Sử dụng deep link zalo:// để switch app quay thẳng về ứng dụng Zalo
-      setTimeout(() => {
-        try {
-          window.location.href = 'zalo://';
-        } catch (_) {
-          Linking.openURL('zalo://').catch(() => {});
-        }
-      }, 300);
-    } else {
-      Linking.openURL('zalo://').catch(() => {});
-    }
-  };
 
   // Gửi báo hàng lên server
   const handleSubmit = async () => {
@@ -232,7 +205,9 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
       if (res.data?.success) {
         const isMobile = isMobileDevice();
         const baseMsg = res.data?.message || `Đã báo lấy hàng cho ${targetObj.label} (${targetObj.formatted}) thành công!`;
-        const successMsg = isMobile ? `${baseMsg} Đang quay lại Zalo...` : baseMsg;
+        const successMsg = isMobile
+          ? `${baseMsg} (Bấm ✕ góc trên để quay lại Zalo)`
+          : baseMsg;
         showGlobalToast(successMsg, 'success');
         setNote('');
         fetchRecentRequests(portalToken);
@@ -240,15 +215,8 @@ const PortalDeliveryModal = forwardRef((props, ref) => {
           props.onSubmitted(res.data.data);
         }
 
-        // Tự động đóng modal
+        // Tự động đóng modal để khách thấy kết quả trạng thái báo hàng
         setVisible(false);
-
-        // Ở dạng dùng trên Mobile: tự động back lại Zalo
-        if (isMobile) {
-          setTimeout(() => {
-            handleBackToZalo();
-          }, 800);
-        }
       }
     } catch (err) {
       const msg = err.response?.data?.message || 'Không thể gửi báo hàng, vui lòng thử lại.';
