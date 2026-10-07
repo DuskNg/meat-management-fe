@@ -1706,10 +1706,6 @@ export default function DashboardScreen() {
                     {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
                   </Text>
                 </View>
-                <View style={styles.merchantDetailsRight}>
-                  <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
-                  <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
-                </View>
               </TouchableOpacity>
             </View>
           </View>
@@ -2037,10 +2033,6 @@ export default function DashboardScreen() {
                   {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
                 </Text>
               </View>
-              <View style={styles.merchantDetailsRight}>
-                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
-                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
-              </View>
             </TouchableOpacity>
           </View>
 
@@ -2241,10 +2233,6 @@ export default function DashboardScreen() {
                 <Text style={styles.avatarTextRight}>
                   {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
                 </Text>
-              </View>
-              <View style={styles.merchantDetailsRight}>
-                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
-                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -2548,10 +2536,6 @@ export default function DashboardScreen() {
                   {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
                 </Text>
               </View>
-              <View style={styles.merchantDetailsRight}>
-                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
-                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
-              </View>
             </TouchableOpacity>
           </View>
 
@@ -2771,10 +2755,6 @@ export default function DashboardScreen() {
                 <Text style={styles.avatarTextRight}>
                   {(auth.user?.name || 'Hoa').trim().charAt(0).toUpperCase()}
                 </Text>
-              </View>
-              <View style={styles.merchantDetailsRight}>
-                <Text style={styles.merchantGreetingRight}>Chủ tài khoản 👋</Text>
-                <Text style={styles.merchantNameRight}>{auth.user?.name || 'Cô Hoa'}</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -4808,15 +4788,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avatarContainerRight: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: '#ECFDF5',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#A7F3D0',
-    marginRight: 8,
   },
   avatarTextRight: {
     fontSize: 14,
