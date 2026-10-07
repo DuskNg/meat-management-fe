@@ -15,7 +15,7 @@ import SmoothModal from './SmoothModal';
 import { API_HOST } from '../api/client';
 import { api } from '../api/client';
 import axios from 'axios';
-import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
+import { downloadOrShareImage, shareTextToZalo, isMobileDevice } from '../utils/imageShareHelper';
 import { showGlobalToast } from '../store/toastStore';
 import { getLunarDateString } from '../utils/lunarCalendar';
 
@@ -359,6 +359,20 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   // Tải ảnh (PC) hoặc chuyển tiếp Zalo kèm text hóa đơn (Mobile)
   const handleDownload = async () => {
     if (!currentUrl) return;
+
+    // Nếu hóa đơn là dạng Video: CHỈ GỬI TEXT, không gửi file video
+    const isVideo = checkIsVideoUrl(currentUrl) || currentItem?.fileType === 'VIDEO';
+    if (isVideo) {
+      const invoiceText = getFullDayInvoiceText();
+      const dateStr = dayData?.displayDate || dayData?.dateKey || '';
+      await shareTextToZalo({
+        text: invoiceText,
+        title: title || `Hóa đơn ngày ${dateStr}`,
+        customerName: dayData?.customerName || '',
+      });
+      return;
+    }
+
     const invoiceText = getFullDayInvoiceText();
     const dateStr = dayData?.dateKey || 'ngay';
     await downloadOrShareImage({

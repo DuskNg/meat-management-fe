@@ -25,7 +25,11 @@ import PortalDeliveryModal from '../../src/components/PortalDeliveryModal';
 import DatePickerInput from '../../src/components/DatePickerInput';
 import CustomSelect from '../../src/components/CustomSelect';
 import { showGlobalToast } from '../../src/store/toastStore';
-import { downloadOrShareImage, downloadOrShareMultipleImages } from '../../src/utils/imageShareHelper';
+import {
+  downloadOrShareImage,
+  downloadOrShareMultipleImages,
+  shareTextToZalo,
+} from '../../src/utils/imageShareHelper';
 import { COLORS } from '../../src/theme';
 import { matchSearch } from '../../src/utils/searchHelper';
 import { getLunarDateString } from '../../src/utils/lunarCalendar';
@@ -1674,6 +1678,76 @@ export default function PortalScreen() {
     return lines.join('\n');
   };
 
+  // Helper kiểm tra file có phải là định dạng Video hay không
+  const isVideoUrl = (url) => {
+    if (!url || typeof url !== 'string') return false;
+    if (url.startsWith('data:video/')) return true;
+    if (url.includes('/video/upload/')) return true;
+    if (url.includes('/meat_invoices/videos/')) return true;
+    return /\.(mp4|mov|webm|m4v|avi|mkv|3gp)($|\?)/i.test(url);
+  };
+
+  // Helper kiểm tra đối tượng hóa đơn có phải là video hay không
+  const isVideoInvoiceItem = (inv) => {
+    if (!inv) return false;
+    if (typeof inv === 'string') return isVideoUrl(inv);
+    if (inv.fileType === 'VIDEO' || inv.fileType === 'video' || inv.isVideo) return true;
+    const rawUrl = inv.imageUrl || inv.url || inv.fileUrl || '';
+    return isVideoUrl(rawUrl);
+  };
+
+  // Tạo nội dung văn bản hóa đơn ngắn gọn cho hóa đơn dạng Video: tên thịt số cân, thành tiền, dòng cuối là tổng tiền
+  const buildVideoInvoiceText = (targetDay, targetCustomerName = null) => {
+    if (!targetDay) return '';
+    const displayDate = targetDay.displayDate || targetDay.dateKey || '';
+    const custName = targetCustomerName || portalData?.currentCustomer?.name || portalInfo?.name || '';
+
+    const lines = [];
+    if (displayDate) {
+      lines.push(`Hóa đơn ngày ${displayDate}${custName ? ` - ${custName}` : ''}:`);
+    }
+
+    let dayEntries = targetDay.entries || [];
+    if (targetCustomerName) {
+      const filteredByCust = dayEntries.filter((e) => !e.customerName || e.customerName === targetCustomerName);
+      if (filteredByCust.length > 0) {
+        dayEntries = filteredByCust;
+      }
+    }
+
+    let totalMeat = 0;
+    let totalReturn = 0;
+
+    dayEntries.forEach((e) => {
+      if (e.type === 'DAY_TOTAL' || e.type === 'DAY_PARTIAL_PAID' || e.type === 'DAY_PARTIAL_REMAINING') return;
+      const isRet = e.type === 'RETURN';
+      const amt = parseFloat(e.amount) || 0;
+      const q = parseFloat(e.quantity) || 0;
+
+      let line = '';
+      if (!targetCustomerName && e.customerName) {
+        line += `[${e.customerName}] `;
+      }
+      line += isRet ? `[-] ${e.name}` : e.name;
+      if (q > 0) {
+        line += `: ${q}kg`;
+      }
+      line += ` = ${isRet ? '-' : ''}${formatCurrency(Math.abs(amt))}`;
+      lines.push(line);
+
+      if (isRet) {
+        totalReturn += Math.abs(amt);
+      } else {
+        totalMeat += Math.abs(amt);
+      }
+    });
+
+    const netAmount = totalMeat - totalReturn;
+    lines.push(`Tổng tiền: ${formatCurrency(netAmount)}`);
+
+    return lines.join('\n');
+  };
+
   // Gửi ảnh hóa đơn kèm text hóa đơn ngày đó qua Zalo (Mobile) hoặc tải về (PC)
   const handleShareDayInvoice = async (targetDay, targetCustomerName = null, overrideInvoices = null) => {
     if (!targetDay) return;
@@ -1688,6 +1762,25 @@ export default function PortalScreen() {
       } else {
         images = targetDay.invoices || [];
       }
+    }
+
+    // ─── KIỂM TRA HÓA ĐƠN DẠNG VIDEO ───
+    // Nếu hóa đơn là dạng video: CHỈ GỬI TEXT (tên thịt số cân, thành tiền, dòng cuối là tổng tiền), KHÔNG gửi ảnh/video
+    const isVideoInvoice = (images && images.length > 0 && images.some(isVideoInvoiceItem)) || Boolean(targetDay.isVideo);
+
+    if (isVideoInvoice) {
+      const videoText = buildVideoInvoiceText(targetDay, targetCustomerName);
+      const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
+      const dateLabel = targetDay.displayDate || targetDay.dateKey || '';
+      const phone = portalData?.currentCustomer?.phone || '';
+
+      await shareTextToZalo({
+        text: videoText,
+        title: `Hóa đơn ngày ${dateLabel}${custName ? ` - ${custName}` : ''}`,
+        phone,
+        customerName: custName,
+      });
+      return;
     }
 
     if (!images || images.length === 0) {

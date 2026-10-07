@@ -516,3 +516,82 @@ export const downloadOrShareMultipleImages = async ({
   }
 };
 
+/**
+ * Hàm chuyên dụng gửi nội dung văn bản hóa đơn sang Zalo (dành cho hóa đơn Video hoặc text thuần):
+ * - Tự động sao chép nội dung vào Clipboard.
+ * - Trên Mobile: Mở menu chia sẻ Web Share API (chọn Zalo) hoặc mở trực tiếp chat Zalo theo số điện thoại.
+ * - Trên PC: Mở Zalo Web / chat và thông báo đã copy text, người dùng chỉ cần dán (Ctrl+V).
+ *
+ * @param {Object} params
+ * @param {string} params.text - Nội dung hóa đơn văn bản
+ * @param {string} [params.title] - Tiêu đề chia sẻ
+ * @param {string} [params.phone] - Số điện thoại khách hàng (để mở chat trực tiếp)
+ * @param {string} [params.customerName] - Tên khách hàng
+ * @returns {Promise<boolean>}
+ */
+export const shareTextToZalo = async ({
+  text = '',
+  title = 'Hóa đơn',
+  phone = '',
+  customerName = '',
+}) => {
+  if (!text) {
+    showGlobalToast('Chưa có nội dung để gửi.', 'warning');
+    return false;
+  }
+
+  // 1. Luôn tự động sao chép text vào clipboard trước
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {}
+  }
+
+  const isMobile = isMobileDevice();
+  const cleanPhone = phone ? String(phone).replace(/[^0-9]/g, '') : '';
+  const targetZaloUrl = cleanPhone ? `https://zalo.me/${cleanPhone}` : 'https://zalo.me';
+
+  // 2. Trên Mobile: Ưu tiên dùng Web Share API (chỉ chia sẻ text)
+  if (isMobile && typeof navigator !== 'undefined' && navigator.share) {
+    try {
+      let canShareText = true;
+      if (navigator.canShare) {
+        try {
+          canShareText = navigator.canShare({ text });
+        } catch (_) {
+          canShareText = true;
+        }
+      }
+      if (canShareText) {
+        await navigator.share({
+          title: title || 'Hóa đơn giao hàng',
+          text,
+        });
+        showGlobalToast('Đã chuyển tiếp nội dung hóa đơn sang Zalo thành công!', 'success');
+        return true;
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return false;
+      }
+      console.warn('Web Share text error, fallback to open Zalo URL:', err);
+    }
+  }
+
+  // 3. Fallback (PC hoặc khi Web Share không khả dụng): Mở liên kết Zalo
+  if (typeof window !== 'undefined') {
+    window.open(targetZaloUrl, '_blank');
+  } else {
+    Linking.openURL(targetZaloUrl).catch(() => {});
+  }
+
+  showGlobalToast(
+    customerName
+      ? `Đã sao chép nội dung hóa đơn & chuyển tiếp tới Zalo của [${customerName}]! Dán (Ctrl+V) để gửi.`
+      : 'Đã sao chép nội dung hóa đơn & mở Zalo! Hãy dán (Ctrl+V) để gửi.',
+    'success'
+  );
+  return true;
+};
+
+
