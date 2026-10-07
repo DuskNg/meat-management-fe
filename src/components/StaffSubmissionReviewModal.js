@@ -2587,6 +2587,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         const card = nextMap[subId];
         if (card.customer?.id !== customerId || !Array.isArray(card.items)) return;
 
+        // BẢO TOÀN HÓA ĐƠN ĐÃ DUYỆT: Nếu đơn đã được duyệt hoặc đã có hóa đơn lưu trong CSDL,
+        // TUYỆT ĐỐI KHÔNG tự ý ghi đè lại giá riêng lên các đơn giá đã lưu của ngày hôm đó!
+        const sub = submissions.find((s) => s.id === subId);
+        if (sub?.status === 'APPROVED' || card.isApproved) return;
+
         const newItems = applyCustPricesToItems(card.items, custProds);
         hasChange = true;
         nextMap[subId] = {
@@ -3092,8 +3097,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               let priceStr = it.price != null ? String(Math.round(it.price)) : '';
               let amountStr = it.amount != null ? String(Math.round(it.amount)) : '';
 
-              // ƯU TIÊN GIÁ RIÊNG CỦA KHÁCH HÀNG:
-              if (matchedP) {
+              // BẢO TOÀN GIÁ ĐÃ LƯU TRÊN HÓA ĐƠN ĐÃ DUYỆT CỦA NGÀY HÔM ĐÓ:
+              // Nếu dòng đã có đơn giá lưu từ trước (it.price > 0), bảo toàn nguyên vẹn 100% giá đó,
+              // TUYỆT ĐỐI KHÔNG tự ý ghi đè bằng giá riêng hiện tại của khách hàng!
+              // Chỉ áp dụng giá riêng nếu dòng đó hoàn toàn chưa có đơn giá đã lưu.
+              if (matchedP && (!priceStr || parseFloat(priceStr) <= 0)) {
                 const hasCustPrice = matchedP.customPrice !== undefined && matchedP.customPrice !== null && !isNaN(Number(matchedP.customPrice)) && Number(matchedP.customPrice) > 0;
                 if (hasCustPrice) {
                   const custPriceNum = Number(matchedP.customPrice);
@@ -3101,11 +3109,18 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   const isQuickDebt = (it.rawName === 'Tiền hàng' || !it.rawName) && (!parsedQty || parsedQty <= 0);
                   if (!isQuickDebt) {
                     priceStr = String(Math.round(custPriceNum));
-                    if (parsedQty > 0) {
+                    if (parsedQty > 0 && (!amountStr || parseFloat(amountStr) <= 0)) {
                       amountStr = String(Math.round(parsedQty * custPriceNum));
                     }
                   }
                 }
+              }
+
+              // Nếu có số kg và đơn giá nhưng chưa có thành tiền, tự động tính thành tiền
+              const parsedSavedQty = parseFloat(qtyStr);
+              const parsedSavedPrice = parseFloat(priceStr);
+              if (parsedSavedQty > 0 && parsedSavedPrice > 0 && (!amountStr || parseFloat(amountStr) <= 0)) {
+                amountStr = String(Math.round(parsedSavedQty * parsedSavedPrice));
               }
 
               return {
