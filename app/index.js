@@ -51,6 +51,7 @@ import RecurringDebtModal from '../src/components/RecurringDebtModal';
 import RegularCustomersModal from '../src/components/RegularCustomersModal';
 import DailyPriceManagementModal from '../src/components/DailyPriceManagementModal';
 import PortalManagementModal from '../src/components/PortalManagementModal';
+import ZaloIcon from '../src/components/ZaloIcon';
 import DeliveryRequestsModal from '../src/components/DeliveryRequestsModal';
 import InvoiceImageUploadModal from '../src/components/InvoiceImageUploadModal';
 import InvoiceImageViewerModal from '../src/components/InvoiceImageViewerModal';
@@ -1661,7 +1662,7 @@ export default function DashboardScreen() {
                   activeOpacity={0.7}
                   title="Link Ghim Zalo (Khách & NCC)"
                 >
-                  <Text style={styles.portalNotifyIcon}>📌</Text>
+                  <ZaloIcon size={22} />
                 </TouchableOpacity>
               )}
 
@@ -2735,7 +2736,7 @@ export default function DashboardScreen() {
                 activeOpacity={0.7}
                 title="Link Ghim Zalo (Khách & NCC)"
               >
-                <Text style={styles.portalNotifyIcon}>📌</Text>
+                <ZaloIcon size={22} />
               </TouchableOpacity>
             )}
 
@@ -3190,7 +3191,9 @@ export default function DashboardScreen() {
                     portalManagementModalRef.current?.open();
                   }}
                 >
-                  <Text style={styles.smartDebtMenuIcon}>📌</Text>
+                  <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
+                    <ZaloIcon size={22} />
+                  </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.smartDebtMenuTitle}>Link Ghim Zalo (Khách & NCC)</Text>
                     <Text style={styles.smartDebtMenuSub}>Ghim link tra cứu công nợ, giá và phản hồi vào nhóm Zalo</Text>

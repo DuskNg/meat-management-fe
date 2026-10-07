@@ -17,6 +17,7 @@ import { api } from '../api/client';
 import { COLORS, SHADOWS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 import { removeDiacritics } from '../utils/searchHelper';
+import ZaloIcon from './ZaloIcon';
 
 const formatDateTime = (isoStr) => {
   if (!isoStr) return '';
@@ -403,7 +404,7 @@ const PortalManagementModal = forwardRef((props, ref) => {
           <View style={styles.modalHeaderRow}>
             <View style={styles.modalHeaderLeft}>
               <View style={styles.headerIconCircle}>
-                <Text style={styles.headerIcon}>📌</Text>
+                <ZaloIcon size={24} />
               </View>
               <View style={styles.modalHeaderTitleCol}>
                 <View style={styles.headerTitleBadgeRow}>
