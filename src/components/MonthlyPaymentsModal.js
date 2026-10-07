@@ -47,6 +47,38 @@ const formatTimeHM = (isoStr) => {
   return `${hh}:${min}`;
 };
 
+// Helper trích xuất ngày thanh toán nợ cụ thể từ ghi chú (ví dụ: "Thanh toán nợ ngày 21/09/2026" -> "(21/9)")
+const extractPaymentSuffix = (note) => {
+  if (!note || typeof note !== 'string') return '';
+  const trimNote = note.trim();
+  if (!trimNote || trimNote === '—' || trimNote === '-') return '';
+
+  // 1. Khớp cụm "Thanh toán nợ ngày DD/MM/YYYY" hoặc "Thanh toán nợ từ ngày DD/MM/YYYY" hoặc "Trả nợ ngày DD/MM"
+  const dateMatch = trimNote.match(/(?:thanh toán|trả nợ|nợ)\s*(?:từ ngày|ngày)?\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i);
+  if (dateMatch) {
+    const d = parseInt(dateMatch[1], 10);
+    const m = parseInt(dateMatch[2], 10);
+    return `(${d}/${m})`;
+  }
+
+  // 2. Khớp nếu là đơn trả lại hàng
+  if (trimNote.toLowerCase().includes('trả lại hàng') || trimNote.toLowerCase().includes('trả hàng')) {
+    return '(trả hàng)';
+  }
+
+  // 3. Nếu có dạng ngày DD/MM hoặc DD/MM/YYYY bất kỳ trong ghi chú
+  const genericMatch = trimNote.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+  if (genericMatch) {
+    const d = parseInt(genericMatch[1], 10);
+    const m = parseInt(genericMatch[2], 10);
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12) {
+      return `(${d}/${m})`;
+    }
+  }
+
+  return '';
+};
+
 const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -376,7 +408,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
               style={styles.searchInput}
-              placeholder="Tìm theo tên khách, SĐT, ghi chú..."
+              placeholder="Tìm theo tên khách, SĐT..."
               placeholderTextColor="#94A3B8"
               value={searchText}
               onChangeText={setSearchText}
@@ -405,7 +437,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
               <Text
                 style={[
                   styles.viewModeTabText,
-                  viewMode === 'list' && styles.viewModeTabBtnActive,
+                  viewMode === 'list' && styles.viewModeTabTextActive,
                 ]}
               >
                 Từng lượt ({filteredPayments.length})
@@ -423,7 +455,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
               <Text
                 style={[
                   styles.viewModeTabText,
-                  viewMode === 'by_customer' && styles.viewModeTabBtnActive,
+                  viewMode === 'by_customer' && styles.viewModeTabTextActive,
                 ]}
               >
                 Gom khách ({groupedByCustomer.length})
@@ -432,7 +464,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
           </View>
         </View>
 
-        {/* 4. NỘI DUNG DẠNG BẢNG (VỪA KHÍT 100% VIEWPORT - RỘNG THEO VIEWPORT - BỎ CỘT CHI TIẾT - KHÔNG SCROLL NGANG) */}
+        {/* 4. NỘI DUNG DẠNG BẢNG (VỪA KHÍT 100% VIEWPORT - RỘNG THEO VIEWPORT - BỎ CỘT GHI CHÚ & CHI TIẾT) */}
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="small" color="#16A34A" />
@@ -453,22 +485,22 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.tableScrollContent}
           >
-            {/* ─── TAB 1: DANH SÁCH CHI TIẾT TỪNG LƯỢT TRẢ TIỀN ─── */}
+            {/* ─── TAB 1: DANH SÁCH CHI TIẾT TỪNG LƯỢT TRẢ TIỀN (4 CỘT: STT | NGÀY | TÊN KHÁCH | SỐ TIỀN ĐẾN) ─── */}
             {viewMode === 'list' ? (
               <View style={styles.tableContainer}>
-                {/* HEADER BẢNG (5 CỘT: STT | NGÀY | TÊN KHÁCH | SỐ TIỀN ĐẾN | GHI CHÚ) */}
+                {/* HEADER BẢNG */}
                 <View style={styles.tableHeaderRow}>
                   <Text style={[styles.tableHeaderCell, styles.colStt]}>STT</Text>
                   <Text style={[styles.tableHeaderCell, styles.colDate]}>NGÀY</Text>
                   <Text style={[styles.tableHeaderCell, styles.colCustomer]}>TÊN KHÁCH</Text>
                   <Text style={[styles.tableHeaderCell, styles.colAmount]}>SỐ TIỀN ĐẾN</Text>
-                  <Text style={[styles.tableHeaderCell, styles.colNote]}>GHI CHÚ</Text>
                 </View>
 
                 {/* NỘI DUNG CÁC DÒNG */}
                 {filteredPayments.map((p, idx) => {
                   const isEven = idx % 2 === 0;
                   const isLast = idx === filteredPayments.length - 1;
+                  const suffix = extractPaymentSuffix(p.note);
 
                   return (
                     <TouchableOpacity
@@ -494,7 +526,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
                         <Text style={styles.timeText}>{formatTimeHM(p.paidAt)}</Text>
                       </View>
 
-                      {/* CỘT 3: TÊN KHÁCH (RỘNG THEO VIEWPORT - flex: 1.2) */}
+                      {/* CỘT 3: TÊN KHÁCH (RỘNG THEO VIEWPORT - flex: 1) */}
                       <View style={styles.colCustomer}>
                         <Text style={styles.customerNameText} numberOfLines={2}>
                           {p.customer?.name || 'Khách vãng lai'}
@@ -506,15 +538,13 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
                         ) : null}
                       </View>
 
-                      {/* CỘT 4: SỐ TIỀN ĐẾN */}
+                      {/* CỘT 4: SỐ TIỀN ĐẾN (KÈM NGÀY NỢ CỤ THỂ NẾU CÓ, VÍ DỤ: 300.000 đ (21/9)) */}
                       <View style={styles.colAmount}>
-                        <Text style={styles.amountText}>{formatCurrency(p.amount)}</Text>
-                      </View>
-
-                      {/* CỘT 5: GHI CHÚ (RỘNG THEO VIEWPORT - flex: 1) */}
-                      <View style={styles.colNote}>
-                        <Text style={styles.noteText} numberOfLines={2}>
-                          {p.note || '—'}
+                        <Text style={styles.amountText}>
+                          {formatCurrency(p.amount)}
+                          {suffix ? (
+                            <Text style={styles.amountSuffixText}> {suffix}</Text>
+                          ) : null}
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -527,9 +557,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
                 {/* HEADER BẢNG GOM */}
                 <View style={styles.tableHeaderRow}>
                   <Text style={[styles.tableHeaderCell, styles.colStt]}>STT</Text>
-                  <Text style={[styles.tableHeaderCell, styles.colCustomerGrouped]}>
-                    KHÁCH HÀNG
-                  </Text>
+                  <Text style={[styles.tableHeaderCell, styles.colCustomer]}>KHÁCH HÀNG</Text>
                   <Text style={[styles.tableHeaderCell, styles.colCount]}>SỐ LẦN</Text>
                   <Text style={[styles.tableHeaderCell, styles.colAmount]}>TỔNG TIỀN ĐẾN</Text>
                   <Text style={[styles.tableHeaderCell, styles.colLatestDate]}>GẦN NHẤT</Text>
@@ -563,7 +591,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
                       </View>
 
                       {/* KHÁCH HÀNG (RỘNG THEO VIEWPORT) */}
-                      <View style={styles.colCustomerGrouped}>
+                      <View style={styles.colCustomer}>
                         <Text style={styles.customerNameText} numberOfLines={2}>
                           {item.customerName}
                         </Text>
@@ -952,12 +980,7 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
   colCustomer: {
-    flex: 1.2,
-    paddingHorizontal: 4,
-    justifyContent: 'center',
-  },
-  colCustomerGrouped: {
-    flex: 1.5,
+    flex: 1,
     paddingHorizontal: 4,
     justifyContent: 'center',
   },
@@ -972,7 +995,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   colAmount: {
-    width: 106,
+    minWidth: 125,
     alignItems: 'flex-end',
     justifyContent: 'center',
     textAlign: 'right',
@@ -982,15 +1005,12 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '800',
     color: '#16A34A',
+    textAlign: 'right',
   },
-  colNote: {
-    flex: 1,
-    paddingLeft: 6,
-    justifyContent: 'center',
-  },
-  noteText: {
+  amountSuffixText: {
     fontSize: 11,
-    color: '#64748B',
+    fontWeight: '700',
+    color: '#059669',
   },
   colCount: {
     width: 50,
