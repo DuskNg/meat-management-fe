@@ -1604,10 +1604,24 @@ export default function PortalScreen() {
     }
   };
 
-  // Tạo nội dung text chi tiết hóa đơn ngày đó: chỉ giữ danh sách món thịt, chia gạch ngang từng cơ sở
+  // Tạo nội dung text chi tiết hóa đơn ngày đó: dòng đầu là ngày (ví dụ 07/10), danh sách món thịt chia gạch ngang từng cơ sở
   const buildPortalDayInvoiceText = (targetDay, targetCustomerName = null) => {
     if (!targetDay) return '';
     const lines = [];
+
+    // Lấy ngày ngắn gọn dạng DD/MM (ví dụ: 07/10) đưa lên dòng đầu tiên
+    const rawDate = targetDay.displayDate || targetDay.dateKey || '';
+    let shortDate = rawDate;
+    if (rawDate.includes('-')) {
+      const parts = rawDate.split('-');
+      if (parts.length === 3) shortDate = `${parts[2]}/${parts[1]}`;
+    } else if (rawDate.includes('/')) {
+      const parts = rawDate.split('/');
+      if (parts.length >= 2) shortDate = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
+    }
+    if (shortDate) {
+      lines.push(shortDate);
+    }
 
     let dayEntries = targetDay.entries || [];
     if (targetCustomerName) {
@@ -1692,6 +1706,20 @@ export default function PortalScreen() {
   const buildVideoInvoiceText = (targetDay, targetCustomerName = null) => {
     if (!targetDay) return '';
     const lines = [];
+
+    // Lấy ngày ngắn gọn dạng DD/MM (ví dụ: 07/10) đưa lên dòng đầu tiên
+    const rawDate = targetDay.displayDate || targetDay.dateKey || '';
+    let shortDate = rawDate;
+    if (rawDate.includes('-')) {
+      const parts = rawDate.split('-');
+      if (parts.length === 3) shortDate = `${parts[2]}/${parts[1]}`;
+    } else if (rawDate.includes('/')) {
+      const parts = rawDate.split('/');
+      if (parts.length >= 2) shortDate = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
+    }
+    if (shortDate) {
+      lines.push(shortDate);
+    }
 
     let dayEntries = targetDay.entries || [];
     if (targetCustomerName) {
