@@ -1633,6 +1633,9 @@ export default function PortalScreen() {
       const p = parseFloat(e.price) || 0;
 
       let line = isRet ? '[-] TRẢ HÀNG: ' : '• ';
+      if (!targetCustomerName && e.customerName) {
+        line += `[${e.customerName}] `;
+      }
       line += e.name;
       if (q > 0) line += `: ${q}kg`;
       if (p > 0) line += ` x ${formatCurrency(p)}`;
@@ -1692,29 +1695,52 @@ export default function PortalScreen() {
       return;
     }
 
-    const firstImg = images[0];
-    const rawUrl = typeof firstImg === 'string' ? firstImg : (firstImg?.imageUrl || firstImg?.url);
-    if (!rawUrl) {
+    // Chuẩn bị danh sách tất cả các ảnh hợp lệ của ngày đó
+    const imageItems = images
+      .map((img, i) => {
+        const rawUrl = typeof img === 'string' ? img : (img?.imageUrl || img?.url);
+        if (!rawUrl) return null;
+        const fullUrl = rawUrl.startsWith('http') || rawUrl.startsWith('data:')
+          ? rawUrl
+          : `${API_HOST}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+        const cName = img?.customerName || (typeof img !== 'string' && img?.customer?.name) || targetCustomerName || '';
+        const cleanName = (cName || 'HoaDon').replace(/[^a-zA-Z0-9À-ỹ]/g, '_');
+        const dateStr = (targetDay.displayDate || targetDay.dateKey || 'ngay').replace(/[^a-zA-Z0-9]/g, '-');
+        return {
+          imageUri: fullUrl,
+          fileName: `HoaDon_${cleanName}_${dateStr}_${i + 1}.jpg`,
+          customerName: cName,
+        };
+      })
+      .filter(Boolean);
+
+    if (imageItems.length === 0) {
       showGlobalToast('Không tìm thấy đường dẫn ảnh hóa đơn.', 'error');
       return;
     }
 
-    const fullUrl = rawUrl.startsWith('http') || rawUrl.startsWith('data:')
-      ? rawUrl
-      : `${API_HOST}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
-
     const invoiceText = buildPortalDayInvoiceText(targetDay, targetCustomerName);
-    const dateStr = targetDay.dateKey || 'ngay';
-    const custName = targetCustomerName || portalData?.currentCustomer?.name || portalInfo?.name || '';
-    const fileName = `hoa_don_${dateStr}.jpg`;
+    const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
+    const dateLabel = targetDay.displayDate || targetDay.dateKey || '';
 
-    await downloadOrShareImage({
-      imageUri: fullUrl,
-      fileName,
-      title: `Hóa đơn ngày ${targetDay.displayDate || targetDay.dateKey}`,
+    // Nếu chỉ có 1 ảnh: Gửi đơn lẻ
+    if (imageItems.length === 1) {
+      await downloadOrShareImage({
+        imageUri: imageItems[0].imageUri,
+        fileName: imageItems[0].fileName,
+        title: `Hóa đơn ngày ${dateLabel}${custName ? ` - ${custName}` : ''}`,
+        text: invoiceText,
+        customerName: custName,
+        phone: portalData?.currentCustomer?.phone || '',
+      });
+      return;
+    }
+
+    // Nếu có nhiều ảnh (gom từ các nhà hàng trong nhóm): Gửi 1 thể qua downloadOrShareMultipleImages
+    await downloadOrShareMultipleImages({
+      items: imageItems,
+      title: `Hóa đơn ngày ${dateLabel}${custName ? ` - ${custName}` : ''} (${imageItems.length} ảnh)`,
       text: invoiceText,
-      customerName: custName,
-      phone: portalData?.currentCustomer?.phone || '',
     });
   };
 
@@ -2866,8 +2892,8 @@ export default function PortalScreen() {
                                         >
                                           {entry.name}
                                         </Text>
-                                        {/* Chỉ hiển thị xem ảnh và gửi Zalo ở dòng TỔNG khi lọc theo từng nhà hàng */}
-                                        {!isChainViewAll && isDayTotal && day.invoices && day.invoices.length > 0 && (
+                                        {/* Hiển thị xem ảnh và gửi Zalo ở dòng TỔNG (cả dạng nhóm và từng quán) */}
+                                        {isDayTotal && day.invoices && day.invoices.length > 0 && (
                                           <View style={styles.invoiceBtnGroupRow}>
                                             <TouchableOpacity
                                               style={[
@@ -2894,7 +2920,7 @@ export default function PortalScreen() {
                                               ]}
                                               onPress={() => handleShareDayInvoice(day)}
                                               activeOpacity={0.7}
-                                              title="Gửi ảnh hóa đơn & text ngày này qua Zalo"
+                                              title={isChainViewAll ? "Gom hết ảnh các nhà hàng trong nhóm & gửi Zalo" : "Gửi ảnh hóa đơn & text ngày này qua Zalo"}
                                             >
                                               <Text
                                                 style={[
@@ -2927,7 +2953,7 @@ export default function PortalScreen() {
                                           )}
                                         </Text>
 
-                                        {/* Case 1: Xem toàn bộ chuỗi -> Tách xem ảnh theo từng cửa hàng, đặt ở hàng thịt cuối của quán đó */}
+                                        {/* Case 1: Xem toàn bộ chuỗi -> Chỉ hiển thị nút Xem ảnh riêng từng quán, nút Gửi Zalo gom chung ở dòng TỔNG */}
                                         {isChainViewAll && isLastEntryOfRestaurant && custInvoices.length > 0 && (
                                           <View style={styles.invoiceBtnGroupRow}>
                                             <TouchableOpacity
@@ -2955,30 +2981,11 @@ export default function PortalScreen() {
                                                 {`👁️ Xem (${custInvoices.length})`}
                                               </Text>
                                             </TouchableOpacity>
-
-                                            <TouchableOpacity
-                                              style={[
-                                                styles.dayTotalInvoiceBtn,
-                                                styles.dayShareInvoiceBtn,
-                                              ]}
-                                              onPress={() => handleShareDayInvoice(day, entry.customerName, custInvoices)}
-                                              activeOpacity={0.7}
-                                              title="Gửi ảnh hóa đơn & text ngày này qua Zalo"
-                                            >
-                                              <Text
-                                                style={[
-                                                  styles.dayTotalInvoiceBtnText,
-                                                  styles.dayShareInvoiceBtnText,
-                                                ]}
-                                              >
-                                                📤 Gửi Zalo
-                                              </Text>
-                                            </TouchableOpacity>
                                           </View>
                                         )}
 
-                                        {/* Case 2: Lọc theo từng quán -> Nếu ngày không có dòng TỔNG nhưng có ảnh hóa đơn và đây là món đầu tiên thì hiển thị nút xem ảnh */}
-                                        {!isChainViewAll && day.invoices && day.invoices.length > 0 && !day.entries.some(isDaySummaryEntry) && idx === 0 && (
+                                        {/* Case 2: Nếu ngày không có dòng TỔNG nhưng có ảnh hóa đơn và đây là món đầu tiên thì hiển thị nút xem ảnh & gửi Zalo */}
+                                        {day.invoices && day.invoices.length > 0 && !day.entries.some(isDaySummaryEntry) && idx === 0 && (
                                           <View style={styles.invoiceBtnGroupRow}>
                                             <TouchableOpacity
                                               style={[

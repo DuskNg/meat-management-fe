@@ -353,7 +353,17 @@ export const downloadOrShareMultipleImages = async ({
           }
         }
 
-        showGlobalToast(`Đã tải về thành công ${downloadedCount} ảnh báo cáo về máy tính!`, 'success');
+        // Tự động sao chép text hóa đơn vào bộ nhớ tạm nếu có
+        if (text && typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(text);
+            showGlobalToast(`Đã tải về thành công ${downloadedCount} ảnh và sao chép nội dung hóa đơn để dán vào Zalo!`, 'success');
+          } catch (_) {
+            showGlobalToast(`Đã tải về thành công ${downloadedCount} ảnh báo cáo về máy tính!`, 'success');
+          }
+        } else {
+          showGlobalToast(`Đã tải về thành công ${downloadedCount} ảnh báo cáo về máy tính!`, 'success');
+        }
         return { success: true, sharedVia: 'pc_download' };
       }
     } catch (err) {
@@ -392,6 +402,13 @@ export const downloadOrShareMultipleImages = async ({
           console.warn('[MultiShare] Không thể fetch file:', item.fileName, fetchErr);
         }
       }
+    }
+
+    // Tự động sao chép trước nội dung text vào clipboard nếu có
+    if (text && typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (_) {}
     }
 
     // Hàm tự động tải lưu tất cả các file ảnh về bộ sưu tập thiết bị
@@ -436,12 +453,34 @@ export const downloadOrShareMultipleImages = async ({
 
     if (canUseWebShare) {
       try {
-        // Chỉ chia sẻ files (không kèm text/title dài để tránh lỗi WebKit trên iOS)
-        await navigator.share({
-          files: filesToShare,
-        });
-        showGlobalToast('Đã mở chia sẻ Zalo thành công!', 'success');
-        return { success: true, sharedVia: 'mobile_share' };
+        let canShareWithText = false;
+        if (text) {
+          try {
+            canShareWithText = navigator.canShare({ files: filesToShare, text });
+          } catch (_) {
+            canShareWithText = false;
+          }
+        }
+
+        if (canShareWithText && text) {
+          await navigator.share({
+            files: filesToShare,
+            text,
+            title: title || 'Hóa đơn giao hàng',
+          });
+          showGlobalToast('Đã chuyển tiếp các ảnh & nội dung hóa đơn sang Zalo!', 'success');
+          return { success: true, sharedVia: 'mobile_share' };
+        } else {
+          await navigator.share({
+            files: filesToShare,
+          });
+          if (text) {
+            showGlobalToast('Đã chuyển tiếp các ảnh sang Zalo (Nội dung hóa đơn đã sao chép sẵn vào bộ nhớ tạm)!', 'success');
+          } else {
+            showGlobalToast('Đã mở chia sẻ Zalo thành công!', 'success');
+          }
+          return { success: true, sharedVia: 'mobile_share' };
+        }
       } catch (shareErr) {
         if (shareErr.name === 'AbortError') {
           // Người dùng chủ động đóng hộp thoại chia sẻ
@@ -462,7 +501,12 @@ export const downloadOrShareMultipleImages = async ({
     } else {
       Linking.openURL(defaultZaloUrl).catch(() => {});
     }
-    showGlobalToast(`Đã lưu ${blobDownloads.length} ảnh vào máy & mở Zalo để gửi...`, 'success');
+    showGlobalToast(
+      text
+        ? `Đã lưu ${blobDownloads.length} ảnh vào máy & mở Zalo (Nội dung hóa đơn đã sao chép sẵn vào bộ nhớ tạm)!`
+        : `Đã lưu ${blobDownloads.length} ảnh vào máy & mở Zalo để gửi...`,
+      'success'
+    );
     return { success: true, sharedVia: 'mobile_download_and_zalo' };
 
   } catch (err) {
