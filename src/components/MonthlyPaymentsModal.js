@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/MonthlyPaymentsModal.js
-import React, { useState, forwardRef, useImperativeHandle, useMemo, useEffect } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,20 +14,12 @@ import SmoothModal from './SmoothModal';
 import { api } from '../api/client';
 import { showGlobalToast } from '../store/toastStore';
 import { matchSearch } from '../utils/searchHelper';
-import { COLORS } from '../theme';
 
 // Helper định dạng tiền tệ VNĐ
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
     .format(amount || 0)
     .replace('₫', 'đ');
-
-// Helper định dạng số rút gọn
-const formatShortAmount = (amount) => {
-  if (!amount || isNaN(amount)) return '0đ';
-  const num = Math.round(Number(amount));
-  return new Intl.NumberFormat('vi-VN').format(num) + 'đ';
-};
 
 // Helper lấy tháng hiện tại theo định dạng MM/YYYY
 const getCurrentMonthString = () => {
@@ -37,7 +29,7 @@ const getCurrentMonthString = () => {
   return `${m}/${y}`;
 };
 
-// Helper định dạng ngày/tháng/năm từ ISO string
+// Helper định dạng ngày/tháng từ ISO string
 const formatDateDM = (isoStr) => {
   if (!isoStr) return '';
   const d = new Date(isoStr);
@@ -46,6 +38,7 @@ const formatDateDM = (isoStr) => {
   return `${dd}/${mm}`;
 };
 
+// Helper định dạng giờ:phút
 const formatTimeHM = (isoStr) => {
   if (!isoStr) return '';
   const d = new Date(isoStr);
@@ -267,20 +260,13 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
   return (
     <SmoothModal visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
-        {/* HEADER CHUẨN BOTTOM-SHEET */}
+        {/* HEADER TINH GỌN (1 DÒNG KHÔNG NGẮT CHỮ) */}
         <View style={styles.headerRow}>
           <View style={styles.headerTitleWrap}>
-            <View style={styles.headerIconWrap}>
-              <Text style={styles.headerIcon}>💰</Text>
-            </View>
-            <View style={styles.headerTextWrap}>
-              <Text style={styles.modalTitle}>TIỀN KHÁCH TRẢ TRONG THÁNG</Text>
-              <Text style={styles.modalSubTitle}>
-                {rangeMode === 'up_to_today' && isCurrentMonth
-                  ? `Tháng ${selectedMonth} (tính đến hôm nay ngày ${todayLabel})`
-                  : `Toàn bộ tháng ${selectedMonth}`}
-              </Text>
-            </View>
+            <Text style={styles.headerIcon}>💰</Text>
+            <Text style={styles.modalTitle} numberOfLines={1}>
+              TIỀN KHÁCH TRẢ THÁNG {selectedMonth}
+            </Text>
           </View>
           <TouchableOpacity
             style={styles.closeBtn}
@@ -291,9 +277,8 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
           </TouchableOpacity>
         </View>
 
-        {/* BỘ ĐIỀU HƯỚNG THÁNG & PHẠM VI NGÀY */}
+        {/* 1. THANH CHỌN THÁNG & LỌC NGÀY GOM 1 DÒNG DUY NHẤT */}
         <View style={styles.filterBar}>
-          {/* Thanh chuyển tháng */}
           <View style={styles.monthNavRow}>
             <TouchableOpacity
               style={styles.monthNavBtn}
@@ -308,7 +293,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
               onPress={handleCurrentMonth}
               activeOpacity={0.7}
             >
-              <Text style={styles.monthCurrentText}>Tháng {selectedMonth}</Text>
+              <Text style={styles.monthCurrentText}>{selectedMonth}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -320,7 +305,6 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
             </TouchableOpacity>
           </View>
 
-          {/* Nút lọc phạm vi ngày: Tính đến hôm nay vs Cả tháng */}
           {isCurrentMonth ? (
             <View style={styles.rangeToggleRow}>
               <TouchableOpacity
@@ -359,33 +343,35 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
                 </Text>
               </TouchableOpacity>
             </View>
-          ) : null}
+          ) : (
+            <View style={styles.allMonthBadge}>
+              <Text style={styles.allMonthBadgeText}>Toàn bộ tháng</Text>
+            </View>
+          )}
         </View>
 
-        {/* THẺ TÓM TẮT SẢN LƯỢNG / TIỀN ĐẾN */}
-        <View style={styles.summaryContainer}>
-          <View style={styles.summaryCardMain}>
-            <Text style={styles.summaryCardMainLabel}>TỔNG TIỀN ĐẾN</Text>
-            <Text style={styles.summaryCardMainValue}>
-              {formatCurrency(summary.totalAmount)}
-            </Text>
+        {/* 2. THANH TÓM TẮT THÔNG SỐ SIÊU GỌN (1 DÒNG DUY NHẤT) */}
+        <View style={styles.summaryBar}>
+          <View style={styles.summaryLeft}>
+            <Text style={styles.summaryLabel}>Tổng đến:</Text>
+            <Text style={styles.summaryAmount}>{formatCurrency(summary.totalAmount)}</Text>
           </View>
-
-          <View style={styles.summaryMiniGroup}>
-            <View style={styles.summaryMiniCard}>
-              <Text style={styles.summaryMiniValue}>{summary.totalCount}</Text>
-              <Text style={styles.summaryMiniLabel}>Lượt trả</Text>
+          <View style={styles.summaryRight}>
+            <View style={styles.statPill}>
+              <Text style={styles.statPillText}>
+                <Text style={styles.statPillNumber}>{summary.totalCount}</Text> lượt
+              </Text>
             </View>
-            <View style={styles.summaryMiniCard}>
-              <Text style={styles.summaryMiniValue}>{summary.customerCount}</Text>
-              <Text style={styles.summaryMiniLabel}>Khách trả</Text>
+            <View style={styles.statPill}>
+              <Text style={styles.statPillText}>
+                <Text style={styles.statPillNumber}>{summary.customerCount}</Text> khách
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* THANH TÌM KIẾM & CHỌN CHẾ ĐỘ XEM TAB */}
+        {/* 3. THANH TÌM KIẾM & TAB LỌC GỌN GÀNG */}
         <View style={styles.searchAndTabRow}>
-          {/* Ô tìm kiếm */}
           <View style={styles.searchInputWrap}>
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
@@ -407,7 +393,6 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
             )}
           </View>
 
-          {/* Tab chuyển đổi chế độ xem: Từng lượt vs Gom khách */}
           <View style={styles.viewModeTabs}>
             <TouchableOpacity
               style={[
@@ -447,7 +432,7 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
           </View>
         </View>
 
-        {/* NỘI DUNG DẠNG BẢNG (TABLE VIEW) */}
+        {/* 4. NỘI DUNG DẠNG BẢNG (VỪA KHÍT 100% VIEWPORT - KHÔNG SCROLL NGANG - BỎ CỘT CHI TIẾT) */}
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="small" color="#16A34A" />
@@ -468,189 +453,143 @@ const MonthlyPaymentsModal = forwardRef(({ onSelectCustomer }, ref) => {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.tableScrollContent}
           >
-            {/* ─── TAB 1: DANH SÁCH CHI TIẾT TỪNG LƯỢT TRẢ TIỀN ─── */}
+            {/* ─── TAB 1: DANH SÁCH CHI TIẾT TỪNG LƯỢT TRẢ TIỀN (KHÔNG SCROLL NGANG) ─── */}
             {viewMode === 'list' ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.tableContainer}>
-                  {/* HEADER BẢNG */}
-                  <View style={styles.tableHeaderRow}>
-                    <Text style={[styles.tableHeaderCell, styles.colStt]}>STT</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colDate]}>NGÀY</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colCustomer]}>TÊN KHÁCH</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colAmount]}>SỐ TIỀN ĐẾN</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colNote]}>GHI CHÚ</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colAction]}>CHI TIẾT</Text>
-                  </View>
+              <View style={styles.tableContainer}>
+                {/* HEADER BẢNG */}
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.tableHeaderCell, styles.colStt]}>STT</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colDate]}>NGÀY</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colCustomer]}>TÊN KHÁCH</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colAmount]}>SỐ TIỀN ĐẾN</Text>
+                </View>
 
-                  {/* NỘI DUNG CÁC DÒNG */}
-                  {filteredPayments.map((p, idx) => {
-                    const isEven = idx % 2 === 0;
-                    const isLast = idx === filteredPayments.length - 1;
+                {/* NỘI DUNG CÁC DÒNG */}
+                {filteredPayments.map((p, idx) => {
+                  const isEven = idx % 2 === 0;
+                  const isLast = idx === filteredPayments.length - 1;
 
-                    return (
-                      <View
-                        key={p.id || idx}
-                        style={[
-                          styles.tableRow,
-                          isEven ? styles.tableRowEven : styles.tableRowOdd,
-                          !isLast && styles.tableRowBorder,
-                        ]}
-                      >
-                        {/* STT */}
-                        <View style={styles.colStt}>
-                          <Text style={styles.sttText}>{idx + 1}</Text>
-                        </View>
+                  return (
+                    <TouchableOpacity
+                      key={p.id || idx}
+                      style={[
+                        styles.tableRow,
+                        isEven ? styles.tableRowEven : styles.tableRowOdd,
+                        !isLast && styles.tableRowBorder,
+                      ]}
+                      onPress={() =>
+                        handleCustomerClick(p.customerId, p.customer?.name, p.customer?.phone)
+                      }
+                      activeOpacity={0.7}
+                    >
+                      {/* CỘT 1: STT */}
+                      <View style={styles.colStt}>
+                        <Text style={styles.sttText}>{idx + 1}</Text>
+                      </View>
 
-                        {/* NGÀY */}
-                        <View style={styles.colDate}>
-                          <Text style={styles.dateText}>{formatDateDM(p.paidAt)}</Text>
-                          <Text style={styles.timeText}>{formatTimeHM(p.paidAt)}</Text>
-                        </View>
+                      {/* CỘT 2: NGÀY */}
+                      <View style={styles.colDate}>
+                        <Text style={styles.dateText}>{formatDateDM(p.paidAt)}</Text>
+                        <Text style={styles.timeText}>{formatTimeHM(p.paidAt)}</Text>
+                      </View>
 
-                        {/* TÊN KHÁCH */}
-                        <TouchableOpacity
-                          style={styles.colCustomer}
-                          onPress={() =>
-                            handleCustomerClick(p.customerId, p.customer?.name, p.customer?.phone)
-                          }
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.customerNameText} numberOfLines={1}>
-                            {p.customer?.name || 'Khách vãng lai'}
-                          </Text>
+                      {/* CỘT 3: TÊN KHÁCH & GHI CHÚ */}
+                      <View style={styles.colCustomer}>
+                        <Text style={styles.customerNameText} numberOfLines={1}>
+                          {p.customer?.name || 'Khách vãng lai'}
+                        </Text>
+                        <View style={styles.customerSubInfoRow}>
                           {p.customer?.phone ? (
                             <Text style={styles.customerPhoneText} numberOfLines={1}>
                               📞 {p.customer.phone}
                             </Text>
                           ) : null}
-                        </TouchableOpacity>
-
-                        {/* SỐ TIỀN ĐẾN */}
-                        <View style={styles.colAmount}>
-                          <Text style={styles.amountText}>{formatCurrency(p.amount)}</Text>
-                        </View>
-
-                        {/* GHI CHÚ */}
-                        <View style={styles.colNote}>
-                          <Text style={styles.noteText} numberOfLines={2}>
-                            {p.note || '—'}
-                          </Text>
-                        </View>
-
-                        {/* THAO TÁC / CHI TIẾT */}
-                        <View style={styles.colAction}>
-                          <TouchableOpacity
-                            style={styles.viewDetailBtn}
-                            onPress={() =>
-                              handleCustomerClick(p.customerId, p.customer?.name, p.customer?.phone)
-                            }
-                            activeOpacity={0.7}
-                            title="Xem lịch sử nợ"
-                          >
-                            <Text style={styles.viewDetailBtnText}>👁️</Text>
-                          </TouchableOpacity>
+                          {p.note ? (
+                            <Text style={styles.noteSnippetText} numberOfLines={1}>
+                              • {p.note}
+                            </Text>
+                          ) : null}
                         </View>
                       </View>
-                    );
-                  })}
-                </View>
-              </ScrollView>
+
+                      {/* CỘT 4: SỐ TIỀN ĐẾN */}
+                      <View style={styles.colAmount}>
+                        <Text style={styles.amountText}>{formatCurrency(p.amount)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             ) : (
-              /* ─── TAB 2: GOM NHÓM THEO TỪNG KHÁCH HÀNG ─── */
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.tableContainer}>
-                  {/* HEADER BẢNG GOM */}
-                  <View style={styles.tableHeaderRow}>
-                    <Text style={[styles.tableHeaderCell, styles.colStt]}>STT</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colCustomerGrouped]}>
-                      KHÁCH HÀNG
-                    </Text>
-                    <Text style={[styles.tableHeaderCell, styles.colCount]}>SỐ LẦN</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colAmount]}>TỔNG TIỀN ĐẾN</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colLatestDate]}>GẦN NHẤT</Text>
-                    <Text style={[styles.tableHeaderCell, styles.colAction]}>CHI TIẾT</Text>
-                  </View>
+              /* ─── TAB 2: GOM NHÓM THEO TỪNG KHÁCH HÀNG (KHÔNG SCROLL NGANG) ─── */
+              <View style={styles.tableContainer}>
+                {/* HEADER BẢNG GOM */}
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.tableHeaderCell, styles.colStt]}>STT</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colCustomer]}>KHÁCH HÀNG</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colCount]}>SỐ LẦN</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colAmount]}>TỔNG TIỀN ĐẾN</Text>
+                </View>
 
-                  {/* NỘI DUNG DÒNG GOM */}
-                  {groupedByCustomer.map((item, idx) => {
-                    const isEven = idx % 2 === 0;
-                    const isLast = idx === groupedByCustomer.length - 1;
+                {/* NỘI DUNG DÒNG GOM */}
+                {groupedByCustomer.map((item, idx) => {
+                  const isEven = idx % 2 === 0;
+                  const isLast = idx === groupedByCustomer.length - 1;
 
-                    return (
-                      <View
-                        key={item.customerId || idx}
-                        style={[
-                          styles.tableRow,
-                          isEven ? styles.tableRowEven : styles.tableRowOdd,
-                          !isLast && styles.tableRowBorder,
-                        ]}
-                      >
-                        {/* STT */}
-                        <View style={styles.colStt}>
-                          <Text style={styles.sttText}>{idx + 1}</Text>
-                        </View>
+                  return (
+                    <TouchableOpacity
+                      key={item.customerId || idx}
+                      style={[
+                        styles.tableRow,
+                        isEven ? styles.tableRowEven : styles.tableRowOdd,
+                        !isLast && styles.tableRowBorder,
+                      ]}
+                      onPress={() =>
+                        handleCustomerClick(
+                          item.customerId,
+                          item.customerName,
+                          item.customerPhone
+                        )
+                      }
+                      activeOpacity={0.7}
+                    >
+                      {/* STT */}
+                      <View style={styles.colStt}>
+                        <Text style={styles.sttText}>{idx + 1}</Text>
+                      </View>
 
-                        {/* KHÁCH HÀNG */}
-                        <TouchableOpacity
-                          style={styles.colCustomerGrouped}
-                          onPress={() =>
-                            handleCustomerClick(
-                              item.customerId,
-                              item.customerName,
-                              item.customerPhone
-                            )
-                          }
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.customerNameText} numberOfLines={1}>
-                            {item.customerName}
-                          </Text>
+                      {/* KHÁCH HÀNG */}
+                      <View style={styles.colCustomer}>
+                        <Text style={styles.customerNameText} numberOfLines={1}>
+                          {item.customerName}
+                        </Text>
+                        <View style={styles.customerSubInfoRow}>
                           {item.customerPhone ? (
                             <Text style={styles.customerPhoneText} numberOfLines={1}>
                               📞 {item.customerPhone}
                             </Text>
                           ) : null}
-                        </TouchableOpacity>
-
-                        {/* SỐ LẦN */}
-                        <View style={styles.colCount}>
-                          <View style={styles.countBadge}>
-                            <Text style={styles.countBadgeText}>{item.count} lần</Text>
-                          </View>
-                        </View>
-
-                        {/* TỔNG TIỀN ĐẾN */}
-                        <View style={styles.colAmount}>
-                          <Text style={styles.amountText}>{formatCurrency(item.totalAmount)}</Text>
-                        </View>
-
-                        {/* GẦN NHẤT */}
-                        <View style={styles.colLatestDate}>
-                          <Text style={styles.dateText}>{formatDateDM(item.latestPaidAt)}</Text>
-                        </View>
-
-                        {/* THAO TÁC / CHI TIẾT */}
-                        <View style={styles.colAction}>
-                          <TouchableOpacity
-                            style={styles.viewDetailBtn}
-                            onPress={() =>
-                              handleCustomerClick(
-                                item.customerId,
-                                item.customerName,
-                                item.customerPhone
-                              )
-                            }
-                            activeOpacity={0.7}
-                            title="Xem lịch sử nợ"
-                          >
-                            <Text style={styles.viewDetailBtnText}>👁️</Text>
-                          </TouchableOpacity>
+                          <Text style={styles.latestDateSnippetText}>
+                            • Gần nhất: {formatDateDM(item.latestPaidAt)}
+                          </Text>
                         </View>
                       </View>
-                    );
-                  })}
-                </View>
-              </ScrollView>
+
+                      {/* SỐ LẦN */}
+                      <View style={styles.colCount}>
+                        <View style={styles.countBadge}>
+                          <Text style={styles.countBadgeText}>{item.count} lần</Text>
+                        </View>
+                      </View>
+
+                      {/* TỔNG TIỀN ĐẾN */}
+                      <View style={styles.colAmount}>
+                        <Text style={styles.amountText}>{formatCurrency(item.totalAmount)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             )}
           </ScrollView>
         )}
@@ -677,9 +616,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 16,
     maxHeight: '92%',
     minHeight: 380,
   },
@@ -687,50 +626,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   headerTitleWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
     marginRight: 8,
-    gap: 10,
-  },
-  headerIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: '#DCFCE7',
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
   },
   headerIcon: {
-    fontSize: 20,
-  },
-  headerTextWrap: {
-    flex: 1,
+    fontSize: 18,
   },
   modalTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#15803D',
     letterSpacing: 0.2,
   },
-  modalSubTitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 1,
-  },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
     fontWeight: 'bold',
   },
@@ -739,63 +662,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 12,
-    gap: 8,
-    flexWrap: 'wrap',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    marginBottom: 6,
+    gap: 6,
   },
   monthNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   monthNavBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 6,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
   },
   monthNavBtnText: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#334155',
     fontWeight: 'bold',
   },
   monthCurrentBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#CBD5E1',
   },
   monthCurrentText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#0F172A',
   },
   rangeToggleRow: {
     flexDirection: 'row',
     backgroundColor: '#E2E8F0',
-    borderRadius: 8,
+    borderRadius: 6,
     padding: 2,
     gap: 2,
   },
   rangeToggleBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 4,
   },
   rangeToggleBtnActive: {
     backgroundColor: '#FFFFFF',
-    elevation: 1,
   },
   rangeToggleText: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '600',
     color: '#64748B',
   },
@@ -803,63 +725,68 @@ const styles = StyleSheet.create({
     color: '#15803D',
     fontWeight: '700',
   },
-  summaryContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
+  allMonthBadge: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
-  summaryCardMain: {
-    flex: 1.4,
+  allMonthBadgeText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  summaryBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#F0FDF4',
     borderWidth: 1,
     borderColor: '#BBF7D0',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    justifyContent: 'center',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
   },
-  summaryCardMainLabel: {
-    fontSize: 10.5,
-    fontWeight: '800',
+  summaryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  summaryLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
     color: '#15803D',
-    letterSpacing: 0.5,
   },
-  summaryCardMainValue: {
-    fontSize: 17,
+  summaryAmount: {
+    fontSize: 14.5,
     fontWeight: '900',
     color: '#16A34A',
-    marginTop: 2,
   },
-  summaryMiniGroup: {
-    flex: 1,
+  summaryRight: {
     flexDirection: 'row',
-    gap: 6,
-  },
-  summaryMiniCard: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 5,
   },
-  summaryMiniValue: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#334155',
+  statPill: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
-  summaryMiniLabel: {
-    fontSize: 10.5,
-    color: '#64748B',
+  statPillText: {
+    fontSize: 11,
+    color: '#166534',
     fontWeight: '600',
-    marginTop: 2,
+  },
+  statPillNumber: {
+    fontWeight: '800',
+    color: '#15803D',
   },
   searchAndTabRow: {
-    marginBottom: 10,
-    gap: 8,
+    marginBottom: 6,
+    gap: 5,
   },
   searchInputWrap: {
     flexDirection: 'row',
@@ -867,17 +794,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    height: 38,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    height: 32,
   },
   searchIcon: {
-    fontSize: 13,
-    marginRight: 6,
+    fontSize: 11,
+    marginRight: 5,
   },
   searchInput: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     color: '#0F172A',
     paddingVertical: 0,
     ...(Platform.OS === 'web'
@@ -888,21 +815,21 @@ const styles = StyleSheet.create({
       : {}),
   },
   clearSearchBtn: {
-    padding: 4,
+    padding: 3,
   },
   clearSearchText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
     fontWeight: 'bold',
   },
   viewModeTabs: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 5,
   },
   viewModeTabBtn: {
     flex: 1,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
@@ -913,7 +840,7 @@ const styles = StyleSheet.create({
     borderColor: '#86EFAC',
   },
   viewModeTabText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
     color: '#64748B',
   },
@@ -922,57 +849,57 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   loadingWrap: {
-    paddingVertical: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  loadingText: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  emptyWrap: {
-    paddingVertical: 40,
+    paddingVertical: 30,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
+  loadingText: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  emptyWrap: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
   emptyIcon: {
-    fontSize: 36,
+    fontSize: 30,
   },
   emptyTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: '#334155',
   },
   emptySubtitle: {
-    fontSize: 12.5,
+    fontSize: 11.5,
     color: '#94A3B8',
     textAlign: 'center',
     paddingHorizontal: 20,
   },
   tableScrollContent: {
-    paddingBottom: 8,
+    paddingBottom: 4,
   },
   tableContainer: {
-    borderRadius: 10,
+    width: '100%',
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
-    minWidth: 520,
   },
   tableHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F1F5F9',
-    paddingVertical: 9,
-    paddingHorizontal: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 6,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
   tableHeaderCell: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
     color: '#475569',
     letterSpacing: 0.2,
@@ -980,8 +907,8 @@ const styles = StyleSheet.create({
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 6,
   },
   tableRowEven: {
     backgroundColor: '#FFFFFF',
@@ -994,37 +921,32 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
   },
   colStt: {
-    width: 36,
+    width: 26,
     alignItems: 'center',
     justifyContent: 'center',
     textAlign: 'center',
   },
   sttText: {
-    fontSize: 11.5,
+    fontSize: 11,
     color: '#64748B',
     fontWeight: '600',
   },
   colDate: {
-    width: 66,
+    width: 48,
     justifyContent: 'center',
   },
   dateText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#334155',
   },
   timeText: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#94A3B8',
   },
   colCustomer: {
-    width: 140,
-    paddingRight: 6,
-    justifyContent: 'center',
-  },
-  colCustomerGrouped: {
-    width: 160,
-    paddingRight: 6,
+    flex: 1,
+    paddingHorizontal: 4,
     justifyContent: 'center',
   },
   customerNameText: {
@@ -1032,83 +954,65 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
-  customerPhoneText: {
-    fontSize: 10.5,
-    color: '#64748B',
+  customerSubInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
     marginTop: 1,
   },
-  colAmount: {
-    width: 115,
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    paddingRight: 8,
-    textAlign: 'right',
-  },
-  amountText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#16A34A',
-  },
-  colNote: {
-    width: 110,
-    paddingRight: 6,
-    justifyContent: 'center',
-  },
-  noteText: {
-    fontSize: 11,
+  customerPhoneText: {
+    fontSize: 10,
     color: '#64748B',
   },
+  noteSnippetText: {
+    fontSize: 10,
+    color: '#64748B',
+    fontStyle: 'italic',
+  },
+  latestDateSnippetText: {
+    fontSize: 10,
+    color: '#475569',
+  },
   colCount: {
-    width: 65,
+    width: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
   countBadge: {
     backgroundColor: '#E0E7FF',
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: 4,
   },
   countBadgeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#4338CA',
   },
-  colLatestDate: {
-    width: 70,
-    alignItems: 'center',
+  colAmount: {
+    width: 108,
+    alignItems: 'flex-end',
     justifyContent: 'center',
+    textAlign: 'right',
   },
-  colAction: {
-    width: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  viewDetailBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  viewDetailBtnText: {
-    fontSize: 12,
+  amountText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#16A34A',
   },
   footerWrap: {
-    paddingTop: 10,
+    paddingTop: 8,
   },
   closeFooterBtn: {
-    height: 46,
-    borderRadius: 12,
+    height: 42,
+    borderRadius: 10,
     backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeFooterBtnText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.5,
