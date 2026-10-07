@@ -1653,6 +1653,18 @@ export default function DashboardScreen() {
             </TouchableOpacity>
 
             <View style={styles.headerRightRow}>
+              {/* Nút Quản lý Link Ghim Zalo (Khách & NCC) */}
+              {!auth.user?.workspaceMember && (
+                <TouchableOpacity
+                  style={[styles.portalNotifyBtn, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}
+                  onPress={() => portalManagementModalRef.current?.open()}
+                  activeOpacity={0.7}
+                  title="Link Ghim Zalo (Khách & NCC)"
+                >
+                  <Text style={styles.portalNotifyIcon}>📌</Text>
+                </TouchableOpacity>
+              )}
+
               {/* Nút Link Zalo cập nhật giá bán nhanh */}
               {!auth.user?.workspaceMember && (
                 <TouchableOpacity
@@ -2715,6 +2727,18 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
+            {/* Nút Quản lý Link Ghim Zalo (Khách & NCC) */}
+            {!auth.user?.workspaceMember && (
+              <TouchableOpacity
+                style={[styles.portalNotifyBtn, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}
+                onPress={() => portalManagementModalRef.current?.open()}
+                activeOpacity={0.7}
+                title="Link Ghim Zalo (Khách & NCC)"
+              >
+                <Text style={styles.portalNotifyIcon}>📌</Text>
+              </TouchableOpacity>
+            )}
+
             {/* Nút xem khách trả tiền trong tháng (dạng bảng) */}
             {auth.hasPermission('canManageDebt') && (
               <TouchableOpacity
@@ -3166,7 +3190,7 @@ export default function DashboardScreen() {
                     portalManagementModalRef.current?.open();
                   }}
                 >
-                  <Text style={styles.smartDebtMenuIcon}>🔗</Text>
+                  <Text style={styles.smartDebtMenuIcon}>📌</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.smartDebtMenuTitle}>Link Ghim Zalo (Khách & NCC)</Text>
                     <Text style={styles.smartDebtMenuSub}>Ghim link tra cứu công nợ, giá và phản hồi vào nhóm Zalo</Text>

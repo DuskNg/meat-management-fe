@@ -403,7 +403,7 @@ const PortalManagementModal = forwardRef((props, ref) => {
           <View style={styles.modalHeaderRow}>
             <View style={styles.modalHeaderLeft}>
               <View style={styles.headerIconCircle}>
-                <Text style={styles.headerIcon}>🔗</Text>
+                <Text style={styles.headerIcon}>📌</Text>
               </View>
               <View style={styles.modalHeaderTitleCol}>
                 <View style={styles.headerTitleBadgeRow}>
