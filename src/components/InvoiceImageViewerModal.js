@@ -226,7 +226,10 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
       const isRet = e.type === 'RETURN';
       const amt = parseFloat(e.amount) || 0;
       const q = parseFloat(e.quantity) || 0;
-      const p = parseFloat(e.price) || 0;
+      let p = parseFloat(e.price) || 0;
+      if (p <= 0 && q > 0 && amt > 0) {
+        p = Math.round(Math.abs(amt) / q);
+      }
 
       let line = isRet ? '[-] TRẢ HÀNG: ' : '• ';
       line += e.name;
@@ -589,8 +592,11 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
         {/* Thanh Header */}
         <View style={styles.headerRow}>
           <View style={styles.headerTitleContainer}>
-            {dayData ? (
-              <View style={styles.headerStatusRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Text style={styles.titleText} numberOfLines={1}>
+                {isVideo ? '🎬 ' : ''}{title} {images.length > 1 ? `(${currentIndex + 1}/${images.length})` : ''}
+              </Text>
+              {dayData ? (
                 <View style={[
                   styles.headerStatusBadge,
                   dayData.isPaid
@@ -614,18 +620,9 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
                       : '⏳ CÒN NỢ'}
                   </Text>
                 </View>
-                {images.length > 1 && (
-                  <Text style={styles.headerImageIndex}>({currentIndex + 1}/{images.length})</Text>
-                )}
-              </View>
-            ) : (
-              <>
-                <Text style={styles.titleText} numberOfLines={1}>
-                  {isVideo ? '🎬 ' : ''}{title} {images.length > 1 ? `(${currentIndex + 1}/${images.length})` : ''}
-                </Text>
-                {subtitle ? <Text style={styles.subText} numberOfLines={1}>{subtitle}</Text> : null}
-              </>
-            )}
+              ) : null}
+            </View>
+            {subtitle ? <Text style={styles.subText} numberOfLines={1}>{subtitle}</Text> : null}
           </View>
 
           {/* Cụm điều hướng Hôm trước / Hôm sau trên Desktop */}
@@ -989,56 +986,84 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
             </View>
           </View>
 
-          {/* CỘT PHẢI (HOẶC NỬA DƯỚI TRÊN MOBILE): BẢNG SỐ LIỆU NGÀY ĐÓ */}
+          {/* CỘT PHẢI (HOẶC NỬA DƯỚI TRÊN MOBILE): BẢNG SỐ LIỆU HÓA ĐƠN ĐÓ */}
           {dayData && (
             <View style={[styles.dayDataBox, isWide ? styles.dayDataBoxSplit : styles.dayDataBoxMobileSplit]}>
-              {/* Bảng danh sách chi tiết các món thịt (Đã bỏ khối tiêu đề số liệu ngày thừa) */}
+              {/* Header đầu cột phải */}
+              <View style={styles.dayDataHeader}>
+                <View style={styles.dayDataTitleRow}>
+                  <Text style={styles.dayDataTitle}>🧾 THÔNG TIN HÓA ĐƠN</Text>
+                  {dayData.customerName ? (
+                    <Text style={styles.dayDataCustomerTag} numberOfLines={1}>
+                      🏢 {dayData.customerName}
+                    </Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity
+                  style={styles.copyDayDataBtn}
+                  onPress={handleCopyDaySummary}
+                  activeOpacity={0.7}
+                  title="Sao chép nội dung hóa đơn"
+                >
+                  <Text style={styles.copyDayDataBtnText}>📋 Sao chép</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Bảng danh sách chi tiết các món thịt */}
               <ScrollView style={styles.dayDataScroll} showsVerticalScrollIndicator={true}>
                 {/* Header bảng */}
                 <View style={styles.dayDataTableHeader}>
-                <Text style={[styles.dayDataTh, styles.dayDataColName]}>TÊN HÀNG</Text>
-                <Text style={[styles.dayDataTh, styles.dayDataColQty]}>KG</Text>
-                <Text style={[styles.dayDataTh, styles.dayDataColPrice]}>ĐƠN GIÁ</Text>
-                <Text style={[styles.dayDataTh, styles.dayDataColAmount]}>THÀNH TIỀN</Text>
-              </View>
+                  <Text style={[styles.dayDataTh, styles.dayDataColName]}>TÊN HÀNG</Text>
+                  <Text style={[styles.dayDataTh, styles.dayDataColQty]}>KG</Text>
+                  <Text style={[styles.dayDataTh, styles.dayDataColPrice]}>ĐƠN GIÁ</Text>
+                  <Text style={[styles.dayDataTh, styles.dayDataColAmount]}>THÀNH TIỀN</Text>
+                </View>
 
-              {/* Danh sách các món thịt */}
-              {(dayData.entries || [])
-                .filter((e) => e.type !== 'DAY_TOTAL' && e.type !== 'DAY_PARTIAL_PAID' && e.type !== 'DAY_PARTIAL_REMAINING')
-                .map((item, idx) => {
-                  const isReturn = item.type === 'RETURN';
-                  return (
-                    <View
-                      key={idx}
-                      style={[
-                        styles.dayDataTableRow,
-                        idx % 2 === 1 && styles.dayDataTableRowAlt,
-                        isReturn && styles.dayDataTableRowReturn,
-                      ]}
-                    >
-                      <View style={styles.dayDataColName}>
-                        <Text style={[styles.dayDataCellText, styles.dayDataMeatName, isReturn && styles.textRed]}>
-                          {isReturn ? `[TRẢ HÀNG] ${item.name}` : item.name}
+                {/* Danh sách các món thịt */}
+                {(dayData.entries || [])
+                  .filter((e) => e.type !== 'DAY_TOTAL' && e.type !== 'DAY_PARTIAL_PAID' && e.type !== 'DAY_PARTIAL_REMAINING')
+                  .map((item, idx) => {
+                    const isReturn = item.type === 'RETURN';
+                    return (
+                      <View
+                        key={idx}
+                        style={[
+                          styles.dayDataTableRow,
+                          idx % 2 === 1 && styles.dayDataTableRowAlt,
+                          isReturn && styles.dayDataTableRowReturn,
+                        ]}
+                      >
+                        <View style={styles.dayDataColName}>
+                          <Text style={[styles.dayDataCellText, styles.dayDataMeatName, isReturn && styles.textRed]}>
+                            {isReturn ? `[TRẢ HÀNG] ${item.name}` : item.name}
+                          </Text>
+                          {item.customerName && dayData.customerName !== item.customerName ? (
+                            <Text style={styles.dayDataBranchNote}>🏢 {item.customerName}</Text>
+                          ) : null}
+                        </View>
+
+                        <Text style={[styles.dayDataCellText, styles.dayDataColQty, isReturn && styles.textRed]}>
+                          {item.quantity != null ? item.quantity : '-'}
                         </Text>
-                        {item.customerName && dayData.customerName !== item.customerName ? (
-                          <Text style={styles.dayDataBranchNote}>🏢 {item.customerName}</Text>
-                        ) : null}
+
+                        <Text style={[styles.dayDataCellText, styles.dayDataColPrice, isReturn && styles.textRed]}>
+                          {item.price != null ? formatCurrency(item.price) : '-'}
+                        </Text>
+
+                        <Text style={[styles.dayDataCellText, styles.dayDataColAmount, styles.dayDataAmountText, isReturn && styles.textRed]}>
+                          {isReturn ? '-' : ''}{formatCurrency(item.amount)}
+                        </Text>
                       </View>
+                    );
+                  })}
 
-                      <Text style={[styles.dayDataCellText, styles.dayDataColQty, isReturn && styles.textRed]}>
-                        {item.quantity != null ? item.quantity : '-'}
-                      </Text>
-
-                      <Text style={[styles.dayDataCellText, styles.dayDataColPrice, isReturn && styles.textRed]}>
-                        {item.price != null ? formatCurrency(item.price) : '-'}
-                      </Text>
-
-                      <Text style={[styles.dayDataCellText, styles.dayDataColAmount, styles.dayDataAmountText, isReturn && styles.textRed]}>
-                        {isReturn ? '-' : ''}{formatCurrency(item.amount)}
-                      </Text>
-                    </View>
-                  );
-                })}
+                {/* Ghi chú đơn nếu có */}
+                {dayData.note ? (
+                  <View style={styles.invoiceNoteBox}>
+                    <Text style={styles.invoiceNoteLabel}>💡 Ghi chú đơn:</Text>
+                    <Text style={styles.invoiceNoteText}>{dayData.note}</Text>
+                  </View>
+                ) : null}
 
               {/* Khối tổng kết ngày - đã bỏ tổng kg và còn nợ ngày */}
               <View style={styles.dayDataSummaryCard}>
@@ -1314,6 +1339,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#334155',
+  },
+  dayDataCustomerTag: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    maxWidth: 180,
+  },
+  invoiceNoteBox: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  invoiceNoteLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#B45309',
+    marginBottom: 2,
+  },
+  invoiceNoteText: {
+    fontSize: 12,
+    color: '#92400E',
   },
   dayDataScroll: {
     flex: 1,

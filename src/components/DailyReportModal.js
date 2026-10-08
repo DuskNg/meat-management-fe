@@ -26,6 +26,7 @@ import {
   generateDuplicateDebtsImage,
   DUPLICATE_COLOR_PALETTES,
 } from '../utils/dailyBundleExportHelper';
+import { getLunarDateString } from '../utils/lunarCalendar';
 
 const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransaction, onEditPayment }, ref) => {
   const popupModalRef = useRef(null);
@@ -657,11 +658,53 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     const typeLabel = isRet ? 'Đơn trả hàng' : (item.type === 'payment' ? 'Chứng từ thu nợ' : 'Hóa đơn');
 
     if (invoices.length > 0) {
+      // Chuẩn bị dữ liệu chi tiết hóa đơn để hiển thị song song bên phải ảnh khi mở xem
+      const entries = (raw.items && raw.items.length > 0)
+        ? raw.items.map((it) => {
+            const qty = it.quantity != null ? parseFloat(it.quantity) : null;
+            const price = it.price != null ? parseFloat(it.price) : null;
+            const amt = it.amount != null
+              ? parseFloat(it.amount)
+              : ((qty != null && price != null) ? qty * price : 0);
+            return {
+              name: it.product?.name || it.productName || it.name || 'Món thịt',
+              quantity: qty,
+              price: price,
+              amount: amt,
+              type: isRet ? 'RETURN' : 'DEBT',
+              customerName: item.customerName,
+            };
+          })
+        : [
+            {
+              name: raw.note || (isRet ? 'Trả hàng nhanh' : (item.type === 'payment' ? 'Chứng từ thu nợ' : 'Tiền hàng')),
+              quantity: null,
+              price: null,
+              amount: parseFloat(item.amount || raw.totalAmount || 0),
+              type: isRet ? 'RETURN' : 'DEBT',
+              customerName: item.customerName,
+            },
+          ];
+
+      const invoiceDateKey = item.time ? toDateKey(item.time) : selectedDate;
+      const invoiceDayData = {
+        customerName: item.customerName || raw.customer?.name || 'Khách hàng',
+        displayDate: invoiceDateKey,
+        dateKey: invoiceDateKey,
+        displayLunarDate: getLunarDateString(item.time || raw.date),
+        totalAmount: parseFloat(item.amount || raw.totalAmount || 0),
+        totalQty: (raw.items || []).reduce((sum, it) => sum + (parseFloat(it.quantity) || 0), 0),
+        note: raw.note,
+        entries,
+        isPaid: Boolean(item.isPaid),
+      };
+
       invoiceImageViewerModalRef.current?.open({
         images: invoices,
         initialIndex: 0,
         title: `${typeLabel}: ${item.customerName || 'Khách hàng'}`,
-        subtitle: `Số tiền: ${formatCurrency(item.amount)} (${item.time ? toDateKey(item.time) : selectedDate})`,
+        subtitle: `Số tiền: ${formatCurrency(item.amount)} (${invoiceDateKey})`,
+        dayData: invoiceDayData,
         onDelete: async (inv, callback) => {
           try {
             await api.delete(`/transactions/invoices/${inv.id}`);

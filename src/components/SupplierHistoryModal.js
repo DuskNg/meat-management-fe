@@ -514,10 +514,25 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
       };
     });
 
+    // Đóng gói thông tin món hàng nếu có để hiển thị bảng đối soát bên phải ảnh
+    const dayData = (transItem.items && transItem.items.length > 0) ? {
+      customerName: currentSupplier?.name || supplier?.name || '',
+      date: transItem.date,
+      note: transItem.note || '',
+      totalAmount: transItem.amount || 0,
+      entries: transItem.items.map((it) => ({
+        productName: it.productName || it.product?.name || it.name || 'Món hàng',
+        weight: it.quantity ?? it.weight ?? 0,
+        price: it.price || 0,
+        amount: it.amount || ((it.quantity || 0) * (it.price || 0)),
+      })),
+    } : null;
+
     imageViewerRef.current?.open({
       images: formattedImages,
       title: `Chứng từ NCC: ${currentSupplier?.name || ''}`,
       subtitle: `Giao dịch ngày ${formatDate(transItem.date)} (${formatCurrency(transItem.amount)}đ)`,
+      dayData,
     });
   };
 

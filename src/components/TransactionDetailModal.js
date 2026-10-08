@@ -22,6 +22,7 @@ import InvoiceImageUploadModal from './InvoiceImageUploadModal';
 import { showGlobalToast } from '../store/toastStore';
 import { hasPin, isSessionValid } from '../store/pinStore';
 import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../utils/debtMessageHelper';
+import { getLunarDateString } from '../utils/lunarCalendar';
 
 /**
  * Modal hiển thị chi tiết tất cả giao dịch trong một ngày.
@@ -100,11 +101,52 @@ const TransactionDetailModal = forwardRef(({
     const viewer = invoiceImageViewerModalRef?.current || internalViewerRef.current;
     if (viewer && t.invoices && t.invoices.length > 0) {
       const isRet = isReturnGoodsItem(t);
+      const entries = (t.items && t.items.length > 0)
+        ? t.items.map((it) => {
+            const qty = it.quantity != null ? parseFloat(it.quantity) : null;
+            const price = it.price != null ? parseFloat(it.price) : null;
+            const amt = it.amount != null
+              ? parseFloat(it.amount)
+              : ((qty != null && price != null) ? qty * price : 0);
+            return {
+              name: it.product?.name || it.productName || it.name || 'Món thịt',
+              quantity: qty,
+              price: price,
+              amount: amt,
+              type: isRet ? 'RETURN' : 'DEBT',
+              customerName: customerName,
+            };
+          })
+        : [
+            {
+              name: t.note || (isRet ? 'Trả hàng nhanh' : 'Tiền hàng'),
+              quantity: null,
+              price: null,
+              amount: parseFloat(t.amount || t.totalAmount || 0),
+              type: isRet ? 'RETURN' : 'DEBT',
+              customerName: customerName,
+            },
+          ];
+
+      const invoiceDateKey = toDateKey(t.date || t.paidAt);
+      const invoiceDayData = {
+        customerName: customerName || t.customer?.name || 'Khách hàng',
+        displayDate: invoiceDateKey,
+        dateKey: invoiceDateKey,
+        displayLunarDate: getLunarDateString(t.date || t.paidAt),
+        totalAmount: parseFloat(t.amount || t.totalAmount || 0),
+        totalQty: (t.items || []).reduce((sum, it) => sum + (parseFloat(it.quantity) || 0), 0),
+        note: t.note,
+        entries,
+        isPaid: Boolean(t.isPaid),
+      };
+
       viewer.open({
         images: t.invoices,
         initialIndex,
-        title: isRet ? `Đơn trả hàng #${toDateKey(t.paidAt || t.date)}` : `Hóa đơn đơn #${toDateKey(t.date || t.paidAt)}`,
-        subtitle: `Số tiền: ${isRet ? '-' : ''}${formatCurrency(t.amount || t.totalAmount)}`,
+        title: isRet ? `Đơn trả hàng #${invoiceDateKey}` : `Hóa đơn: ${customerName || 'Khách hàng'}`,
+        subtitle: `Số tiền: ${isRet ? '-' : ''}${formatCurrency(t.amount || t.totalAmount)} (${invoiceDateKey})`,
+        dayData: invoiceDayData,
         onDelete: (inv, callback) => handleDeleteInvoice(inv, callback),
       });
     }

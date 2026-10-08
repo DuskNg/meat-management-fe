@@ -1739,6 +1739,10 @@ export default function PortalScreen() {
       const isRet = e.type === 'RETURN';
       const amt = parseFloat(e.amount) || 0;
       const q = parseFloat(e.quantity) || 0;
+      let p = parseFloat(e.price) || 0;
+      if (p <= 0 && q > 0 && amt > 0) {
+        p = Math.round(Math.abs(amt) / q);
+      }
 
       const currentCust = (!targetCustomerName && e.customerName) ? e.customerName.trim() : null;
 
@@ -1757,6 +1761,9 @@ export default function PortalScreen() {
       line += isRet ? `[-] ${e.name}` : e.name;
       if (q > 0) {
         line += `: ${q}kg`;
+      }
+      if (p > 0) {
+        line += ` x ${formatCurrency(p)}`;
       }
       line += ` = ${isRet ? '-' : ''}${formatCurrency(Math.abs(amt))}`;
       lines.push(line);
