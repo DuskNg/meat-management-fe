@@ -19,12 +19,14 @@ import * as SecureStore from 'expo-secure-store';
 import SmoothModal from './SmoothModal';
 import { COLORS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
+import { api } from '../api/client';
+import { useAuthStore } from '../store/authStore';
 
-// Khoá lưu ghi chú trong localStorage / SecureStore
+// Khoá lưu ghi chú trong localStorage / SecureStore (bộ nhớ tạm khi offline)
 const STORAGE_KEY = 'quick_note_content';
-const MAX_LENGTH = 10000;
+const MAX_LENGTH = 50000;
 
-// Helper đọc ghi chú đa nền tảng
+// Helper đọc ghi chú từ bộ nhớ máy
 const loadNoteFromStorage = async () => {
   try {
     if (Platform.OS === 'web') {
@@ -36,12 +38,12 @@ const loadNoteFromStorage = async () => {
       return val || '';
     }
   } catch (e) {
-    console.error('Lỗi đọc ghi chú:', e);
+    console.error('Lỗi đọc ghi chú máy cục bộ:', e);
   }
   return '';
 };
 
-// Helper lưu ghi chú đa nền tảng
+// Helper lưu ghi chú vào bộ nhớ máy
 const persistNoteToStorage = async (text) => {
   try {
     if (Platform.OS === 'web') {
@@ -52,16 +54,16 @@ const persistNoteToStorage = async (text) => {
       await SecureStore.setItemAsync(STORAGE_KEY, text);
     }
   } catch (e) {
-    console.error('Lỗi lưu ghi chú:', e);
+    console.error('Lỗi lưu ghi chú máy cục bộ:', e);
   }
 };
 
 /**
- * Modal Ghi Chú Nhanh:
- * - Hiển thị textarea rộng rãi để lưu mẹo công việc, giá riêng từng quán, lưu ý nợ
+ * Modal Ghi Chú Nhanh Cần Nhớ:
+ * - Lưu trữ và đồng bộ 2 chiều (Cloud Server Backend + Bộ nhớ máy)
+ * - Tự động đồng bộ trên mọi thiết bị khi đăng nhập
  * - Tự động lưu sau 600ms debounce
  * - Hỗ trợ nút Lưu thủ công và Xóa trắng
- * - Mở lại vẫn giữ nguyên nội dung
  */
 const QuickNoteModal = forwardRef((_props, ref) => {
   const [visible, setVisible] = useState(false);
@@ -69,25 +71,59 @@ const QuickNoteModal = forwardRef((_props, ref) => {
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saving' | 'saved'
   const saveTimerRef = useRef(null);
 
-  // Mở modal và khôi phục nội dung đã lưu
+  // Mở modal, khôi phục nội dung từ bộ nhớ máy và đồng bộ với Server
   useImperativeHandle(ref, () => ({
     open: async () => {
-      const saved = await loadNoteFromStorage();
-      setText(saved);
+      // 1. Đọc ngay từ bộ nhớ máy để hiển thị tức thì cho người dùng
+      const localSaved = await loadNoteFromStorage();
+      setText(localSaved);
       setSaveStatus('saved');
       setVisible(true);
+
+      // 2. Đồng bộ ngầm với Backend Server nếu người dùng đã đăng nhập
+      const token = useAuthStore.getState().accessToken;
+      if (token) {
+        try {
+          const res = await api.get('/quick-note');
+          if (res.data && res.data.success) {
+            const serverContent = res.data.content ?? '';
+
+            // Nếu trên máy có ghi chú cũ nhưng server chưa có, tự động đẩy lên server
+            if (localSaved && !serverContent) {
+              await api.put('/quick-note', { content: localSaved });
+            } else if (serverContent !== localSaved) {
+              // Cập nhật nội dung mới nhất từ máy chủ vào giao diện và bộ nhớ máy
+              setText(serverContent);
+              await persistNoteToStorage(serverContent);
+            }
+          }
+        } catch (err) {
+          console.warn('[QuickNote] Không thể đồng bộ từ máy chủ:', err.message);
+        }
+      }
     },
     close: () => setVisible(false),
   }));
 
-  // Xử lý thay đổi văn bản: cập nhật state và tự động lưu debounce
+  // Xử lý thay đổi văn bản: cập nhật state và tự động lưu debounce lên cả máy và server
   const handleChange = useCallback((val) => {
     if (val.length > MAX_LENGTH) return;
     setText(val);
     setSaveStatus('saving');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
+      // Lưu vào máy cục bộ
       await persistNoteToStorage(val);
+
+      // Đồng bộ lên máy chủ Backend
+      const token = useAuthStore.getState().accessToken;
+      if (token) {
+        try {
+          await api.put('/quick-note', { content: val });
+        } catch (err) {
+          console.warn('[QuickNote] Lỗi đồng bộ lên server:', err.message);
+        }
+      }
       setSaveStatus('saved');
     }, 600);
   }, []);
@@ -97,8 +133,18 @@ const QuickNoteModal = forwardRef((_props, ref) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaveStatus('saving');
     await persistNoteToStorage(text);
+
+    const token = useAuthStore.getState().accessToken;
+    if (token) {
+      try {
+        await api.put('/quick-note', { content: text });
+      } catch (err) {
+        console.warn('[QuickNote] Lỗi lưu lên server:', err.message);
+      }
+    }
+
     setSaveStatus('saved');
-    showGlobalToast('Đã lưu ghi chú thành công!', 'success');
+    showGlobalToast('Đã lưu ghi chú lên hệ thống!', 'success');
   };
 
   // Xóa toàn bộ ghi chú
@@ -106,6 +152,16 @@ const QuickNoteModal = forwardRef((_props, ref) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setText('');
     await persistNoteToStorage('');
+
+    const token = useAuthStore.getState().accessToken;
+    if (token) {
+      try {
+        await api.put('/quick-note', { content: '' });
+      } catch (err) {
+        console.warn('[QuickNote] Lỗi xóa trên server:', err.message);
+      }
+    }
+
     setSaveStatus('saved');
     showGlobalToast('Đã xóa toàn bộ ghi chú.', 'info');
   };
@@ -126,13 +182,13 @@ const QuickNoteModal = forwardRef((_props, ref) => {
             <Text style={styles.headerIcon}>📝</Text>
             <View>
               <Text style={styles.headerTitle}>Ghi chú cần nhớ</Text>
-              <Text style={styles.headerSub}>Tự động lưu · Lưu giá riêng, mẹo việc, lưu ý</Text>
+              <Text style={styles.headerSub}>Đồng bộ máy chủ · Lưu giá riêng, mẹo việc, lưu ý</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
             <View style={[styles.saveBadge, saveStatus === 'saving' && styles.saveBadgeSaving]}>
               <Text style={[styles.saveBadgeText, saveStatus === 'saving' && styles.saveBadgeTextSaving]}>
-                {saveStatus === 'saving' ? '⏳ Đang lưu...' : '✓ Đã lưu'}
+                {saveStatus === 'saving' ? '⏳ Đang lưu...' : '✓ Đã đồng bộ'}
               </Text>
             </View>
             <TouchableOpacity onPress={() => setVisible(false)} style={styles.closeBtn} activeOpacity={0.7}>
@@ -147,7 +203,7 @@ const QuickNoteModal = forwardRef((_props, ref) => {
           multiline
           value={text}
           onChangeText={handleChange}
-          placeholder="Gõ ghi chú, giá riêng từng quán, việc cần nhớ tại đây...&#10;(Ví dụ: Bún riêu nvl 220k, Bún riêu đan phượng 225k... Tự động lưu không bị mất)"
+          placeholder="Gõ ghi chú, giá riêng từng quán, việc cần nhớ tại đây...&#10;(Ví dụ: Bún riêu nvl 220k, Bún riêu đan phượng 225k... Tự động lưu lên hệ thống, đổi máy không mất)"
           placeholderTextColor="#94A3B8"
           textAlignVertical="top"
           autoFocus

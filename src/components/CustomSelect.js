@@ -127,78 +127,57 @@ const CustomSelect = ({
     };
   }, []);
 
-  // Tính toán vị trí hiển thị dropdown (hỗ trợ cả Drop Up khi không đủ khoảng trống phía dưới)
+  // Mặc định dropdown luôn mở xuống dưới bám sát đáy ô input. Chỉ dropUp khi được chỉ định tường minh qua prop dropUp.
+  const shouldDropUp = dropUp !== undefined ? !!dropUp : false;
+
+  // Tính toán vị trí hiển thị dropdown trên Desktop Web qua Portal
   const measureAndOpen = useCallback(() => {
-    if (!dropdownRef.current) return;
+    if (Platform.OS !== 'web' || !dropdownRef.current) return;
 
     let rect = null;
-    if (Platform.OS === 'web' && dropdownRef.current.getBoundingClientRect) {
+    if (dropdownRef.current.getBoundingClientRect) {
       rect = dropdownRef.current.getBoundingClientRect();
     }
-
-    // Trên thiết bị di động, ưu tiên window.visualViewport để lấy chính xác chiều cao còn lại khi bàn phím ảo hiển thị
-    const vv = (typeof window !== 'undefined' && window.visualViewport) ? window.visualViewport : null;
-    const windowHeight = vv ? vv.height : ((typeof window !== 'undefined' ? window.innerHeight : 800) || 800);
-
-    const spaceBelow = rect ? (windowHeight - rect.bottom) : 300;
-    const spaceAbove = rect ? rect.top : 300;
-
-    // Tự động Drop Up khi khoảng trống phía dưới không đủ (< 210px) và khoảng trống phía trên nhiều hơn
-    let shouldDropUp = dropUp !== undefined ? !!dropUp : (spaceBelow < 210 && spaceAbove > spaceBelow);
+    if (!rect) return;
 
     setDropdownPos({
-      top: shouldDropUp ? (rect ? rect.top : 0) : (rect ? rect.bottom : 0),
-      left: rect ? rect.left : 0,
-      width: rect ? rect.width : 0,
+      top: shouldDropUp ? rect.top : rect.bottom,
+      left: rect.left,
+      width: rect.width,
       isUp: shouldDropUp,
-      spaceBelow,
-      spaceAbove,
-      windowHeight,
     });
-  }, [dropUp]);
+  }, [shouldDropUp]);
 
-  // Lắng nghe sự kiện scroll và resize: cập nhật lại vị trí dropdown khi cuộn/thay đổi kích thước
+  // Lắng nghe sự kiện scroll và resize trên Desktop Web để portal luôn bám sát ô chọn
   useEffect(() => {
-    if (!open || Platform.OS !== 'web') return;
+    if (!open || Platform.OS !== 'web' || isMobile) return;
 
-    // Dùng requestAnimationFrame để throttle: tránh gọi measureAndOpen quá nhiều khi scroll
     let rafId = null;
     const handleScrollOrResize = () => {
-      if (rafId) return; // Đã có 1 frame được lên lịch, bỏ qua
+      if (rafId) return;
       rafId = requestAnimationFrame(() => {
         measureAndOpen();
         rafId = null;
       });
     };
 
-    // Bắt sự kiện scroll và resize ở bất kỳ container cha/con nào để dropdown luôn bám sát ô chọn
     window.addEventListener('scroll', handleScrollOrResize, true);
     window.addEventListener('resize', handleScrollOrResize);
-
-    // Bắt thêm sự kiện visualViewport trên mobile để phản hồi ngay khi bàn phím ảo bật/tắt hoặc cuộn
-    if (typeof window !== 'undefined' && window.visualViewport) {
-      window.visualViewport.addEventListener('resize', handleScrollOrResize);
-      window.visualViewport.addEventListener('scroll', handleScrollOrResize);
-    }
 
     return () => {
       window.removeEventListener('scroll', handleScrollOrResize, true);
       window.removeEventListener('resize', handleScrollOrResize);
-      if (typeof window !== 'undefined' && window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', handleScrollOrResize);
-        window.visualViewport.removeEventListener('scroll', handleScrollOrResize);
-      }
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [open, measureAndOpen]);
+  }, [open, isMobile, measureAndOpen]);
 
   // Mở dropdown: đo vị trí và cập nhật state
   const openDropdown = useCallback(() => {
     if (disabled) return;
-    measureAndOpen();
+    if (!isMobile) measureAndOpen();
     setOpen(true);
     if (onOpenChange) onOpenChange(true);
-  }, [disabled, measureAndOpen, onOpenChange]);
+  }, [disabled, isMobile, measureAndOpen, onOpenChange]);
 
   // Đóng dropdown
   const closeDropdown = useCallback(() => {
@@ -233,23 +212,26 @@ const CustomSelect = ({
     }
   };
 
-  // Render nội dung dropdown (dùng chung cho Portal và fallback)
+  // Render nội dung dropdown (chuẩn phong cách Ant Design)
   const dropdownContent = (
     <ScrollView
       style={styles.selectDropdownScroll}
       nestedScrollEnabled={true}
       keyboardShouldPersistTaps="always"
+      showsVerticalScrollIndicator={true}
     >
       {filteredOptions.length === 0 ? (
-        <Text style={styles.selectEmptyText}>Không tìm thấy kết quả</Text>
+        <Text style={styles.selectEmptyText}>Không có dữ liệu</Text>
       ) : (
         filteredOptions.map((opt, idx) => (
           <TouchableOpacity
             key={opt.id || idx}
-            style={[styles.selectOption, compact && styles.selectOptionCompact]}
+            style={[
+              styles.selectOption,
+              compact && styles.selectOptionCompact,
+            ]}
             activeOpacity={0.7}
             onPress={() => handleSelectOption(opt)}
-            // Ngăn mousedown/touch cướp focus và đóng dropdown trên Web (hỗ trợ cả chuột máy tính và chạm cảm ứng mobile)
             {...(Platform.OS === 'web'
               ? {
                 onMouseDown: (e) => {
@@ -268,7 +250,13 @@ const CustomSelect = ({
             {renderOption ? (
               renderOption(opt)
             ) : (
-              <Text style={[styles.selectOptionText, compact && styles.selectTriggerTextCompact]}>
+              <Text
+                style={[
+                  styles.selectOptionText,
+                  compact && styles.selectTriggerTextCompact,
+                ]}
+                numberOfLines={1}
+              >
                 {getOptionLabel(opt)}
               </Text>
             )}
@@ -278,12 +266,11 @@ const CustomSelect = ({
     </ScrollView>
   );
 
-  // Trên Web: render qua Portal ra ngoài document.body để thoát khỏi mọi stacking context
+  // Trên Desktop Web: render qua Portal ra ngoài document.body để thoát khỏi mọi stacking context trên PC
   const renderDropdownPortal = () => {
-    if (!open || Platform.OS !== 'web' || !ReactDOM) return null;
+    if (!open || Platform.OS !== 'web' || !ReactDOM || isMobile) return null;
     if (typeof document === 'undefined') return null;
 
-    // Mỗi instance CustomSelect có 1 container riêng, luôn đặt pointer-events: none và zIndex cao nhất
     const effectiveZIndex = Math.max(Number(zIndex) || 999999, 99999999);
     if (!portalElRef.current) {
       const el = document.createElement('div');
@@ -292,19 +279,11 @@ const CustomSelect = ({
       document.body.appendChild(el);
       portalElRef.current = el;
     } else {
-      // Cập nhật z-index với độ ưu tiên important để không bị bất kỳ modal cha nào đè
       portalElRef.current.style.setProperty('z-index', String(effectiveZIndex), 'important');
     }
 
-    // Tính vị trí hiển thị dropdown cố định theo viewport
-    const effectiveMinWidth = minWidth !== undefined ? minWidth : 260;
+    const effectiveMinWidth = minWidth !== undefined ? minWidth : 220;
     const calculatedWidth = dropdownStyle?.width || Math.max(dropdownPos.width, effectiveMinWidth);
-
-    // Tính maxHeight động để dropdown không bao giờ bị tràn ra ngoài màn hình hay bị bàn phím ảo/footer che khuất
-    const availableSpace = dropdownPos.isUp
-      ? Math.max(120, (dropdownPos.spaceAbove || 260) - 12)
-      : Math.max(120, (dropdownPos.spaceBelow !== undefined ? dropdownPos.spaceBelow : 260) - 12);
-    const effectiveMaxHeight = Math.min(240, availableSpace);
 
     const dropStyle = {
       position: 'fixed',
@@ -315,17 +294,19 @@ const CustomSelect = ({
       backgroundColor: '#FFFFFF',
       border: '1px solid #CBD5E1',
       borderRadius: 8,
-      boxShadow: '0px 8px 24px rgba(0,0,0,0.18)',
+      boxShadow: '0 6px 16px 0 rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05)',
       overflow: 'hidden',
-      maxHeight: effectiveMaxHeight,
+      maxHeight: 256,
       pointerEvents: 'auto',
+      padding: 4,
+      boxSizing: 'border-box',
     };
 
     if (dropdownPos.isUp) {
-      dropStyle.top = dropdownPos.top - 2;
+      dropStyle.top = dropdownPos.top - 4;
       dropStyle.transform = 'translateY(-100%)';
     } else {
-      dropStyle.top = dropdownPos.top + 2;
+      dropStyle.top = dropdownPos.top + 4;
       dropStyle.transform = 'none';
     }
 
@@ -342,14 +323,11 @@ const CustomSelect = ({
     if (disabled) return;
     if (e && e.stopPropagation) e.stopPropagation();
     if (open) {
-      // Đang mở → bấm mũi tên để đóng
       inputRef.current?.blur();
-      // Web: blur không đóng dropdown (có outside-click), phải đóng thủ công
       if (Platform.OS === 'web') {
         closeDropdown();
       }
     } else {
-      // Đang đóng → focus TextInput và mở dropdown
       inputRef.current?.focus();
       openDropdown();
     }
@@ -423,14 +401,12 @@ const CustomSelect = ({
             }
           }}
           onChangeText={(text) => {
-            // Cập nhật search ngay lập tức để hiển thị trong input (không bị giật)
             setSearch(text);
-            // Cập nhật deferredSearch trong transition: render danh sách không block input
             startTransition(() => {
               setDeferredSearch(text);
             });
             if (!open && !disabled) {
-              if (Platform.OS === 'web') measureAndOpen();
+              if (Platform.OS === 'web' && !isMobile) measureAndOpen();
               setOpen(true);
               if (onOpenChange) onOpenChange(true);
             }
@@ -452,12 +428,12 @@ const CustomSelect = ({
         </TouchableOpacity>
       </View>
 
-      {/* Dropdown cho Mobile Native thuần (React Native không có Web DOM) */}
-      {open && Platform.OS !== 'web' && (
+      {/* Dropdown cho Mobile (cả Native và Web Mobile): render inline bám sát input, đồng bộ theo ScrollView và không bao giờ bị trôi khi bàn phím ảo bật */}
+      {open && isMobile && (
         <View
           style={[
             styles.selectDropdown,
-            dropdownPos.isUp && styles.selectDropdownUp,
+            shouldDropUp && styles.selectDropdownUp,
             { zIndex: 9999999, elevation: 9999999 },
             dropdownStyle,
           ]}
@@ -466,8 +442,8 @@ const CustomSelect = ({
         </View>
       )}
 
-      {/* Dropdown cho Web (cả Desktop Web và Web Mobile): BẮT BUỘC dùng Portal ra document.body để luôn ở lớp cao nhất tuyệt đối */}
-      {open && Platform.OS === 'web' && renderDropdownPortal()}
+      {/* Dropdown cho Desktop Web: render qua Portal ra document.body */}
+      {open && !isMobile && renderDropdownPortal()}
     </View>
   );
 };
@@ -607,25 +583,35 @@ const styles = StyleSheet.create({
     maxHeight: 235,
   },
   selectOption: {
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 4,
+    marginBottom: 2,
+    ...(Platform.OS === 'web' ? {
+      cursor: 'pointer',
+      transition: 'background-color 0.1s ease',
+    } : {}),
+  },
+  selectOptionSelected: {
+    backgroundColor: '#E6F4FF',
   },
   selectOptionCompact: {
     paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingVertical: 5,
   },
   selectOptionText: {
     fontSize: 13,
     color: '#0F172A',
     fontWeight: '500',
   },
+  selectOptionTextSelected: {
+    color: '#1677FF',
+    fontWeight: '600',
+  },
   selectEmptyText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#94A3B8',
-    padding: 10,
+    padding: 14,
     textAlign: 'center',
   },
 });
