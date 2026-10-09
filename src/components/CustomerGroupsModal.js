@@ -121,10 +121,11 @@ const CustomerGroupsModal = forwardRef(
       setMode('create');
     };
 
-    // Mở form chỉnh sửa nhóm
+    // Mở form chỉnh sửa nhóm (hỗ trợ cả nhóm tự tạo và nhóm liên kết Zalo Portal)
     const handleStartEdit = (group) => {
       setEditingGroupId(group.id);
-      setGroupName(group.name || '');
+      const defaultName = group.rawName || (group.name ? group.name.replace(/\s*\(Zalo Portal\)$/i, '') : '');
+      setGroupName(defaultName || group.name || '');
       setBillingCycle(group.billingCycle || 'custom');
       setGroupNote(group.note || '');
       setSelectedCustomerIds(new Set(group.customerIds || []));
@@ -159,7 +160,7 @@ const CustomerGroupsModal = forwardRef(
       );
     };
 
-    // Lưu nhóm (tạo mới hoặc sửa)
+    // Lưu nhóm (tạo mới hoặc sửa, hỗ trợ đồng bộ cả Zalo Portal)
     const handleSave = async () => {
       if (!groupName.trim()) {
         showGlobalToast('Vui lòng nhập tên nhóm nhà hàng.', 'warning');
@@ -171,14 +172,30 @@ const CustomerGroupsModal = forwardRef(
       }
 
       try {
-        await saveGroup(groupName.trim(), Array.from(selectedCustomerIds), {
-          billingCycle,
-          note: groupNote.trim(),
-        });
+        const cleanName = groupName.trim();
+        const cleanIds = Array.from(selectedCustomerIds);
+
+        // Nếu đang sửa nhóm liên kết từ Zalo Portal: cập nhật trực tiếp qua API Portal Link
+        if (editingGroupId && String(editingGroupId).startsWith('portal_')) {
+          const portalLinkId = String(editingGroupId).replace('portal_', '');
+          await api.put(`/portal/manage/links/${portalLinkId}`, {
+            name: cleanName,
+            customerIds: cleanIds,
+            note: groupNote.trim(),
+          });
+          await refreshGroups();
+        } else {
+          // Nhóm tự tạo lưu trong bộ nhớ
+          await saveGroup(cleanName, cleanIds, {
+            billingCycle,
+            note: groupNote.trim(),
+          });
+        }
+
         showGlobalToast(
           mode === 'edit'
-            ? `Đã cập nhật nhóm [${groupName.trim()}] thành công!`
-            : `Đã tạo nhóm [${groupName.trim()}] thành công!`,
+            ? `Đã cập nhật nhóm [${cleanName}] thành công!`
+            : `Đã tạo nhóm [${cleanName}] thành công!`,
           'success'
         );
         resetForm();
@@ -189,22 +206,29 @@ const CustomerGroupsModal = forwardRef(
       }
     };
 
-    // Xóa nhóm (xác nhận bằng PopupModal)
+    // Xóa nhóm (xác nhận bằng PopupModal, hỗ trợ cả nhóm Portal)
     const handleDelete = (group) => {
-      if (group.source === 'portal') {
-        showGlobalToast('Nhóm liên kết từ Zalo Portal cần quản lý tại mục Zalo Portal.', 'info');
-        return;
-      }
+      const isPortal = group.source === 'portal' || String(group.id).startsWith('portal_');
+      const confirmMsg = isPortal
+        ? `Bạn có chắc muốn xóa nhóm "${group.name}"? Thao tác này sẽ xóa link nhóm trong Zalo Portal (dữ liệu công nợ các quán vẫn được giữ nguyên).`
+        : `Bạn có chắc muốn xóa nhóm "${group.name}"? Dữ liệu công nợ và các nhà hàng bên trong vẫn được giữ nguyên.`;
 
       popupModalRef?.current?.show({
         type: 'confirm',
         title: 'Xóa nhóm nhà hàng',
-        message: `Bạn có chắc muốn xóa nhóm "${group.name}"? Dữ liệu công nợ và các nhà hàng bên trong vẫn được giữ nguyên.`,
+        message: confirmMsg,
         onConfirm: async () => {
           try {
-            await deleteGroup(group.id);
+            if (isPortal) {
+              const portalLinkId = String(group.id).replace('portal_', '');
+              await api.delete(`/portal/manage/links/${portalLinkId}`);
+              await refreshGroups();
+            } else {
+              await deleteGroup(group.id);
+            }
             showGlobalToast(`Đã xóa nhóm [${group.name}] thành công!`, 'success');
           } catch (e) {
+            console.error('Lỗi khi xóa nhóm:', e);
             showGlobalToast('Không thể xóa nhóm.', 'error');
           }
         },
@@ -410,23 +434,19 @@ const CustomerGroupsModal = forwardRef(
                           <Text style={styles.exportBtnText}>📊 Xuất công nợ</Text>
                         </TouchableOpacity>
 
-                        {group.source !== 'portal' && (
-                          <>
-                            <TouchableOpacity
-                              style={[styles.actionBtn, styles.editBtn]}
-                              onPress={() => handleStartEdit(group)}
-                            >
-                              <Text style={styles.editBtnText}>✏️ Sửa</Text>
-                            </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.editBtn]}
+                          onPress={() => handleStartEdit(group)}
+                        >
+                          <Text style={styles.editBtnText}>✏️ Sửa</Text>
+                        </TouchableOpacity>
 
-                            <TouchableOpacity
-                              style={[styles.actionBtn, styles.deleteBtn]}
-                              onPress={() => handleDelete(group)}
-                            >
-                              <Text style={styles.deleteBtnText}>🗑️</Text>
-                            </TouchableOpacity>
-                          </>
-                        )}
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.deleteBtn]}
+                          onPress={() => handleDelete(group)}
+                        >
+                          <Text style={styles.deleteBtnText}>🗑️</Text>
+                        </TouchableOpacity>
                       </View>
                     </View>
                   ))}

@@ -41,9 +41,12 @@ export const useCustomerGroups = (userId) => {
           .filter(l => l.customers && l.customers.length >= 2)
           .map(l => ({
             id: `portal_${l.id}`,
+            portalLinkId: l.id,
             name: `${l.name} (Zalo Portal)`,
+            rawName: l.name,
             customerIds: l.customers.map(c => c?.id || c?.customerId || c?.customer?.id).filter(Boolean),
             source: 'portal',
+            note: l.note || '',
             count: l.customers.length,
           }));
       } catch (portalErr) {
