@@ -960,28 +960,47 @@ const resolveCustomerForSub = (sub, custList) => {
       return exactMatchCust;
     }
 
-    // 1. ĐẶC BIỆT: Khớp ưu tiên khách "Bún huế văn khê" nếu AI nhận diện có chứa "bun hue" hoặc "van khe"
-    if (
-      cleanDetected.includes('bun hue') ||
-      cleanDetected.includes('van khe') ||
-      cleanDetectedNoSpace.includes('bunhue') ||
-      cleanDetectedNoSpace.includes('vankhe')
-    ) {
-      if (!currentCustClean.includes('bun hue') && !currentCustClean.includes('van khe')) {
-        const bunHueCust = custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('bun hue') && cClean.includes('van khe');
-        }) || custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('van khe');
-        }) || custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('bun hue');
-        }) || null;
+    // 1. ĐẶC BIỆT: Phân biệt rõ khách "văn khê" và "Bún huế van khe"
+    // (kể cả trường hợp chữ viết tay "Van khê" bị AI đọc nhầm thành "Van Hle", "Van Hie", "Van khz", "hle")
+    const isVanHue1 = cleanDetected.includes('bun hue') || cleanDetected.includes('bun bo hue') ||
+      cleanDetectedNoSpace.includes('bunhue') || (cleanDetected.includes('bun') && (cleanDetected.includes('van khe') || cleanDetected.includes('van hle')));
 
-        if (bunHueCust) {
-          matchedCust = bunHueCust;
-        }
+    const isVanKheDetected1 = (
+      cleanDetected.includes('van khe') ||
+      cleanDetectedNoSpace.includes('vankhe') ||
+      cleanDetected.includes('van hle') ||
+      cleanDetectedNoSpace.includes('vanhle') ||
+      cleanDetected.includes('van hie') ||
+      cleanDetectedNoSpace.includes('vanhie') ||
+      cleanDetected.includes('van khz') ||
+      cleanDetectedNoSpace.includes('vankhz') ||
+      cleanDetected.includes('van kh2') ||
+      cleanDetectedNoSpace.includes('vankh2') ||
+      cleanDetected === 'hle' ||
+      cleanDetectedNoSpace === 'hle'
+    );
+
+    if (isVanHue1) {
+      const bunHueCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('bun hue') && cClean.includes('van khe')) || (cClean.includes('bun') && cClean.includes('van khe'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('bun hue');
+      }) || null;
+      if (bunHueCust) {
+        matchedCust = bunHueCust;
+      }
+    } else if (isVanKheDetected1 && !cleanDetected.includes('bun') && !cleanDetected.includes('hue')) {
+      const vanKheCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean === 'van khe' || (cClean.includes('van khe') && !cClean.includes('bun') && !cClean.includes('hue'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('khe') && !cClean.includes('bun') && !cClean.includes('hue');
+      }) || null;
+      if (vanKheCust) {
+        matchedCust = vanKheCust;
       }
     }
 
@@ -1363,13 +1382,30 @@ const resolveCustomerForSub = (sub, custList) => {
     }
 
     // 1k. ĐẶC BIỆT: Phân biệt rõ khách "văn khê" và "Bún huế van khe"
-    if (cleanDetected.includes('van khe') || cleanDetectedNoSpace.includes('vankhe')) {
+    const isVanKheDetected1k = (
+      cleanDetected.includes('van khe') ||
+      cleanDetectedNoSpace.includes('vankhe') ||
+      cleanDetected.includes('van hle') ||
+      cleanDetectedNoSpace.includes('vanhle') ||
+      cleanDetected.includes('van hie') ||
+      cleanDetectedNoSpace.includes('vanhie') ||
+      cleanDetected.includes('van khz') ||
+      cleanDetectedNoSpace.includes('vankhz') ||
+      cleanDetected.includes('van kh2') ||
+      cleanDetectedNoSpace.includes('vankh2') ||
+      cleanDetected === 'hle' ||
+      cleanDetectedNoSpace === 'hle'
+    );
+    if (isVanKheDetected1k) {
       const hasBunHue = cleanDetected.includes('bun hue') || cleanDetected.includes('bun bo hue') ||
         cleanDetectedNoSpace.includes('bunhue') || (cleanDetected.includes('bun') && cleanDetected.includes('van khe'));
       if (!hasBunHue) {
         const custVanKhe = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
           return cClean === 'van khe' || (cClean.includes('van khe') && !cClean.includes('bun'));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase());
+          return cClean.includes('khe') && !cClean.includes('bun');
         }) || null;
         if (custVanKhe) matchedCust = custVanKhe;
       } else {
@@ -1893,13 +1929,30 @@ const resolveCustomerForSub = (sub, custList) => {
 
     // 5k. Ưu tiên phân biệt rõ khách "văn khê" và "Bún huế van khe"
     if (!matchedCust) {
-      if (cleanDetected.includes('van khe') || cleanDetectedNoSpace.includes('vankhe')) {
+      const isVanKheDetected5k = (
+        cleanDetected.includes('van khe') ||
+        cleanDetectedNoSpace.includes('vankhe') ||
+        cleanDetected.includes('van hle') ||
+        cleanDetectedNoSpace.includes('vanhle') ||
+        cleanDetected.includes('van hie') ||
+        cleanDetectedNoSpace.includes('vanhie') ||
+        cleanDetected.includes('van khz') ||
+        cleanDetectedNoSpace.includes('vankhz') ||
+        cleanDetected.includes('van kh2') ||
+        cleanDetectedNoSpace.includes('vankh2') ||
+        cleanDetected === 'hle' ||
+        cleanDetectedNoSpace === 'hle'
+      );
+      if (isVanKheDetected5k) {
         const hasBunHue = cleanDetected.includes('bun hue') || cleanDetected.includes('bun bo hue') ||
           cleanDetectedNoSpace.includes('bunhue') || (cleanDetected.includes('bun') && cleanDetected.includes('van khe'));
         if (!hasBunHue) {
           matchedCust = custList.find((c) => {
             const cClean = removeDiacritics(c.name.toLowerCase());
             return cClean === 'van khe' || (cClean.includes('van khe') && !cClean.includes('bun'));
+          }) || custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return cClean.includes('khe') && !cClean.includes('bun');
           }) || null;
         } else {
           matchedCust = custList.find((c) => {

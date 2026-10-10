@@ -15,7 +15,6 @@ import {
 import { useLocalSearchParams } from 'expo-router';
 import { api, API_HOST } from '../../src/api/client';
 import { showGlobalToast } from '../../src/store/toastStore';
-import GlobalToast from '../../src/components/GlobalToast';
 import DatePickerInput from '../../src/components/DatePickerInput';
 import ImagePreviewModal from '../../src/components/ImagePreviewModal';
 
@@ -827,21 +826,23 @@ export default function StaffSubmitScreen() {
         // Xóa khỏi hàng đợi đang tải + kiểm tra hoàn thành toàn bộ
         setUploadQueue((prev) => {
           const updated = prev.filter((it) => it.id !== nextItem.id);
-          // Kiểm tra nếu không còn file nào đang chờ/đang gửi → toast tổng kết
+          // Kiểm tra nếu không còn file nào đang chờ/đang gửi → toast tổng kết (bọc setTimeout để không setState trong render phase)
           const stillActive = updated.some((it) => it.status === 'QUEUED' || it.status === 'UPLOADING');
           if (!stillActive) {
             const errorCount = updated.filter((it) => it.status === 'ERROR').length;
-            if (errorCount === 0) {
-              showGlobalToast(
-                '✅ Đã gửi tất cả ảnh/video hóa đơn thành công! Chủ buôn sẽ xem và duyệt sớm nhé.',
-                'success'
-              );
-            } else {
-              showGlobalToast(
-                `⚠️ Đã gửi xong, nhưng có ${errorCount} tệp bị lỗi. Vui lòng kiểm tra lại!`,
-                'warning'
-              );
-            }
+            setTimeout(() => {
+              if (errorCount === 0) {
+                showGlobalToast(
+                  '✅ Đã gửi tất cả ảnh/video hóa đơn thành công! Chủ buôn sẽ xem và duyệt sớm nhé.',
+                  'success'
+                );
+              } else {
+                showGlobalToast(
+                  `⚠️ Đã gửi xong, nhưng có ${errorCount} tệp bị lỗi. Vui lòng kiểm tra lại!`,
+                  'warning'
+                );
+              }
+            }, 0);
           }
           return updated;
         });
@@ -1296,7 +1297,6 @@ export default function StaffSubmitScreen() {
         </View>
       </Modal>
     </ScrollView>
-    <GlobalToast />
   </>
   );
 }
