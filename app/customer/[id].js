@@ -38,6 +38,7 @@ import InvoiceImageUploadModal from '../../src/components/InvoiceImageUploadModa
 import InvoiceImageViewerModal from '../../src/components/InvoiceImageViewerModal';
 import PopupModal from '../../src/components/PopupModal';
 import { useResourceLock } from '../../src/hooks/useResourceLock';
+import { removeCustomerFromSavedGroups } from '../../src/hooks/useCustomerGroups';
 
 export default function CustomerDetailScreen() {
   const auth = useAuthStore();
@@ -93,6 +94,8 @@ export default function CustomerDetailScreen() {
     try {
       const response = await api.delete(`/customers/${id}`);
       if (response.data.success) {
+        // Tự động gỡ bỏ khách hàng vừa xóa khỏi toàn bộ các nhóm nhà hàng lưu trên máy
+        removeCustomerFromSavedGroups(id);
         popupModalRef.current?.show({
           title: 'Thành công',
           message: 'Đã xóa khách hàng thành công.',

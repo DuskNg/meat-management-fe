@@ -16,6 +16,7 @@ import {
 import { api } from '../api/client';
 import PopupModal from './PopupModal';
 import WorkspaceEditActionModal from './WorkspaceEditActionModal';
+import { removeCustomerFromSavedGroups } from '../hooks/useCustomerGroups';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
@@ -230,6 +231,7 @@ const WorkspaceMemberActionsModal = forwardRef(function WorkspaceMemberActionsMo
             await api.delete(`/payments/${item.id}`);
           } else if (item.type === 'CUSTOMER') {
             await api.delete(`/customers/${item.id}`);
+            removeCustomerFromSavedGroups(item.id);
           } else if (item.type === 'STORE_ORDER') {
             await api.delete(`/store/transactions/${item.id}`);
           } else if (item.type === 'STORE_PAYMENT') {

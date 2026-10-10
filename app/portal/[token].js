@@ -501,6 +501,8 @@ const buildInvoiceRows = (
 
   // 1. Chuẩn bị bản đồ ngày trên TOÀN BỘ lịch sử giao dịch (để tính FIFO xuyên tháng)
   const allDayMap = {};
+  const todayObj = new Date();
+  const todayKey = `${String(todayObj.getDate()).padStart(2, '0')}/${String(todayObj.getMonth() + 1).padStart(2, '0')}/${todayObj.getFullYear()}`;
 
   // Gom toàn bộ transactions vào từng ngày
   (transactions || []).forEach((tx) => {
@@ -515,6 +517,7 @@ const buildInvoiceRows = (
     const displayDate = `${dd}/${mm}`;
     const displayLunarDate = getLunarDateString(d);
     const monthKey = `${mm}/${yyyy}`;
+    const isToday = dateKey === todayKey;
 
     if (!allDayMap[dateKey]) {
       allDayMap[dateKey] = {
@@ -522,6 +525,7 @@ const buildInvoiceRows = (
         dateObj: d,
         dateKey,
         displayDate,
+        isToday,
         displayLunarDate,
         monthKey,
         monthDisplay: `T${d.getMonth() + 1}`,
@@ -615,6 +619,7 @@ const buildInvoiceRows = (
       const displayDate = `${dd}/${mm}`;
       const displayLunarDate = getLunarDateString(effectiveDate);
       const monthKey = `${mm}/${yyyy}`;
+      const isToday = dateKey === todayKey;
 
       if (!allDayMap[dateKey]) {
         allDayMap[dateKey] = {
@@ -622,6 +627,7 @@ const buildInvoiceRows = (
           dateObj: effectiveDate,
           dateKey,
           displayDate,
+          isToday,
           displayLunarDate,
           monthKey,
           monthDisplay: `T${effectiveDate.getMonth() + 1}`,
@@ -1286,18 +1292,19 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
       const dayMidY = dayStartY + dayHeight / 2;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      const dateDisplayText = day.isToday ? `Hôm nay (${day.displayDate})` : day.displayDate;
       if (day.displayLunarDate) {
         ctx.fillStyle = '#0F172A';
-        ctx.font = 'bold 12.5px Arial, sans-serif';
-        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
+        ctx.font = day.isToday ? 'bold 11px Arial, sans-serif' : 'bold 12.5px Arial, sans-serif';
+        ctx.fillText(dateDisplayText, pColX[0] + colWidths[0] / 2, dayMidY - 7);
 
         ctx.fillStyle = '#64748B';
         ctx.font = '10px Arial, sans-serif';
         ctx.fillText(`(${day.displayLunarDate} âm)`, pColX[0] + colWidths[0] / 2, dayMidY + 8);
       } else {
         ctx.fillStyle = '#0F172A';
-        ctx.font = 'bold 13.5px Arial, sans-serif';
-        ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY);
+        ctx.font = day.isToday ? 'bold 11.5px Arial, sans-serif' : 'bold 13.5px Arial, sans-serif';
+        ctx.fillText(dateDisplayText, pColX[0] + colWidths[0] / 2, dayMidY);
       }
 
       // Kẻ ngang phân cách ngày (ĐẬM NHẤT)
@@ -1470,12 +1477,16 @@ export default function PortalScreen() {
       return;
     }
 
+    const dateLabel = targetDay.isToday
+      ? `Hôm nay (${targetDay.displayDate || targetDay.dateKey})`
+      : (targetDay.displayDate || targetDay.dateKey);
+
     const modalTitle = targetCustomerName
-      ? `Hóa đơn [${targetCustomerName}] - ${targetDay.displayDate || targetDay.dateKey}`
-      : `Hóa đơn ngày ${targetDay.displayDate || targetDay.dateKey}`;
+      ? `Hóa đơn [${targetCustomerName}] - ${dateLabel}`
+      : `Hóa đơn ${targetDay.isToday ? dateLabel : `ngày ${dateLabel}`}`;
     const modalSubtitle = targetCustomerName
-      ? `Cơ sở: ${targetCustomerName} | Ngày: ${targetDay.displayDate || targetDay.dateKey}`
-      : `Ngày: ${targetDay.displayDate || targetDay.dateKey}`;
+      ? `Cơ sở: ${targetCustomerName} | Ngày: ${dateLabel}`
+      : `Ngày: ${dateLabel}`;
 
     // Lọc danh sách entries của ngày phù hợp với cơ sở nếu có lọc theo cơ sở
     let dayEntries = targetDay.entries || [];
@@ -1620,7 +1631,8 @@ export default function PortalScreen() {
       if (parts.length >= 2) shortDate = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
     }
     if (shortDate) {
-      lines.push(shortDate);
+      const headerDateLine = targetDay.isToday ? `Hôm nay (${shortDate})` : shortDate;
+      lines.push(headerDateLine);
     }
 
     let dayEntries = targetDay.entries || [];
@@ -1806,7 +1818,9 @@ export default function PortalScreen() {
     if (isVideoInvoice) {
       const videoText = buildVideoInvoiceText(targetDay, targetCustomerName);
       const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
-      const dateLabel = targetDay.displayDate || targetDay.dateKey || '';
+      const dateLabel = targetDay.isToday
+        ? `Hôm nay (${targetDay.displayDate || targetDay.dateKey})`
+        : (targetDay.displayDate || targetDay.dateKey || '');
       const phone = portalData?.currentCustomer?.phone || '';
 
       await shareTextToZalo({
@@ -1849,7 +1863,9 @@ export default function PortalScreen() {
 
     const invoiceText = buildPortalDayInvoiceText(targetDay, targetCustomerName);
     const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
-    const dateLabel = targetDay.displayDate || targetDay.dateKey || '';
+    const dateLabel = targetDay.isToday
+      ? `Hôm nay (${targetDay.displayDate || targetDay.dateKey})`
+      : (targetDay.displayDate || targetDay.dateKey || '');
 
     // Nếu chỉ có 1 ảnh: Gửi đơn lẻ
     if (imageItems.length === 1) {
@@ -2185,25 +2201,10 @@ export default function PortalScreen() {
     setToDate(range.to);
   };
 
-  // Xử lý thay đổi từ ngày hoặc đến ngày thủ công (giới hạn tối đa 1 tháng)
+  // Xử lý thay đổi từ ngày hoặc đến ngày thủ công (cho phép chọn thoải mái không giới hạn thời gian)
   const handleDateChange = (newFrom, newTo) => {
-    let finalTo = newTo;
-    if (newFrom && newTo) {
-      const dFrom = parseDDMMYYYY(newFrom);
-      const dTo = parseDDMMYYYY(newTo);
-      if (dFrom && dTo) {
-        const diffDays = Math.round((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays > 31) {
-          showGlobalToast('Khoảng thời gian tra cứu tối đa là 1 tháng.', 'warning');
-          const maxTo = new Date(dFrom);
-          maxTo.setDate(dFrom.getDate() + 30);
-          const pad = (n) => String(n).padStart(2, '0');
-          finalTo = `${pad(maxTo.getDate())}/${pad(maxTo.getMonth() + 1)}/${maxTo.getFullYear()}`;
-        }
-      }
-    }
     setFromDate(newFrom);
-    setToDate(finalTo);
+    setToDate(newTo);
     setTimePreset('custom');
   };
 
@@ -2251,7 +2252,7 @@ export default function PortalScreen() {
 
         const matchesName = matchSearch(entry.name, q);
         const matchesCustomer = matchSearch(entry.customerName, q);
-        const matchesDate = matchSearch(day.displayDate, q) || matchSearch(day.dateKey, q);
+        const matchesDate = matchSearch(day.displayDate, q) || matchSearch(day.dateKey, q) || (day.isToday && (matchSearch('hôm nay', q) || matchSearch('hom nay', q)));
         const matchesReturn = entry.type === 'RETURN' && matchSearch('tra hang', q);
 
         return Boolean(matchesName || matchesCustomer || matchesDate || matchesReturn);
@@ -2940,8 +2941,8 @@ export default function PortalScreen() {
                           <View key={day.dateKey} style={styles.tableDayRowGroup}>
                             {/* Cột Ngày bên trái (gộp chung cho toàn bộ các món trong ngày) */}
                             <View style={[styles.tdDateCol, dateColStyle]}>
-                              <Text style={[styles.tdDateText, dateTextStyle]}>
-                                {day.displayDate}
+                              <Text style={[styles.tdDateText, dateTextStyle, day.isToday && styles.tdDateTextToday]}>
+                                {day.isToday ? `Hôm nay\n(${day.displayDate})` : day.displayDate}
                               </Text>
                               {day.displayLunarDate ? (
                                 <Text
@@ -4291,7 +4292,7 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   thDate: {
-    width: 45,
+    width: 48,
     textAlign: 'center',
     borderRightWidth: 1,
     borderRightColor: '#CBD5E1',
@@ -4330,7 +4331,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   tdDateCol: {
-    width: 45,
+    width: 48,
     alignItems: 'center',
     justifyContent: 'center',
     borderRightWidth: 1,
@@ -4341,6 +4342,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  tdDateTextToday: {
+    fontSize: 8.5,
+    lineHeight: 11,
+    fontWeight: '800',
   },
   tdLunarDateText: {
     fontSize: 7.5,

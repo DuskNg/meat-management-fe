@@ -253,10 +253,16 @@ const CustomSelect = ({
     }
   };
 
+  // Ref lưu toạ độ bắt đầu chạm để phân biệt vuốt cuộn với chạm chọn option trên mobile
+  const touchStartYRef = useRef(0);
+
   // Render nội dung dropdown (chuẩn phong cách Ant Design)
-  const dropdownContent = (
+  const renderDropdownContent = (maxH = 235) => (
     <ScrollView
-      style={styles.selectDropdownScroll}
+      style={[
+        styles.selectDropdownScroll,
+        { maxHeight: Math.max(80, maxH - 8) },
+      ]}
       nestedScrollEnabled={true}
       keyboardShouldPersistTaps="always"
       showsVerticalScrollIndicator={true}
@@ -280,10 +286,18 @@ const CustomSelect = ({
                   e.stopPropagation();
                   handleSelectOption(opt);
                 },
+                onTouchStart: (e) => {
+                  if (e.touches && e.touches[0]) {
+                    touchStartYRef.current = e.touches[0].clientY;
+                  }
+                },
                 onTouchEnd: (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleSelectOption(opt);
+                  const endY = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : touchStartYRef.current;
+                  if (Math.abs(endY - touchStartYRef.current) < 10) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSelectOption(opt);
+                  }
                 },
               }
               : {})}
@@ -307,9 +321,9 @@ const CustomSelect = ({
     </ScrollView>
   );
 
-  // Trên Desktop Web: luôn render qua Portal ra ngoài document.body chuẩn Ant Design để thoát khỏi mọi stacking context, modal và ScrollView
+  // Trên Web: luôn render qua Portal ra ngoài document.body chuẩn Ant Design để thoát khỏi mọi stacking context, modal và ScrollView
   const renderDropdownPortal = () => {
-    if (!open || Platform.OS !== 'web' || !ReactDOM || isMobile) return null;
+    if (!open || Platform.OS !== 'web' || !ReactDOM) return null;
     if (typeof document === 'undefined') return null;
 
     const effectiveZIndex = Math.max(Number(zIndex) || 999999, 99999999);
@@ -324,8 +338,12 @@ const CustomSelect = ({
       portalElRef.current.style.setProperty('z-index', String(effectiveZIndex), 'important');
     }
 
+    const windowW = typeof window !== 'undefined' ? window.innerWidth : 400;
     const effectiveMinWidth = minWidth !== undefined ? minWidth : 220;
-    const calculatedWidth = dropdownStyle?.width || Math.max(dropdownPos.width, effectiveMinWidth);
+    let calculatedWidth = dropdownStyle?.width || Math.max(dropdownPos.width, effectiveMinWidth);
+    if (calculatedWidth > windowW - 8) {
+      calculatedWidth = windowW - 8;
+    }
 
     // Tính toán khoảng trống bên dưới để dropdown không vượt quá viewport
     const dynamicMaxHeight = dropdownPos.isUp
@@ -333,7 +351,6 @@ const CustomSelect = ({
       : Math.min(240, Math.max(130, (dropdownPos.spaceBelow || 240) - 8));
 
     // Đảm bảo dropdown không bị tràn ra ngoài cạnh phải màn hình (tính theo viewport rồi cộng lại scrollX)
-    const windowW = typeof window !== 'undefined' ? window.innerWidth : 400;
     const scrollXOffset = (dropdownPos.left || 0) - (dropdownPos.viewLeft || 0);
     const clampedLeft = Math.max(4, Math.min(dropdownPos.viewLeft || 0, windowW - calculatedWidth - 4)) + scrollXOffset;
 
@@ -341,7 +358,7 @@ const CustomSelect = ({
       position: 'absolute',
       left: clampedLeft,
       width: calculatedWidth,
-      minWidth: effectiveMinWidth,
+      minWidth: Math.min(effectiveMinWidth, calculatedWidth),
       zIndex: effectiveZIndex,
       backgroundColor: '#FFFFFF',
       border: '1px solid #CBD5E1',
@@ -364,7 +381,7 @@ const CustomSelect = ({
 
     return ReactDOM.createPortal(
       <div style={dropStyle}>
-        {dropdownContent}
+        {renderDropdownContent(dynamicMaxHeight)}
       </div>,
       portalElRef.current
     );
@@ -480,12 +497,8 @@ const CustomSelect = ({
         </TouchableOpacity>
       </View>
 
-      {/* Dropdown cho Mobile (cả React Native thuần và Web Mobile):
-          Render INLINE bám sát ô input.
-          - Khi mở xuống dưới: bám sát mép đáy của ô select (top: 100%, marginTop: 2).
-          - Khi bàn phím bật / nảy lên trên (Drop Up): bám sát mép trên (top) của ô select (bottom: 100%, marginBottom: 2).
-          Nhờ render inline, dropdown luôn đồng bộ 100% với ScrollView và bàn phím ảo, không bao giờ bị lệch vị trí. */}
-      {open && isMobile && (
+      {/* Dropdown cho Mobile Native thuần (React Native không có Web DOM) */}
+      {open && Platform.OS !== 'web' && (
         <View
           style={[
             styles.selectDropdown,
@@ -497,12 +510,12 @@ const CustomSelect = ({
             dropdownStyle,
           ]}
         >
-          {dropdownContent}
+          {renderDropdownContent()}
         </View>
       )}
 
-      {/* Dropdown cho Desktop Web: render qua Portal ra document.body chuẩn Ant Design */}
-      {open && !isMobile && renderDropdownPortal()}
+      {/* Dropdown cho Web (cả Desktop Web và Web Mobile): BẮT BUỘC dùng Portal ra document.body để luôn ở lớp cao nhất tuyệt đối */}
+      {open && Platform.OS === 'web' && renderDropdownPortal()}
     </View>
   );
 };

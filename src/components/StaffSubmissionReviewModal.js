@@ -3909,6 +3909,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         priceChangeReasonModalRef.current?.open({
           items: changedPriceItems,
           customerName: card.customer.name || 'Khách hàng',
+          customerId: card.customer?.id || card.customerId,
           allowScopeSelection: true,
           onConfirm: (result) => {
             const applyToFuture = typeof result === 'object' && result !== null ? result.applyToFuture !== false : true;

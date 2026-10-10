@@ -803,7 +803,12 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   isMobile && mobileTab === 'form' && { flex: 1 },
                 ]}
               >
-                <ScrollView ref={formScrollRef} showsVerticalScrollIndicator={true} contentContainerStyle={styles.formScrollContent}>
+                <ScrollView
+                  ref={formScrollRef}
+                  showsVerticalScrollIndicator={true}
+                  contentContainerStyle={styles.formScrollContent}
+                  style={customerSelectZIndex > 10 || activeMeatItemIdx !== null ? { zIndex: 999999 } : undefined}
+                >
                   {/* Báo lỗi / nhắc nhở AI nếu có */}
                   {currentSub.aiError ? (
                     <View style={styles.alertBannerWrap}>
@@ -1235,7 +1240,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                 </ScrollView>
 
                 {/* ═══ FOOTER CỘT PHẢI: TỔNG TIỀN VÀ NÚT NHẬP CÔNG NỢ ═══ */}
-                <View style={styles.formFooterWrap}>
+                <View style={[styles.formFooterWrap, (customerSelectZIndex > 10 || activeMeatItemIdx !== null) && { zIndex: 0 }]}>
                   <View style={styles.totalMoneyBox}>
                     <Text
                       style={[

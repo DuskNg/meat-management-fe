@@ -74,8 +74,23 @@ const CustomerGroupsModal = forwardRef(
     const [customerSearch, setCustomerSearch] = useState('');
     const [cycleSelectOpen, setCycleSelectOpen] = useState(false);
 
+    const [initialCustomerIds, setInitialCustomerIds] = useState(new Set());
+    const [saving, setSaving] = useState(false);
+
     const { groups, loading: loadingGroups, saveGroup, deleteGroup, refreshGroups } =
       useCustomerGroups(currentUserId);
+
+    // Danh sách ID các nhà hàng mới được chọn thêm vào nhóm (khi sửa)
+    const newlyAddedCustomerIds = useMemo(() => {
+      if (mode !== 'edit' || !initialCustomerIds || initialCustomerIds.size === 0) return [];
+      return Array.from(selectedCustomerIds).filter((id) => !initialCustomerIds.has(id));
+    }, [mode, selectedCustomerIds, initialCustomerIds]);
+
+    // Danh sách đối tượng khách hàng mới được thêm vào
+    const newlyAddedCustomers = useMemo(() => {
+      if (newlyAddedCustomerIds.length === 0) return [];
+      return customers.filter((c) => newlyAddedCustomerIds.includes(c.id));
+    }, [newlyAddedCustomerIds, customers]);
 
     // Phơi bày phương thức open / close ra ngoài
     useImperativeHandle(ref, () => ({
@@ -111,6 +126,7 @@ const CustomerGroupsModal = forwardRef(
       setBillingCycle('15_to_end');
       setGroupNote('');
       setSelectedCustomerIds(new Set());
+      setInitialCustomerIds(new Set());
       setCustomerSearch('');
       setCycleSelectOpen(false);
     };
@@ -128,7 +144,11 @@ const CustomerGroupsModal = forwardRef(
       setGroupName(defaultName || group.name || '');
       setBillingCycle(group.billingCycle || 'custom');
       setGroupNote(group.note || '');
-      setSelectedCustomerIds(new Set(group.customerIds || []));
+      // Chỉ chọn các quán còn tồn tại trong danh sách khách hàng đang hoạt động (loại bỏ quán đã xóa)
+      const validMembers = (group.customerIds || []).filter((id) => customerMap.has(id));
+      const members = new Set(validMembers);
+      setSelectedCustomerIds(members);
+      setInitialCustomerIds(members); // Lưu lại tập thành viên ban đầu để phát hiện nhà hàng mới
       setCustomerSearch('');
       setMode('edit');
     };
@@ -160,7 +180,7 @@ const CustomerGroupsModal = forwardRef(
       );
     };
 
-    // Lưu nhóm (tạo mới hoặc sửa, hỗ trợ đồng bộ cả Zalo Portal)
+    // Lưu nhóm (tạo mới hoặc sửa, tự động thiết lập bộ giá riêng của nhóm cho nhà hàng mới)
     const handleSave = async () => {
       if (!groupName.trim()) {
         showGlobalToast('Vui lòng nhập tên nhóm nhà hàng.', 'warning');
@@ -171,18 +191,21 @@ const CustomerGroupsModal = forwardRef(
         return;
       }
 
+      setSaving(true);
       try {
         const cleanName = groupName.trim();
         const cleanIds = Array.from(selectedCustomerIds);
+        let syncPriceResult = null;
 
-        // Nếu đang sửa nhóm liên kết từ Zalo Portal: cập nhật trực tiếp qua API Portal Link
+        // Nếu đang sửa nhóm liên kết từ Zalo Portal: cập nhật trực tiếp qua API Portal Link (Backend tự động đồng bộ giá nhóm)
         if (editingGroupId && String(editingGroupId).startsWith('portal_')) {
           const portalLinkId = String(editingGroupId).replace('portal_', '');
-          await api.put(`/portal/manage/links/${portalLinkId}`, {
+          const res = await api.put(`/portal/manage/links/${portalLinkId}`, {
             name: cleanName,
             customerIds: cleanIds,
             note: groupNote.trim(),
           });
+          syncPriceResult = res.data?.syncPriceResult;
           await refreshGroups();
         } else {
           // Nhóm tự tạo lưu trong bộ nhớ
@@ -190,19 +213,44 @@ const CustomerGroupsModal = forwardRef(
             billingCycle,
             note: groupNote.trim(),
           });
+
+          // Tự động thiết lập bộ giá riêng của nhóm cho các nhà hàng mới được thêm vào
+          if (mode === 'edit' && newlyAddedCustomerIds.length > 0 && initialCustomerIds.size > 0) {
+            try {
+              const syncRes = await api.post('/products/apply-group-prices', {
+                groupName: cleanName,
+                sourceCustomerIds: Array.from(initialCustomerIds),
+                targetCustomerIds: newlyAddedCustomerIds,
+              });
+              syncPriceResult = syncRes.data?.data;
+            } catch (syncErr) {
+              console.error('Lỗi khi thiết lập giá nhóm cho khách mới:', syncErr);
+            }
+          }
         }
 
-        showGlobalToast(
-          mode === 'edit'
-            ? `Đã cập nhật nhóm [${cleanName}] thành công!`
-            : `Đã tạo nhóm [${cleanName}] thành công!`,
-          'success'
-        );
+        // Thông báo kết quả minh bạch cho người dùng
+        if (syncPriceResult && syncPriceResult.syncedProductCount > 0) {
+          showGlobalToast(
+            `Đã cập nhật nhóm [${cleanName}] & tự động thiết lập bộ giá riêng (${syncPriceResult.syncedProductCount} loại thịt) cho ${syncPriceResult.syncedCustomerCount} nhà hàng mới!`,
+            'success'
+          );
+        } else {
+          showGlobalToast(
+            mode === 'edit'
+              ? `Đã cập nhật nhóm [${cleanName}] thành công!`
+              : `Đã tạo nhóm [${cleanName}] thành công!`,
+            'success'
+          );
+        }
+
         resetForm();
         setMode('list');
       } catch (err) {
         console.error('Lỗi khi lưu nhóm:', err);
         showGlobalToast('Có lỗi xảy ra khi lưu nhóm.', 'error');
+      } finally {
+        setSaving(false);
       }
     };
 
@@ -281,7 +329,10 @@ const CustomerGroupsModal = forwardRef(
         let activeCount = 0;
         const memberNames = [];
 
-        memberIds.forEach((id) => {
+        // Tự động loại bỏ bất kỳ khách hàng nào đã bị xóa (không còn trong customerMap)
+        const validMemberIds = memberIds.filter((id) => customerMap.has(id));
+
+        validMemberIds.forEach((id) => {
           const cust = customerMap.get(id);
           if (cust) {
             const d = Math.max(0, parseFloat(cust.debt) || 0);
@@ -293,7 +344,8 @@ const CustomerGroupsModal = forwardRef(
 
         return {
           ...g,
-          memberCount: memberIds.length,
+          customerIds: validMemberIds,
+          memberCount: validMemberIds.length,
           activeCount,
           totalDebt,
           memberNamesPreview: memberNames.slice(0, 4).join(', ') + (memberNames.length > 4 ? ` (+${memberNames.length - 4} quán nữa)` : ''),
@@ -455,135 +507,161 @@ const CustomerGroupsModal = forwardRef(
             </View>
           ) : (
             /* Form Tạo / Sửa nhóm */
-            <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-              {/* Tên nhóm */}
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>
-                  Tên nhóm nhà hàng <Text style={{ color: COLORS.danger }}>*</Text>
-                </Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Ví dụ: Nhóm Trường Hoàng, Nhóm 3 Bếp..."
-                  value={groupName}
-                  onChangeText={setGroupName}
-                />
-              </View>
-
-              {/* Phím tắt tạo nhanh Trường Hoàng */}
-              {mode === 'create' && (
-                <TouchableOpacity
-                  style={styles.quickTemplateBtn}
-                  onPress={handleQuickSelectTruongHoang}
-                >
-                  <Text style={styles.quickTemplateBtnText}>
-                    ⚡ Điền mẫu & Tự động chọn 10 quán "Nhóm Trường Hoàng"
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {/* Chu kỳ chốt nợ */}
-              <View
-                style={[
-                  styles.formGroup,
-                  cycleSelectOpen && { zIndex: 999999, elevation: 999999 },
-                ]}
+            <View style={styles.formWrap}>
+              <ScrollView
+                style={styles.formScroll}
+                contentContainerStyle={styles.formScrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={true}
               >
-                <Text style={styles.formLabel}>Chu kỳ xuất công nợ / Thanh toán</Text>
-                <CustomSelect
-                  value={BILLING_CYCLES.find((c) => c.id === billingCycle)}
-                  options={BILLING_CYCLES}
-                  getOptionLabel={(item) => item?.name || ''}
-                  renderSelected={(item) => item?.name || 'Chọn chu kỳ...'}
-                  onSelect={(item) => setBillingCycle(item.id)}
-                  onOpenChange={setCycleSelectOpen}
-                  zIndex={999999}
-                />
-              </View>
-
-              {/* Ghi chú */}
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Ghi chú nhóm (tùy chọn)</Text>
-                <TextInput
-                  style={[styles.textInput, { height: 40 }]}
-                  placeholder="Ghi chú người đại diện, số tài khoản nhận tiền..."
-                  value={groupNote}
-                  onChangeText={setGroupNote}
-                />
-              </View>
-
-              {/* Chọn các nhà hàng vào nhóm */}
-              <View style={styles.formGroup}>
-                <View style={styles.selectHeaderRow}>
+                {/* Tên nhóm */}
+                <View style={styles.formGroup}>
                   <Text style={styles.formLabel}>
-                    Chọn nhà hàng vào nhóm ({selectedCustomerIds.size} quán đã chọn)
+                    Tên nhóm nhà hàng <Text style={{ color: COLORS.danger }}>*</Text>
                   </Text>
-                  <View style={styles.quickSelectRow}>
-                    <TouchableOpacity onPress={handleSelectAll} style={styles.quickSelectBtn}>
-                      <Text style={styles.quickSelectBtnText}>Tất cả</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleSelectDebtOnly} style={styles.quickSelectBtn}>
-                      <Text style={styles.quickSelectBtnText}>Chỉ quán nợ</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleDeselectAll} style={styles.quickSelectBtn}>
-                      <Text style={styles.quickSelectBtnText}>Bỏ chọn</Text>
-                    </TouchableOpacity>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Ví dụ: Nhóm Trường Hoàng, Nhóm 3 Bếp..."
+                    value={groupName}
+                    onChangeText={setGroupName}
+                  />
+                </View>
+
+                {/* Phím tắt tạo nhanh Trường Hoàng */}
+                {mode === 'create' && (
+                  <TouchableOpacity
+                    style={styles.quickTemplateBtn}
+                    onPress={handleQuickSelectTruongHoang}
+                  >
+                    <Text style={styles.quickTemplateBtnText}>
+                      ⚡ Điền mẫu & Tự động chọn 10 quán "Nhóm Trường Hoàng"
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Chu kỳ chốt nợ */}
+                <View
+                  style={[
+                    styles.formGroup,
+                    cycleSelectOpen && { zIndex: 999999, elevation: 999999 },
+                  ]}
+                >
+                  <Text style={styles.formLabel}>Chu kỳ xuất công nợ / Thanh toán</Text>
+                  <CustomSelect
+                    value={BILLING_CYCLES.find((c) => c.id === billingCycle)}
+                    options={BILLING_CYCLES}
+                    getOptionLabel={(item) => item?.name || ''}
+                    renderSelected={(item) => item?.name || 'Chọn chu kỳ...'}
+                    onSelect={(item) => setBillingCycle(item.id)}
+                    onOpenChange={setCycleSelectOpen}
+                    zIndex={999999}
+                  />
+                </View>
+
+                {/* Ghi chú */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Ghi chú nhóm (tùy chọn)</Text>
+                  <TextInput
+                    style={[styles.textInput, { height: 40 }]}
+                    placeholder="Ghi chú người đại diện, số tài khoản nhận tiền..."
+                    value={groupNote}
+                    onChangeText={setGroupNote}
+                  />
+                </View>
+
+                {/* Chọn các nhà hàng vào nhóm */}
+                <View style={styles.formGroup}>
+                  <View style={styles.selectHeaderRow}>
+                    <Text style={styles.formLabel}>
+                      Chọn nhà hàng vào nhóm ({selectedCustomerIds.size} quán đã chọn)
+                    </Text>
+                    <View style={styles.quickSelectRow}>
+                      <TouchableOpacity onPress={handleSelectAll} style={styles.quickSelectBtn}>
+                        <Text style={styles.quickSelectBtnText}>Tất cả</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handleSelectDebtOnly} style={styles.quickSelectBtn}>
+                        <Text style={styles.quickSelectBtnText}>Chỉ quán nợ</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handleDeselectAll} style={styles.quickSelectBtn}>
+                        <Text style={styles.quickSelectBtnText}>Bỏ chọn</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
 
-                {/* Ô tìm kiếm nhà hàng */}
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="🔍 Gõ tên hoặc địa chỉ quán để tìm nhanh..."
-                  value={customerSearch}
-                  onChangeText={setCustomerSearch}
-                />
+                  {/* Ô tìm kiếm nhà hàng */}
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="🔍 Gõ tên hoặc địa chỉ quán để tìm nhanh..."
+                    value={customerSearch}
+                    onChangeText={setCustomerSearch}
+                  />
 
-                {/* Danh sách nhà hàng dạng checkbox */}
-                <View style={styles.customerListBox}>
-                  <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled={true}>
-                    {filteredCustomers.length === 0 ? (
-                      <Text style={styles.noCustText}>Không tìm thấy nhà hàng nào.</Text>
-                    ) : (
-                      filteredCustomers.map((cust) => {
-                        const isChecked = selectedCustomerIds.has(cust.id);
-                        const debt = parseFloat(cust.debt) || 0;
-                        return (
-                          <TouchableOpacity
-                            key={cust.id}
-                            style={[
-                              styles.customerRowItem,
-                              isChecked && styles.customerRowItemSelected,
-                            ]}
-                            onPress={() => toggleCustomer(cust.id)}
-                          >
-                            <View
+                  {/* Danh sách nhà hàng dạng checkbox */}
+                  <View style={styles.customerListBox}>
+                    <ScrollView style={{ maxHeight: 280 }} nestedScrollEnabled={true}>
+                      {filteredCustomers.length === 0 ? (
+                        <Text style={styles.noCustText}>Không tìm thấy nhà hàng nào.</Text>
+                      ) : (
+                        filteredCustomers.map((cust) => {
+                          const isChecked = selectedCustomerIds.has(cust.id);
+                          const debt = parseFloat(cust.debt) || 0;
+                          return (
+                            <TouchableOpacity
+                              key={cust.id}
                               style={[
-                                styles.checkboxSquare,
-                                isChecked && styles.checkboxSquareChecked,
+                                styles.customerRowItem,
+                                isChecked && styles.customerRowItemSelected,
                               ]}
+                              onPress={() => toggleCustomer(cust.id)}
                             >
-                              {isChecked && <Text style={styles.checkIcon}>✓</Text>}
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.custName}>{cust.name}</Text>
-                              {cust.address ? (
-                                <Text style={styles.custAddress} numberOfLines={1}>
-                                  📍 {cust.address}
-                                </Text>
-                              ) : null}
-                            </View>
-                            {debt > 0 && (
-                              <Text style={styles.custDebtText}>{formatCurrency(debt)}</Text>
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })
-                    )}
-                  </ScrollView>
-                </View>
-              </View>
+                              <View
+                                style={[
+                                  styles.checkboxSquare,
+                                  isChecked && styles.checkboxSquareChecked,
+                                ]}
+                              >
+                                {isChecked && <Text style={styles.checkIcon}>✓</Text>}
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.custName}>{cust.name}</Text>
+                                {cust.address ? (
+                                  <Text style={styles.custAddress} numberOfLines={1}>
+                                    📍 {cust.address}
+                                  </Text>
+                                ) : null}
+                              </View>
+                              {debt > 0 && (
+                                <Text style={styles.custDebtText}>{formatCurrency(debt)}</Text>
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
+                    </ScrollView>
+                  </View>
 
-              {/* Nút hành động form */}
+                  {/* Banner thông báo cơ chế tự động thiết lập bộ giá riêng cho nhà hàng mới */}
+                  {mode === 'edit' && newlyAddedCustomers.length > 0 ? (
+                    <View style={styles.syncPriceBanner}>
+                      <Text style={styles.syncPriceBannerIcon}>✨</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.syncPriceBannerTitle}>
+                          Tự động thiết lập bộ giá riêng của nhóm
+                        </Text>
+                        <Text style={styles.syncPriceBannerDesc}>
+                          {newlyAddedCustomers.length} nhà hàng mới ({newlyAddedCustomers.map((c) => c.name).join(', ')}) sẽ được tự động thiết lập toàn bộ bảng giá riêng của nhóm này khi bấm Lưu!
+                        </Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={styles.syncPriceNote}>
+                      💡 Cơ chế tự động: Khi có nhà hàng mới được thêm vào nhóm, nhà hàng đó sẽ tự động được thiết lập bộ giá riêng của nhóm đó.
+                    </Text>
+                  )}
+                </View>
+              </ScrollView>
+
+              {/* Nút hành động form - Neo cố định ở chân modal */}
               <View style={styles.formFooterRow}>
                 <TouchableOpacity
                   style={styles.cancelBtn}
@@ -591,17 +669,26 @@ const CustomerGroupsModal = forwardRef(
                     resetForm();
                     setMode('list');
                   }}
+                  disabled={saving}
                 >
                   <Text style={styles.cancelBtnText}>Quay lại danh sách</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.submitBtn} onPress={handleSave}>
-                  <Text style={styles.submitBtnText}>
-                    {mode === 'create' ? '💾 Lưu Nhóm Mới' : '💾 Lưu Thay Đổi'}
-                  </Text>
+                <TouchableOpacity
+                  style={[styles.submitBtn, saving && { opacity: 0.7 }]}
+                  onPress={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.submitBtnText}>
+                      {mode === 'create' ? '💾 Lưu Nhóm Mới' : '💾 Lưu Thay Đổi'}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               </View>
-            </ScrollView>
+            </View>
           )}
 
           {/* Nút đóng chân Modal chuẩn Ảnh 2 */}
@@ -626,7 +713,9 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: '100%',
     maxWidth: 680,
-    maxHeight: '92%',
+    height: Platform.OS === 'web' ? '92vh' : '92%',
+    maxHeight: '94%',
+    minHeight: 520,
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -635,6 +724,7 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'web' ? 16 : 24,
     alignSelf: 'center',
     marginHorizontal: 'auto',
+    flexDirection: 'column',
   },
   modalHeaderRow: {
     flexDirection: 'row',
@@ -682,7 +772,9 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   listContainer: {
-    flexShrink: 1,
+    flex: 1,
+    minHeight: 0,
+    flexDirection: 'column',
   },
   toolbarRow: {
     flexDirection: 'row',
@@ -762,7 +854,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   groupScroll: {
-    maxHeight: 560,
+    flex: 1,
   },
   groupCard: {
     backgroundColor: '#FFFFFF',
@@ -1043,14 +1135,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748B',
   },
+  formWrap: {
+    flex: 1,
+    minHeight: 0,
+    flexDirection: 'column',
+  },
+  formScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  formScrollContent: {
+    paddingBottom: 16,
+  },
   formFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 14,
+    marginTop: 10,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
   },
   cancelBtn: {
     paddingHorizontal: 16,
@@ -1078,5 +1183,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  syncPriceBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    gap: 8,
+  },
+  syncPriceBannerIcon: {
+    fontSize: 16,
+    marginTop: 1,
+  },
+  syncPriceBannerTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#065F46',
+    marginBottom: 2,
+  },
+  syncPriceBannerDesc: {
+    fontSize: 11.5,
+    color: '#047857',
+    lineHeight: 16,
+  },
+  syncPriceNote: {
+    fontSize: 11,
+    color: '#64748B',
+    fontStyle: 'italic',
+    marginTop: 6,
+    lineHeight: 15,
   },
 });

@@ -5,6 +5,46 @@ import { api } from '../api/client';
 const STORAGE_PREFIX = 'saved_debt_customer_groups_';
 
 /**
+ * Helper dọn dẹp một khách hàng bị xóa khỏi toàn bộ các nhóm đã lưu trong localStorage
+ */
+export const removeCustomerFromSavedGroups = (customerId) => {
+  if (typeof window === 'undefined' || !window.localStorage || !customerId) return;
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(STORAGE_PREFIX)) {
+        const raw = window.localStorage.getItem(key);
+        if (raw) {
+          try {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              let modified = false;
+              const updatedList = list
+                .map((g) => {
+                  if (g.customerIds && g.customerIds.includes(customerId)) {
+                    modified = true;
+                    return {
+                      ...g,
+                      customerIds: g.customerIds.filter((id) => id !== customerId),
+                    };
+                  }
+                  return g;
+                })
+                .filter((g) => (g.customerIds || []).length >= 2); // Loại bỏ nhóm nếu còn dưới 2 quán
+              if (modified) {
+                window.localStorage.setItem(key, JSON.stringify(updatedList));
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Lỗi khi xóa khách hàng khỏi các nhóm đã lưu:', err);
+  }
+};
+
+/**
  * Custom Hook quản lý danh sách các nhóm khách hàng phục vụ xuất công nợ hàng loạt
  * - Tự động tải các nhóm khách hàng đã lưu từ localStorage
  * - Tự động liên kết lấy các nhóm chuỗi từ Cổng tra cứu Zalo (Portal Links) nếu có
@@ -205,6 +245,7 @@ export const useCustomerGroups = (userId) => {
     saveGroup,
     updateGroup,
     deleteGroup,
+    removeCustomerFromGroups: removeCustomerFromSavedGroups,
     refreshGroups: loadGroups,
   };
 };

@@ -57,7 +57,7 @@ import InvoiceImageUploadModal from '../src/components/InvoiceImageUploadModal';
 import InvoiceImageViewerModal from '../src/components/InvoiceImageViewerModal';
 import BatchExportDebtModal from '../src/components/BatchExportDebtModal';
 import CustomerGroupsModal from '../src/components/CustomerGroupsModal';
-import { useCustomerGroups } from '../src/hooks/useCustomerGroups';
+import { useCustomerGroups, removeCustomerFromSavedGroups } from '../src/hooks/useCustomerGroups';
 import QuickNoteModal from '../src/components/QuickNoteModal';
 import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewModal';
 import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
@@ -749,6 +749,8 @@ export default function DashboardScreen() {
     try {
       const response = await api.delete(`/customers/${customerId}`);
       if (response.data.success) {
+        // Tự động gỡ bỏ khách hàng vừa xóa khỏi toàn bộ các nhóm nhà hàng lưu trên máy
+        removeCustomerFromSavedGroups(customerId);
         popupModalRef.current?.show({
           title: 'Thành công',
           message: 'Đã xóa khách hàng thành công.',

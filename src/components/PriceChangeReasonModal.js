@@ -11,6 +11,8 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
+import PopupModal from './PopupModal';
+import { useCustomerGroups } from '../hooks/useCustomerGroups';
 import { COLORS } from '../theme';
 
 // Các gợi ý lý do phổ biến để chọn nhanh trên màn hình điện thoại
@@ -33,7 +35,8 @@ const formatCurrency = (amount) => {
  * Modal hỏi phạm vi & nhập lý do khi thay đổi giá riêng của khách hàng
  * - Bước 1: Hỏi cập nhật từ bây giờ hay chỉ lần này (công nợ lần đó)
  * - Nếu chọn "Chỉ lần này": áp dụng giá mới cho lần nợ hiện tại, không đổi giá riêng của khách
- * - Nếu chọn "Cập nhật từ bây giờ": mở logic nhập lý do đổi giá (luồng cũ) và lưu giá mới từ nay về sau
+ * - Nếu chọn "Cập nhật từ bây giờ": mở logic nhập lý do đổi giá và lưu giá mới từ nay về sau
+ * - NẾU LÀ NHÀ HÀNG THUỘC NHÓM: khi ấn lưu từ bây giờ, hiển thị thêm pop-up xác nhận đây là giá riêng của nhà hàng trong nhóm
  * - Áp dụng chuẩn Mobile-First Bottom-Sheet
  */
 const PriceChangeReasonModal = forwardRef((props, ref) => {
@@ -41,15 +44,34 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
   const [step, setStep] = useState('SCOPE'); // 'SCOPE' | 'REASON'
   const [changedItems, setChangedItems] = useState([]);
   const [customerName, setCustomerName] = useState('');
+  const [customerId, setCustomerId] = useState(null);
+  const [isGroupMemberProp, setIsGroupMemberProp] = useState(false);
+  const [groupNameProp, setGroupNameProp] = useState(null);
   const [reason, setReason] = useState('');
   const [canChooseScope, setCanChooseScope] = useState(true);
+
   const onConfirmCallbackRef = useRef(null);
+  const popupModalRef = useRef(null);
+
+  // Lấy danh sách nhóm khách hàng để tự động nhận diện nếu khách thuộc nhóm chuỗi
+  const { groups } = useCustomerGroups();
 
   // Mở modal và nhận thông tin các mặt hàng thay đổi giá cùng callback
   useImperativeHandle(ref, () => ({
-    open: ({ items = [], customerName = '', allowScopeSelection = true, onConfirm = null }) => {
+    open: ({
+      items = [],
+      customerName = '',
+      customerId = null,
+      isGroupMember = false,
+      groupName = null,
+      allowScopeSelection = true,
+      onConfirm = null,
+    }) => {
       setChangedItems(items);
       setCustomerName(customerName || '');
+      setCustomerId(customerId || null);
+      setIsGroupMemberProp(Boolean(isGroupMember));
+      setGroupNameProp(groupName || null);
       setReason('');
       setCanChooseScope(allowScopeSelection !== false);
       setStep(allowScopeSelection !== false ? 'SCOPE' : 'REASON');
@@ -83,20 +105,63 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
     notifyParent(false, null);
   };
 
-  // Chọn: Cập nhật từ bây giờ -> chuyển sang bước nhập lý do (luồng cũ)
+  // Chọn: Cập nhật từ bây giờ -> chuyển sang bước nhập lý do
   const handleSelectApplyToFuture = () => {
     setStep('REASON');
+  };
+
+  // Kiểm tra xem khách hàng này có thuộc nhóm nhà hàng nào không
+  const checkGroupMembership = () => {
+    if (isGroupMemberProp) {
+      return { isGroup: true, groupName: groupNameProp || 'Nhóm nhà hàng' };
+    }
+    if (groupNameProp) {
+      return { isGroup: true, groupName: groupNameProp };
+    }
+    if (customerId && Array.isArray(groups)) {
+      const matched = groups.find((g) => (g.customerIds || []).includes(customerId));
+      if (matched) {
+        return { isGroup: true, groupName: matched.name || 'Nhóm nhà hàng' };
+      }
+    }
+    return { isGroup: false, groupName: null };
+  };
+
+  // Xử lý xác nhận lưu giá mới từ bây giờ (nếu là nhà hàng trong nhóm: hiển thị pop-up hỏi tiếp tục)
+  const confirmSaveApplyToFuture = (finalReason) => {
+    const { isGroup, groupName } = checkGroupMembership();
+
+    if (isGroup) {
+      const groupSuffix = groupName && groupName !== 'Nhóm nhà hàng' ? ` "${groupName}"` : '';
+      popupModalRef.current?.show({
+        type: 'confirm',
+        title: 'Xác nhận thay đổi giá riêng nhóm',
+        message: `đây là giá riêng của nhà hàng trong nhóm${groupSuffix}, bạn có muốn tiếp tục thay đổi?`,
+        confirmText: 'Tiếp tục thay đổi',
+        cancelText: 'Hủy bỏ',
+        onConfirm: () => {
+          notifyParent(true, finalReason);
+        },
+        onCancel: () => {
+          // Người dùng bấm Hủy bỏ -> giữ nguyên, không lưu đè giá riêng
+        },
+      });
+      return;
+    }
+
+    // Nếu không thuộc nhóm, lưu bình thường
+    notifyParent(true, finalReason);
   };
 
   // Xác nhận lưu giá kèm lý do
   const handleConfirmReason = () => {
     const finalReason = reason.trim();
-    notifyParent(true, finalReason || null);
+    confirmSaveApplyToFuture(finalReason || null);
   };
 
   // Bỏ qua lý do nhưng vẫn cập nhật giá mới từ bây giờ
   const handleSkipReason = () => {
-    notifyParent(true, null);
+    confirmSaveApplyToFuture(null);
   };
 
   // Chọn nhanh lý do từ gợi ý
@@ -105,7 +170,8 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={handleClose} zIndex={props.zIndex || 9999999}>
+    <>
+      <SmoothModal visible={visible} onClose={handleClose} zIndex={props.zIndex || 9999999}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ width: '100%' }}
@@ -148,10 +214,19 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
             {/* Tên khách hàng */}
             {customerName ? (
               <View style={styles.customerCard}>
-                <Text style={styles.customerLabel}>Khách hàng:</Text>
-                <Text style={styles.customerValue} numberOfLines={1}>
-                  {customerName}
-                </Text>
+                <View style={{ flex: 1, paddingRight: 6 }}>
+                  <Text style={styles.customerLabel}>Khách hàng:</Text>
+                  <Text style={styles.customerValue} numberOfLines={1}>
+                    {customerName}
+                  </Text>
+                </View>
+                {checkGroupMembership().isGroup ? (
+                  <View style={styles.groupBadge}>
+                    <Text style={styles.groupBadgeText} numberOfLines={1}>
+                      🏢 {checkGroupMembership().groupName}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             ) : null}
 
@@ -314,6 +389,10 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
         </View>
       </KeyboardAvoidingView>
     </SmoothModal>
+
+    {/* PopupModal xác nhận độc lập ở tầng cao nhất tuyệt đối */}
+    <PopupModal ref={popupModalRef} />
+  </>
   );
 });
 
@@ -400,7 +479,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#0F172A',
-    flex: 1,
+  },
+  groupBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    maxWidth: 150,
+  },
+  groupBadgeText: {
+    fontSize: 11,
+    color: '#1D4ED8',
+    fontWeight: '700',
   },
   itemsCard: {
     backgroundColor: '#FFF7ED',

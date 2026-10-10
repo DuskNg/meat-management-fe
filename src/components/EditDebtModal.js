@@ -541,6 +541,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
             newPrice: item.price,
           })),
           customerName: customerName || 'Khách hàng',
+          customerId: transaction?.customerId || customerId,
           allowScopeSelection: true,
           onConfirm: (result) => {
             const applyToFuture = typeof result === 'object' && result !== null ? result.applyToFuture !== false : true;
@@ -744,7 +745,16 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
                   </View>
 
                   {/* Đơn giá */}
-                  <Text style={styles.label}>Giá bán thực tế tại thời điểm này (VND):</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={[styles.label, { marginBottom: 0 }]}>
+                      Giá bán thực tế tại thời điểm này (VND):
+                    </Text>
+                    {currentProduct && Boolean(currentProduct.hasCustomPrice || (currentProduct.customPrice !== undefined && currentProduct.customPrice !== null)) && (
+                      <View style={styles.customPriceNoticeBadge}>
+                        <Text style={styles.customPriceNoticeText}>🏷️ Đang áp dụng Giá riêng</Text>
+                      </View>
+                    )}
+                  </View>
                   <TextInput
                     style={[
                       styles.input,
@@ -1283,5 +1293,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#854D0E',
     fontStyle: 'italic',
+  },
+  customPriceNoticeBadge: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  customPriceNoticeText: {
+    color: '#15803D',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

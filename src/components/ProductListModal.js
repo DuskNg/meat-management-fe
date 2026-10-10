@@ -586,6 +586,9 @@ const ProductListModal = forwardRef(({ onRefresh }, ref) => {
           newPrice: i.customPrice,
         })),
         customerName: targetName,
+        customerId: customTargetType === 'customer' ? selectedCustomer?.id : null,
+        isGroupMember: customTargetType === 'group',
+        groupName: customTargetType === 'group' ? selectedGroup?.name : null,
         allowScopeSelection: false,
         onConfirm: (result) => {
           const reason = typeof result === 'object' && result !== null ? result.reason : result;

@@ -206,8 +206,16 @@ const PortalManagementModal = forwardRef((props, ref) => {
       };
 
       if (editingLinkId) {
-        await api.put(`/portal/manage/links/${editingLinkId}`, payload);
-        showGlobalToast('Cập nhật link nhóm Zalo thành công!');
+        const res = await api.put(`/portal/manage/links/${editingLinkId}`, payload);
+        const syncResult = res.data?.syncPriceResult;
+        if (syncResult && syncResult.syncedProductCount > 0) {
+          showGlobalToast(
+            `Cập nhật nhóm thành công & tự động áp dụng bộ giá riêng (${syncResult.syncedProductCount} loại thịt) cho ${syncResult.syncedCustomerCount} nhà hàng mới!`,
+            'success'
+          );
+        } else {
+          showGlobalToast('Cập nhật link nhóm Zalo thành công!');
+        }
       } else {
         await api.post('/portal/manage/links', payload);
         showGlobalToast('Tạo link ghim Zalo mới thành công!');

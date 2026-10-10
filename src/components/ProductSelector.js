@@ -1,5 +1,4 @@
-// meat-management-fe/src/components/ProductSelector.js
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,7 +11,7 @@ import CustomSelect from './CustomSelect';
 /**
  * Component ProductSelector dùng chung cho cả DebtModal, EditDebtModal, ReturnGoodsModal, EditReturnGoodsModal.
  * Tích hợp CustomSelect tiêu chuẩn với Portal hiển thị lớp trên cùng tuyệt đối (zIndex 999999).
- * Giải quyết triệt để lỗi dropdown bị các phần tử khác (như phần đính kèm ảnh) đè lên.
+ * Phân biệt trực quan, rõ ràng giữa Giá riêng và Giá chung, tự động đưa các món có giá riêng lên đầu danh sách.
  */
 const ProductSelector = ({
   products = [],
@@ -24,11 +23,28 @@ const ProductSelector = ({
   hasError = false,
   error = '',
 }) => {
-  // Helper định dạng tiền tệ an toàn
-  const safeFormatCurrency = (val) => {
-    if (typeof formatCurrency === 'function') return formatCurrency(val);
-    return Number(val || 0).toLocaleString('vi-VN');
+  // Helper chuẩn hóa định dạng số tiền, loại bỏ hoàn toàn chữ 'đ', '₫' thừa để tránh bị lặp thành 'đđ'
+  const formatPriceOnly = (val) => {
+    if (val === undefined || val === null || val === '') return '0';
+    let formatted = '';
+    if (typeof formatCurrency === 'function') {
+      formatted = formatCurrency(val);
+    } else {
+      formatted = Number(val || 0).toLocaleString('vi-VN');
+    }
+    return String(formatted).replace(/[đ₫]/gi, '').trim();
   };
+
+  // Sắp xếp đưa các món có giá riêng lên đầu, sau đó sắp xếp theo tên A-Z
+  const sortedProducts = useMemo(() => {
+    return [...products].sort((a, b) => {
+      const aCustom = Boolean(a.hasCustomPrice || (a.customPrice !== undefined && a.customPrice !== null));
+      const bCustom = Boolean(b.hasCustomPrice || (b.customPrice !== undefined && b.customPrice !== null));
+      if (aCustom && !bCustom) return -1;
+      if (!aCustom && bCustom) return 1;
+      return (a.name || '').localeCompare(b.name || '', 'vi');
+    });
+  }, [products]);
 
   return (
     <View style={styles.productsContainer}>
@@ -38,31 +54,57 @@ const ProductSelector = ({
           <CustomSelect
             value={currentProduct}
             placeholder="🔍 Chọn loại thịt..."
-            options={products}
+            options={sortedProducts}
             onSelect={(product) => {
               if (onSelectProduct) onSelectProduct(product);
             }}
             getOptionLabel={(p) => (p?.name ? p.name : '')}
-            renderSelected={(p) => (p?.name ? p.name : '')}
-            renderOption={(p) => {
-              const isCustom = p.customPrice !== undefined && p.customPrice !== null;
+            renderSelected={(p) => {
+              if (!p?.name) return '';
+              const isCustom = Boolean(p.hasCustomPrice || (p.customPrice !== undefined && p.customPrice !== null));
               const displayPrice = isCustom ? p.customPrice : p.defaultPrice;
+              return `${p.name} (${formatPriceOnly(displayPrice)} đ/${p.unit || 'kg'}${isCustom ? ' - 🏷️ Giá riêng' : ''})`;
+            }}
+            renderOption={(p) => {
+              const isCustom = Boolean(p.hasCustomPrice || (p.customPrice !== undefined && p.customPrice !== null));
+              const displayPrice = isCustom ? p.customPrice : p.defaultPrice;
+              const basePrice = p.baseDefaultPrice ?? p.defaultPrice;
+              const hasDiffFromBase = isCustom && basePrice !== undefined && basePrice !== null && Number(basePrice) !== Number(p.customPrice);
+
               return (
-                <View style={styles.dropdownOptionRow}>
-                  <View style={{ flex: 1, paddingRight: 6 }}>
-                    <Text style={styles.dropdownOptionName}>{p.name}</Text>
+                <View style={[styles.dropdownOptionRow, isCustom && styles.dropdownOptionRowCustom]}>
+                  {/* Cột trái: Tên sản phẩm, Badge phân biệt Giá riêng/Giá chung, và lý do đổi giá nếu có */}
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <View style={styles.nameAndBadgeWrap}>
+                      <Text style={[styles.dropdownOptionName, isCustom && styles.dropdownOptionNameCustom]}>
+                        {p.name}
+                      </Text>
+                      {isCustom ? (
+                        <View style={styles.badgeCustomPrice}>
+                          <Text style={styles.badgeCustomPriceText}>🏷️ Giá riêng</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.badgeDefaultPrice}>
+                          <Text style={styles.badgeDefaultPriceText}>Giá chung</Text>
+                        </View>
+                      )}
+                    </View>
                     {p.changeReason ? (
-                      <Text style={{ fontSize: 10, color: '#B45309', fontStyle: 'italic', marginTop: 1 }} numberOfLines={1}>
-                        💬 {p.changeReason}
+                      <Text style={styles.dropdownOptionReason} numberOfLines={1}>
+                        💬 Lý do: {p.changeReason}
                       </Text>
                     ) : null}
                   </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={[styles.dropdownOptionPrice, isCustom && { color: '#059669', fontWeight: 'bold' }]}>
-                      {safeFormatCurrency(displayPrice)}đ/{p.unit || 'kg'}
+
+                  {/* Cột phải: Đơn giá hiện tại và giá chung gốc gạch ngang để đối chiếu */}
+                  <View style={styles.priceCol}>
+                    <Text style={[styles.dropdownOptionPrice, isCustom && styles.dropdownOptionPriceCustom]}>
+                      {formatPriceOnly(displayPrice)} đ/{p.unit || 'kg'}
                     </Text>
-                    {isCustom && (
-                      <Text style={{ fontSize: 9.5, color: '#059669', fontWeight: '600' }}>Giá riêng</Text>
+                    {hasDiffFromBase && (
+                      <Text style={styles.dropdownOptionBasePrice}>
+                        Giá chung: {formatPriceOnly(basePrice)} đ
+                      </Text>
                     )}
                   </View>
                 </View>
@@ -188,19 +230,82 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
-    paddingVertical: 2,
+    paddingVertical: 5,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  dropdownOptionRowCustom: {
+    backgroundColor: '#F0FDF4',
+    borderLeftWidth: 3,
+    borderLeftColor: '#10B981',
+    paddingLeft: 8,
+  },
+  nameAndBadgeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
   },
   dropdownOptionName: {
     fontSize: 13.5,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#0F172A',
-    flex: 1,
-    marginRight: 8,
+  },
+  dropdownOptionNameCustom: {
+    color: '#15803D',
+    fontWeight: '700',
+  },
+  badgeCustomPrice: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+  },
+  badgeCustomPriceText: {
+    color: '#15803D',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  badgeDefaultPrice: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  badgeDefaultPriceText: {
+    color: '#64748B',
+    fontSize: 9.5,
+    fontWeight: '500',
+  },
+  dropdownOptionReason: {
+    fontSize: 10.5,
+    color: '#B45309',
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  priceCol: {
+    alignItems: 'flex-end',
+    flexShrink: 0,
   },
   dropdownOptionPrice: {
-    fontSize: 12,
-    color: '#64748B',
+    fontSize: 12.5,
+    color: '#475569',
     fontWeight: '600',
+  },
+  dropdownOptionPriceCustom: {
+    color: '#059669',
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  dropdownOptionBasePrice: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
+    marginTop: 1,
   },
   noProductHintText: {
     color: COLORS.dangerDark,
