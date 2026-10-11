@@ -44,6 +44,7 @@ import SupplierHistoryModal from '../src/components/SupplierHistoryModal';
 import AddEmployeeModal from '../src/components/AddEmployeeModal';
 import SalaryAdvanceModal from '../src/components/SalaryAdvanceModal';
 import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
+import EmployeeSalaryShareModal from '../src/components/EmployeeSalaryShareModal';
 import EditEmployeeModal from '../src/components/EditEmployeeModal';
 import ReturnGoodsModal from '../src/components/ReturnGoodsModal';
 import ProfitFeatureIntroModal from '../src/components/ProfitFeatureIntroModal';
@@ -155,6 +156,7 @@ export default function DashboardScreen() {
   const addEmployeeModalRef = useRef(null);
   const salaryAdvanceModalRef = useRef(null);
   const employeeHistoryModalRef = useRef(null);
+  const employeeSalaryShareModalRef = useRef(null);
   const editEmployeeModalRef = useRef(null);
   const memberActionsModalRef = useRef(null);
   const dailyPriceManagementModalRef = useRef(null);
@@ -1280,6 +1282,18 @@ export default function DashboardScreen() {
                 activeOpacity={0.6}
               >
                 <Text style={styles.viewDebtBtnText}>👁️ Lịch sử</Text>
+              </AnimatedPressable>
+
+              {/* Nút gửi link Zalo tra cứu lương & công */}
+              <AnimatedPressable
+                style={[styles.viewDebtBtn, { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }]}
+                onPress={() => {
+                  setSelectedEmployee(item);
+                  employeeSalaryShareModalRef.current?.open(item, salaryMonth);
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={[styles.viewDebtBtnText, { color: '#0284C7', fontWeight: 'bold' }]}>📲 Gửi Zalo</Text>
               </AnimatedPressable>
 
               {/* Nút ứng lương */}
@@ -2461,6 +2475,7 @@ export default function DashboardScreen() {
         <EditEmployeeModal ref={editEmployeeModalRef} onRefresh={refetchEmployees} />
         <SalaryAdvanceModal ref={salaryAdvanceModalRef} employee={selectedEmployee} onRefresh={refetchEmployees} />
         <EmployeeHistoryModal ref={employeeHistoryModalRef} employee={selectedEmployee} />
+        <EmployeeSalaryShareModal ref={employeeSalaryShareModalRef} />
 
         {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
         {auth.user?.isWorkspaceOwner && (

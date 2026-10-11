@@ -13,6 +13,11 @@ import {
 import SmoothModal from './SmoothModal';
 import PopupModal from './PopupModal';
 import { useCustomerGroups } from '../hooks/useCustomerGroups';
+import {
+  checkStreakBeforeOneTime,
+  recordOneTimeOverride,
+  clearOverrideHistory,
+} from '../utils/priceOverrideHistory';
 import { COLORS } from '../theme';
 
 // Các gợi ý lý do phổ biến để chọn nhanh trên màn hình điện thoại
@@ -102,6 +107,44 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
 
   // Chọn: Chỉ áp dụng lần này (không lưu vào bảng giá riêng)
   const handleSelectOneTimeOnly = () => {
+    // 1. Kiểm tra xem có mặt hàng nào đã có 2 lần liên tiếp trước đó sửa thành cùng mức giá này (chọn chỉ lần này)
+    const streakItems = checkStreakBeforeOneTime(customerId, changedItems);
+
+    if (streakItems && streakItems.length > 0) {
+      // Đã có 2 lần trước cùng giá -> Lần thứ 3 hiển thị pop-up gợi ý đổi sang "Cập nhật từ bây giờ"
+      let streakMessage = '';
+      if (streakItems.length === 1) {
+        const item = streakItems[0];
+        streakMessage = `Ở 2 lần ghi nợ trước, món "${item.productName}" đều được sửa thành giá ${formatCurrency(item.price)} (chọn chỉ lần này).\n\nBạn có muốn đổi thành tùy chọn "CẬP NHẬT TỪ BÂY GIỜ" để lưu cố định mức giá này luôn không?`;
+      } else {
+        const itemsList = streakItems
+          .map((it) => `• ${it.productName}: ${formatCurrency(it.price)}`)
+          .join('\n');
+        streakMessage = `Ở 2 lần ghi nợ trước, các món sau đều được sửa cùng mức giá này (chọn chỉ lần này):\n${itemsList}\n\nBạn có muốn đổi thành tùy chọn "CẬP NHẬT TỪ BÂY GIỜ" để lưu cố định mức giá này luôn không?`;
+      }
+
+      popupModalRef.current?.show({
+        type: 'confirm',
+        title: '💡 Gợi ý cập nhật đơn giá riêng',
+        message: streakMessage,
+        confirmText: 'Đổi sang Cập nhật từ bây giờ',
+        cancelText: 'Vẫn chỉ lần này',
+        onConfirm: () => {
+          // Người dùng đồng ý -> chuyển sang bước nhập lý do để lưu giá mới từ bây giờ
+          clearOverrideHistory(customerId, changedItems);
+          setStep('REASON');
+        },
+        onCancel: () => {
+          // Người dùng giữ nguyên ý định -> ghi nhận tiếp lần này và áp dụng chỉ lần này
+          recordOneTimeOverride(customerId, changedItems);
+          notifyParent(false, null);
+        },
+      });
+      return;
+    }
+
+    // Nếu chưa đủ 3 lần: Ghi nhận thêm 1 lần và áp dụng chỉ lần này
+    recordOneTimeOverride(customerId, changedItems);
     notifyParent(false, null);
   };
 
@@ -140,6 +183,7 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
         confirmText: 'Tiếp tục thay đổi',
         cancelText: 'Hủy bỏ',
         onConfirm: () => {
+          clearOverrideHistory(customerId, changedItems);
           notifyParent(true, finalReason);
         },
         onCancel: () => {
@@ -149,7 +193,8 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
       return;
     }
 
-    // Nếu không thuộc nhóm, lưu bình thường
+    // Nếu không thuộc nhóm, xóa vết và lưu bình thường
+    clearOverrideHistory(customerId, changedItems);
     notifyParent(true, finalReason);
   };
 

@@ -205,8 +205,8 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
   const isLoadedDraftRef = useRef(false);
   const saveTimeoutRef = useRef(null);
 
-  // State phục vụ tính năng thu phóng (Scale/Zoom) ảnh tập trung vào giữa
-  const [batchScale, setBatchScale] = useState(1.4); // Mức scale mặc định 140%
+  // State phục vụ tính năng thu phóng (Scale/Zoom) ảnh (Mặc định 100% trọn vẹn hóa đơn để không che khuất chữ ký)
+  const [batchScale, setBatchScale] = useState(1.0);
   const isItemDraggingRef = useRef(false);
 
   // Bảng đếm tệp theo khách hàng để nhận diện và cảnh báo các tệp bị trùng khách trong danh sách
@@ -479,12 +479,8 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
         const img = document.createElement('img');
         img.onload = () => {
           try {
-            const maxDim = 1200;
-            const origW = img.naturalWidth || img.width;
-            const origH = img.naturalHeight || img.height;
-
-            // Cắt 10% viền ngoài để tập trung sâu vào bố cục ở giữa
-            const CROP_RATIO = 0.10;
+            // Cắt nhẹ 5% viền ngoài mỗi cạnh để ảnh tự động zoom to hơn chút, dễ nhìn
+            const CROP_RATIO = 0.05;
             const sx = Math.round(origW * CROP_RATIO);
             const sy = Math.round(origH * CROP_RATIO);
             const sw = origW - sx * 2;
@@ -505,6 +501,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
             canvas.width = width;
             canvas.height = height;
             const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
             const compressed = canvas.toDataURL('image/jpeg', 0.70);
             resolve({
@@ -585,7 +582,7 @@ const InvoiceImageUploadModal = forwardRef(({ onRefresh, onSuccess, popupModalRe
             transactionId: batchTransactionRef.current?.id || null,
             dateStr: batchDateStr || getTodayFormatted(),
             note: '',
-            scale: isVid ? 1.0 : (batchScale || 1.4), // Mặc định tự động phóng to 140% tập trung vào giữa hóa đơn để bỏ rìa thừa
+            scale: isVid ? 1.0 : (batchScale || 1.0), // Mặc định hiển thị 100% trọn vẹn hóa đơn để nhìn rõ chữ ký ở đáy
             offsetX: 0,
             offsetY: 0,
           });

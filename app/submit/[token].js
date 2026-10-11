@@ -126,14 +126,14 @@ const getFileCategory = (file) => {
   return { isVideo, isImage };
 };
 
-// Helper nén ảnh siêu tốc bằng HTML5 Canvas + cắt viền ngoài (Cắt 10% mỗi cạnh, tập trung sâu vào giữa hóa đơn)
-const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
+// Helper nén ảnh siêu tốc bằng HTML5 Canvas (Bảo toàn 100% toàn bộ ảnh gốc, không cắt viền để giữ trọn chữ ký ở chân trang)
+const compressImageClient = async (file, maxWidth = 1200, quality = 0.65) => {
   if (!file) return null;
   const { isImage } = getFileCategory(file);
   if (!isImage) return null;
 
-  // Cắt 10% viền ngoài mỗi cạnh (trên, dưới, trái, phải) để tập trung sâu vào bố cục ở giữa, loại bỏ bàn/rìa thừa
-  const CROP_RATIO = 0.10;
+  // Cắt nhẹ 5% viền ngoài mỗi cạnh để ảnh tự động zoom to hơn, dễ nhìn hơn mà không mất chữ ký ở đáy
+  const CROP_RATIO = 0.05;
 
   try {
     // 1. Ưu tiên giải mã phần cứng bằng createImageBitmap (cực nhanh, đa luồng off-thread, không tốn RAM)
@@ -143,7 +143,6 @@ const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
         const origW = bitmap.width;
         const origH = bitmap.height;
 
-        // Vùng cắt tập trung ở giữa (giữ nguyên 80% chiều rộng và 80% chiều cao trung tâm)
         const sx = Math.round(origW * CROP_RATIO);
         const sy = Math.round(origH * CROP_RATIO);
         const sw = origW - sx * 2;
@@ -162,7 +161,7 @@ const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
         canvas.height = height;
         const ctx = canvas.getContext('2d', { alpha: false }); // Tắt alpha channel để tăng tốc render 2x
         if (ctx) {
-          ctx.imageSmoothingQuality = 'medium'; // Tối ưu tốc độ xử lý điểm ảnh
+          ctx.imageSmoothingQuality = 'high'; // Đảm bảo chữ ký và nét chữ rõ nét nhất
           ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, width, height);
           const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
           if (typeof bitmap.close === 'function') bitmap.close();
@@ -205,7 +204,6 @@ const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
           const origW = img.naturalWidth || img.width;
           const origH = img.naturalHeight || img.height;
 
-          // Vùng cắt tập trung ở giữa (giữ nguyên 80% kích thước trung tâm)
           const sx = Math.round(origW * CROP_RATIO);
           const sy = Math.round(origH * CROP_RATIO);
           const sw = origW - sx * 2;
@@ -224,7 +222,7 @@ const compressImageClient = async (file, maxWidth = 1000, quality = 0.55) => {
           canvas.height = height;
           const ctx = canvas.getContext('2d', { alpha: false });
           if (ctx) {
-            ctx.imageSmoothingQuality = 'medium';
+            ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
             const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
             // Dọn sạch VRAM Canvas & thu hồi Blob URL

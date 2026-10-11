@@ -1270,6 +1270,29 @@ const resolveCustomerForSub = (sub, custList) => {
       }
     }
 
+    // 1g1. ĐẶC BIỆT: Khớp ưu tiên khách "Tài" (kể cả khi nét chữ viết tay chữ T thảo bị AI đọc nhầm thành chữ "l" -> lai, lại, tai...)
+    if (
+      cleanDetected === 'lai' ||
+      cleanDetectedNoSpace === 'lai' ||
+      cleanDetected === 'tai' ||
+      cleanDetectedNoSpace === 'tai' ||
+      cleanDetected === 'anh tai' ||
+      cleanDetectedNoSpace === 'anhtai' ||
+      cleanDetected === 'chu tai' ||
+      cleanDetectedNoSpace === 'chutai'
+    ) {
+      const taiCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+        return cClean === 'tai' || cClean === 'anh tai';
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+        return (cClean === 'tai' || cClean.includes('tai')) && !cClean.includes('tuyet') && !cClean.includes('tai chinh');
+      }) || null;
+      if (taiCust) {
+        matchedCust = taiCust;
+      }
+    }
+
     // 1g2. ĐẶC BIỆT: Khớp ưu tiên khách "Nguyễn khuyến trường hoàng" (khi AI đọc được nguyễn . hoàng, nguyễn hoàng, nguyễn khuyến, trường hoàng...)
     const hasNguyenOrKhuyen = cleanDetected.includes('nguyen') || cleanDetected.includes('khuyen') || cleanDetectedNoSpace.includes('nguyen') || cleanDetectedNoSpace.includes('khuyen');
     const hasHoang = cleanDetected.includes('hoang') || cleanDetectedNoSpace.includes('hoang');
@@ -1479,16 +1502,20 @@ const resolveCustomerForSub = (sub, custList) => {
       if (custThangPhoCo) matchedCust = custThangPhoCo;
     }
 
-    // 1n. ĐẶC BIỆT: Khớp ưu tiên khách "Phở đông" nếu là phở đg, phở đông, pho dg, pho dong...
+    // 1n. ĐẶC BIỆT: Khớp ưu tiên khách "Phở đông" nếu là phở đg, phở đông, phở đs, pho dg, pho dong, pho ds...
     if (
       cleanDetected === 'pho dg' ||
       cleanDetected === 'phodg' ||
       cleanDetected === 'pho dong' ||
       cleanDetected === 'phodong' ||
+      cleanDetected === 'pho ds' ||
+      cleanDetected === 'phods' ||
       cleanDetected === 'dg' ||
+      cleanDetected === 'ds' ||
       cleanDetectedNoSpace === 'phodg' ||
       cleanDetectedNoSpace === 'phodong' ||
-      (cleanDetected.includes('pho') && (cleanDetected.includes('dg') || cleanDetected.includes('dong'))) ||
+      cleanDetectedNoSpace === 'phods' ||
+      (cleanDetected.includes('pho') && (cleanDetected.includes('dg') || cleanDetected.includes('dong') || cleanDetected.includes('ds'))) ||
       cleanDetected.includes('pho dong')
     ) {
       const custPhoDong = custList.find((c) => {
@@ -2009,10 +2036,14 @@ const resolveCustomerForSub = (sub, custList) => {
         cleanDetected === 'phodg' ||
         cleanDetected === 'pho dong' ||
         cleanDetected === 'phodong' ||
+        cleanDetected === 'pho ds' ||
+        cleanDetected === 'phods' ||
         cleanDetected === 'dg' ||
+        cleanDetected === 'ds' ||
         cleanDetectedNoSpace === 'phodg' ||
         cleanDetectedNoSpace === 'phodong' ||
-        (cleanDetected.includes('pho') && (cleanDetected.includes('dg') || cleanDetected.includes('dong'))) ||
+        cleanDetectedNoSpace === 'phods' ||
+        (cleanDetected.includes('pho') && (cleanDetected.includes('dg') || cleanDetected.includes('dong') || cleanDetected.includes('ds'))) ||
         cleanDetected.includes('pho dong')
       ) {
         matchedCust = custList.find((c) => {
@@ -2029,6 +2060,21 @@ const resolveCustomerForSub = (sub, custList) => {
         matchedCust = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
           return cClean === 'gia hung cs2' || (cClean.includes('gia hung') && cClean.includes('cs2'));
+        }) || null;
+      } else if (
+        cleanDetected === 'lai' ||
+        cleanDetectedNoSpace === 'lai' ||
+        cleanDetected === 'tai' ||
+        cleanDetectedNoSpace === 'tai' ||
+        cleanDetected === 'anh tai' ||
+        cleanDetectedNoSpace === 'anhtai'
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+          return cClean === 'tai' || cClean === 'anh tai';
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+          return (cClean === 'tai' || cClean.includes('tai')) && !cClean.includes('tuyet') && !cClean.includes('tai chinh');
         }) || null;
       }
     }
@@ -3342,8 +3388,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             } else if (cleanRawMeat === 'than' || cleanRawMeat === 'than bo' || cleanRawMeat === 'thit than') {
               // Quy tắc: thăn -> Thăn
               rawName = 'Thăn';
-            } else if (cleanRawMeat === 'xg' || cleanRawMeat === 'x' || cleanRawMeat === 'xg bo' || cleanRawMeat === 'xuong' || cleanRawMeat === 'xuong bo') {
-              // Quy tắc: xg, x -> Xg Bò
+            } else if (cleanRawMeat === 'xg' || cleanRawMeat === 'x' || cleanRawMeat === 'xg bo' || cleanRawMeat === 'xuong' || cleanRawMeat === 'xuong bo' || (cleanRawMeat.length === 1 && cleanRawMeat !== 's')) {
+              // Quy tắc: xg, x, hoặc chỉ có 1 ký tự duy nhất -> Xg Bò
               rawName = 'Xg Bò';
             } else if (cleanRawMeat === 'nam' || cleanRawMeat === 'lam') {
               // Quy tắc: nạm, lạm -> Nam
