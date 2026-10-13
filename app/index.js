@@ -46,6 +46,7 @@ import SalaryAdvanceModal from '../src/components/SalaryAdvanceModal';
 import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
 import EmployeeSalaryShareModal from '../src/components/EmployeeSalaryShareModal';
 import EditEmployeeModal from '../src/components/EditEmployeeModal';
+import EmployeeLeaveModal from '../src/components/EmployeeLeaveModal';
 import ReturnGoodsModal from '../src/components/ReturnGoodsModal';
 import ProfitFeatureIntroModal from '../src/components/ProfitFeatureIntroModal';
 import RecurringDebtModal from '../src/components/RecurringDebtModal';
@@ -158,6 +159,7 @@ export default function DashboardScreen() {
   const employeeHistoryModalRef = useRef(null);
   const employeeSalaryShareModalRef = useRef(null);
   const editEmployeeModalRef = useRef(null);
+  const employeeLeaveModalRef = useRef(null);
   const memberActionsModalRef = useRef(null);
   const dailyPriceManagementModalRef = useRef(null);
   const employeeDailyDebtModalRef = useRef(null); // Modal danh sách ghi nợ trong ngày (chỉ dùng cho tk thành viên)
@@ -237,15 +239,11 @@ export default function DashboardScreen() {
     return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
   });
 
-  // States quản lý tab nhân viên và chấm công / tính lương
-  const [employeeTab, setEmployeeTab] = useState('STAFF'); // 'STAFF' (Nhân sự), 'ATTENDANCE' (Chấm công), 'SALARY' (Bảng lương)
-  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().split('T')[0]); // Ngày chấm công mặc định hôm nay
-  const [attendanceList, setAttendanceList] = useState([]); // Danh sách chấm công tạm thời để gửi lưu
-  const [showSaveToast, setShowSaveToast] = useState(false); // Trạng thái hiển thị thông báo toast khi lưu chấm công thành công
+  // Tháng tính lương mặc định tháng hiện tại
   const [salaryMonth, setSalaryMonth] = useState(() => {
     const d = new Date();
     return `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-  }); // Tháng tính lương mặc định tháng hiện tại
+  });
 
 
   // Đồng bộ view khi URL thay đổi (bao gồm cả khi reload hoặc bấm quay lại)
@@ -643,74 +641,9 @@ export default function DashboardScreen() {
     enabled: auth.hasPermission('canManageEmployees'),
   });
 
-  // States và logic chấm công & bảng lương nhân viên
-  const [salaryData, setSalaryData] = useState([]);
-  const [loadingSalary, setLoadingSalary] = useState(false);
-  const [savingAttendance, setSavingAttendance] = useState(false);
-
-  // States phụ để nhập thưởng phạt khi mở rộng thẻ nhân viên để chốt lương
-  const [activeSalaryEmpId, setActiveSalaryEmpId] = useState(null);
+  // States quản lý thao tác nhân viên
   const [activeOptionsEmpId, setActiveOptionsEmpId] = useState(null);
-  const [bonusInput, setBonusInput] = useState('');
-  const [deductionInput, setDeductionInput] = useState('');
-  const [paymentNote, setPaymentNote] = useState('');
   const [payingSalaryEmpId, setPayingSalaryEmpId] = useState(null);
-
-  // Lấy danh sách chấm công
-  const fetchAttendanceList = async (dateStr) => {
-    try {
-      const response = await api.get(`/employees/attendance?date=${dateStr}`);
-      if (response.data.success) {
-        setAttendanceList(response.data.data);
-      }
-    } catch (err) {
-      console.error("Lỗi tải danh sách chấm công:", err);
-    }
-  };
-
-  // Tự động load dữ liệu chấm công khi đổi ngày hoặc tab
-  React.useEffect(() => {
-    if (currentView === 'employees' && employeeTab === 'ATTENDANCE') {
-      fetchAttendanceList(attendanceDate);
-    }
-  }, [currentView, employeeTab, attendanceDate]);
-
-  // Thay đổi trạng thái chấm công
-  const handleToggleAttendance = (empId, status, shift = 'FULL') => {
-    setAttendanceList((prev) =>
-      prev.map((item) =>
-        item.employeeId === empId ? { ...item, status, shift } : item
-      )
-    );
-  };
-
-  // Lưu bảng chấm công
-  const handleSaveAttendance = async () => {
-    if (savingAttendance) return; // Chống spam click
-    setSavingAttendance(true);
-    try {
-      const response = await api.post('/employees/attendance', {
-        date: attendanceDate,
-        list: attendanceList,
-      });
-      if (response.data.success) {
-        setShowSaveToast(true);
-        // Tự động ẩn thông báo sau 5 giây
-        setTimeout(() => {
-          setShowSaveToast(false);
-        }, 5000);
-        fetchAttendanceList(attendanceDate);
-      }
-    } catch (err) {
-      popupModalRef.current?.show({
-        title: 'Thất bại',
-        message: err.response?.data?.message || 'Không thể lưu chấm công.',
-        type: 'error',
-      });
-    } finally {
-      setSavingAttendance(false);
-    }
-  };
 
   // Gửi yêu cầu chốt trả lương
   const handlePaySalary = async (empId) => {
@@ -723,12 +656,11 @@ export default function DashboardScreen() {
       });
 
       if (response.data.success) {
-        Alert.alert('Thành công', 'Đã chốt và chi trả lương tháng thành công.');
-        setActiveSalaryEmpId(null);
+        showGlobalToast('Đã chốt và chi trả lương tháng thành công!', 'success');
         refetchEmployees(); // Làm mới danh sách nhân viên để cập nhật lương hiển thị & trạng thái
       }
     } catch (err) {
-      Alert.alert('Lỗi', err.response?.data?.message || 'Lỗi thanh toán lương.');
+      showGlobalToast(err.response?.data?.message || 'Lỗi thanh toán lương.', 'error');
     } finally {
       setPayingSalaryEmpId(null);
     }
@@ -1212,7 +1144,9 @@ export default function DashboardScreen() {
     const firstLetter = (item.name || 'E').trim().charAt(0).toUpperCase();
     const avatarBg = '#E0F2FE'; // Xanh dương nhạt
     const avatarText = '#0369A1'; // Xanh dương đậm
-    const remainingSalary = item.baseSalary - (item.totalAdvances || 0) + (item.carryOver || 0);
+    const remainingSalary = item.remainingSalary !== undefined
+      ? item.remainingSalary
+      : (item.baseSalary - (item.leaveDeduction || 0) - (item.totalAdvances || 0) + (item.carryOver || 0));
     const showOptions = activeOptionsEmpId === item.id;
 
     return (
@@ -1246,9 +1180,9 @@ export default function DashboardScreen() {
                     {formatCurrency(remainingSalary)}{remainingSalary < 0 ? ' (chuyển sang tháng sau)' : ''}
                   </Text>
                 </View>
-                {item.totalAdvances > 0 && (
+                {(item.totalAdvances > 0 || item.leaveDays > 0) && (
                   <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 2, textAlign: 'right' }}>
-                    (Gốc: {formatCurrency(item.baseSalary)} - Ứng: {formatCurrency(item.totalAdvances)})
+                    (Gốc: {formatCurrency(item.baseSalary)}{item.leaveDays > 0 ? ` - Nghỉ ${item.leaveDays} buổi: -${formatCurrency(item.leaveDeduction)}` : ''}{item.totalAdvances > 0 ? ` - Ứng: -${formatCurrency(item.totalAdvances)}` : ''})
                   </Text>
                 )}
                 {item.carryOver < 0 && (
@@ -1272,7 +1206,7 @@ export default function DashboardScreen() {
 
           <View style={styles.cardDebtContainer}>
             <View style={styles.actionsRightGroup}>
-              {/* Nút xem lịch sử chấm công, ứng, lương */}
+              {/* Nút xem lịch sử xin nghỉ, ứng, lương */}
               <AnimatedPressable
                 style={styles.viewDebtBtn}
                 onPress={() => {
@@ -1284,7 +1218,19 @@ export default function DashboardScreen() {
                 <Text style={styles.viewDebtBtnText}>👁️ Lịch sử</Text>
               </AnimatedPressable>
 
-              {/* Nút gửi link Zalo tra cứu lương & công */}
+              {/* Nút xin nghỉ (Tự động trừ buổi lương) */}
+              <AnimatedPressable
+                style={[styles.viewDebtBtn, { backgroundColor: '#FEF2F2', borderColor: '#FECDD3' }]}
+                onPress={() => {
+                  setSelectedEmployee(item);
+                  employeeLeaveModalRef.current?.open(item);
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={[styles.viewDebtBtnText, { color: '#DC2626', fontWeight: 'bold' }]}>📝 Xin nghỉ</Text>
+              </AnimatedPressable>
+
+              {/* Nút gửi link Zalo tra cứu lương & ngày nghỉ */}
               <AnimatedPressable
                 style={[styles.viewDebtBtn, { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }]}
                 onPress={() => {
@@ -2266,206 +2212,78 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* THANH TABS NGHIỆP VỤ NHÂN VIÊN */}
-          <View style={styles.tabHeaderContainer}>
-            <TouchableOpacity
-              style={[styles.tabHeaderButton, employeeTab === 'STAFF' && styles.tabHeaderButtonActive]}
-              onPress={() => setEmployeeTab('STAFF')}
-            >
-              <Text style={[styles.tabHeaderText, employeeTab === 'STAFF' && styles.tabHeaderTextActive]}>
-                👥 Nhân sự
-              </Text>
+          {/* ĐIỀU KHIỂN LỌC THÁNG LƯƠNG & ỨNG LƯƠNG */}
+          <View style={styles.dateSelectorContainer}>
+            <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustSalaryMonth(-1)}>
+              <Text style={styles.dateSelectorArrowText}>◀️ Tháng trước</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabHeaderButton, employeeTab === 'ATTENDANCE' && styles.tabHeaderButtonActive]}
-              onPress={() => setEmployeeTab('ATTENDANCE')}
-            >
-              <Text style={[styles.tabHeaderText, employeeTab === 'ATTENDANCE' && styles.tabHeaderTextActive]}>
-                📅 Chấm công
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* TAB 1: DANH SÁCH NHÂN SỰ */}
-          {employeeTab === 'STAFF' && (
-            <>
-              {/* ĐIỀU KHIỂN LỌC THÁNG LƯƠNG & ỨNG LƯƠNG */}
-              <View style={styles.dateSelectorContainer}>
-                <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustSalaryMonth(-1)}>
-                  <Text style={styles.dateSelectorArrowText}>◀️ Tháng trước</Text>
-                </TouchableOpacity>
-                <View style={styles.dateDisplayWrapper}>
-                  <Text style={styles.dateDisplayTitle}>Tháng xem lương & ứng</Text>
-                  <Text style={styles.dateDisplayVal}>Tháng {salaryMonth}</Text>
-                </View>
-                <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustSalaryMonth(1)}>
-                  <Text style={styles.dateSelectorArrowText}>Tháng sau ▶️</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* NÚT THÊM NHÂN VIÊN MỚI (MỚI DI CHUYỂN LÊN TRÊN) */}
-              <TouchableOpacity
-                style={[styles.addEmployeeButtonFull, { marginHorizontal: 16, marginTop: 8, marginBottom: 4 }]}
-                onPress={() => addEmployeeModalRef.current?.open()}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.addEmployeeButtonFullText}>➕ THÊM NHÂN VIÊN MỚI</Text>
-              </TouchableOpacity>
-
-              {/* Ô TÌM KIẾM NHÂN VIÊN */}
-              <View style={[styles.searchContainer, { marginTop: 12 }]}>
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="🔍 Tìm nhân viên..."
-                  placeholderTextColor={COLORS.textLight}
-                  value={search}
-                  onChangeText={setSearch}
-                />
-                {search ? (
-                  <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
-                    <Text style={styles.clearSearchText}>✕</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-
-              <View style={styles.listHeaderContainer}>
-                <Text style={styles.listHeaderEmployee}>📂 DANH SÁCH NHÂN VIÊN ({filteredEmployees.length})</Text>
-              </View>
-
-              {isLoadingEmployees ? (
-                <ActivityIndicator size="large" color="#0369A1" style={{ marginTop: 40 }} />
-              ) : (
-                <FlatList
-                  data={filteredEmployees}
-                  renderItem={renderEmployeeItem}
-                  keyExtractor={(item) => item.id}
-                  contentContainerStyle={styles.listContent}
-                  refreshing={isLoadingEmployees}
-                  onRefresh={refetchEmployees}
-                  CellRendererComponent={CustomCellRenderer}
-                  ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                      <Text style={styles.emptyText}>Chưa có nhân viên nào. Hãy nhấn nút dưới đáy để thêm!</Text>
-                    </View>
-                  }
-                />
-              )}
-            </>
-          )}
-
-          {/* TAB 2: CHẤM CÔNG HÀNG NGÀY */}
-          {employeeTab === 'ATTENDANCE' && (
-            <View style={{ flex: 1 }}>
-              {/* ĐIỀU KHIỂN CHỌN NGÀY CHẤM CÔNG */}
-              <View style={styles.dateSelectorContainer}>
-                <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustAttendanceDate(-1)}>
-                  <Text style={styles.dateSelectorArrowText}>◀️ Trước</Text>
-                </TouchableOpacity>
-                <View style={styles.dateDisplayWrapper}>
-                  <Text style={styles.dateDisplayTitle}>Ngày chấm công</Text>
-                  <Text style={styles.dateDisplayVal}>{formatDateDisplay(attendanceDate)}</Text>
-                </View>
-                <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustAttendanceDate(1)}>
-                  <Text style={styles.dateSelectorArrowText}>Sau ▶️</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* DANH SÁCH NHÂN VIÊN ĐỂ CHẤM CÔNG */}
-              <FlatList
-                data={attendanceList}
-                keyExtractor={(item) => item.employeeId}
-                contentContainerStyle={styles.listContent}
-                renderItem={({ item }) => {
-                  const isPresent = item.status === 'PRESENT';
-                  const isHalf = item.shift === 'HALF';
-                  return (
-                    <View style={[styles.attendanceCard, { flexDirection: 'column', alignItems: 'stretch' }]}>
-                      {/* Dòng 1: Tên nhân viên */}
-                      <View style={{ marginBottom: 8, paddingHorizontal: 4 }}>
-                        <Text style={styles.attendanceEmpName}>{item.name}</Text>
-                      </View>
-
-                      {/* Dòng 2: Các nút chấm công */}
-                      <View style={[styles.attendanceActions, { width: '100%' }]}>
-                        {/* Nút đi làm cả ngày */}
-                        <TouchableOpacity
-                          style={[
-                            styles.attButton,
-                            { flex: 1, alignItems: 'center', justifyContent: 'center' },
-                            isPresent && !isHalf && styles.attButtonGreen
-                          ]}
-                          onPress={() => handleToggleAttendance(item.employeeId, 'PRESENT', 'FULL')}
-                        >
-                          <Text style={[styles.attButtonText, isPresent && !isHalf && styles.attButtonTextActive]}>
-                            🟢 Làm đủ
-                          </Text>
-                        </TouchableOpacity>
-
-                        {/* Nút đi làm nửa ngày */}
-                        <TouchableOpacity
-                          style={[
-                            styles.attButton,
-                            { flex: 1, alignItems: 'center', justifyContent: 'center' },
-                            isPresent && isHalf && styles.attButtonYellow
-                          ]}
-                          onPress={() => handleToggleAttendance(item.employeeId, 'PRESENT', 'HALF')}
-                        >
-                          <Text style={[styles.attButtonText, isPresent && isHalf && styles.attButtonTextActive]}>
-                            🟡 Nghỉ nửa ngày
-                          </Text>
-                        </TouchableOpacity>
-
-                        {/* Nút nghỉ */}
-                        <TouchableOpacity
-                          style={[
-                            styles.attButton,
-                            { flex: 1, alignItems: 'center', justifyContent: 'center' },
-                            item.status === 'ABSENT' && styles.attButtonRed
-                          ]}
-                          onPress={() => handleToggleAttendance(item.employeeId, 'ABSENT', 'FULL')}
-                        >
-                          <Text style={[styles.attButtonText, item.status === 'ABSENT' && styles.attButtonTextActive]}>
-                            🔴 Nghỉ cả ngày
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                }}
-                ListEmptyComponent={
-                  <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>Chưa có nhân viên nào hoạt động để chấm công.</Text>
-                  </View>
-                }
-              />
-              {showSaveToast && (
-                <View style={styles.toastContainer}>
-                  <Text style={styles.toastText}>✅ Đã lưu bảng chấm công ngày thành công.</Text>
-                </View>
-              )}
+            <View style={styles.dateDisplayWrapper}>
+              <Text style={styles.dateDisplayTitle}>Tháng xem lương & ứng</Text>
+              <Text style={styles.dateDisplayVal}>Tháng {salaryMonth}</Text>
             </View>
-          )}
-
-
-        </View>
-
-        {employeeTab === 'ATTENDANCE' && (
-          <View style={styles.bottomBarEmployee}>
-            <TouchableOpacity
-              style={[styles.addEmployeeButtonFull, { backgroundColor: '#10B981', shadowColor: '#10B981', flex: 1, height: 46 }]}
-              onPress={handleSaveAttendance}
-              activeOpacity={0.8}
-              disabled={savingAttendance}
-            >
-              {savingAttendance ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.addEmployeeButtonFullText}>💾 LƯU BẢNG CHẤM CÔNG NGÀY</Text>
-              )}
+            <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustSalaryMonth(1)}>
+              <Text style={styles.dateSelectorArrowText}>Tháng sau ▶️</Text>
             </TouchableOpacity>
           </View>
-        )}
+
+          {/* CỤM NÚT THAO TÁC NHÂN SỰ */}
+          <View style={{ flexDirection: 'row', marginHorizontal: 16, marginTop: 8, marginBottom: 4, gap: 8 }}>
+            <TouchableOpacity
+              style={[styles.addEmployeeButtonFull, { flex: 1.2, backgroundColor: '#0284C7' }]}
+              onPress={() => employeeSalaryShareModalRef.current?.openGeneral(salaryMonth)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 13 }]}>🔗 LINK CHUNG (LƯƠNG & NỘI QUY)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.addEmployeeButtonFull, { flex: 0.8, backgroundColor: '#0369A1' }]}
+              onPress={() => addEmployeeModalRef.current?.open()}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 13 }]}>➕ THÊM NHÂN VIÊN</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Ô TÌM KIẾM NHÂN VIÊN */}
+          <View style={[styles.searchContainer, { marginTop: 12 }]}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="🔍 Tìm nhân viên..."
+              placeholderTextColor={COLORS.textLight}
+              value={search}
+              onChangeText={setSearch}
+            />
+            {search ? (
+              <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')}>
+                <Text style={styles.clearSearchText}>✕</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={styles.listHeaderContainer}>
+            <Text style={styles.listHeaderEmployee}>📂 DANH SÁCH NHÂN VIÊN ({filteredEmployees.length})</Text>
+          </View>
+
+          {isLoadingEmployees ? (
+            <ActivityIndicator size="large" color="#0369A1" style={{ marginTop: 40 }} />
+          ) : (
+            <FlatList
+              data={filteredEmployees}
+              renderItem={renderEmployeeItem}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContent}
+              refreshing={isLoadingEmployees}
+              onRefresh={refetchEmployees}
+              CellRendererComponent={CustomCellRenderer}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>Chưa có nhân viên nào. Hãy nhấn nút trên để thêm!</Text>
+                </View>
+              }
+            />
+          )}
+        </View>
 
         <ProfileModal ref={profileModalRef} />
         <PopupModal ref={popupModalRef} />
@@ -2473,8 +2291,9 @@ export default function DashboardScreen() {
         {/* Modals nhân viên */}
         <AddEmployeeModal ref={addEmployeeModalRef} onRefresh={refetchEmployees} />
         <EditEmployeeModal ref={editEmployeeModalRef} onRefresh={refetchEmployees} />
+        <EmployeeLeaveModal ref={employeeLeaveModalRef} onRefresh={refetchEmployees} />
         <SalaryAdvanceModal ref={salaryAdvanceModalRef} employee={selectedEmployee} onRefresh={refetchEmployees} />
-        <EmployeeHistoryModal ref={employeeHistoryModalRef} employee={selectedEmployee} />
+        <EmployeeHistoryModal ref={employeeHistoryModalRef} employee={selectedEmployee} onRefresh={refetchEmployees} />
         <EmployeeSalaryShareModal ref={employeeSalaryShareModalRef} />
 
         {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}

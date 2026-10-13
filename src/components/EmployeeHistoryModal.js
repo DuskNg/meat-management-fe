@@ -11,16 +11,19 @@ import {
 import { api } from '../api/client';
 import { COLORS, FONTS } from '../theme';
 import SmoothModal from './SmoothModal';
+import PopupModal from './PopupModal';
+import { showGlobalToast } from '../store/toastStore';
 
-// Modal xem lịch sử tổng hợp của nhân viên
-const EmployeeHistoryModal = forwardRef(({ employee }, ref) => {
+// Modal xem lịch sử tổng hợp của nhân viên (Ngày nghỉ, Tạm ứng, Bảng lương)
+const EmployeeHistoryModal = forwardRef(({ employee, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [currentEmployee, setCurrentEmployee] = useState(employee);
-  const [activeTab, setActiveTab] = useState('ATTENDANCE'); // 'ATTENDANCE', 'ADVANCE', 'PAYMENT'
+  const [activeTab, setActiveTab] = useState('LEAVES'); // 'LEAVES' (Nghỉ làm), 'ADVANCE' (Tạm ứng), 'PAYMENT' (Lịch sử lương)
   const [historyData, setHistoryData] = useState({ attendances: [], advances: [], payments: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const activeEmployeeIdRef = useRef(null);
+  const popupRef = useRef(null);
 
   // Đồng bộ thông tin nhân viên khi prop employee thay đổi
   useEffect(() => {
@@ -38,7 +41,7 @@ const EmployeeHistoryModal = forwardRef(({ employee }, ref) => {
       setHistoryData({ attendances: [], advances: [], payments: [] });
       setError('');
       setVisible(true);
-      setActiveTab('ATTENDANCE');
+      setActiveTab('LEAVES');
 
       if (activeEmp?.id) {
         fetchHistory(activeEmp.id);
@@ -88,7 +91,7 @@ const EmployeeHistoryModal = forwardRef(({ employee }, ref) => {
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('vi-VN', {
       style: 'currency',
-      currency: 'VND'
+      currency: 'VND',
     }).format(amount).replace('₫', 'đ');
   };
 
@@ -97,19 +100,53 @@ const EmployeeHistoryModal = forwardRef(({ employee }, ref) => {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   };
 
-  const renderAttendanceItem = ({ item }) => {
-    const isPresent = item.status === 'PRESENT';
+  // Xóa / Hủy ngày xin nghỉ để hoàn lại buổi lương
+  const handleDeleteLeave = (leaveItem) => {
+    popupRef.current?.show({
+      type: 'confirm',
+      title: 'Hủy ngày nghỉ',
+      message: `Bạn có chắc muốn xóa bản ghi xin nghỉ ngày ${formatDate(leaveItem.date)} không? Buổi lương hôm đó sẽ được hoàn lại vào bảng lương thực lĩnh.`,
+      confirmText: 'Xác nhận xóa',
+      cancelText: 'Giữ lại',
+      onConfirm: async () => {
+        try {
+          const res = await api.delete(`/employees/leave/${leaveItem.id}`);
+          if (res.data?.success) {
+            showGlobalToast('Đã xóa ngày nghỉ và hoàn lại buổi lương thành công!', 'success');
+            fetchHistory();
+            if (onRefresh) onRefresh();
+          } else {
+            showGlobalToast(res.data?.message || 'Không thể xóa ngày nghỉ.', 'error');
+          }
+        } catch (err) {
+          showGlobalToast(err.response?.data?.message || 'Lỗi khi xóa ngày nghỉ.', 'error');
+        }
+      },
+    });
+  };
+
+  // Render từng dòng xin nghỉ
+  const renderLeaveItem = ({ item }) => {
     const isHalf = item.shift === 'HALF';
     return (
       <View style={styles.cardItem}>
         <View style={styles.cardLeft}>
-          <Text style={styles.dateText}>{formatDate(item.date)}</Text>
-          {item.note ? <Text style={styles.noteText}>Ghi chú: {item.note}</Text> : null}
+          <Text style={styles.dateText}>📅 Ngày nghỉ: {formatDate(item.date)}</Text>
+          {item.note ? <Text style={styles.noteText}>Lý do: {item.note}</Text> : null}
         </View>
-        <View style={[styles.badge, isPresent ? styles.badgeGreen : styles.badgeRed]}>
-          <Text style={[styles.badgeText, isPresent ? styles.textGreen : styles.textRed]}>
-            {isPresent ? (isHalf ? 'Nghỉ nửa ngày' : 'Làm đủ') : 'Nghỉ cả ngày'}
-          </Text>
+        <View style={styles.leaveActionGroup}>
+          <View style={[styles.badge, isHalf ? styles.badgeYellow : styles.badgeRed]}>
+            <Text style={[styles.badgeText, isHalf ? styles.textYellow : styles.textRed]}>
+              {isHalf ? 'Nửa ngày (-0.5 buổi)' : 'Cả ngày (-1 buổi)'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.deleteLeaveBtn}
+            onPress={() => handleDeleteLeave(item)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.deleteLeaveBtnText}>🗑️</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -148,85 +185,102 @@ const EmployeeHistoryModal = forwardRef(({ employee }, ref) => {
           {parseFloat(item.deductions) > 0 ? (
             <Text style={styles.detailText}>Phạt / Trừ lương: -{formatCurrency(item.deductions)}</Text>
           ) : null}
-          {item.note ? <Text style={styles.noteText}>Ghi chú: {item.note}</Text> : null}
+          {item.note ? <Text style={styles.detailText}>Ghi chú: {item.note}</Text> : null}
+          <Text style={styles.detailTime}>Thanh toán lúc: {formatDate(item.paidAt)}</Text>
         </View>
       </View>
     );
   };
 
+  // Danh sách chỉ lấy các ngày xin nghỉ
+  const leavesList = historyData.attendances?.filter(
+    (item) => item.status === 'ABSENT' || (item.status === 'PRESENT' && item.shift === 'HALF')
+  ) || [];
+
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.modalView}>
-        <Text style={styles.modalTitle}>👁️ LỊCH SỬ NHÂN VIÊN</Text>
-        <Text style={styles.employeeName}>
-          Nhân viên: {currentEmployee?.name || employee?.name || ''}
-        </Text>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+        <View style={styles.modalView}>
+          <Text style={styles.modalTitle}>👁️ LỊCH SỬ NHÂN VIÊN</Text>
+          <Text style={styles.employeeName}>
+            Nhân viên: {currentEmployee?.name || employee?.name || ''}
+          </Text>
 
-        {/* Cụm Tabs */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'ATTENDANCE' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('ATTENDANCE')}
-          >
-            <Text style={[styles.tabText, activeTab === 'ATTENDANCE' && styles.tabTextActive]}>Chấm công</Text>
-          </TouchableOpacity>
+          {/* Cụm Tabs */}
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'LEAVES' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('LEAVES')}
+            >
+              <Text style={[styles.tabText, activeTab === 'LEAVES' && styles.tabTextActive]}>
+                Nghỉ làm ({leavesList.length})
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'ADVANCE' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('ADVANCE')}
-          >
-            <Text style={[styles.tabText, activeTab === 'ADVANCE' && styles.tabTextActive]}>Tạm ứng</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'ADVANCE' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('ADVANCE')}
+            >
+              <Text style={[styles.tabText, activeTab === 'ADVANCE' && styles.tabTextActive]}>
+                Tạm ứng ({historyData.advances?.length || 0})
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'PAYMENT' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('PAYMENT')}
-          >
-            <Text style={[styles.tabText, activeTab === 'PAYMENT' && styles.tabTextActive]}>Lịch sử lương</Text>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'PAYMENT' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('PAYMENT')}
+            >
+              <Text style={[styles.tabText, activeTab === 'PAYMENT' && styles.tabTextActive]}>
+                Lịch sử lương
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {loading ? (
+            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
+          ) : error ? (
+            <Text style={styles.errorText}>⚠️ {error}</Text>
+          ) : (
+            <View style={styles.listContainer}>
+              {activeTab === 'LEAVES' && (
+                <FlatList
+                  data={leavesList}
+                  renderItem={renderLeaveItem}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.scrollList}
+                  ListEmptyComponent={<Text style={styles.emptyText}>Chưa có ngày xin nghỉ nào.</Text>}
+                />
+              )}
+              {activeTab === 'ADVANCE' && (
+                <FlatList
+                  data={historyData.advances}
+                  renderItem={renderAdvanceItem}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.scrollList}
+                  ListEmptyComponent={<Text style={styles.emptyText}>Chưa có tạm ứng nào.</Text>}
+                />
+              )}
+              {activeTab === 'PAYMENT' && (
+                <FlatList
+                  data={historyData.payments}
+                  renderItem={renderPaymentItem}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.scrollList}
+                  ListEmptyComponent={<Text style={styles.emptyText}>Chưa có lịch sử nhận lương.</Text>}
+                />
+              )}
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.closeButton} onPress={() => setVisible(false)}>
+            <Text style={styles.closeButtonText}>ĐÓNG LẠI</Text>
           </TouchableOpacity>
         </View>
+      </SmoothModal>
 
-        {loading ? (
-          <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 40 }} />
-        ) : error ? (
-          <Text style={styles.errorText}>⚠️ {error}</Text>
-        ) : (
-          <View style={styles.listContainer}>
-            {activeTab === 'ATTENDANCE' && (
-              <FlatList
-                data={historyData.attendances}
-                renderItem={renderAttendanceItem}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.scrollList}
-                ListEmptyComponent={<Text style={styles.emptyText}>Không có dữ liệu chấm công.</Text>}
-              />
-            )}
-            {activeTab === 'ADVANCE' && (
-              <FlatList
-                data={historyData.advances}
-                renderItem={renderAdvanceItem}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.scrollList}
-                ListEmptyComponent={<Text style={styles.emptyText}>Chưa có tạm ứng nào.</Text>}
-              />
-            )}
-            {activeTab === 'PAYMENT' && (
-              <FlatList
-                data={historyData.payments}
-                renderItem={renderPaymentItem}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.scrollList}
-                ListEmptyComponent={<Text style={styles.emptyText}>Chưa có lịch sử nhận lương.</Text>}
-              />
-            )}
-          </View>
-        )}
-
-        <TouchableOpacity style={styles.closeButton} onPress={() => setVisible(false)}>
-          <Text style={styles.closeButtonText}>ĐÓNG LẠI</Text>
-        </TouchableOpacity>
-      </View>
-    </SmoothModal>
+      {/* Modal xác nhận độc lập ở tầng cao nhất */}
+      <PopupModal ref={popupRef} />
+    </>
   );
 });
 
@@ -318,13 +372,18 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 4,
   },
+  leaveActionGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   badge: {
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 6,
   },
-  badgeGreen: {
-    backgroundColor: '#E8F5E9',
+  badgeYellow: {
+    backgroundColor: '#FEF3C7',
   },
   badgeRed: {
     backgroundColor: '#FFE2E2',
@@ -333,11 +392,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold',
   },
-  textGreen: {
-    color: '#388E3C',
+  textYellow: {
+    color: '#D97706',
   },
   textRed: {
     color: '#D32F2F',
+  },
+  deleteLeaveBtn: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: '#FEE2E2',
+  },
+  deleteLeaveBtnText: {
+    fontSize: 13,
   },
   amountText: {
     fontSize: 14,
@@ -367,6 +434,11 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 12,
     color: COLORS.textSecondary,
+  },
+  detailTime: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginTop: 4,
   },
   emptyText: {
     textAlign: 'center',

@@ -8,32 +8,45 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  Platform,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { api } from '../api/client';
 import { showGlobalToast } from '../store/toastStore';
 import { shareTextToZalo } from '../utils/imageShareHelper';
-import { COLORS } from '../theme';
 
 /**
- * Modal tạo và chia sẻ liên kết tra cứu Lương, Chế độ và Ngày nghỉ cho nhân viên qua Zalo
+ * Modal tạo và chia sẻ liên kết tra cứu Lương và Nội quy quy định cho nhân viên qua Zalo
+ * Hỗ trợ 2 chế độ:
+ * 1. Chế độ chung (Khuyến nghị): Tất cả nhân viên dùng chung 1 đường link duy nhất (có tab Lương + tab Nội quy)
+ * 2. Chế độ riêng: Gửi link riêng lẻ cho 1 nhân viên cụ thể
  */
 const EmployeeSalaryShareModal = forwardRef((props, ref) => {
   const [visible, setVisible] = useState(false);
+  const [isGeneralMode, setIsGeneralMode] = useState(true);
   const [employee, setEmployee] = useState(null);
   const [monthKey, setMonthKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [shareData, setShareData] = useState(null);
 
   useImperativeHandle(ref, () => ({
+    // Mở link chung cho toàn bộ nhân viên (Tab Lương + Tab Nội quy)
+    openGeneral: async (targetMonthKey) => {
+      setIsGeneralMode(true);
+      setEmployee(null);
+      setMonthKey(targetMonthKey || getCurrentMonthKey());
+      setVisible(true);
+      setShareData(null);
+      await fetchGeneralShareLink();
+    },
+    // Mở link riêng cho 1 nhân viên cụ thể
     open: async (targetEmployee, targetMonthKey) => {
       if (!targetEmployee) return;
+      setIsGeneralMode(false);
       setEmployee(targetEmployee);
       setMonthKey(targetMonthKey || getCurrentMonthKey());
       setVisible(true);
       setShareData(null);
-      await fetchShareLink(targetEmployee.id);
+      await fetchEmployeeShareLink(targetEmployee.id);
     },
     close: () => {
       setVisible(false);
@@ -46,7 +59,27 @@ const EmployeeSalaryShareModal = forwardRef((props, ref) => {
     return `${mm}/${now.getFullYear()}`;
   };
 
-  const fetchShareLink = async (employeeId) => {
+  // Lấy link chung cho toàn bộ nhân viên
+  const fetchGeneralShareLink = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/employees/general-share-link');
+      if (res.data?.success) {
+        setShareData(res.data.data);
+      }
+    } catch (err) {
+      console.error('Lỗi lấy liên kết nhân sự chung:', err);
+      showGlobalToast(
+        err.response?.data?.message || 'Không thể lấy liên kết chung cho nhân viên.',
+        'error'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Lấy link riêng cho 1 nhân viên
+  const fetchEmployeeShareLink = async (employeeId) => {
     try {
       setLoading(true);
       const res = await api.get(`/employees/${employeeId}/share-link`);
@@ -75,12 +108,16 @@ const EmployeeSalaryShareModal = forwardRef((props, ref) => {
 
   const getZaloShareMessage = () => {
     const url = getFullShareUrl();
+    if (isGeneralMode) {
+      return `📋 CỔNG THÔNG TIN NHÂN SỰ & NỘI QUY CỬA HÀNG\n🔗 Link xem bảng lương & nội quy quy chế:\n${url}\n\n💡 HƯỚNG DẪN DÀNH CHO TẤT CẢ NHÂN VIÊN:\n• Tab 1 (Bảng lương): Chọn Tên của bạn và nhập 4 số cuối SĐT để mở khóa xem lương, ngày nghỉ, tạm ứng.\n• Tab 2 (Nội quy quy định): Đọc quy chế ứng lương (tối đa 50%), thưởng lễ, thưởng thâm niên 6 tháng, thưởng trách nhiệm 200k/tháng & quy định an toàn vệ sinh.`;
+    }
+
     const name = employee?.name || 'bạn';
     const pinNotice = shareData?.suggestedPin
       ? `\n🔒 Mật khẩu mở xem: 4 số cuối SĐT (${shareData.suggestedPin})`
       : '';
 
-    return `📋 BẢNG LƯƠNG & CHẤM CÔNG THÁNG ${monthKey}\n👤 Nhân viên: ${name}\n🔗 Nhấp vào link để xem chi tiết:\n${url}${pinNotice}\n(Kiểm tra ngày công, tạm ứng và lương thực lĩnh)`;
+    return `📋 BẢNG LƯƠNG & CHẾ ĐỘ THÁNG ${monthKey}\n👤 Nhân viên: ${name}\n🔗 Nhấp vào link để xem chi tiết:\n${url}${pinNotice}\n(Kiểm tra ngày nghỉ, tạm ứng, lương thực lĩnh & nội quy cửa hàng)`;
   };
 
   const handleCopyLink = async () => {
@@ -90,7 +127,7 @@ const EmployeeSalaryShareModal = forwardRef((props, ref) => {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(url);
       }
-      showGlobalToast('Đã sao chép liên kết tra cứu lương!', 'success');
+      showGlobalToast('Đã sao chép liên kết!', 'success');
     } catch (_) {
       showGlobalToast('Không thể tự động sao chép, vui lòng copy thủ công.', 'warning');
     }
@@ -103,7 +140,7 @@ const EmployeeSalaryShareModal = forwardRef((props, ref) => {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(msg);
       }
-      showGlobalToast('Đã sao chép nội dung tin nhắn gửi Zalo!', 'success');
+      showGlobalToast('Đã sao chép nội dung tin nhắn!', 'success');
     } catch (_) {
       showGlobalToast('Không thể sao chép, vui lòng thử lại.', 'warning');
     }
@@ -114,9 +151,11 @@ const EmployeeSalaryShareModal = forwardRef((props, ref) => {
     if (!msg) return;
     const sent = await shareTextToZalo({
       phone: employee?.phone,
-      customerName: employee?.name,
+      customerName: employee?.name || 'Nhóm Nhân Viên',
       text: msg,
-      title: `Phiếu lương tháng ${monthKey} - ${employee?.name}`,
+      title: isGeneralMode
+        ? 'Cổng Thông Tin Nhân Sự & Nội Quy Cửa Hàng'
+        : `Phiếu lương tháng ${monthKey} - ${employee?.name}`,
     });
     if (sent) {
       setVisible(false);
@@ -131,8 +170,12 @@ const EmployeeSalaryShareModal = forwardRef((props, ref) => {
         {/* Header Modal */}
         <View style={styles.headerRow}>
           <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerIcon}>📲</Text>
-            <Text style={styles.headerTitle}>GỬI PHIẾU LƯƠNG & CÔNG QUA ZALO</Text>
+            <Text style={styles.headerIcon}>{isGeneralMode ? '🌐' : '📲'}</Text>
+            <Text style={styles.headerTitle}>
+              {isGeneralMode
+                ? 'LINK CHUNG NHÂN VIÊN (LƯƠNG & NỘI QUY)'
+                : 'GỬI PHIẾU LƯƠNG QUA ZALO'}
+            </Text>
           </View>
           <TouchableOpacity
             style={styles.closeButton}
@@ -144,44 +187,66 @@ const EmployeeSalaryShareModal = forwardRef((props, ref) => {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBody}>
-          {/* Card thông tin nhân viên */}
-          <View style={styles.employeeCard}>
-            <View style={styles.empAvatar}>
-              <Text style={styles.empAvatarText}>
-                {(employee?.name || 'E').trim().charAt(0).toUpperCase()}
-              </Text>
+          {/* Card thông tin */}
+          {isGeneralMode ? (
+            <View style={styles.generalCard}>
+              <View style={styles.generalIconBox}>
+                <Text style={{ fontSize: 24 }}>👥</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.generalTitle}>DÙNG CHUNG 1 ĐƯỜNG DẪN DUY NHẤT</Text>
+                <Text style={styles.generalSubtitle}>
+                  Tất cả nhân viên vào chung 1 link: gồm Tab Bảng lương (bảo mật PIN cá nhân) và Tab Nội quy cửa hàng.
+                </Text>
+              </View>
             </View>
-            <View style={styles.empInfo}>
-              <Text style={styles.empName}>{employee?.name}</Text>
-              <Text style={styles.empSub}>
-                💼 {employee?.role || 'Nhân viên'} {employee?.phone ? `• 📞 ${employee.phone}` : ''}
-              </Text>
+          ) : (
+            <View style={styles.employeeCard}>
+              <View style={styles.empAvatar}>
+                <Text style={styles.empAvatarText}>
+                  {(employee?.name || 'E').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.empInfo}>
+                <Text style={styles.empName}>{employee?.name}</Text>
+                <Text style={styles.empSub}>
+                  💼 {employee?.role || 'Nhân viên'} {employee?.phone ? `• 📞 ${employee.phone}` : ''}
+                </Text>
+              </View>
+              <View style={styles.monthBadge}>
+                <Text style={styles.monthBadgeText}>Tháng {monthKey}</Text>
+              </View>
             </View>
-            <View style={styles.monthBadge}>
-              <Text style={styles.monthBadgeText}>Tháng {monthKey}</Text>
-            </View>
-          </View>
+          )}
 
           {loading ? (
             <View style={styles.loadingBox}>
               <ActivityIndicator size="large" color="#0284C7" />
-              <Text style={styles.loadingText}>Đang tạo đường dẫn bảo mật cho nhân viên...</Text>
+              <Text style={styles.loadingText}>Đang tạo đường dẫn chia sẻ...</Text>
             </View>
           ) : (
             <>
-              {/* Thẻ gợi ý bảo mật mã PIN */}
+              {/* Thẻ hướng dẫn bảo mật */}
               <View style={styles.pinTipCard}>
                 <Text style={styles.pinTipIcon}>🔒</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.pinTipTitle}>Bảo Mật Bằng Mã PIN 4 Số</Text>
+                  <Text style={styles.pinTipTitle}>
+                    {isGeneralMode ? 'Bảo Mật Bảng Lương Cá Nhân' : 'Bảo Mật Bằng Mã PIN 4 Số'}
+                  </Text>
                   <Text style={styles.pinTipDesc}>
-                    {shareData?.suggestedPin ? (
+                    {isGeneralMode ? (
+                      <>
+                        Khi mở link, nhân viên chỉ cần{' '}
+                        <Text style={{ fontWeight: 'bold', color: '#0369A1' }}>chọn tên mình</Text> và nhập{' '}
+                        <Text style={{ fontWeight: 'bold', color: '#0369A1' }}>4 số cuối SĐT</Text> để mở khóa xem bảng lương của riêng họ. Không ai xem trộm được lương của người khác!
+                      </>
+                    ) : shareData?.suggestedPin ? (
                       <>
                         Nhân viên khi mở link trên Zalo cần nhập{' '}
                         <Text style={{ fontWeight: 'bold', color: '#0369A1' }}>
                           4 số cuối số điện thoại ({shareData.suggestedPin})
                         </Text>{' '}
-                        để mở khóa xem lương, tránh bị người khác nhìn trộm.
+                        để mở khóa xem lương.
                       </>
                     ) : (
                       'Nhân viên chưa cập nhật số điện thoại nên link này có thể mở trực tiếp mà không cần mã PIN.'
@@ -192,7 +257,7 @@ const EmployeeSalaryShareModal = forwardRef((props, ref) => {
 
               {/* Ô hiển thị đường dẫn */}
               <View style={styles.linkSection}>
-                <Text style={styles.sectionLabel}>🔗 ĐƯỜNG DẪN TRA CỨU TRÊN ĐIỆN THOẠI</Text>
+                <Text style={styles.sectionLabel}>🔗 ĐƯỜNG DẪN DÙNG CHUNG TRÊN ĐIỆN THOẠI</Text>
                 <View style={styles.linkInputRow}>
                   <TextInput
                     style={styles.linkInput}
@@ -235,7 +300,9 @@ const EmployeeSalaryShareModal = forwardRef((props, ref) => {
             activeOpacity={0.8}
           >
             <Text style={styles.zaloActionBtnIcon}>💬</Text>
-            <Text style={styles.zaloActionBtnText}>MỞ ZALO GỬI NGAY CHO NHÂN VIÊN</Text>
+            <Text style={styles.zaloActionBtnText}>
+              {isGeneralMode ? 'GỬI TIN NHẮN VÀO NHÓM ZALO' : 'MỞ ZALO GỬI NGAY CHO NHÂN VIÊN'}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -276,15 +343,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flex: 1,
   },
   headerIcon: {
     fontSize: 20,
   },
   headerTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '800',
     color: '#0F172A',
-    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   closeButton: {
     width: 32,
@@ -300,17 +368,47 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   scrollBody: {
-    paddingBottom: 12,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  generalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  generalIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  generalTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0369A1',
+    marginBottom: 2,
+  },
+  generalSubtitle: {
+    fontSize: 12,
+    color: '#0284C7',
+    lineHeight: 16,
   },
   employeeCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 12,
   },
   empAvatar: {
     width: 44,
@@ -319,12 +417,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0F2FE',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
   empAvatarText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#0369A1',
+    color: '#0284C7',
   },
   empInfo: {
     flex: 1,
@@ -340,20 +437,20 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   monthBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#EEF2FF',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#C7D2FE',
   },
   monthBadgeText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#1D4ED8',
+    fontWeight: 'bold',
+    color: '#4F46E5',
   },
   loadingBox: {
-    paddingVertical: 40,
+    paddingVertical: 36,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
@@ -364,81 +461,80 @@ const styles = StyleSheet.create({
   },
   pinTipCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#F0F9FF',
-    borderColor: '#BAE6FD',
+    backgroundColor: '#F0FDF4',
     borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 14,
-    gap: 8,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+    alignItems: 'flex-start',
   },
   pinTipIcon: {
     fontSize: 18,
-    marginTop: 1,
+    marginTop: 2,
   },
   pinTipTitle: {
     fontSize: 13,
     fontWeight: 'bold',
-    color: '#0369A1',
+    color: '#15803D',
     marginBottom: 2,
   },
   pinTipDesc: {
     fontSize: 12,
-    color: '#334155',
+    color: '#166534',
     lineHeight: 17,
   },
   linkSection: {
-    marginBottom: 14,
+    gap: 6,
   },
   sectionLabel: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-    marginBottom: 6,
+    fontWeight: 'bold',
+    color: '#475569',
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   linkInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    overflow: 'hidden',
+    gap: 8,
   },
   linkInput: {
     flex: 1,
     height: 42,
-    paddingHorizontal: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
     fontSize: 13,
-    color: '#334155',
+    color: '#0F172A',
   },
   copyLinkBtn: {
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 14,
     height: 42,
+    paddingHorizontal: 12,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
     alignItems: 'center',
     justifyContent: 'center',
-    borderLeftWidth: 1,
-    borderLeftColor: '#CBD5E1',
   },
   copyLinkBtnText: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#0F172A',
+    color: '#334155',
   },
   previewSection: {
-    marginBottom: 8,
+    gap: 6,
   },
   previewHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    justifyContent: 'space-between',
   },
   copyMsgBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#0284C7',
   },
@@ -453,25 +549,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#334155',
     lineHeight: 18,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   footerContainer: {
-    marginTop: 10,
+    marginTop: 8,
     gap: 8,
   },
   zaloActionBtn: {
-    height: 48,
-    backgroundColor: '#0068FF', // Màu chuẩn Zalo
+    height: 46,
     borderRadius: 12,
+    backgroundColor: '#0284C7',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: '#0068FF',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   zaloActionBtnIcon: {
     fontSize: 18,
@@ -480,18 +570,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#FFFFFF',
-    letterSpacing: 0.3,
   },
   secondaryBtn: {
     height: 42,
-    backgroundColor: '#F1F5F9',
     borderRadius: 10,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   secondaryBtnText: {
     fontSize: 13,
-    fontWeight: 'bold',
-    color: '#64748B',
+    fontWeight: '600',
+    color: '#475569',
   },
 });

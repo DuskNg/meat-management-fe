@@ -13,6 +13,7 @@ import {
 import { api } from '../api/client';
 import { COLORS, FONTS } from '../theme';
 import SmoothModal from './SmoothModal';
+import { showGlobalToast } from '../store/toastStore';
 
 // Modal thêm nhân viên mới
 const AddEmployeeModal = forwardRef(({ onRefresh }, ref) => {
@@ -63,8 +64,8 @@ const AddEmployeeModal = forwardRef(({ onRefresh }, ref) => {
       return;
     }
 
-    const numericSalary = salaryVND;
-    if (numericSalary < 0) {
+    const salaryVal = salaryVND;
+    if (salaryVal < 0) {
       setError('Mức lương không hợp lệ.');
       return;
     }
@@ -81,6 +82,7 @@ const AddEmployeeModal = forwardRef(({ onRefresh }, ref) => {
       });
 
       if (response.data.success) {
+        showGlobalToast('Thêm nhân viên mới thành công!', 'success');
         setVisible(false);
         if (onRefresh) onRefresh();
       } else {

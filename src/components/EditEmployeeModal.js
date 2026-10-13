@@ -13,6 +13,7 @@ import {
 import { api } from '../api/client';
 import { COLORS, FONTS } from '../theme';
 import SmoothModal from './SmoothModal';
+import { showGlobalToast } from '../store/toastStore';
 
 // Modal chỉnh sửa thông tin nhân viên
 const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
@@ -83,6 +84,7 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
       });
 
       if (response.data.success) {
+        showGlobalToast('Cập nhật thông tin nhân viên thành công!', 'success');
         setVisible(false);
         if (onRefresh) onRefresh();
       } else {

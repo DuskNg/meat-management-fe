@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import PopupModal from './PopupModal';
@@ -217,10 +216,6 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
   return (
     <>
       <SmoothModal visible={visible} onClose={handleClose} zIndex={props.zIndex || 9999999}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ width: '100%' }}
-      >
         <View style={styles.modalView}>
           {/* Header Modal */}
           <View style={styles.header}>
@@ -432,12 +427,11 @@ const PriceChangeReasonModal = forwardRef((props, ref) => {
             </View>
           )}
         </View>
-      </KeyboardAvoidingView>
-    </SmoothModal>
+      </SmoothModal>
 
-    {/* PopupModal xác nhận độc lập ở tầng cao nhất tuyệt đối */}
-    <PopupModal ref={popupModalRef} />
-  </>
+      {/* PopupModal xác nhận độc lập ở tầng cao nhất tuyệt đối */}
+      <PopupModal ref={popupModalRef} />
+    </>
   );
 });
 
@@ -446,11 +440,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
     maxHeight: '92%',
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: Platform.OS === 'ios' ? 28 : 20,
     width: '100%',
+    marginTop: 'auto',
   },
   header: {
     flexDirection: 'row',

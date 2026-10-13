@@ -948,6 +948,124 @@ const resolveCustomerForSub = (sub, custList) => {
       }
     }
 
+    // 0c. ĐẶC BIỆT: Khớp ưu tiên khách "Anh bình" nếu AI nhận diện là "ABh", "Abh", "ABH", "a binh", "abinh", "a.binh", "ab", "anh binh"...
+    const isDetectedAnhBinh = (
+      cleanDetectedNoSpace === 'abh' ||
+      cleanDetectedNoSpace === 'ab' ||
+      cleanDetectedNoSpace === 'abinh' ||
+      cleanDetectedNoSpace === 'anhbinh' ||
+      cleanDetected === 'abh' ||
+      cleanDetected === 'ab' ||
+      cleanDetected === 'a binh' ||
+      cleanDetected === 'a.binh' ||
+      cleanDetected === 'anh binh' ||
+      cleanDetected.startsWith('a binh') ||
+      cleanDetected.startsWith('anh binh') ||
+      cleanDetectedNoSpace.startsWith('abinh') ||
+      cleanDetectedNoSpace.startsWith('anhbinh')
+    ) && !cleanDetected.includes('da') && !cleanDetected.includes('nghia') && !cleanDetected.includes('bao');
+
+    if (isDetectedAnhBinh) {
+      const anhBinhCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return (cClean === 'anh binh' || cClean === 'a binh') && !cClean.includes('da') && !cClean.includes('nghia') && !cClean.includes('bao');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('binh') && (cClean.includes('anh') || cClean.startsWith('a ')) && !cClean.includes('da') && !cClean.includes('nghia') && !cClean.includes('bao');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('binh') && !cClean.includes('da') && !cClean.includes('bao') && !cClean.includes('nghia');
+      }) || null;
+
+      if (anhBinhCust) {
+        return anhBinhCust;
+      }
+    }
+
+    // 0d. ĐẶC BIỆT: Khớp ưu tiên khách "Hồng hạnh hqv" nếu AI nhận diện là "H.C.U.", "HCU", "H.Q.V.", "HQV", "H.C.V.", "HCV", "H.U.V.", "hong hanh hqv"...
+    const isDetectedHongHanhHQV = (
+      cleanDetectedNoSpace === 'hcu' ||
+      cleanDetectedNoSpace === 'hqv' ||
+      cleanDetectedNoSpace === 'hcv' ||
+      cleanDetectedNoSpace === 'huv' ||
+      cleanDetectedNoSpace === 'honghanhhqv' ||
+      cleanDetectedNoSpace === 'hanhhqv' ||
+      cleanDetected === 'h.c.u.' ||
+      cleanDetected === 'h.c.u' ||
+      cleanDetected === 'h.q.v.' ||
+      cleanDetected === 'h.q.v' ||
+      cleanDetected === 'h.c.v.' ||
+      cleanDetected === 'h.c.v' ||
+      cleanDetected === 'h.u.v.' ||
+      cleanDetected === 'h.u.v' ||
+      cleanDetected === 'hcu' ||
+      cleanDetected === 'hqv' ||
+      cleanDetected === 'hcv' ||
+      cleanDetected === 'huv' ||
+      cleanDetected.includes('hqv') ||
+      cleanDetected.includes('h.q.v') ||
+      cleanDetected.includes('h.c.u') ||
+      cleanDetected.includes('h.c.v') ||
+      cleanDetectedNoSpace.includes('hqv') ||
+      cleanDetectedNoSpace.includes('hcu') ||
+      cleanDetectedNoSpace.includes('hcv') ||
+      (cleanDetected.includes('hong hanh') && (cleanDetected.includes('hqv') || cleanDetected.includes('hcu') || cleanDetected.includes('hcv')))
+    );
+
+    if (isDetectedHongHanhHQV) {
+      const hongHanhCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('hong hanh') && cClean.includes('hqv');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('hong hanh');
+      }) || null;
+
+      if (hongHanhCust) {
+        return hongHanhCust;
+      }
+    }
+
+    // 0e. ĐẶC BIỆT: Khớp ưu tiên khách "Thuỷ gà(thủy lê zalo nhóm bò)" nếu AI nhận diện là "Chị Huy Ga", "Huy Ga", "Chi Huy Ga", "C Huy Ga", "Chị Thủy Gà", "Thuỷ Gà", "Thuy Ga", "Thuy Le"...
+    const isDetectedThuyGa = (
+      cleanDetectedNoSpace === 'chihuyga' ||
+      cleanDetectedNoSpace === 'chuyga' ||
+      cleanDetectedNoSpace === 'huyga' ||
+      cleanDetectedNoSpace === 'chithuyga' ||
+      cleanDetectedNoSpace === 'cthuyga' ||
+      cleanDetectedNoSpace === 'thuyga' ||
+      cleanDetectedNoSpace === 'thuyle' ||
+      cleanDetectedNoSpace === 'thuygazalo' ||
+      cleanDetectedNoSpace === 'thuylezalo' ||
+      cleanDetected === 'chi huy ga' ||
+      cleanDetected === 'c huy ga' ||
+      cleanDetected === 'huy ga' ||
+      cleanDetected === 'chi thuy ga' ||
+      cleanDetected === 'c thuy ga' ||
+      cleanDetected === 'thuy ga' ||
+      cleanDetected === 'thuy le' ||
+      (cleanDetected.includes('huy') && cleanDetected.includes('ga')) ||
+      (cleanDetected.includes('thuy') && cleanDetected.includes('ga')) ||
+      (cleanDetected.includes('thuy') && cleanDetected.includes('le')) ||
+      cleanDetectedNoSpace.includes('huyga') ||
+      cleanDetectedNoSpace.includes('thuyga') ||
+      cleanDetectedNoSpace.includes('thuyle')
+    );
+
+    if (isDetectedThuyGa) {
+      const thuyGaCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return (cClean.includes('thuy') && cClean.includes('ga')) || (cClean.includes('thuy') && cClean.includes('le'));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('ga') && (cClean.includes('thuy') || cClean.includes('huy'));
+      }) || null;
+
+      if (thuyGaCust) {
+        return thuyGaCust;
+      }
+    }
+
     // 0. BẮT BUỘC ƯU TIÊN KHỚP CHÍNH XÁC 100% (Exact Match) TRƯỚC TIÊN
     // Nếu tên khách AI bóc tách trùng khớp hoàn toàn với một khách trong DB (ví dụ: "Hồng hạnh hqv")
     // thì lấy ngay khách này, TUYỆT ĐỐI không để các rule heuristic phía dưới ghi đè!
@@ -3082,9 +3200,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         }
 
         // Ngày áp dụng cho đơn nợ:
-        // Đối với đơn ĐÃ DUYỆT (APPROVED): Lấy chính xác ngày đã được lưu trong CSDL (sub.date)
-        // Đối với đơn chưa duyệt: Ưu tiên ngày đang lọc (filterDate) hoặc hôm nay
-        const applyDateStr = (isApproved && sub.date)
+        // Luôn ưu tiên chính xác ngày của hóa đơn đã được lưu (sub.date), nếu không có mới lấy theo ngày lọc hoặc hôm nay
+        const applyDateStr = sub.date
           ? formatDateOnly(sub.date)
           : (filterDate || (() => {
             const today = new Date();
