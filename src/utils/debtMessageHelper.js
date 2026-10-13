@@ -126,28 +126,14 @@ const isReturnPaymentRecord = (item) => {
 export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [], cust = null) => {
   if (!dateKey) return '';
 
-  const dayTrans = (transList || []).filter((t) => {
-    const d = new Date(t.date);
-    const dd = d.getDate().toString().padStart(2, '0');
-    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}` === dateKey;
-  });
-
-  const dayPays = (payList || []).filter((p) => {
-    const d = new Date(p.paidAt);
-    const dd = d.getDate().toString().padStart(2, '0');
-    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}` === dateKey;
-  });
-
-  if (dayTrans.length === 0 && dayPays.length === 0) {
-    return `${dateKey}\n(Không có phát sinh giao dịch công nợ)`;
+  // Chuẩn hóa ngày hiển thị dạng DD/MM (ví dụ: 10/10)
+  let cleanDateKey = dateKey || '';
+  if (cleanDateKey.includes('-')) {
+    const parts = cleanDateKey.split('-');
+    if (parts.length === 3) cleanDateKey = `${parts[2]}/${parts[1]}`;
   }
-
-  const [dStr, mStr] = dateKey.split('/');
-  const dayHeader = `${parseInt(dStr, 10)}/${parseInt(mStr, 10)}`;
+  const [dStr, mStr] = cleanDateKey.split('/');
+  const dayHeader = (dStr && mStr) ? `${parseInt(dStr, 10)}/${parseInt(mStr, 10)}` : cleanDateKey;
 
   // Bảng gom nhóm các món: 'bò' và 'thăn' kèm theo mảng lưu đơn giá riêng
   const groups = {
@@ -158,140 +144,206 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
   let totalPayment = 0;
   const unallocatedReturns = [];
 
-  // 1. Gom các món từ đơn hàng trong ngày
-  dayTrans.forEach((t) => {
-    const transTotal = parseFloat(t.amount || t.totalAmount || 0);
+  // Kiểm tra nếu transList truyền vào trực tiếp là danh sách entries của ngày (từ Portal hoặc Day Object)
+  const isDirectEntries = Array.isArray(transList) && transList.length > 0 && transList.some((it) => it && (it.type === 'MEAT' || it.type === 'DELIVERY' || it.type === 'RETURN'));
 
-    if (t.items && t.items.length > 0) {
-      t.items.forEach((item) => {
-        const q = parseFloat(item.quantity || 0);
-        const p = parseFloat(item.price || 0);
-        const amt = parseFloat(item.amount !== undefined && item.amount !== null ? item.amount : q * p);
-        const name = item.product?.name || item.productName || item.rawName || 'Thịt';
+  if (isDirectEntries) {
+    transList.forEach((e) => {
+      if (!e) return;
+      if (e.type === 'DAY_TOTAL' || e.type === 'DAY_PARTIAL_PAID' || e.type === 'DAY_PARTIAL_REMAINING' || e.type === 'PAYMENT') return;
 
-        const groupKey = getChiTuyetProductGroup(name);
-        if (!groups[groupKey]) {
-          groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0, prices: [] };
-        }
+      const isRet = e.type === 'RETURN' || (e.amount && Number(e.amount) < 0) || (e.quantity && Number(e.quantity) < 0);
+      const q = Math.abs(parseFloat(e.quantity || 0));
+      const p = parseFloat(e.price || 0);
+      const amt = Math.abs(parseFloat(e.amount || 0));
+      const rawName = e.name || e.productName || 'Thịt';
 
-        // Lưu đơn giá nghìn đồng (ví dụ 145000 -> 145, 255000 -> 255)
-        if (p > 0) {
-          const priceK = Math.round(p / 1000);
-          if (!groups[groupKey].prices.includes(priceK)) {
-            groups[groupKey].prices.push(priceK);
-          }
-        }
-
-        if (q < 0) {
-          groups[groupKey].retQuantities.push(Math.abs(q));
-          groups[groupKey].amount -= Math.abs(amt);
-        } else {
-          groups[groupKey].posQuantities.push(q);
-          groups[groupKey].amount += amt;
-        }
-      });
-    } else {
-      // Nếu không có items chi tiết, mặc định vào nhóm bò
-      groups['bò'].amount += transTotal;
-    }
-  });
-
-  // 2. Phân loại và khử trùng lặp các khoản trả lại hàng trong ngày
-  const returnPays = [];
-  const normalPays = [];
-
-  dayPays.forEach((p) => {
-    if (isReturnPaymentRecord(p)) {
-      returnPays.push(p);
-    } else {
-      normalPays.push(p);
-    }
-  });
-
-  // Lọc de-duplicate: nếu có 2 khoản trả hàng cùng số tiền, ưu tiên khoản có ghi rõ chi tiết số kg/tên thịt
-  const deduplicatedReturnPays = [];
-  returnPays.forEach((p) => {
-    const pAmt = Math.round(parseFloat(p.amount || 0));
-    const pNote = (p.note || '').trim();
-    const cleanNote = pNote.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
-    const hasDetail = /[\d]+[.,]?[\d]*\s*(?:kg|kilo)?/i.test(cleanNote);
-
-    if (!hasDetail) {
-      const hasBetterDuplicate = returnPays.some((other) => {
-        if (other === p) return false;
-        const otherAmt = Math.round(parseFloat(other.amount || 0));
-        if (Math.abs(otherAmt - pAmt) > 100) return false;
-        const otherClean = (other.note || '').replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
-        return /[\d]+[.,]?[\d]*\s*(?:kg|kilo)?/i.test(otherClean);
-      });
-
-      if (hasBetterDuplicate) {
-        return; // Bỏ qua bản ghi chung chung vì đã có bản ghi chi tiết số kg
-      }
-    }
-
-    const isExactDup = deduplicatedReturnPays.some((existing) => {
-      if (existing.id && p.id && existing.id === p.id) return true;
-      const exAmt = Math.round(parseFloat(existing.amount || 0));
-      return Math.abs(exAmt - pAmt) < 100 && (existing.note || '').trim() === pNote;
-    });
-
-    if (!isExactDup) {
-      deduplicatedReturnPays.push(p);
-    }
-  });
-
-  // Gom các khoản trả lại hàng đã khử trùng lặp
-  deduplicatedReturnPays.forEach((p) => {
-    const amt = parseFloat(p.amount || 0);
-    const note = p.note || '';
-    const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
-
-    // Tách theo các món nếu ghi chú có nhiều món phân tách bằng dấu phẩy
-    const parts = clean ? clean.split(/,\s*(?=[a-zA-Z\d\u00C0-\u1EF9])/) : [];
-    let parsedAny = false;
-
-    parts.forEach((part) => {
-      let qty = null;
-      const explicitKgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*kg/i);
-      const startQtyMatch = part.match(/^([\d]+[.,][\d]+|[\d]+)/);
-      const kgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*(?:kg|kilo)?/i);
-
-      if (explicitKgMatch) {
-        qty = parseFloat(explicitKgMatch[1].replace(',', '.'));
-      } else if (startQtyMatch) {
-        qty = parseFloat(startQtyMatch[1].replace(',', '.'));
-      } else if (kgMatch) {
-        qty = parseFloat(kgMatch[1].replace(',', '.'));
-      }
-
-      const amtMatch = part.match(/\(\s*([\d.,]+)\s*(?:đ|₫|VND)?\s*\)\s*$/i);
-      const itemAmt = amtMatch
-        ? parseFloat(amtMatch[1].replace(/\./g, '').replace(/,/g, ''))
-        : (parts.length === 1 ? amt : 0);
-
-      const groupKey = getChiTuyetProductGroup(part);
+      const groupKey = getChiTuyetProductGroup(rawName);
       if (!groups[groupKey]) {
         groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0, prices: [] };
       }
 
-      if (qty && qty > 0) {
-        groups[groupKey].retQuantities.push(qty);
-        parsedAny = true;
+      if (p > 0) {
+        const priceK = Math.round(p / 1000);
+        if (!groups[groupKey].prices.includes(priceK)) {
+          groups[groupKey].prices.push(priceK);
+        }
       }
-      groups[groupKey].amount -= itemAmt;
+
+      if (isRet) {
+        if (q > 0) {
+          groups[groupKey].retQuantities.push(q);
+        } else if (amt > 0) {
+          unallocatedReturns.push({ amount: amt, note: rawName });
+        }
+        groups[groupKey].amount -= amt;
+      } else {
+        if (q > 0) {
+          groups[groupKey].posQuantities.push(q);
+        }
+        groups[groupKey].amount += amt;
+      }
+    });
+  } else {
+    const dayTrans = (transList || []).filter((t) => {
+      const d = new Date(t.date);
+      const dd = d.getDate().toString().padStart(2, '0');
+      const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+      const yyyy = d.getFullYear();
+      const keyWithYear = `${dd}/${mm}/${yyyy}`;
+      const keyWithoutYear = `${dd}/${mm}`;
+      return keyWithYear === cleanDateKey || keyWithoutYear === cleanDateKey;
     });
 
-    if (!parsedAny) {
-      // Nếu hoàn toàn không có số cân, tách thành dòng giảm trừ riêng chứ KHÔNG trừ ngầm vào nhóm bò
-      unallocatedReturns.push({ amount: amt, note: clean || 'Trả lại hàng' });
-    }
-  });
+    const dayPays = (payList || []).filter((p) => {
+      const d = new Date(p.paidAt);
+      const dd = d.getDate().toString().padStart(2, '0');
+      const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+      const yyyy = d.getFullYear();
+      const keyWithYear = `${dd}/${mm}/${yyyy}`;
+      const keyWithoutYear = `${dd}/${mm}`;
+      return keyWithYear === cleanDateKey || keyWithoutYear === cleanDateKey;
+    });
 
-  // Gom các khoản thanh toán bình thường (tiền mặt, chuyển khoản...)
-  normalPays.forEach((p) => {
-    totalPayment += parseFloat(p.amount || 0);
-  });
+    if (dayTrans.length === 0 && dayPays.length === 0) {
+      return `${dayHeader}\n(Không có phát sinh giao dịch công nợ)`;
+    }
+
+    // 1. Gom các món từ đơn hàng trong ngày
+    dayTrans.forEach((t) => {
+      const transTotal = parseFloat(t.amount || t.totalAmount || 0);
+
+      if (t.items && t.items.length > 0) {
+        t.items.forEach((item) => {
+          const q = parseFloat(item.quantity || 0);
+          const p = parseFloat(item.price || 0);
+          const amt = parseFloat(item.amount !== undefined && item.amount !== null ? item.amount : (item.total !== undefined ? item.total : q * p));
+          const name = item.product?.name || item.productName || item.rawName || 'Thịt';
+
+          const groupKey = getChiTuyetProductGroup(name);
+          if (!groups[groupKey]) {
+            groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0, prices: [] };
+          }
+
+          // Lưu đơn giá nghìn đồng (ví dụ 145000 -> 145, 255000 -> 255)
+          if (p > 0) {
+            const priceK = Math.round(p / 1000);
+            if (!groups[groupKey].prices.includes(priceK)) {
+              groups[groupKey].prices.push(priceK);
+            }
+          }
+
+          if (q < 0) {
+            groups[groupKey].retQuantities.push(Math.abs(q));
+            groups[groupKey].amount -= Math.abs(amt);
+          } else {
+            groups[groupKey].posQuantities.push(q);
+            groups[groupKey].amount += amt;
+          }
+        });
+      } else {
+        // Nếu không có items chi tiết, mặc định vào nhóm bò
+        groups['bò'].amount += transTotal;
+      }
+    });
+
+    // 2. Phân loại và khử trùng lặp các khoản trả lại hàng trong ngày
+    const returnPays = [];
+    const normalPays = [];
+
+    dayPays.forEach((p) => {
+      if (isReturnPaymentRecord(p)) {
+        returnPays.push(p);
+      } else {
+        normalPays.push(p);
+      }
+    });
+
+    // Lọc de-duplicate: nếu có 2 khoản trả hàng cùng số tiền, ưu tiên khoản có ghi rõ chi tiết số kg/tên thịt
+    const deduplicatedReturnPays = [];
+    returnPays.forEach((p) => {
+      const pAmt = Math.round(parseFloat(p.amount || 0));
+      const pNote = (p.note || '').trim();
+      const cleanNote = pNote.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+      const hasDetail = /[\d]+[.,]?[\d]*\s*(?:kg|kilo)?/i.test(cleanNote);
+
+      if (!hasDetail) {
+        const hasBetterDuplicate = returnPays.some((other) => {
+          if (other === p) return false;
+          const otherAmt = Math.round(parseFloat(other.amount || 0));
+          if (Math.abs(otherAmt - pAmt) > 100) return false;
+          const otherClean = (other.note || '').replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+          return /[\d]+[.,]?[\d]*\s*(?:kg|kilo)?/i.test(otherClean);
+        });
+
+        if (hasBetterDuplicate) {
+          return; // Bỏ qua bản ghi chung chung vì đã có bản ghi chi tiết số kg
+        }
+      }
+
+      const isExactDup = deduplicatedReturnPays.some((existing) => {
+        if (existing.id && p.id && existing.id === p.id) return true;
+        const exAmt = Math.round(parseFloat(existing.amount || 0));
+        return Math.abs(exAmt - pAmt) < 100 && (existing.note || '').trim() === pNote;
+      });
+
+      if (!isExactDup) {
+        deduplicatedReturnPays.push(p);
+      }
+    });
+
+    // Gom các khoản trả lại hàng đã khử trùng lặp
+    deduplicatedReturnPays.forEach((p) => {
+      const amt = parseFloat(p.amount || 0);
+      const note = p.note || '';
+      const clean = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/gi, '').trim();
+
+      // Tách theo các món nếu ghi chú có nhiều món phân tách bằng dấu phẩy
+      const parts = clean ? clean.split(/,\s*(?=[a-zA-Z\d\u00C0-\u1EF9])/) : [];
+      let parsedAny = false;
+
+      parts.forEach((part) => {
+        let qty = null;
+        const explicitKgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*kg/i);
+        const startQtyMatch = part.match(/^([\d]+[.,][\d]+|[\d]+)/);
+        const kgMatch = part.match(/([\d]+[.,][\d]+|[\d]+)\s*(?:kg|kilo)?/i);
+
+        if (explicitKgMatch) {
+          qty = parseFloat(explicitKgMatch[1].replace(',', '.'));
+        } else if (startQtyMatch) {
+          qty = parseFloat(startQtyMatch[1].replace(',', '.'));
+        } else if (kgMatch) {
+          qty = parseFloat(kgMatch[1].replace(',', '.'));
+        }
+
+        const amtMatch = part.match(/\(\s*([\d.,]+)\s*(?:đ|₫|VND)?\s*\)\s*$/i);
+        const itemAmt = amtMatch
+          ? parseFloat(amtMatch[1].replace(/\./g, '').replace(/,/g, ''))
+          : (parts.length === 1 ? amt : 0);
+
+        const groupKey = getChiTuyetProductGroup(part);
+        if (!groups[groupKey]) {
+          groups[groupKey] = { posQuantities: [], retQuantities: [], amount: 0, prices: [] };
+        }
+
+        if (qty && qty > 0) {
+          groups[groupKey].retQuantities.push(qty);
+          parsedAny = true;
+        }
+        groups[groupKey].amount -= itemAmt;
+      });
+
+      if (!parsedAny) {
+        // Nếu hoàn toàn không có số cân, tách thành dòng giảm trừ riêng chứ KHÔNG trừ ngầm vào nhóm bò
+        unallocatedReturns.push({ amount: amt, note: clean || 'Trả lại hàng' });
+      }
+    });
+
+    // Gom các khoản thanh toán bình thường (tiền mặt, chuyển khoản...)
+    normalPays.forEach((p) => {
+      totalPayment += parseFloat(p.amount || 0);
+    });
+  }
 
   const lines = [];
   lines.push(dayHeader);

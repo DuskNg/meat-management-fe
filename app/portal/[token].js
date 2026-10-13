@@ -33,6 +33,7 @@ import {
 import { COLORS } from '../../src/theme';
 import { matchSearch } from '../../src/utils/searchHelper';
 import { getLunarDateString } from '../../src/utils/lunarCalendar';
+import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../../src/utils/debtMessageHelper';
 
 import { API_HOST } from '../../src/api/client';
 
@@ -1616,8 +1617,32 @@ export default function PortalScreen() {
   };
 
   // Tạo nội dung text chi tiết hóa đơn ngày đó: dòng đầu là ngày (ví dụ 07/10), danh sách món thịt chia gạch ngang từng cơ sở
+  // Tạo nội dung text chi tiết hóa đơn ngày đó: dòng đầu là ngày (ví dụ 07/10), danh sách món thịt chia gạch ngang từng cơ sở
   const buildPortalDayInvoiceText = (targetDay, targetCustomerName = null) => {
     if (!targetDay) return '';
+
+    // Kiểm tra nếu là khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
+    const isTuyetCustomer = (
+      isChiTuyetToanNgaCustomer(targetCustomerName) ||
+      isChiTuyetToanNgaCustomer(portalInfo?.name) ||
+      isChiTuyetToanNgaCustomer(portalData?.currentCustomer) ||
+      isChiTuyetToanNgaCustomer(portalData?.currentCustomer?.name) ||
+      isChiTuyetToanNgaCustomer(portalData?.currentCustomer?.id) ||
+      (portalInfo?.customers && portalInfo.customers.some((c) => isChiTuyetToanNgaCustomer(c?.name || c?.id || c))) ||
+      (portalData?.branches && portalData.branches.some((c) => isChiTuyetToanNgaCustomer(c?.name || c?.id || c)))
+    );
+
+    if (isTuyetCustomer) {
+      let dayEntries = targetDay.entries || [];
+      if (targetCustomerName) {
+        const filteredByCust = dayEntries.filter((e) => !e.customerName || e.customerName === targetCustomerName);
+        if (filteredByCust.length > 0) {
+          dayEntries = filteredByCust;
+        }
+      }
+      return buildChiTuyetDailyMessage(targetDay.dateKey || targetDay.displayDate, dayEntries);
+    }
+
     const lines = [];
 
     // Lấy ngày ngắn gọn dạng DD/MM (ví dụ: 07/10) đưa lên dòng đầu tiên
@@ -1717,6 +1742,29 @@ export default function PortalScreen() {
   // Tạo nội dung văn bản hóa đơn ngắn gọn cho hóa đơn dạng Video: tên thịt số cân, thành tiền, chia gạch ngang từng cơ sở
   const buildVideoInvoiceText = (targetDay, targetCustomerName = null) => {
     if (!targetDay) return '';
+
+    // Kiểm tra nếu là khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
+    const isTuyetCustomer = (
+      isChiTuyetToanNgaCustomer(targetCustomerName) ||
+      isChiTuyetToanNgaCustomer(portalInfo?.name) ||
+      isChiTuyetToanNgaCustomer(portalData?.currentCustomer) ||
+      isChiTuyetToanNgaCustomer(portalData?.currentCustomer?.name) ||
+      isChiTuyetToanNgaCustomer(portalData?.currentCustomer?.id) ||
+      (portalInfo?.customers && portalInfo.customers.some((c) => isChiTuyetToanNgaCustomer(c?.name || c?.id || c))) ||
+      (portalData?.branches && portalData.branches.some((c) => isChiTuyetToanNgaCustomer(c?.name || c?.id || c)))
+    );
+
+    if (isTuyetCustomer) {
+      let dayEntries = targetDay.entries || [];
+      if (targetCustomerName) {
+        const filteredByCust = dayEntries.filter((e) => !e.customerName || e.customerName === targetCustomerName);
+        if (filteredByCust.length > 0) {
+          dayEntries = filteredByCust;
+        }
+      }
+      return buildChiTuyetDailyMessage(targetDay.dateKey || targetDay.displayDate, dayEntries);
+    }
+
     const lines = [];
 
     // Lấy ngày ngắn gọn dạng DD/MM (ví dụ: 07/10) đưa lên dòng đầu tiên
@@ -1833,7 +1881,20 @@ export default function PortalScreen() {
     }
 
     if (!images || images.length === 0) {
-      showGlobalToast('Chưa có ảnh chụp hóa đơn đính kèm cho ngày này.', 'info');
+      // Nếu không có ảnh hóa đơn: Gửi nội dung tin nhắn hóa đơn ngày đó qua Zalo
+      const invoiceText = buildPortalDayInvoiceText(targetDay, targetCustomerName);
+      const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
+      const dateLabel = targetDay.isToday
+        ? `Hôm nay (${targetDay.displayDate || targetDay.dateKey})`
+        : (targetDay.displayDate || targetDay.dateKey || '');
+      const phone = portalData?.currentCustomer?.phone || '';
+
+      await shareTextToZalo({
+        text: invoiceText,
+        title: `Hóa đơn ngày ${dateLabel}${custName ? ` - ${custName}` : ''}`,
+        phone,
+        customerName: custName,
+      });
       return;
     }
 
