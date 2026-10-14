@@ -2085,9 +2085,12 @@ export default function DashboardScreen() {
         <TransactionDetailModal
           ref={detailModalRef}
           customerId={selectedCustomerId}
+          customerName={customers?.find(c => c.id === selectedCustomerId)?.name}
           onRefresh={handleRefreshBadAll}
           onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
           onEditPayment={handleEditPayment}
+          invoiceImageViewerModalRef={invoiceImageViewerModalRef}
+          invoiceImageUploadModalRef={invoiceImageUploadModalRef}
         />
         <EditDebtModal ref={editDebtModalRef} customerId={selectedCustomerId} onRefresh={handleRefreshBadAll} />
         <EditPaymentModal ref={editPaymentModalRef} onRefresh={handleRefreshBadAll} editReturnGoodsModalRef={editReturnGoodsModalRef} />
@@ -3271,6 +3274,7 @@ export default function DashboardScreen() {
       <TransactionDetailModal
         ref={detailModalRef}
         customerId={selectedCustomerId}
+        customerName={customers?.find(c => c.id === selectedCustomerId)?.name}
         onRefresh={handleRefreshAll}
         onEditTransaction={(transaction) => editDebtModalRef.current?.open(transaction)}
         onEditPayment={handleEditPayment}

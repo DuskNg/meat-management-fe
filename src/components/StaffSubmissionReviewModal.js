@@ -1643,6 +1643,35 @@ const resolveCustomerForSub = (sub, custList) => {
       if (custPhoDong) matchedCust = custPhoDong;
     }
 
+    // 1n2. ĐẶC BIỆT: Khớp ưu tiên khách "Anh bình" nếu là Akb, AK b, A kb, ak b, a bình, a binh, a.binh, anh binh, ak binh...
+    const isDetectedAnhBinh1 = (
+      cleanDetected === 'akb' ||
+      cleanDetected === 'ak b' ||
+      cleanDetected === 'a kb' ||
+      cleanDetected === 'a binh' ||
+      cleanDetected === 'anh binh' ||
+      cleanDetected === 'a.binh' ||
+      cleanDetected === 'ak binh' ||
+      cleanDetected === 'anh b' ||
+      cleanDetected === 'a b' ||
+      cleanDetectedNoSpace === 'akb' ||
+      cleanDetectedNoSpace === 'anhbinh' ||
+      cleanDetectedNoSpace === 'abinh' ||
+      cleanDetectedNoSpace === 'akbinh' ||
+      cleanDetected.includes('akb') ||
+      (cleanDetected.includes('binh') && (cleanDetected.includes('anh') || cleanDetected.startsWith('a ') || cleanDetected.startsWith('a.')) && !cleanDetected.includes('binh da') && !cleanDetected.includes('da'))
+    );
+    if (isDetectedAnhBinh1) {
+      const custAnhBinh = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+        return (cClean === 'anh binh' || cClean === 'a binh' || (cClean.includes('binh') && (cClean.includes('anh') || cClean.startsWith('a ')))) && !cClean.includes('binh da') && !cClean.includes('da');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+        return cClean.includes('binh') && !cClean.includes('binh da') && !cClean.includes('da');
+      }) || null;
+      if (custAnhBinh) matchedCust = custAnhBinh;
+    }
+
     // 1o. ĐẶC BIỆT: Khớp ưu tiên khách "Gia Hưng cs2" nếu là Gia Hy CS2, Gia Hưng CS2, Gia Hưng 2...
     if (
       (cleanDetected.includes('gia') && (cleanDetected.includes('hung') || cleanDetected.includes('hy')) && (cleanDetected.includes('cs2') || cleanDetected.includes('cs 2') || cleanDetected.includes('co so 2') || cleanDetected.endsWith('2'))) ||
@@ -2167,6 +2196,30 @@ const resolveCustomerForSub = (sub, custList) => {
         matchedCust = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
           return cClean === 'pho dong' || (cClean.includes('pho') && cClean.includes('dong'));
+        }) || null;
+      } else if (
+        cleanDetected === 'akb' ||
+        cleanDetected === 'ak b' ||
+        cleanDetected === 'a kb' ||
+        cleanDetected === 'a binh' ||
+        cleanDetected === 'anh binh' ||
+        cleanDetected === 'a.binh' ||
+        cleanDetected === 'ak binh' ||
+        cleanDetected === 'anh b' ||
+        cleanDetected === 'a b' ||
+        cleanDetectedNoSpace === 'akb' ||
+        cleanDetectedNoSpace === 'anhbinh' ||
+        cleanDetectedNoSpace === 'abinh' ||
+        cleanDetectedNoSpace === 'akbinh' ||
+        cleanDetected.includes('akb') ||
+        (cleanDetected.includes('binh') && (cleanDetected.includes('anh') || cleanDetected.startsWith('a ') || cleanDetected.startsWith('a.')) && !cleanDetected.includes('binh da') && !cleanDetected.includes('da'))
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+          return (cClean === 'anh binh' || cClean === 'a binh' || (cClean.includes('binh') && (cClean.includes('anh') || cClean.startsWith('a ')))) && !cClean.includes('binh da') && !cClean.includes('da');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+          return cClean.includes('binh') && !cClean.includes('binh da') && !cClean.includes('da');
         }) || null;
       } else if (
         (cleanDetected.includes('gia') && (cleanDetected.includes('hung') || cleanDetected.includes('hy')) && (cleanDetected.includes('cs2') || cleanDetected.includes('cs 2') || cleanDetected.includes('co so 2') || cleanDetected.endsWith('2'))) ||

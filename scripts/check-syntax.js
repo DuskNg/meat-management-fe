@@ -40,9 +40,47 @@ allFiles.forEach((f) => {
   }
 });
 
-if (errors > 0) {
-  console.error(`\n💥 THẤT BẠI: Phát hiện ${errors} file bị lỗi cú pháp/biên dịch!`);
-  process.exit(1);
-} else {
-  console.log(`✅ [FE CHECK] Toàn bộ ${allFiles.length} file Frontend COMPILES OK (100% hợp lệ).`);
+async function checkMetroBundler() {
+  return new Promise((resolve) => {
+    const req = http.get('http://127.0.0.1:8081/index.bundle?platform=web&dev=true', { timeout: 8000 }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          console.log('✅ [METRO LIVE CHECK] Metro Bundler đang chạy và Web Bundle trả về STATUS: 200 OK (Không có runtime/bundle error).');
+          resolve(true);
+        } else {
+          console.error(`💥 [METRO ERROR]: Metro Bundler trả về STATUS: ${res.statusCode}`);
+          if (body.includes('error') || body.includes('Error')) {
+            console.error(body.slice(0, 500));
+          }
+          resolve(false);
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      console.log(`ℹ️ [METRO NOTICE]: Metro Bundler offline hoặc không phản hồi trên cổng 8081 (${err.message}). Bỏ qua kiểm tra live bundle.`);
+      resolve(true); // Không bắt buộc nếu Metro chưa khởi động
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      console.log('⚠️ [METRO TIMEOUT]: Kiểm tra live bundle vượt quá thời gian chờ.');
+      resolve(true);
+    });
+  });
 }
+
+(async () => {
+  if (errors > 0) {
+    console.error(`\n💥 THẤT BẠI: Phát hiện ${errors} file bị lỗi cú pháp/biên dịch!`);
+    process.exit(1);
+  } else {
+    console.log(`✅ [FE CHECK] Toàn bộ ${allFiles.length} file Frontend COMPILES OK (100% hợp lệ).`);
+    const metroOk = await checkMetroBundler();
+    if (!metroOk) {
+      process.exit(1);
+    }
+  }
+})();

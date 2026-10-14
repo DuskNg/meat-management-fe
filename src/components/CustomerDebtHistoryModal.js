@@ -1190,7 +1190,7 @@ const CustomerDebtHistoryModal = forwardRef(({
                               <TouchableOpacity
                                 key={g.dateKey}
                                 style={styles.rangeDayChipCompact}
-                                onPress={() => detailModalRef?.current?.open(g)}
+                                onPress={() => detailModalRef?.current?.open({ ...g, customerName: customer?.name })}
                                 activeOpacity={0.8}
                               >
                                 <Text style={styles.rangeDayChipDateCompact}>{formatShortDate(g.date)}</Text>
@@ -1562,7 +1562,7 @@ const CustomerDebtHistoryModal = forwardRef(({
                             key={group.dateKey}
                             group={group}
                             tileSize={tileSize}
-                            onPress={() => detailModalRef?.current?.open(group)}
+                            onPress={() => detailModalRef?.current?.open({ ...group, customerName: customer?.name })}
                           />
                         ))}
                       </View>

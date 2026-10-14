@@ -39,6 +39,7 @@ import { getLunarDateString } from '../utils/lunarCalendar';
  */
 const TransactionDetailModal = forwardRef(({
   customerId,
+  customerName,
   monthGroups,
   onRefresh,
   onEditTransaction,
@@ -64,6 +65,9 @@ const TransactionDetailModal = forwardRef(({
     return dayGroupState;
   }, [monthGroups, selectedDateKey, dayGroupState]);
 
+  // Tên khách hàng an toàn từ props hoặc dayGroup
+  const currentCustomerName = customerName || dayGroup?.customerName || dayGroupState?.customerName || '';
+
   // Các refs cho Modal PIN và Popup thông báo
   const pinInputRef = useRef(null);
   const pinSetupRef = useRef(null);
@@ -71,6 +75,39 @@ const TransactionDetailModal = forwardRef(({
   const internalViewerRef = useRef(null);
   const internalUploadRef = useRef(null);
   const isSubmittingRef = useRef(false);
+
+  // ─── Helper: định dạng tiền VNĐ ────────────────────────────────────────
+  const formatCurrency = (amount) =>
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
+      .format(amount || 0)
+      .replace('₫', 'đ');
+
+  // Helper chuyển đổi chuỗi ngày ISO thành dạng khóa "DD/MM/YYYY"
+  const toDateKey = (dateStr) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr).split('T')[0] || '';
+      const dd = d.getDate().toString().padStart(2, '0');
+      const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    } catch {
+      return String(dateStr).split('T')[0] || '';
+    }
+  };
+
+  // ─── Helper: lấy thứ trong tuần tiếng Việt đầy đủ ─────────────────────
+  const getFullWeekday = (dateStr) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      return ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'][d.getDay()] || '';
+    } catch {
+      return '';
+    }
+  };
 
   // Kiểm tra URL có phải là định dạng Video hay không
   const checkIsVideoUrl = (url) => {
@@ -101,6 +138,7 @@ const TransactionDetailModal = forwardRef(({
     const viewer = invoiceImageViewerModalRef?.current || internalViewerRef.current;
     if (viewer && t.invoices && t.invoices.length > 0) {
       const isRet = isReturnGoodsItem(t);
+      const custName = currentCustomerName || t.customer?.name || 'Khách hàng';
       const entries = (t.items && t.items.length > 0)
         ? t.items.map((it) => {
             const qty = it.quantity != null ? parseFloat(it.quantity) : null;
@@ -114,7 +152,7 @@ const TransactionDetailModal = forwardRef(({
               price: price,
               amount: amt,
               type: isRet ? 'RETURN' : 'DEBT',
-              customerName: customerName,
+              customerName: custName,
             };
           })
         : [
@@ -124,13 +162,13 @@ const TransactionDetailModal = forwardRef(({
               price: null,
               amount: parseFloat(t.amount || t.totalAmount || 0),
               type: isRet ? 'RETURN' : 'DEBT',
-              customerName: customerName,
+              customerName: custName,
             },
           ];
 
       const invoiceDateKey = toDateKey(t.date || t.paidAt);
       const invoiceDayData = {
-        customerName: customerName || t.customer?.name || 'Khách hàng',
+        customerName: custName,
         displayDate: invoiceDateKey,
         dateKey: invoiceDateKey,
         displayLunarDate: getLunarDateString(t.date || t.paidAt),
@@ -144,7 +182,7 @@ const TransactionDetailModal = forwardRef(({
       viewer.open({
         images: t.invoices,
         initialIndex,
-        title: isRet ? `Đơn trả hàng #${invoiceDateKey}` : `Hóa đơn: ${customerName || 'Khách hàng'}`,
+        title: isRet ? `Đơn trả hàng #${invoiceDateKey}` : `Hóa đơn: ${custName}`,
         subtitle: `Số tiền: ${isRet ? '-' : ''}${formatCurrency(t.amount || t.totalAmount)} (${invoiceDateKey})`,
         dayData: invoiceDayData,
         onDelete: (inv, callback) => handleDeleteInvoice(inv, callback),
@@ -417,26 +455,7 @@ const TransactionDetailModal = forwardRef(({
     }
   };
 
-  // ─── Helper: định dạng tiền VNĐ ────────────────────────────────────────
-  const formatCurrency = (amount) =>
-    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
-      .format(amount)
-      .replace('₫', 'đ');
 
-  // Helper chuyển đổi chuỗi ngày ISO thành dạng khóa "DD/MM/YYYY"
-  const toDateKey = (dateStr) => {
-    const d = new Date(dateStr);
-    const dd = d.getDate().toString().padStart(2, '0');
-    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  };
-
-  // ─── Helper: lấy thứ trong tuần tiếng Việt đầy đủ ─────────────────────
-  const getFullWeekday = (dateStr) => {
-    const d = new Date(dateStr);
-    return ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'][d.getDay()];
-  };
 
   // Helper sao chép tin nhắn công nợ của ngày này theo đúng cấu trúc yêu cầu
   const handleCopyDailyMessage = async () => {

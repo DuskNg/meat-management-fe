@@ -19,6 +19,7 @@ import EditSupplierPaymentModal from './EditSupplierPaymentModal';
 import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import PopupModal from './PopupModal';
 import { showGlobalToast } from '../store/toastStore';
+import { exportSupplierHistoryImage } from '../utils/supplierHistoryExportHelper';
 
 // Các hàm tiện ích xử lý định dạng ngày tháng
 const padZero = (n) => String(n).padStart(2, '0');
@@ -73,6 +74,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
   const [toDate, setToDate] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'DEBT' | 'PAYMENT'
+  const [exporting, setExporting] = useState(false);
   const [selectContainerZIndex, setSelectContainerZIndex] = useState(10);
   const activeSupplierIdRef = useRef(null);
   const exportSupplierHistoryModalRef = useRef(null);
@@ -775,6 +777,32 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
     });
   };
 
+  // Xuất ảnh theo đúng bộ lọc danh sách hiện tại ngay lập tức (không qua chọn tháng)
+  const handleExportFilteredImage = async () => {
+    if (exporting) return;
+    setExporting(true);
+    showGlobalToast('Đang tạo và xuất hình ảnh theo bộ lọc...', 'info');
+
+    try {
+      const sup = currentSupplier || supplier;
+      await exportSupplierHistoryImage({
+        supplier: sup,
+        historyList: filteredHistory,
+        filterInfo: {
+          fromDate,
+          toDate,
+          selectedFilter,
+          typeFilter,
+        },
+      });
+    } catch (err) {
+      console.error('[HANDLE EXPORT IMAGE ERROR]', err);
+      showGlobalToast('Không thể xuất ảnh danh sách giao dịch.', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
@@ -810,18 +838,16 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
             </View>
 
             <TouchableOpacity
-              style={styles.exportBtn}
-              onPress={() => {
-                const now = new Date();
-                const currentMonthStr = `${padZero(now.getMonth() + 1)}/${now.getFullYear()}`;
-                const targetMonth = selectedFilter && selectedFilter.includes('/')
-                  ? selectedFilter
-                  : (availableMonths[0] || currentMonthStr);
-                exportSupplierHistoryModalRef.current?.open(currentSupplier || supplier, targetMonth, history);
-              }}
+              style={[styles.exportBtn, exporting && styles.exportBtnDisabled]}
+              onPress={handleExportFilteredImage}
               activeOpacity={0.7}
+              disabled={exporting}
             >
-              <Text style={styles.exportBtnText}>🖼️ Xuất ảnh</Text>
+              {exporting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.exportBtnText}>🖼️ Xuất ảnh</Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -1122,6 +1148,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  exportBtnDisabled: {
+    opacity: 0.6,
   },
   exportBtnText: {
     color: '#FFFFFF',
