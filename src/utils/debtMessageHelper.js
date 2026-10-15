@@ -91,11 +91,13 @@ export const getChiTuyetProductGroup = (productName) => {
 };
 
 /**
- * Định dạng số cân gọn gàng (23 thay vì 23.0, 11.8, 2.85, 14.53)
+ * Định dạng số cân gọn gàng (23 thay vì 23.0, 11.8, 2.85, 14.53, 2.145)
+ * Giữ tối đa 3 chữ số thập phân nếu có số lẻ từ cân điện tử (như 2.145, 2.375),
+ * tự động bỏ các số 0 thừa ở cuối để không làm lệch phép tính vế trái và vế phải.
  */
 const formatQty = (num) => {
   if (num === null || num === undefined || isNaN(num)) return '0';
-  return parseFloat(Number(num).toFixed(2)).toString();
+  return parseFloat(Number(num).toFixed(3)).toString();
 };
 
 /**
@@ -397,8 +399,11 @@ export const buildChiTuyetDailyMessage = (dateKey, transList = [], payList = [],
     if (formula) {
       // ── QUY TẮC BẢO ĐẢM NHẤT QUÁN TOÁN HỌC (MATHEMATICAL CONSISTENCY) ──
       // Vế trái (công thức số cân) và Vế phải (thành tiền sau dấu =) BẮT BUỘC PHẢI KHỚP NHAU 100%
-      const totalPos = g.posQuantities.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
-      const totalRet = g.retQuantities.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+      // Tính toán dựa trên chính các số cân đã được format hiển thị ở vế trái
+      const displayedPosQuantities = g.posQuantities.map((q) => parseFloat(formatQty(q)));
+      const displayedRetQuantities = g.retQuantities.map((q) => parseFloat(formatQty(q)));
+      const totalPos = displayedPosQuantities.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+      const totalRet = displayedRetQuantities.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
       const netQty = totalPos - totalRet;
 
       let calculatedAmountK = 0;

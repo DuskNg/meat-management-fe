@@ -463,8 +463,8 @@ const TransactionDetailModal = forwardRef(({
     const { transactions: dayTrans = [], payments: dayPays = [], totalDebt: dayTotalDebt = 0, dateKey } = dayGroup;
 
     // Định dạng tin nhắn đặc biệt riêng cho khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
-    if (isChiTuyetToanNgaCustomer(customerId)) {
-      const msg = buildChiTuyetDailyMessage(dateKey, dayTrans, dayPays);
+    if (isChiTuyetToanNgaCustomer(currentCustomerName || customerId || customerName)) {
+      const msg = buildChiTuyetDailyMessage(dateKey, dayTrans, dayPays, currentCustomerName || customerName);
       try {
         if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(msg);

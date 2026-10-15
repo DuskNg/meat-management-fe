@@ -94,6 +94,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
   const [transactionId, setTransactionId] = useState(null);
   const [customerId, setCustomerId] = useState(null); // Lưu ID khách hàng phục vụ lấy giá thịt tùy biến
   const [customerName, setCustomerName] = useState('');
+  const [transactionData, setTransactionData] = useState(null);
 
   // Giỏ hàng chứa danh sách mặt hàng đang sửa đổi
   const [cartItems, setCartItems] = useState([]);
@@ -151,6 +152,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
       setTransactionId(transaction.id);
       setCustomerId(transaction.customerId || ownerCustomerId); // Ưu tiên ID trong giao dịch, fallback sang khách hàng đang xem
       setCustomerName(transaction.customer?.name || '');
+      setTransactionData(transaction);
 
       // Kiểm tra xem đơn có các mặt hàng thịt thật sự hay không
       const hasRealMeat = (transaction.items || []).some(
@@ -541,7 +543,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
             newPrice: item.price,
           })),
           customerName: customerName || 'Khách hàng',
-          customerId: transaction?.customerId || customerId,
+          customerId: customerId || transactionData?.customerId || null,
           allowScopeSelection: true,
           onConfirm: (result) => {
             const applyToFuture = typeof result === 'object' && result !== null ? result.applyToFuture !== false : true;
@@ -851,7 +853,7 @@ const EditDebtModal = forwardRef(({ onRefresh, customerId: ownerCustomerId }, re
       <ProductListModal ref={productModalRef} onRefresh={refetchProducts} />
       <PinInputModal ref={pinInputRef} />
       <PinSetupModal ref={pinSetupRef} />
-      <PriceChangeReasonModal ref={priceChangeReasonModalRef} />
+      <PriceChangeReasonModal ref={priceChangeReasonModalRef} zIndex={35000} />
     </>
   );
 });
