@@ -771,7 +771,11 @@ export const generateDailyDebtImage = ({ selectedDate, transactions, payments })
     ctx.font = 'bold 17.5px Arial, sans-serif';
     ctx.fillText(`${new Intl.NumberFormat('vi-VN').format(finalRemaining)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
 
-    return canvas.toDataURL('image/png');
+    const dataUrl = canvas.toDataURL('image/png');
+    // Giải phóng bộ nhớ RAM/GPU của canvas ngay sau khi xuất base64
+    canvas.width = 0;
+    canvas.height = 0;
+    return dataUrl;
   } catch (err) {
     console.error('[GENERATE DAILY DEBT IMAGE ERROR]', err);
     return null;
@@ -985,7 +989,11 @@ const generateMissingCustomersImage = ({ selectedDate, allTransactions, customer
     ctx.textAlign = 'right';
     ctx.fillText('Phần mềm Quản lý Sạp thịt', width - padding, footerY + 18);
 
-    return canvas.toDataURL('image/png');
+    const dataUrl = canvas.toDataURL('image/png');
+    // Giải phóng bộ nhớ RAM/GPU của canvas ngay sau khi xuất base64
+    canvas.width = 0;
+    canvas.height = 0;
+    return dataUrl;
   } catch (err) {
     console.error('[GENERATE MISSING CUSTOMERS IMAGE ERROR]', err);
     return null;
@@ -1154,11 +1162,19 @@ export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], r
     };
 
     // 2. Lọc danh sách giao dịch đúng ngày được chọn
-    const dayTransactions = (transactions || []).filter((t) => {
-      if (!t) return false;
+    // Kiểm tra an toàn: nếu danh sách transactions truyền vào đã là của riêng ngày này rồi thì không cần lọc lại tránh lệch múi giờ
+    const isAlreadyFiltered = (transactions || []).length > 0 && (transactions || []).every((t) => {
       const d = t.date || t.time || t.createdAt;
-      return toDateKey(d) === selectedDate;
+      return !d || toDateKey(d) === selectedDate;
     });
+
+    const dayTransactions = isAlreadyFiltered
+      ? (transactions || [])
+      : (transactions || []).filter((t) => {
+          if (!t) return false;
+          const d = t.date || t.time || t.createdAt;
+          return toDateKey(d) === selectedDate;
+        });
 
     // 3. Đếm số đơn nợ của từng khách hàng
     const customerDebtCountMap = {};
@@ -1240,10 +1256,11 @@ export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], r
     const totalCount = duplicateItems.length;
 
     // 5. Tính toán kích thước canvas và phân bổ 2 cột cân đối
+    const isMobile = isMobileDevice();
     const isTwoCol = totalCount >= 10;
-    const width = isTwoCol ? 1200 : 900;
-    const sidePadding = 25;
-    const colGap = 20;
+    const width = isTwoCol ? (isMobile ? 1000 : 1200) : (isMobile ? 800 : 900);
+    const sidePadding = isMobile ? 18 : 25;
+    const colGap = isMobile ? 14 : 20;
     const colWidth = isTwoCol ? (width - sidePadding * 2 - colGap) / 2 : (width - sidePadding * 2);
     const leftColX = sidePadding;
     const rightColX = sidePadding + colWidth + colGap;
@@ -1305,7 +1322,8 @@ export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], r
 
     const totalHeight = listStartY + listHeight + footerGap + footerHeight + bottomPadding;
 
-    const scale = 2;
+    // Tỉ lệ scale phù hợp: Mobile dùng 1.5x để tối ưu bộ nhớ RAM/Safari tránh crash, PC dùng 2x sắc nét
+    const scale = isMobile ? 1.5 : 2;
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(totalHeight * scale);
@@ -1511,7 +1529,16 @@ export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], r
     ctx.fillText('Hệ thống Quản lý Giao dịch & Công nợ Sạp thịt', width / 2, footerY1 + 22);
     ctx.fillText('Cảm ơn bạn đã tin dùng dịch vụ!', width / 2, footerY1 + 40);
 
-    const dataUrl = canvas.toDataURL('image/png');
+    let dataUrl = '';
+    try {
+      dataUrl = canvas.toDataURL('image/png');
+    } catch (dataErr) {
+      console.warn('Lỗi toDataURL ảnh đơn trùng:', dataErr);
+    }
+    // Giải phóng bộ nhớ RAM/GPU của canvas ngay sau khi xuất base64
+    canvas.width = 0;
+    canvas.height = 0;
+
     const fileName = `BaoCao_DonNoTrung_Ngay_${selectedDate.replace(/\//g, '_')}.png`;
 
     if (returnDetails) {
@@ -1524,7 +1551,7 @@ export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], r
       };
     }
 
-    return dataUrl;
+    return dataUrl || null;
   } catch (err) {
     console.error('[GENERATE DUPLICATE DEBTS IMAGE ERROR]', err);
     return null;
@@ -1682,12 +1709,14 @@ export const exportDailyReportBundle = async ({
         title: `Khách chưa lên đơn ngày ${dateStr}`,
       });
     }
-    if (img3) {
+    if (img3 && typeof img3 === 'string' && img3.length > 50 && !img3.startsWith('data:,')) {
       itemsToExport.push({
         imageUri: img3,
         fileName: `3_DonNoTrung_Ngay_${dateFileClean}.png`,
         title: `Đơn nợ trùng ngày ${dateStr}`,
       });
+    } else {
+      console.warn('Không tạo được ảnh đơn trùng (img3 rỗng hoặc lỗi bộ nhớ).');
     }
 
     if (itemsToExport.length === 0) {

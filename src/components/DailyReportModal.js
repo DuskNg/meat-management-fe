@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/DailyReportModal.js
-import React, { useState, forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -46,6 +46,16 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
   const [bundleExporting, setBundleExporting] = useState(false);
+  // Danh sách các ID đơn nợ trùng được chọn để xóa hàng loạt
+  const [selectedDuplicateDebtIds, setSelectedDuplicateDebtIds] = useState(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  // Tự động dọn dẹp các lựa chọn khi chuyển tab hoặc bộ lọc
+  useEffect(() => {
+    if (activeFilter !== 'duplicate' || activeReportTab !== 'day') {
+      setSelectedDuplicateDebtIds(new Set());
+    }
+  }, [activeFilter, activeReportTab]);
 
   // 1. Phơi bày hàm open/close ra bên ngoài (hỗ trợ truyền date, month và filter khi mở)
   useImperativeHandle(ref, () => ({
@@ -647,6 +657,107 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           showGlobalToast(errMsg, 'error');
         }
       }
+    });
+  };
+
+  // Chọn hoặc bỏ chọn một đơn nợ trùng
+  const toggleSelectDuplicateItem = (id) => {
+    setSelectedDuplicateDebtIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // Chọn tất cả hoặc bỏ chọn tất cả đơn nợ trùng đang hiển thị
+  const handleToggleSelectAllDuplicates = () => {
+    const debtItems = displayItems.filter((it) => it.type === 'debt');
+    if (selectedDuplicateDebtIds.size === debtItems.length && debtItems.length > 0) {
+      setSelectedDuplicateDebtIds(new Set());
+    } else {
+      setSelectedDuplicateDebtIds(new Set(debtItems.map((it) => it.id)));
+    }
+  };
+
+  // Tự động chọn thông minh các đơn trùng thừa (giữ lại 1 đơn cũ nhất cho mỗi khách hàng)
+  const handleSmartSelectDuplicates = () => {
+    const debtItems = displayItems.filter((it) => it.type === 'debt');
+    const groupMap = {};
+    debtItems.forEach((it) => {
+      const key = getCustomerKey(it);
+      if (!groupMap[key]) groupMap[key] = [];
+      groupMap[key].push(it);
+    });
+
+    const toSelect = new Set();
+    Object.values(groupMap).forEach((list) => {
+      if (list.length >= 2) {
+        // Sắp xếp đơn theo thời gian tăng dần: đơn cũ nhất ở đầu
+        const sorted = [...list].sort((a, b) => {
+          const tA = new Date(a.time || a.createdAt || a.date || 0).getTime();
+          const tB = new Date(b.time || b.createdAt || b.date || 0).getTime();
+          if (tA !== tB) return tA - tB;
+          return String(a.id).localeCompare(String(b.id));
+        });
+        // Giữ lại phần tử đầu tiên (đơn gốc), chọn tất cả các đơn trùng thừa phía sau
+        for (let i = 1; i < sorted.length; i++) {
+          toSelect.add(sorted[i].id);
+        }
+      }
+    });
+
+    if (toSelect.size === 0) {
+      showGlobalToast('Không tìm thấy đơn nợ trùng lặp thừa nào để tự động chọn.', 'info');
+      return;
+    }
+
+    setSelectedDuplicateDebtIds(toSelect);
+    showGlobalToast(`Đã tự động chọn ${toSelect.size} đơn trùng thừa (giữ lại 1 đơn gốc cho mỗi khách).`, 'info');
+  };
+
+  // Xóa hàng loạt các đơn nợ trùng đã chọn
+  const handleBulkDeleteDuplicates = () => {
+    const selectedList = displayItems.filter((it) => it.type === 'debt' && selectedDuplicateDebtIds.has(it.id));
+    if (selectedList.length === 0) {
+      showGlobalToast('Vui lòng chọn ít nhất 1 đơn nợ bị trùng để xóa.', 'warning');
+      return;
+    }
+
+    const totalAmt = selectedList.reduce((sum, it) => sum + Number(it.amount || 0), 0);
+    const count = selectedList.length;
+
+    popupModalRef.current?.show({
+      title: `Xác nhận xóa ${count} đơn nợ trùng`,
+      message: `Bạn có chắc chắn muốn xóa cùng lúc ${count} đơn nợ trùng đã chọn không?\nTổng số tiền: ${formatCurrency(totalAmt)}.\n\n⚠️ Hành động này sẽ xóa vĩnh viễn và không thể hoàn tác.`,
+      type: 'confirm',
+      confirmText: `Xóa ${count} đơn`,
+      cancelText: 'Hủy',
+      onConfirm: async () => {
+        setIsBulkDeleting(true);
+        try {
+          const ids = selectedList.map((it) => it.id);
+          try {
+            await api.post('/transactions/bulk-delete', { ids });
+          } catch (bulkErr) {
+            // Fallback nếu API bulk-delete gặp trục trặc thì xóa tuần tự
+            await Promise.all(ids.map((id) => api.delete(`/transactions/${id}`)));
+          }
+
+          showGlobalToast(`Đã xóa thành công ${count} đơn nợ trùng.`, 'success');
+          setSelectedDuplicateDebtIds(new Set());
+          fetchReportData();
+          if (onRefresh) onRefresh();
+        } catch (err) {
+          const errMsg = err.response?.data?.message || err.message || 'Lỗi khi xóa hàng loạt đơn nợ.';
+          showGlobalToast(errMsg, 'error');
+        } finally {
+          setIsBulkDeleting(false);
+        }
+      },
     });
   };
 
@@ -1808,8 +1919,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       showGlobalToast('Đang tạo và chuẩn bị 3 ảnh báo cáo ngày...', 'info', 'Đang xử lý', 2500);
       await exportDailyReportBundle({
         selectedDate,
-        transactions: rawTransactions,
-        payments: rawPayments,
+        transactions: (currentTransactions && currentTransactions.length > 0) ? currentTransactions : rawTransactions,
+        payments: (currentPayments && currentPayments.length > 0) ? currentPayments : rawPayments,
         customers: rawCustomers,
         onProgress: (msg) => showGlobalToast(msg, 'info', 'Tiến trình xuất ảnh', 1800),
       });
@@ -2001,6 +2112,72 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               </View>
             )}
 
+            {/* Thanh công cụ chọn nhiều để xóa hàng loạt khi đang lọc đơn trùng */}
+            {activeReportTab === 'day' && activeFilter === 'duplicate' && (
+              <View style={styles.duplicateBulkBar}>
+                <View style={styles.duplicateBulkBarTop}>
+                  <Text style={styles.duplicateBulkCountText} numberOfLines={1}>
+                    Đã chọn:{' '}
+                    <Text style={styles.duplicateBulkCountHighlight}>
+                      {selectedDuplicateDebtIds.size}
+                    </Text>
+                    /{displayItems.filter((it) => it.type === 'debt').length} đơn
+                    {selectedDuplicateDebtIds.size > 0 ? (
+                      <Text style={styles.duplicateBulkAmountText}>
+                        {' '}({formatCurrency(
+                          displayItems
+                            .filter((it) => it.type === 'debt' && selectedDuplicateDebtIds.has(it.id))
+                            .reduce((sum, it) => sum + Number(it.amount || 0), 0)
+                        )})
+                      </Text>
+                    ) : null}
+                  </Text>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.duplicateBulkDeleteBtn,
+                      selectedDuplicateDebtIds.size === 0 && styles.duplicateBulkDeleteBtnDisabled,
+                    ]}
+                    onPress={handleBulkDeleteDuplicates}
+                    disabled={selectedDuplicateDebtIds.size === 0 || isBulkDeleting}
+                    activeOpacity={0.7}
+                  >
+                    {isBulkDeleting ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={styles.duplicateBulkDeleteBtnText}>
+                        🗑️ Xóa đã chọn ({selectedDuplicateDebtIds.size})
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.duplicateBulkActionsRow}>
+                  <TouchableOpacity
+                    style={styles.duplicateBulkQuickBtn}
+                    onPress={handleToggleSelectAllDuplicates}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.duplicateBulkQuickBtnText}>
+                      {selectedDuplicateDebtIds.size > 0 && selectedDuplicateDebtIds.size === displayItems.filter((it) => it.type === 'debt').length
+                        ? '✕ Bỏ chọn tất cả'
+                        : '✓ Chọn tất cả'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.duplicateBulkQuickBtn, styles.duplicateBulkSmartBtn]}
+                    onPress={handleSmartSelectDuplicates}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.duplicateBulkQuickBtnText, styles.duplicateBulkSmartBtnText]}>
+                      ⚡ Tự chọn đơn trùng thừa (giữ 1)
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             {/* Ô chú thích 4 màu trạng thái giao dịch (bấm để lọc nhanh) */}
             {activeReportTab === 'day' && (
               <View style={styles.legendContainer}>
@@ -2085,6 +2262,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                     const isDuplicate = isItemDuplicateDebt(item);
                     const palette = isDuplicate ? getDuplicatePalette(item) : null;
                     const seqText = isDuplicate ? getItemDebtSequence(item) : '';
+                    const isSelected = selectedDuplicateDebtIds.has(item.id);
                     const isRecurring = Boolean(
                       isDebt && (
                         item.isRecurring ||
@@ -2121,7 +2299,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                                           backgroundColor: palette.cardBg,
                                           borderColor: palette.borderColor,
                                           borderLeftColor: palette.borderLeftColor,
-                                        }
+                                        },
+                                        isSelected && styles.duplicateCardSelected,
                                       ]
                                     : styles.itemCardDebt)
                                 : styles.itemCardPayment
@@ -2129,7 +2308,41 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                       >
                         <View style={styles.itemHeader}>
                           <View style={styles.customerNameRow}>
+                            {/* Ô checkbox chọn đơn nợ trùng khi ở chế độ xem trùng */}
+                            {activeFilter === 'duplicate' && isDebt && (
+                              <TouchableOpacity
+                                style={[
+                                  styles.duplicateItemCheckbox,
+                                  isSelected && styles.duplicateItemCheckboxSelected,
+                                ]}
+                                onPress={() => toggleSelectDuplicateItem(item.id)}
+                                activeOpacity={0.7}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              >
+                                {isSelected ? (
+                                  <Text style={styles.duplicateItemCheckmark}>✓</Text>
+                                ) : null}
+                              </TouchableOpacity>
+                            )}
+
                             <Text style={styles.customerName}>{item.customerName}</Text>
+
+                            {/* Tag hiển thị thứ tự đơn trùng của khách hàng */}
+                            {isDuplicate && activeFilter === 'duplicate' && seqText ? (
+                              <View style={[styles.seqBadge, isSelected && styles.seqBadgeSelected]}>
+                                <Text style={[styles.seqBadgeText, isSelected && styles.seqBadgeTextSelected]}>
+                                  {seqText}
+                                </Text>
+                              </View>
+                            ) : null}
+
+                            {/* Huy hiệu đánh dấu đơn đã chọn sẽ xóa */}
+                            {isSelected && (
+                              <View style={styles.selectedToDeleteBadge}>
+                                <Text style={styles.selectedToDeleteText}>Sẽ xóa</Text>
+                              </View>
+                            )}
+
                             {isRecurring && (
                               <View style={styles.recurringTag}>
                                 <Text style={styles.recurringTagText}>📌 Đơn cố định</Text>
@@ -2268,6 +2481,23 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
         {/* Nhóm nút hành động dưới đáy */}
         <View style={styles.footerButtons}>
+          {activeReportTab === 'day' && activeFilter === 'duplicate' && selectedDuplicateDebtIds.size > 0 && (
+            <TouchableOpacity
+              style={styles.bulkDeleteFooterBtn}
+              onPress={handleBulkDeleteDuplicates}
+              disabled={isBulkDeleting}
+              activeOpacity={0.7}
+            >
+              {isBulkDeleting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.bulkDeleteFooterBtnText} numberOfLines={1}>
+                  🗑️ XÓA {selectedDuplicateDebtIds.size} ĐƠN ĐÃ CHỌN
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
+
           {activeReportTab === 'day' && (
             <>
               <TouchableOpacity
@@ -3018,6 +3248,160 @@ const styles = StyleSheet.create({
     ...SHADOWS.card,
   },
   exportBundleBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 15,
+  },
+  // Style cho tính năng chọn nhiều và xóa hàng loạt đơn trùng
+  duplicateBulkBar: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 6,
+    gap: 6,
+  },
+  duplicateBulkBarTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  duplicateBulkCountText: {
+    fontSize: 12.5,
+    color: '#92400E',
+    fontWeight: '600',
+    flex: 1,
+  },
+  duplicateBulkCountHighlight: {
+    color: '#DC2626',
+    fontWeight: 'bold',
+    fontSize: 13.5,
+  },
+  duplicateBulkAmountText: {
+    color: '#B45309',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  duplicateBulkDeleteBtn: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 28,
+  },
+  duplicateBulkDeleteBtnDisabled: {
+    backgroundColor: '#CBD5E1',
+    opacity: 0.7,
+  },
+  duplicateBulkDeleteBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: 'bold',
+  },
+  duplicateBulkActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  duplicateBulkQuickBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  duplicateBulkQuickBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#78350F',
+  },
+  duplicateBulkSmartBtn: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  duplicateBulkSmartBtnText: {
+    color: '#B45309',
+    fontWeight: '700',
+  },
+  duplicateItemCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 4,
+  },
+  duplicateItemCheckboxSelected: {
+    borderColor: '#DC2626',
+    backgroundColor: '#DC2626',
+  },
+  duplicateItemCheckmark: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    lineHeight: 14,
+  },
+  duplicateCardSelected: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderLeftColor: '#EF4444',
+  },
+  seqBadge: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  seqBadgeSelected: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  seqBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#475569',
+  },
+  seqBadgeTextSelected: {
+    color: '#DC2626',
+  },
+  selectedToDeleteBadge: {
+    backgroundColor: '#EF4444',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  selectedToDeleteText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  bulkDeleteFooterBtn: {
+    flex: 1.6,
+    minHeight: 40,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#DC2626',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.card,
+  },
+  bulkDeleteFooterBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: 'bold',

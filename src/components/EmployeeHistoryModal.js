@@ -174,6 +174,11 @@ const EmployeeHistoryModal = forwardRef(({ employee, onRefresh }, ref) => {
           <Text style={styles.paymentFinal}>{formatCurrency(item.finalAmount)}</Text>
         </View>
         <View style={styles.paymentDetails}>
+          {item.fromDate && item.toDate ? (
+            <Text style={[styles.detailText, { color: '#0284C7', fontWeight: 'bold' }]}>
+              📅 Kỳ chi trả: {formatDate(item.fromDate)} ➜ {formatDate(item.toDate)}
+            </Text>
+          ) : null}
           <Text style={styles.detailText}>Lương cơ bản: {formatCurrency(item.baseSalary)}</Text>
           <Text style={styles.detailText}>Ngày công thực tế: {item.workingDays} công</Text>
           {parseFloat(item.advancesDeducted) > 0 ? (

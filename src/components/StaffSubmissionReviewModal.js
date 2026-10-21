@@ -1066,6 +1066,40 @@ const resolveCustomerForSub = (sub, custList) => {
       }
     }
 
+    // 0f. ĐẶC BIỆT: Khớp ưu tiên khách "lk01 phùng khoang" / "Phùng Khoang" nếu AI nhận diện là "Phùng Khong", "Phung Khong", "Phùng Khoang", "Phung Khoang", "Phùng Khơng", "Phùng Khang", "phung khong", "phungkhoang", "phungkhong"...
+    const isDetectedPhungKhoang = (
+      cleanDetected.includes('phung khoang') ||
+      cleanDetected.includes('phung khong') ||
+      cleanDetected.includes('phung khang') ||
+      cleanDetected.includes('phung khơng') ||
+      cleanDetectedNoSpace === 'phungkhoang' ||
+      cleanDetectedNoSpace === 'phungkhong' ||
+      cleanDetectedNoSpace === 'phungkhang' ||
+      cleanDetectedNoSpace.includes('phungkhoang') ||
+      cleanDetectedNoSpace.includes('phungkhong') ||
+      cleanDetectedNoSpace.includes('phungkhang') ||
+      (cleanDetected.includes('phung') && (
+        cleanDetected.includes('khoang') ||
+        cleanDetected.includes('khong') ||
+        cleanDetected.includes('khang') ||
+        cleanDetected.includes('khơng')
+      ))
+    );
+
+    if (isDetectedPhungKhoang) {
+      const phungKhoangCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('phung khoang') || (cClean.includes('phung') && cClean.includes('khoang')) || cClean.includes('phung khong');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim());
+        return cClean.includes('khoang');
+      }) || null;
+
+      if (phungKhoangCust) {
+        return phungKhoangCust;
+      }
+    }
+
     // 0. BẮT BUỘC ƯU TIÊN KHỚP CHÍNH XÁC 100% (Exact Match) TRƯỚC TIÊN
     // Nếu tên khách AI bóc tách trùng khớp hoàn toàn với một khách trong DB (ví dụ: "Hồng hạnh hqv")
     // thì lấy ngay khách này, TUYỆT ĐỐI không để các rule heuristic phía dưới ghi đè!

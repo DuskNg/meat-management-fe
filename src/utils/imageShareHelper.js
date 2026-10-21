@@ -425,14 +425,17 @@ export const downloadOrShareMultipleImages = async ({
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+          // Tăng khoảng chờ giữa các file trên Mobile lên 750ms để trình duyệt không chặn popup download hàng loạt
           if (i < blobDownloads.length - 1) {
-            await new Promise((r) => setTimeout(r, 350));
+            await new Promise((r) => setTimeout(r, 750));
           }
         } catch (dlErr) {
           console.warn('Lỗi khi tải ảnh về thiết bị:', fileName, dlErr);
         }
       }
+      // Đợi thêm 1200ms sau file cuối cùng để trình duyệt mobile hoàn tất kết nối download trước khi chuyển trang
+      await new Promise((r) => setTimeout(r, 1200));
     };
 
     // Kiểm tra khả năng hỗ trợ Web Share API

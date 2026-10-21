@@ -1,6 +1,7 @@
 // meat-management-fe/src/components/EditEmployeeModal.js
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import MoneyInput from './MoneyInput';
+import DatePickerInput from './DatePickerInput';
 import {
   StyleSheet,
   Text,
@@ -15,6 +16,27 @@ import { COLORS, FONTS } from '../theme';
 import SmoothModal from './SmoothModal';
 import { showGlobalToast } from '../store/toastStore';
 
+// Chuyển ISO / Date string sang "DD/MM/YYYY" cho DatePickerInput
+const toDisplayDate = (isoStr) => {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+// Chuyển "DD/MM/YYYY" sang "YYYY-MM-DD" cho API
+const toISODate = (displayStr) => {
+  if (!displayStr) return null;
+  const parts = displayStr.split('/');
+  if (parts.length === 3) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return displayStr;
+};
+
 // Modal chỉnh sửa thông tin nhân viên
 const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
@@ -24,6 +46,7 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
   const [address, setAddress] = useState('');
   const [role, setRole] = useState('');
   const [salaryVND, setSalaryVND] = useState(0);
+  const [startDate, setStartDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -36,6 +59,7 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
       setAddress(emp.address || '');
       setRole(emp.role || '');
       setSalaryVND(emp.baseSalary || 0);
+      setStartDate(emp.startDate ? toDisplayDate(emp.startDate) : '');
       setError('');
       setVisible(true);
     },
@@ -81,6 +105,7 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
         address: address.trim() || null,
         role: role.trim() || null,
         baseSalary: salaryVal,
+        startDate: startDate ? toISODate(startDate) : null,
       });
 
       if (response.data.success) {
@@ -128,6 +153,19 @@ const EditEmployeeModal = forwardRef(({ onRefresh }, ref) => {
             }}
             placeholder="Ví dụ: 9.000"
           />
+
+          <Text style={styles.label}>Ngày bắt đầu vào làm (Dương lịch):</Text>
+          <View style={{ marginBottom: 6 }}>
+            <DatePickerInput
+              value={startDate}
+              onChange={(val) => setStartDate(val)}
+              allowFuture={true}
+              dense={true}
+            />
+          </View>
+          <Text style={styles.helperText}>
+            💡 Mẹo: Nếu vừa trả lương Âm lịch, hãy chọn ngày hôm sau ngày vừa trả để hệ thống tự động tính số ngày công lẻ cho chu kỳ Dương lịch này!
+          </Text>
 
           <Text style={styles.label}>Số điện thoại (Có thể bỏ qua):</Text>
           <TextInput
@@ -234,6 +272,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.primary,
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#0284C7',
+    backgroundColor: '#F0F9FF',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+    lineHeight: 16,
   },
   buttonContainer: {
     flexDirection: 'row',

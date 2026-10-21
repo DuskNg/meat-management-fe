@@ -47,6 +47,7 @@ import EmployeeHistoryModal from '../src/components/EmployeeHistoryModal';
 import EmployeeSalaryShareModal from '../src/components/EmployeeSalaryShareModal';
 import EditEmployeeModal from '../src/components/EditEmployeeModal';
 import EmployeeLeaveModal from '../src/components/EmployeeLeaveModal';
+import PaySalaryModal from '../src/components/PaySalaryModal';
 import ReturnGoodsModal from '../src/components/ReturnGoodsModal';
 import ProfitFeatureIntroModal from '../src/components/ProfitFeatureIntroModal';
 import RecurringDebtModal from '../src/components/RecurringDebtModal';
@@ -160,6 +161,7 @@ export default function DashboardScreen() {
   const employeeSalaryShareModalRef = useRef(null);
   const editEmployeeModalRef = useRef(null);
   const employeeLeaveModalRef = useRef(null);
+  const paySalaryModalRef = useRef(null);
   const memberActionsModalRef = useRef(null);
   const dailyPriceManagementModalRef = useRef(null);
   const employeeDailyDebtModalRef = useRef(null); // Modal danh sách ghi nợ trong ngày (chỉ dùng cho tk thành viên)
@@ -1149,8 +1151,73 @@ export default function DashboardScreen() {
       : (item.baseSalary - (item.leaveDeduction || 0) - (item.totalAdvances || 0) + (item.carryOver || 0));
     const showOptions = activeOptionsEmpId === item.id;
 
+    const formatEmployeeStartDate = (dateStr) => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+    };
+
+    // Tính toán thông tin lương luỹ kế tính đến ngày hiện tại
+    const computeCurrentSalaryInfo = () => {
+      if (item.currentSalary !== undefined && item.currentWorkingDays !== undefined) {
+        return {
+          currentSalary: item.currentSalary,
+          currentWorkingDays: item.currentWorkingDays,
+          currentDayCutoff: item.currentDayCutoff,
+          isCurrentMonth: item.isCurrentMonth,
+          isPastMonth: item.isPastMonth,
+          isFutureMonth: item.isFutureMonth,
+        };
+      }
+
+      // Fallback tính toán tại Frontend nếu chưa tải dữ liệu mới
+      const now = new Date();
+      const [mStr, yStr] = (salaryMonth || '').split('/');
+      const targetMonth = parseInt(mStr, 10) || (now.getMonth() + 1);
+      const targetYear = parseInt(yStr, 10) || now.getFullYear();
+      const totalDays = getDaysInMonthFromStr(salaryMonth);
+
+      const isCurrentMonth = (targetYear === now.getFullYear() && targetMonth === (now.getMonth() + 1));
+      const isPastMonth = (targetYear < now.getFullYear() || (targetYear === now.getFullYear() && targetMonth < (now.getMonth() + 1)));
+      const isFutureMonth = (targetYear > now.getFullYear() || (targetYear === now.getFullYear() && targetMonth > (now.getMonth() + 1)));
+
+      let cutoff = totalDays;
+      if (isCurrentMonth) {
+        cutoff = Math.min(now.getDate(), totalDays);
+      } else if (isFutureMonth) {
+        cutoff = 0;
+      }
+
+      let startDay = 1;
+      if (item.startDate) {
+        const sd = new Date(item.startDate);
+        if (sd.getFullYear() === targetYear && (sd.getMonth() + 1) === targetMonth) {
+          startDay = sd.getDate();
+        } else if (sd.getFullYear() > targetYear || (sd.getFullYear() === targetYear && (sd.getMonth() + 1) > targetMonth)) {
+          startDay = totalDays + 1;
+        }
+      }
+
+      const eligible = (!isFutureMonth && cutoff >= startDay) ? (cutoff - startDay + 1) : 0;
+      const leaveD = item.leaveDays || 0;
+      const curWorkDays = Math.max(0, eligible - leaveD);
+      const curSal = Math.max(0, Math.round((item.baseSalary / totalDays) * curWorkDays));
+
+      return {
+        currentSalary: curSal,
+        currentWorkingDays: curWorkDays,
+        currentDayCutoff: cutoff,
+        isCurrentMonth,
+        isPastMonth,
+        isFutureMonth,
+      };
+    };
+
+    const currentInfo = computeCurrentSalaryInfo();
+
     return (
-      <View style={styles.customerCard}>
+      <View style={[styles.customerCard, showOptions && { zIndex: 100, elevation: 100 }]}>
         <View style={styles.customerCardClickable}>
           <View style={styles.cardHeaderSection}>
             <View style={[styles.customerAvatar, { backgroundColor: avatarBg }]}>
@@ -1164,12 +1231,23 @@ export default function DashboardScreen() {
               <Text style={styles.customerPhone} numberOfLines={1}>
                 {item.role ? `💼 ${item.role}` : '💼 Nhân viên'} {item.phone ? `• 📞 ${item.phone}` : ''}
               </Text>
+              {item.startDate ? (
+                <Text style={{ fontSize: 11, color: '#0284C7', marginTop: 2 }} numberOfLines={1}>
+                  📅 Vào làm: {formatEmployeeStartDate(item.startDate)}
+                  {item.joinedMidMonth ? ` • Hưởng ${item.eligibleDays}/${item.totalDaysInMonth} công` : ''}
+                </Text>
+              ) : null}
+              {item.isBeforeJoined ? (
+                <View style={{ marginTop: 3, alignSelf: 'flex-start', backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 10, color: '#D97706', fontWeight: 'bold' }}>⏳ Chưa vào làm trong tháng này</Text>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.cardDebtStatusSection}>
               <View style={styles.debtValueContainer}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 4 }}>
-                  <Text style={[styles.debtValueLabel, { marginBottom: 0 }]}>Lương thực lĩnh:</Text>
+                  <Text style={[styles.debtValueLabel, { marginBottom: 0 }]}>Lương tháng thực lĩnh:</Text>
                   <Text style={[
                     styles.debtValueAmount,
                     {
@@ -1180,6 +1258,24 @@ export default function DashboardScreen() {
                     {formatCurrency(remainingSalary)}{remainingSalary < 0 ? ' (chuyển sang tháng sau)' : ''}
                   </Text>
                 </View>
+
+                {/* Dòng hiển thị lương tính đến ngày hiện tại */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                  <Text style={{ fontSize: 11, color: '#0369A1', fontWeight: '600' }}>
+                    Lương tính đến ngày hiện tại{currentInfo.isCurrentMonth && currentInfo.currentDayCutoff ? ` (${currentInfo.currentDayCutoff}/${salaryMonth.split('/')[0]})` : ''}:
+                  </Text>
+                  <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#0284C7' }}>
+                    {formatCurrency(currentInfo.currentSalary)}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: '#64748B' }}>
+                    ({currentInfo.currentWorkingDays} công)
+                  </Text>
+                </View>
+                {item.joinedMidMonth && (
+                  <Text style={{ fontSize: 10, color: '#0284C7', marginTop: 2, textAlign: 'right' }}>
+                    (Vào làm giữa tháng: {item.workingDays} công = {formatCurrency(item.calculatedSalary)})
+                  </Text>
+                )}
                 {(item.totalAdvances > 0 || item.leaveDays > 0) && (
                   <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 2, textAlign: 'right' }}>
                     (Gốc: {formatCurrency(item.baseSalary)}{item.leaveDays > 0 ? ` - Nghỉ ${item.leaveDays} buổi: -${formatCurrency(item.leaveDeduction)}` : ''}{item.totalAdvances > 0 ? ` - Ứng: -${formatCurrency(item.totalAdvances)}` : ''})
@@ -1230,18 +1326,6 @@ export default function DashboardScreen() {
                 <Text style={[styles.viewDebtBtnText, { color: '#DC2626', fontWeight: 'bold' }]}>📝 Xin nghỉ</Text>
               </AnimatedPressable>
 
-              {/* Nút gửi link Zalo tra cứu lương & ngày nghỉ */}
-              <AnimatedPressable
-                style={[styles.viewDebtBtn, { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }]}
-                onPress={() => {
-                  setSelectedEmployee(item);
-                  employeeSalaryShareModalRef.current?.open(item, salaryMonth);
-                }}
-                activeOpacity={0.6}
-              >
-                <Text style={[styles.viewDebtBtnText, { color: '#0284C7', fontWeight: 'bold' }]}>📲 Gửi Zalo</Text>
-              </AnimatedPressable>
-
               {/* Nút ứng lương */}
               <AnimatedPressable
                 style={styles.addDebtBtn}
@@ -1254,27 +1338,18 @@ export default function DashboardScreen() {
                 <Text style={styles.addDebtBtnText}>💸 Ứng lương</Text>
               </AnimatedPressable>
 
-              {/* Nút trả lương trực tiếp */}
-              {!item.isPaid && (
-                <AnimatedPressable
-                  style={[styles.addDebtBtn, { backgroundColor: '#10B981', borderColor: '#10B981' }]}
-                  onPress={() => {
-                    popupModalRef.current?.show({
-                      title: 'Xác nhận trả lương',
-                      message: `Bạn có chắc chắn muốn trả lương cho nhân viên "${item.name}" với số tiền thực lĩnh là ${formatCurrency(remainingSalary)} không?`,
-                      type: 'confirm',
-                      confirmText: 'Xác nhận',
-                      cancelText: 'Hủy bỏ',
-                      onConfirm: () => handlePaySalary(item.id),
-                    });
-                  }}
-                  activeOpacity={0.6}
-                >
-                  <Text style={[styles.addDebtBtnText, { color: '#FFFFFF' }]}>💵 Trả lương</Text>
-                </AnimatedPressable>
-              )}
+              {/* Nút trả lương cho phép chọn khoảng ngày */}
+              <AnimatedPressable
+                style={[styles.addDebtBtn, { backgroundColor: '#10B981', borderColor: '#10B981' }]}
+                onPress={() => {
+                  paySalaryModalRef.current?.open(item, salaryMonth);
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={[styles.addDebtBtnText, { color: '#FFFFFF' }]}>💵 Trả lương</Text>
+              </AnimatedPressable>
               {/* Nút 3 chấm dọc (Chứa tính năng Sửa & Xóa) */}
-              <View style={{ position: 'relative', zIndex: 100 }}>
+              <View style={{ position: 'relative', zIndex: 1000 }}>
                 <AnimatedPressable
                   style={[styles.viewDebtBtn, { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1', minWidth: 32, paddingHorizontal: 8 }]}
                   onPress={() => {
@@ -1587,13 +1662,14 @@ export default function DashboardScreen() {
   };
 
   const CustomCellRenderer = (cellProps) => {
-    const isMenuOpen = activeMenuId === cellProps.item?.id;
+    // Nâng zIndex khi menu khách hàng hoặc menu nhân viên đang mở
+    const isMenuOpen = activeMenuId === cellProps.item?.id || activeOptionsEmpId === cellProps.item?.id;
     return (
       <View
         {...cellProps}
         style={[
           cellProps.style,
-          { zIndex: isMenuOpen ? 999 : 1, elevation: isMenuOpen ? 999 : 1 }
+          { zIndex: isMenuOpen ? 9999 : 1, elevation: isMenuOpen ? 9999 : 1 }
         ]}
       />
     );
@@ -2229,6 +2305,13 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* MẸO CHUYỂN ĐỔI LỊCH ÂM SANG DƯƠNG */}
+          <View style={{ marginHorizontal: 16, marginTop: 6, marginBottom: 2, padding: 8, backgroundColor: '#F0F9FF', borderRadius: 8, borderWidth: 1, borderColor: '#BAE6FD' }}>
+            <Text style={{ fontSize: 11, color: '#0369A1', lineHeight: 16 }}>
+              💡 <Text style={{ fontWeight: 'bold' }}>Chu kỳ lương Dương lịch:</Text> Với nhân viên chuyển từ lương Âm sang hoặc vào làm giữa tháng, hệ thống tự động tính ngày công thực tế từ ngày bắt đầu vào làm.
+            </Text>
+          </View>
+
           {/* CỤM NÚT THAO TÁC NHÂN SỰ */}
           <View style={{ flexDirection: 'row', marginHorizontal: 16, marginTop: 8, marginBottom: 4, gap: 8 }}>
             <TouchableOpacity
@@ -2298,6 +2381,7 @@ export default function DashboardScreen() {
         <SalaryAdvanceModal ref={salaryAdvanceModalRef} employee={selectedEmployee} onRefresh={refetchEmployees} />
         <EmployeeHistoryModal ref={employeeHistoryModalRef} employee={selectedEmployee} onRefresh={refetchEmployees} />
         <EmployeeSalaryShareModal ref={employeeSalaryShareModalRef} />
+        <PaySalaryModal ref={paySalaryModalRef} onSuccess={refetchEmployees} />
 
         {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
         {auth.user?.isWorkspaceOwner && (
@@ -5358,19 +5442,19 @@ const styles = StyleSheet.create({
   },
   employeeOptionsDropdown: {
     position: 'absolute',
-    bottom: 38,
+    top: 36, // Sổ xuống dưới để tránh bị đè/cắt bởi mép trên danh sách
     right: 0,
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     width: 150,
-    zIndex: 1000,
+    zIndex: 9999,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 10,
   },
   employeeOptionsDropdownItem: {
     paddingVertical: 10,

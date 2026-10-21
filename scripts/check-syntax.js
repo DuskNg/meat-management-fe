@@ -29,10 +29,44 @@ const allFiles = [...srcFiles, ...appFiles];
 
 console.log(`[FE CHECK] Đang kiểm tra cú pháp và biên dịch cho ${allFiles.length} file JS/JSX...`);
 
+const parser = require('@babel/parser');
+const traverse = require('@babel/traverse').default;
+
+const commonReactHooks = [
+  'useState',
+  'useEffect',
+  'useMemo',
+  'useCallback',
+  'useRef',
+  'useContext',
+  'useReducer',
+  'useImperativeHandle',
+  'useLayoutEffect',
+  'forwardRef'
+];
+
 let errors = 0;
 allFiles.forEach((f) => {
   try {
-    babel.transformFileSync(f, { presets: ['babel-preset-expo'] });
+    const code = fs.readFileSync(f, 'utf8');
+    babel.transformSync(code, { filename: f, presets: ['babel-preset-expo'] });
+
+    // Kiểm tra AST để bắt triệt để lỗi quên import các React Hooks
+    const ast = parser.parse(code, {
+      sourceType: 'module',
+      plugins: ['jsx', 'typescript']
+    });
+
+    traverse(ast, {
+      Identifier(p) {
+        if (commonReactHooks.includes(p.node.name)) {
+          if (p.isReferencedIdentifier() && !p.scope.hasBinding(p.node.name)) {
+            console.error(`❌ [LỖI BIẾN/HOOK CHƯA KHAI BÁO]: ${p.node.name} tại file ${path.relative(rootDir, f)} (Dòng ${p.node.loc?.start?.line})`);
+            errors++;
+          }
+        }
+      }
+    });
   } catch (err) {
     console.error(`❌ [LỖI BIÊN DỊCH]: ${path.relative(rootDir, f)}`);
     console.error(`   -> ${err.message}`);
