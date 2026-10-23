@@ -1294,19 +1294,45 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
       const dayMidY = dayStartY + dayHeight / 2;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const dateDisplayText = day.isToday ? `Hôm nay (${day.displayDate})` : day.displayDate;
-      if (day.displayLunarDate) {
-        ctx.fillStyle = '#0F172A';
-        ctx.font = day.isToday ? 'bold 11px Arial, sans-serif' : 'bold 12.5px Arial, sans-serif';
-        ctx.fillText(dateDisplayText, pColX[0] + colWidths[0] / 2, dayMidY - 7);
 
-        ctx.fillStyle = '#64748B';
-        ctx.font = '10px Arial, sans-serif';
-        ctx.fillText(`(${day.displayLunarDate} âm)`, pColX[0] + colWidths[0] / 2, dayMidY + 8);
+      if (day.isToday) {
+        if (day.displayLunarDate) {
+          // 3 dòng cân đối: Hôm nay / (22/10) / (13/9 âm)
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 11px Arial, sans-serif';
+          ctx.fillText('Hôm nay', pColX[0] + colWidths[0] / 2, dayMidY - 14);
+
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 12px Arial, sans-serif';
+          ctx.fillText(`(${day.displayDate})`, pColX[0] + colWidths[0] / 2, dayMidY);
+
+          ctx.fillStyle = '#64748B';
+          ctx.font = '9.5px Arial, sans-serif';
+          ctx.fillText(`(${day.displayLunarDate} âm)`, pColX[0] + colWidths[0] / 2, dayMidY + 12);
+        } else {
+          // 2 dòng cân đối: Hôm nay / (22/10)
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 11.5px Arial, sans-serif';
+          ctx.fillText('Hôm nay', pColX[0] + colWidths[0] / 2, dayMidY - 8);
+
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 12.5px Arial, sans-serif';
+          ctx.fillText(`(${day.displayDate})`, pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        }
       } else {
-        ctx.fillStyle = '#0F172A';
-        ctx.font = day.isToday ? 'bold 11.5px Arial, sans-serif' : 'bold 13.5px Arial, sans-serif';
-        ctx.fillText(dateDisplayText, pColX[0] + colWidths[0] / 2, dayMidY);
+        if (day.displayLunarDate) {
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 12.5px Arial, sans-serif';
+          ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY - 7);
+
+          ctx.fillStyle = '#64748B';
+          ctx.font = '10px Arial, sans-serif';
+          ctx.fillText(`(${day.displayLunarDate} âm)`, pColX[0] + colWidths[0] / 2, dayMidY + 8);
+        } else {
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 13.5px Arial, sans-serif';
+          ctx.fillText(day.displayDate, pColX[0] + colWidths[0] / 2, dayMidY);
+        }
       }
 
       // Kẻ ngang phân cách ngày (ĐẬM NHẤT)
@@ -2938,17 +2964,6 @@ export default function PortalScreen() {
 
                 {/* CÁC NÚT THAO TÁC CÔNG NỢ & XUẤT BẢNG KÊ */}
                 <View style={styles.actionButtonsRow}>
-                  <TouchableOpacity
-                    style={styles.debtActionBtn}
-                    onPress={() =>
-                      portalDebtActionModalRef.current?.open({
-                        defaultCustomerId: selectedCustomerId,
-                      })
-                    }
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.debtActionBtnText}>⚡ Thu / Sửa nợ</Text>
-                  </TouchableOpacity>
 
                   <TouchableOpacity
                     style={styles.exportDebtBtn}

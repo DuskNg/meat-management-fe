@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/PaySalaryModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect, useCallback } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -13,7 +13,7 @@ import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
 import MoneyInput from './MoneyInput';
 import { api } from '../api/client';
-import { COLORS, FONTS } from '../theme';
+import { COLORS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 
 // Định dạng tiền tệ VND
@@ -21,17 +21,10 @@ const formatCurrency = (amount) => {
   return new Intl.NumberFormat('vi-VN').format(Math.round(amount || 0)) + ' đ';
 };
 
-// Định dạng ngày thành chuỗi YYYY-MM-DD
-const formatDateToISO = (date) => {
-  const d = String(date.getDate()).padStart(2, '0');
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const y = date.getFullYear();
-  return `${y}-${m}-${d}`;
-};
-
 // Định dạng ngày hiển thị DD/MM/YYYY
 const formatDateDisplay = (dateStr) => {
   if (!dateStr) return '';
+  if (dateStr.includes('/')) return dateStr;
   const parts = dateStr.split('-');
   if (parts.length === 3) {
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
@@ -44,6 +37,75 @@ const getDaysInMonth = (year, month) => {
   return new Date(year, month, 0).getDate();
 };
 
+// Chuyển chuỗi ngày DD/MM/YYYY hoặc YYYY-MM-DD sang Date object
+const parseDateStringToObj = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return val;
+  if (typeof val !== 'string') return null;
+  if (val.includes('/')) {
+    const parts = val.split('/');
+    if (parts.length === 3) {
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const y = parseInt(parts[2], 10);
+      return new Date(y, m - 1, d);
+    }
+  }
+  if (val.includes('-')) {
+    const parts = val.split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      return new Date(y, m - 1, d);
+    }
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+// Chuyển chuỗi ngày sang chuẩn ISO YYYY-MM-DD gửi API backend
+const convertToISODate = (val) => {
+  if (!val) return '';
+  if (val.includes('/')) {
+    const parts = val.split('/');
+    if (parts.length === 3) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+  }
+  return val;
+};
+
+// Tính toán ngày công và số tiền lương theo khoảng ngày (tức thì tại Client)
+const getRangeCalculation = (fDateStr, tDateStr, baseSalary, startDateStr) => {
+  const dFrom = parseDateStringToObj(fDateStr);
+  const dTo = parseDateStringToObj(tDateStr);
+  if (!dFrom || !dTo || dFrom > dTo || !baseSalary) {
+    return { days: 0, dailySalary: 0, calculatedSalary: 0 };
+  }
+
+  const year = dFrom.getFullYear();
+  const month = dFrom.getMonth() + 1;
+  const daysInMonth = getDaysInMonth(year, month);
+  const dailySalary = Math.round(baseSalary / daysInMonth);
+
+  let effectiveFrom = new Date(dFrom.getTime());
+  if (startDateStr) {
+    const sDate = parseDateStringToObj(startDateStr);
+    if (sDate && sDate > effectiveFrom) {
+      effectiveFrom = sDate;
+    }
+  }
+
+  if (effectiveFrom > dTo) {
+    return { days: 0, dailySalary, calculatedSalary: 0 };
+  }
+
+  const days = Math.floor((dTo.getTime() - effectiveFrom.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  const calculatedSalary = Math.round(dailySalary * days);
+  return { days, dailySalary, calculatedSalary };
+};
+
 const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
   const [visible, setVisible] = useState(false);
   const [employee, setEmployee] = useState(null);
@@ -51,8 +113,8 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [bonus, setBonus] = useState(0);
-  const [deductions, setDeductions] = useState(0);
+  const [amount, setAmount] = useState(0);
+  const [isManualAmount, setIsManualAmount] = useState(false);
   const [note, setNote] = useState('');
 
   const [previewData, setPreviewData] = useState(null);
@@ -62,13 +124,17 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
 
   const isSubmittingRef = useRef(false);
 
+  // Tính toán số ngày và mức lương dự kiến tức thì tại Client
+  const currentCalc = useMemo(() => {
+    return getRangeCalculation(fromDate, toDate, employee?.baseSalary, employee?.startDate);
+  }, [fromDate, toDate, employee?.baseSalary, employee?.startDate]);
+
   // Mở modal và khởi tạo khoảng ngày mặc định
   useImperativeHandle(ref, () => ({
     open: (emp, monthKeyStr) => {
       setEmployee(emp);
       setError('');
-      setBonus(0);
-      setDeductions(0);
+      setIsManualAmount(false);
       setNote('');
       setPreviewData(null);
 
@@ -104,11 +170,17 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
         defaultEndDay = Math.min(now.getDate(), daysInM);
       }
 
-      const initFrom = `${y}-${m.toString().padStart(2, '0')}-${defaultStartDay.toString().padStart(2, '0')}`;
-      const initTo = `${y}-${m.toString().padStart(2, '0')}-${defaultEndDay.toString().padStart(2, '0')}`;
+      // Định dạng ngày khởi tạo chuẩn DD/MM/YYYY
+      const initFrom = `${defaultStartDay.toString().padStart(2, '0')}/${m.toString().padStart(2, '0')}/${y}`;
+      const initTo = `${defaultEndDay.toString().padStart(2, '0')}/${m.toString().padStart(2, '0')}/${y}`;
 
       setFromDate(initFrom);
       setToDate(initTo);
+
+      // Tự động tính số tiền lương ngay lập tức cho khoảng ngày mặc định
+      const initCalc = getRangeCalculation(initFrom, initTo, emp?.baseSalary, emp?.startDate);
+      setAmount(initCalc.calculatedSalary);
+
       setVisible(true);
     },
     close: () => {
@@ -116,7 +188,7 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
     },
   }));
 
-  // Tải thông tin tính lương xem trước từ Backend
+  // Tải thông tin tính lương chi tiết từ Backend (tạm ứng, ngày nghỉ)
   const fetchSalaryPreview = useCallback(async (fDate, tDate, empId) => {
     if (!empId || !fDate || !tDate) return;
     setLoadingPreview(true);
@@ -125,8 +197,8 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
       const res = await api.get(`/employees/salary/preview`, {
         params: {
           employeeId: empId,
-          fromDate: fDate,
-          toDate: tDate,
+          fromDate: convertToISODate(fDate),
+          toDate: convertToISODate(tDate),
           monthKey: salaryMonth,
         },
       });
@@ -148,6 +220,35 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
       fetchSalaryPreview(fromDate, toDate, employee.id);
     }
   }, [visible, employee?.id, fromDate, toDate, fetchSalaryPreview]);
+
+  // Khi có kết quả xem trước từ backend (có trừ tạm ứng hoặc ngày nghỉ), cập nhật số tiền nếu người dùng chưa sửa tay
+  useEffect(() => {
+    if (previewData && !isManualAmount) {
+      if (previewData.suggestedFinalAmount !== undefined && previewData.suggestedFinalAmount !== null) {
+        setAmount(previewData.suggestedFinalAmount);
+      }
+    }
+  }, [previewData, isManualAmount]);
+
+  // Xử lý khi người dùng đổi Từ ngày
+  const handleFromDateChange = (newFrom) => {
+    setFromDate(newFrom);
+    setIsManualAmount(false); // Bật lại chế độ tự động tính theo khoảng ngày
+    const calc = getRangeCalculation(newFrom, toDate, employee?.baseSalary, employee?.startDate);
+    if (calc.calculatedSalary > 0) {
+      setAmount(calc.calculatedSalary);
+    }
+  };
+
+  // Xử lý khi người dùng đổi Đến ngày
+  const handleToDateChange = (newTo) => {
+    setToDate(newTo);
+    setIsManualAmount(false); // Bật lại chế độ tự động tính theo khoảng ngày
+    const calc = getRangeCalculation(fromDate, newTo, employee?.baseSalary, employee?.startDate);
+    if (calc.calculatedSalary > 0) {
+      setAmount(calc.calculatedSalary);
+    }
+  };
 
   // Phím tắt chọn nhanh khoảng ngày
   const handleQuickSelectRange = (type) => {
@@ -185,20 +286,30 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
       end = totalDays;
     }
 
-    setFromDate(`${y}-${m.toString().padStart(2, '0')}-${start.toString().padStart(2, '0')}`);
-    setToDate(`${y}-${m.toString().padStart(2, '0')}-${end.toString().padStart(2, '0')}`);
-  };
+    const newFrom = `${start.toString().padStart(2, '0')}/${m.toString().padStart(2, '0')}/${y}`;
+    const newTo = `${end.toString().padStart(2, '0')}/${m.toString().padStart(2, '0')}/${y}`;
 
-  // Tính số tiền thực lĩnh cuối cùng
-  const calculatedSalary = previewData?.calculatedSalary || 0;
-  const advancesDeducted = previewData?.totalAdvances || 0;
-  const finalPayable = Math.max(0, calculatedSalary - advancesDeducted + (Number(bonus) || 0) - (Number(deductions) || 0));
+    setIsManualAmount(false);
+    setFromDate(newFrom);
+    setToDate(newTo);
+
+    // Tự động tính số tiền lương ngay lập tức cho khoảng ngày vừa chọn
+    const calc = getRangeCalculation(newFrom, newTo, employee?.baseSalary, employee?.startDate);
+    if (calc.calculatedSalary > 0) {
+      setAmount(calc.calculatedSalary);
+    }
+  };
 
   // Gửi yêu cầu chi trả lương
   const handleSubmitPay = async () => {
     if (submitting || isSubmittingRef.current) return;
     if (!fromDate || !toDate) {
       setError('Vui lòng chọn khoảng ngày chi trả hợp lệ.');
+      return;
+    }
+    const payAmount = Number(amount) || 0;
+    if (payAmount <= 0) {
+      setError('Vui lòng nhập số tiền chi trả lương lớn hơn 0.');
       return;
     }
     if (previewData?.isOverlapped) {
@@ -213,17 +324,16 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
     try {
       const res = await api.post('/employees/salary/pay', {
         employeeId: employee.id,
-        fromDate,
-        toDate,
+        fromDate: convertToISODate(fromDate),
+        toDate: convertToISODate(toDate),
         monthKey: salaryMonth,
-        bonus: Number(bonus) || 0,
-        deductions: Number(deductions) || 0,
+        amount: payAmount,
         note: note.trim() || null,
       });
 
       if (res.data?.success) {
         setVisible(false);
-        showGlobalToast(`Đã chi trả lương cho nhân viên ${employee.name} (${formatDateDisplay(fromDate)} - ${formatDateDisplay(toDate)}) thành công!`, 'success');
+        showGlobalToast(`Đã chi trả lương cho nhân viên ${employee.name} (${formatDateDisplay(fromDate)} - ${formatDateDisplay(toDate)}) số tiền ${formatCurrency(payAmount)} thành công!`, 'success');
         if (onSuccess) onSuccess();
       } else {
         setError(res.data?.message || 'Lỗi khi thanh toán lương.');
@@ -278,7 +388,7 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
             </View>
           ) : null}
 
-          {/* Khối chọn khoảng ngày chi trả */}
+          {/* 1. Khối chọn khoảng ngày chi trả */}
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>📅 KHOẢNG NGÀY TRẢ LƯƠNG</Text>
 
@@ -288,7 +398,7 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
                 <Text style={styles.rangeLabel}>Từ ngày:</Text>
                 <DatePickerInput
                   value={fromDate}
-                  onChange={setFromDate}
+                  onChange={handleFromDateChange}
                   compact={true}
                   showIcon={true}
                 />
@@ -298,7 +408,7 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
                 <Text style={styles.rangeLabel}>Đến ngày:</Text>
                 <DatePickerInput
                   value={toDate}
-                  onChange={setToDate}
+                  onChange={handleToDateChange}
                   compact={true}
                   showIcon={true}
                 />
@@ -334,100 +444,37 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
             </View>
           </View>
 
-          {/* Khối tóm tắt tính toán lương */}
-          <View style={styles.calcSummaryCard}>
-            <View style={styles.calcRow}>
-              <Text style={styles.calcLabel}>Số ngày trong kỳ:</Text>
-              <Text style={styles.calcValueBold}>
-                {previewData ? `${previewData.eligibleDays} ngày` : '...'}
-              </Text>
+          {/* 2. Khối Số tiền chi trả (Tự động tính theo khoảng ngày) */}
+          <View style={styles.amountCard}>
+            <View style={styles.amountHeaderRow}>
+              <Text style={styles.amountLabel}>💵 SỐ TIỀN CHI TRẢ (VND):</Text>
+              {currentCalc.days > 0 ? (
+                <Text style={styles.suggestText}>
+                  ({currentCalc.days} ngày công • ~{formatCurrency(currentCalc.dailySalary)}/ngày{previewData?.totalAdvances > 0 ? ` • Trừ ứng -${formatCurrency(previewData.totalAdvances)}` : ''})
+                </Text>
+              ) : null}
             </View>
-
-            <View style={styles.calcRow}>
-              <Text style={styles.calcLabel}>Số buổi xin nghỉ trừ lương:</Text>
-              <Text style={[styles.calcValue, previewData?.leaveDays > 0 ? styles.textRed : null]}>
-                {previewData ? `${previewData.leaveDays} buổi` : '...'}
-              </Text>
-            </View>
-
-            <View style={styles.calcRow}>
-              <Text style={styles.calcLabel}>Số ngày công thực tế:</Text>
-              <Text style={[styles.calcValueBold, { color: '#0284C7' }]}>
-                {previewData ? `${previewData.workingDays} công` : '...'}
-              </Text>
-            </View>
-
-            <View style={styles.calcDivider} />
-
-            <View style={styles.calcRow}>
-              <Text style={styles.calcLabel}>
-                Lương theo công (~{formatCurrency(previewData?.dailySalary)}/ngày):
-              </Text>
-              <Text style={styles.calcValueBold}>{formatCurrency(calculatedSalary)}</Text>
-            </View>
-
-            <View style={styles.calcRow}>
-              <Text style={styles.calcLabel}>Khấu trừ tạm ứng trong kỳ:</Text>
-              <Text style={[styles.calcValueBold, advancesDeducted > 0 ? styles.textAmber : null]}>
-                -{formatCurrency(advancesDeducted)}
-              </Text>
-            </View>
-
-            {/* Chi tiết các khoản ứng nếu có */}
-            {previewData?.advancesList?.length > 0 ? (
-              <View style={styles.advanceMiniList}>
-                {previewData.advancesList.map((adv) => (
-                  <Text key={adv.id} style={styles.advanceMiniItem}>
-                    • Ứng ngày {formatDateDisplay(adv.date)}: -{formatCurrency(adv.amount)}
-                    {adv.note ? ` (${adv.note})` : ''}
-                  </Text>
-                ))}
-              </View>
-            ) : null}
+            <MoneyInput
+              value={amount}
+              onChangeValue={(val) => {
+                setAmount(val);
+                setIsManualAmount(true);
+              }}
+              placeholder="Nhập số tiền trả lương..."
+              inputStyle={styles.amountInput}
+            />
           </View>
 
-          {/* Khối Thưởng thêm, Phạt trừ và Ghi chú */}
-          <View style={styles.inputsCard}>
-            <View style={styles.inputTwoColRow}>
-              <View style={styles.inputCol}>
-                <Text style={styles.inputLabel}>🎁 Thưởng thêm (VND):</Text>
-                <MoneyInput
-                  value={bonus}
-                  onChangeValue={setBonus}
-                  placeholder="Ví dụ: 200.000"
-                  inputStyle={styles.moneyInputBox}
-                />
-              </View>
-              <View style={styles.inputCol}>
-                <Text style={styles.inputLabel}>⚠️ Phạt / Trừ thêm (VND):</Text>
-                <MoneyInput
-                  value={deductions}
-                  onChangeValue={setDeductions}
-                  placeholder="Ví dụ: 100.000"
-                  inputStyle={styles.moneyInputBox}
-                />
-              </View>
-            </View>
-
-            <Text style={[styles.inputLabel, { marginTop: 10 }]}>📝 Ghi chú thanh toán (Nếu có):</Text>
+          {/* 3. Ô Ghi chú thanh toán */}
+          <View style={styles.noteCard}>
+            <Text style={styles.noteLabel}>📝 Ghi chú thanh toán (Nếu có):</Text>
             <TextInput
               style={styles.noteTextInput}
-              placeholder="Ví dụ: Thanh toán lương đợt 1 chuyển khoản Vietcombank"
+              placeholder="Ví dụ: Chuyển khoản Vietcombank, tiền mặt..."
               placeholderTextColor={COLORS.textLight}
               value={note}
               onChangeText={setNote}
             />
-          </View>
-
-          {/* Khối Tổng tiền thực lĩnh */}
-          <View style={styles.totalBlock}>
-            <View>
-              <Text style={styles.totalBlockLabel}>TỔNG THỰC LĨNH:</Text>
-              <Text style={styles.totalBlockSub}>
-                Kỳ: {formatDateDisplay(fromDate)} ➜ {formatDateDisplay(toDate)}
-              </Text>
-            </View>
-            <Text style={styles.totalBlockAmount}>{formatCurrency(finalPayable)}</Text>
           </View>
         </ScrollView>
 
@@ -436,10 +483,10 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
           <TouchableOpacity
             style={[
               styles.submitBtn,
-              (loadingPreview || submitting || previewData?.isOverlapped) && styles.submitBtnDisabled,
+              (submitting || previewData?.isOverlapped) && styles.submitBtnDisabled,
             ]}
             onPress={handleSubmitPay}
-            disabled={loadingPreview || submitting || previewData?.isOverlapped}
+            disabled={submitting || previewData?.isOverlapped}
           >
             {submitting ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
@@ -588,86 +635,56 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontWeight: '500',
   },
-  calcSummaryCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  amountCard: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#86EFAC',
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
   },
-  calcRow: {
+  amountHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 3,
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    flexWrap: 'wrap',
+    gap: 4,
   },
-  calcLabel: {
-    fontSize: 12,
-    color: '#475569',
-  },
-  calcValue: {
-    fontSize: 12,
-    color: '#1E293B',
-  },
-  calcValueBold: {
+  amountLabel: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#0F172A',
+    color: '#166534',
   },
-  textRed: {
-    color: '#DC2626',
-    fontWeight: 'bold',
-  },
-  textAmber: {
-    color: '#D97706',
-    fontWeight: 'bold',
-  },
-  calcDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 6,
-  },
-  advanceMiniList: {
-    backgroundColor: '#FFFBEB',
-    borderRadius: 6,
-    padding: 6,
-    marginTop: 6,
-  },
-  advanceMiniItem: {
+  suggestText: {
     fontSize: 11,
-    color: '#92400E',
-    marginVertical: 1,
+    color: '#15803D',
+    fontWeight: '600',
   },
-  inputsCard: {
+  amountInput: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#10B981',
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#047857',
+  },
+  noteCard: {
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 12,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  inputTwoColRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  inputCol: {
-    flex: 1,
-  },
-  inputLabel: {
+  noteLabel: {
     fontSize: 11,
     color: '#475569',
     fontWeight: '600',
-    marginBottom: 4,
-  },
-  moneyInputBox: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#CBD5E1',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 13,
+    marginBottom: 6,
   },
   noteTextInput: {
     backgroundColor: '#FFFFFF',
@@ -676,34 +693,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    fontSize: 12,
-    color: '#0F172A',
-  },
-  totalBlock: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1.5,
-    borderColor: '#10B981',
-    borderRadius: 12,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  totalBlockLabel: {
     fontSize: 13,
-    fontWeight: 'bold',
-    color: '#065F46',
-  },
-  totalBlockSub: {
-    fontSize: 11,
-    color: '#047857',
-    marginTop: 2,
-  },
-  totalBlockAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#059669',
+    color: '#0F172A',
   },
   footer: {
     paddingTop: 8,

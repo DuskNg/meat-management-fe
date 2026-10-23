@@ -67,6 +67,7 @@ import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
 import BankTransactionsView from '../src/components/BankTransactionsView';
 import ProfitManagementModal from '../src/components/ProfitManagementModal';
 import PeriodicDebtReminderModal from '../src/components/PeriodicDebtReminderModal';
+import MonthlySalaryNotificationModal from '../src/components/MonthlySalaryNotificationModal';
 import MonthlyPaymentsModal from '../src/components/MonthlyPaymentsModal';
 import { showGlobalToast } from '../src/store/toastStore';
 import { isMobileDevice } from '../src/utils/imageShareHelper';
@@ -180,6 +181,7 @@ export default function DashboardScreen() {
   const quickPriceLinkModalRef = useRef(null); // Modal link Zalo cập nhật giá bán cho Anh Chủ
   const profitManagementModalRef = useRef(null); // Modal quản lý lợi nhuận & đối soát lò
   const periodicDebtReminderModalRef = useRef(null); // Modal nhắc gửi công nợ định kỳ Ngày 1 & Ngày 15 hàng tháng qua Zalo
+  const monthlySalaryNotificationModalRef = useRef(null); // Modal thông báo trả lương & xuất ảnh bảng lương vào ngày cuối tháng
   const monthlyPaymentsModalRef = useRef(null); // Modal xem khách trả tiền trong tháng (dạng bảng)
 
   // Nhắc hẹn chốt công nợ định kỳ theo nhóm nhà hàng (ví dụ: nhóm Trường Hoàng từ 15 đến 31)
@@ -611,6 +613,36 @@ export default function DashboardScreen() {
       }
     }
   }, [auth.user?.id, params?.testReminder]);
+
+  // Tự động kiểm tra và bung Pop-up thông báo trả lương nhân viên vào ngày cuối cùng của tháng
+  useEffect(() => {
+    if (!auth.user?.id || !auth.hasPermission('canManageEmployees')) return;
+
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const curDay = now.getDate();
+    const lastDayOfMonth = new Date(curYear, curMonth, 0).getDate();
+
+    const isLastDay = curDay === lastDayOfMonth;
+    const isTestSalaryMode = Boolean(params?.testSalaryReminder);
+
+    if (isLastDay || isTestSalaryMode) {
+      const curMonthKey = `${curMonth.toString().padStart(2, '0')}/${curYear}`;
+      const storageKey = `salary_exported_${curMonthKey}`;
+
+      if (typeof window !== 'undefined') {
+        const isExported = !isTestSalaryMode && localStorage.getItem(storageKey) === 'true';
+        if (!isExported) {
+          // Trì hoãn 1.5s để màn hình chính tải xong dữ liệu rồi bung pop-up thông báo
+          const timer = setTimeout(() => {
+            monthlySalaryNotificationModalRef.current?.open(curMonthKey);
+          }, 1500);
+          return () => clearTimeout(timer);
+        }
+      }
+    }
+  }, [auth.user?.id, params?.testSalaryReminder]);
 
   // 1.8. Dùng React Query tải danh sách nhà cung cấp
   const { data: suppliersResponse, isLoading: isLoadingSuppliers, refetch: refetchSuppliers, isRefetching: isRefetchingSuppliers } = useQuery({
@@ -1158,11 +1190,24 @@ export default function DashboardScreen() {
       return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
     };
 
-    // Tính toán thông tin lương luỹ kế tính đến ngày hiện tại
+    // Tính toán thông tin lương luỹ kế tính đến ngày hiện tại (đã trừ tạm ứng và trừ đợt trả lương)
     const computeCurrentSalaryInfo = () => {
-      if (item.currentSalary !== undefined && item.currentWorkingDays !== undefined) {
+      if (item.currentRemainingSalary !== undefined && item.currentWorkingDays !== undefined) {
         return {
-          currentSalary: item.currentSalary,
+          currentSalary: item.currentRemainingSalary,
+          rawCurrentSalary: item.currentSalary,
+          currentWorkingDays: item.currentWorkingDays,
+          currentDayCutoff: item.currentDayCutoff,
+          isCurrentMonth: item.isCurrentMonth,
+          isPastMonth: item.isPastMonth,
+          isFutureMonth: item.isFutureMonth,
+        };
+      }
+      if (item.currentSalary !== undefined && item.currentWorkingDays !== undefined) {
+        const netCur = Math.max(0, item.currentSalary - (item.totalAdvances || 0) - (item.totalPaidSalary || 0));
+        return {
+          currentSalary: netCur,
+          rawCurrentSalary: item.currentSalary,
           currentWorkingDays: item.currentWorkingDays,
           currentDayCutoff: item.currentDayCutoff,
           isCurrentMonth: item.isCurrentMonth,
@@ -1203,9 +1248,11 @@ export default function DashboardScreen() {
       const leaveD = item.leaveDays || 0;
       const curWorkDays = Math.max(0, eligible - leaveD);
       const curSal = Math.max(0, Math.round((item.baseSalary / totalDays) * curWorkDays));
+      const netCur = Math.max(0, curSal - (item.totalAdvances || 0) - (item.totalPaidSalary || 0));
 
       return {
-        currentSalary: curSal,
+        currentSalary: netCur,
+        rawCurrentSalary: curSal,
         currentWorkingDays: curWorkDays,
         currentDayCutoff: cutoff,
         isCurrentMonth,
@@ -1247,30 +1294,48 @@ export default function DashboardScreen() {
             <View style={styles.cardDebtStatusSection}>
               <View style={styles.debtValueContainer}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 4 }}>
-                  <Text style={[styles.debtValueLabel, { marginBottom: 0 }]}>Lương tháng thực lĩnh:</Text>
+                  <Text style={[styles.debtValueLabel, { marginBottom: 0 }]}>
+                    {item.isPartiallyPaid
+                      ? 'Lương còn lại cần trả:'
+                      : (item.isPaid ? 'Lương tháng (Đã trả đủ):' : 'Lương tháng thực lĩnh:')}
+                  </Text>
                   <Text style={[
                     styles.debtValueAmount,
                     {
-                      color: item.isPaid ? '#10B981' : (remainingSalary < 0 ? '#EF4444' : '#0369A1'),
+                      color: item.isPaid ? '#10B981' : (remainingSalary < 0 ? '#EF4444' : (item.isPartiallyPaid ? '#D97706' : '#0369A1')),
                       fontSize: remainingSalary < 0 ? 11 : 15
                     }
                   ]}>
-                    {formatCurrency(remainingSalary)}{remainingSalary < 0 ? ' (chuyển sang tháng sau)' : ''}
+                    {item.isPaid
+                      ? formatCurrency(item.monthNetSalary || item.calculatedSalary)
+                      : formatCurrency(remainingSalary)}{remainingSalary < 0 ? ' (chuyển sang tháng sau)' : ''}
                   </Text>
                 </View>
+
+                {/* Ghi chú khi đã trả lương một phần */}
+                {item.isPartiallyPaid && (
+                  <Text style={{ fontSize: 10, color: '#D97706', marginTop: 2, textAlign: 'right', fontWeight: '500' }}>
+                    (Tổng lương: {formatCurrency(item.monthNetSalary || item.calculatedSalary)} • Đã trả: -{formatCurrency(item.totalPaidSalary)})
+                  </Text>
+                )}
 
                 {/* Dòng hiển thị lương tính đến ngày hiện tại */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
                   <Text style={{ fontSize: 11, color: '#0369A1', fontWeight: '600' }}>
                     Lương tính đến ngày hiện tại{currentInfo.isCurrentMonth && currentInfo.currentDayCutoff ? ` (${currentInfo.currentDayCutoff}/${salaryMonth.split('/')[0]})` : ''}:
                   </Text>
-                  <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#0284C7' }}>
+                  <Text style={{ fontSize: 12, fontWeight: 'bold', color: item.totalPaidSalary > 0 && currentInfo.currentSalary === 0 ? '#10B981' : '#0284C7' }}>
                     {formatCurrency(currentInfo.currentSalary)}
                   </Text>
                   <Text style={{ fontSize: 10, color: '#64748B' }}>
                     ({currentInfo.currentWorkingDays} công)
                   </Text>
                 </View>
+                {item.totalPaidSalary > 0 && (
+                  <Text style={{ fontSize: 10, color: '#059669', marginTop: 1, textAlign: 'right' }}>
+                    (Đã trừ tiền lương đã chi trả: -{formatCurrency(item.totalPaidSalary)})
+                  </Text>
+                )}
                 {item.joinedMidMonth && (
                   <Text style={{ fontSize: 10, color: '#0284C7', marginTop: 2, textAlign: 'right' }}>
                     (Vào làm giữa tháng: {item.workingDays} công = {formatCurrency(item.calculatedSalary)})
@@ -1291,7 +1356,14 @@ export default function DashboardScreen() {
                 </Text>
                 {item.isPaid && (
                   <View style={{ marginTop: 4, backgroundColor: '#10B98120', borderColor: '#10B981', borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                    <Text style={{ fontSize: 10, color: '#10B981', fontWeight: 'bold', textAlign: 'center' }}>✅ Đã trả lương</Text>
+                    <Text style={{ fontSize: 10, color: '#10B981', fontWeight: 'bold', textAlign: 'center' }}>✅ Đã trả đủ lương</Text>
+                  </View>
+                )}
+                {item.isPartiallyPaid && (
+                  <View style={{ marginTop: 4, backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                    <Text style={{ fontSize: 10, color: '#D97706', fontWeight: 'bold', textAlign: 'center' }}>
+                      ⏳ Đã trả 1 phần: {formatCurrency(item.totalPaidSalary)}
+                    </Text>
                   </View>
                 )}
               </View>
@@ -2298,7 +2370,19 @@ export default function DashboardScreen() {
             </TouchableOpacity>
             <View style={styles.dateDisplayWrapper}>
               <Text style={styles.dateDisplayTitle}>Tháng xem lương & ứng</Text>
-              <Text style={styles.dateDisplayVal}>Tháng {salaryMonth}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Text style={styles.dateDisplayVal}>Tháng {salaryMonth}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    refetchEmployees();
+                    showGlobalToast('Đã làm mới dữ liệu lương nhân viên.', 'success');
+                  }}
+                  style={{ padding: 4 }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 13 }}>🔄</Text>
+                </TouchableOpacity>
+              </View>
             </View>
             <TouchableOpacity style={styles.dateSelectorArrow} onPress={() => adjustSalaryMonth(1)}>
               <Text style={styles.dateSelectorArrowText}>Tháng sau ▶️</Text>
@@ -2313,21 +2397,32 @@ export default function DashboardScreen() {
           </View>
 
           {/* CỤM NÚT THAO TÁC NHÂN SỰ */}
-          <View style={{ flexDirection: 'row', marginHorizontal: 16, marginTop: 8, marginBottom: 4, gap: 8 }}>
+          <View style={{ flexDirection: 'row', marginHorizontal: 16, marginTop: 8, marginBottom: 4, gap: 8, flexWrap: 'wrap' }}>
             <TouchableOpacity
-              style={[styles.addEmployeeButtonFull, { flex: 1.2, backgroundColor: '#0284C7' }]}
+              style={[styles.addEmployeeButtonFull, { flex: 1.2, minWidth: 150, backgroundColor: '#0284C7' }]}
               onPress={() => employeeSalaryShareModalRef.current?.openGeneral(salaryMonth)}
               activeOpacity={0.8}
             >
-              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 13 }]}>🔗 LINK CHUNG (LƯƠNG & NỘI QUY)</Text>
+              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 12 }]}>🔗 LINK CHUNG</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.addEmployeeButtonFull, { flex: 0.8, backgroundColor: '#0369A1' }]}
+              style={[styles.addEmployeeButtonFull, { flex: 1.2, minWidth: 150, backgroundColor: '#059669' }]}
+              onPress={() => {
+                refetchEmployees();
+                monthlySalaryNotificationModalRef.current?.open(salaryMonth);
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 12 }]}>📸 BẢNG LƯƠNG THÁNG</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.addEmployeeButtonFull, { flex: 1, minWidth: 140, backgroundColor: '#0369A1' }]}
               onPress={() => addEmployeeModalRef.current?.open()}
               activeOpacity={0.8}
             >
-              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 13 }]}>➕ THÊM NHÂN VIÊN</Text>
+              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 12 }]}>➕ THÊM NHÂN VIÊN</Text>
             </TouchableOpacity>
           </View>
 
@@ -3504,6 +3599,9 @@ export default function DashboardScreen() {
 
       {/* MODAL NHẮC GỬI CÔNG NỢ ĐỊNH KỲ (NGÀY 1 & 15 HÀNG THÁNG QUA ZALO) */}
       <PeriodicDebtReminderModal ref={periodicDebtReminderModalRef} />
+
+      {/* MODAL THÔNG BÁO TRẢ LƯƠNG NHÂN VIÊN VÀ XUẤT ẢNH BẢNG LƯƠNG NGÀY CUỐI THÁNG */}
+      <MonthlySalaryNotificationModal ref={monthlySalaryNotificationModalRef} />
 
       {/* POPUP THÔNG BÁO DÙNG CHUNG - render CUỐI CÙNG để luôn nằm trên layer cao nhất */}
       <PopupModal ref={popupModalRef} />

@@ -408,7 +408,7 @@ const computeMeatVolumeSummary = (filteredTrans, filteredPays) => {
 const buildMonthlyMeatSummaryText = (summary, custName, monthStr) => {
   if (!summary || !summary.items || summary.items.length === 0) return '';
   const lines = [
-    `🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr || ''}${custName ? ` - ${custName}` : ''}:`,
+    `🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr || ''}${custName ? ` - ${custName}` : ''} (không tính tiền hàng):`,
   ];
   summary.items.forEach(it => {
     const qtyFormatted = Number(it.quantity.toFixed(2)).toLocaleString('vi-VN');
@@ -1562,7 +1562,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         ctx.font = 'bold 13.5px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr}`, meatStartX + meatPanelWidth / 2, curMeatY + meatHeaderHeight / 2);
+        ctx.fillText(`🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr} (không tính tiền hàng)`, meatStartX + meatPanelWidth / 2, curMeatY + meatHeaderHeight / 2);
         curMeatY += meatHeaderHeight;
 
         // 2. Từng loại thịt
@@ -2253,7 +2253,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                             <View style={styles.monthlyMeatTitleGroup}>
                               <Text style={styles.monthlyMeatHeaderIcon}>🥩</Text>
                               <Text style={styles.monthlyMeatHeaderTitle}>
-                                TỔNG HỢP SẢN LƯỢNG THỊT THÁNG {selectedMonth || fromDate?.substring(3)}
+                                TỔNG HỢP SẢN LƯỢNG THỊT THÁNG {selectedMonth || fromDate?.substring(3)} (không tính tiền hàng)
                               </Text>
                             </View>
                             <TouchableOpacity

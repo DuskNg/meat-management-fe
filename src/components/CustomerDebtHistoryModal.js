@@ -253,7 +253,7 @@ const computeMeatVolumeSummary = (filteredTrans, filteredPays) => {
 const buildMonthlyMeatSummaryText = (summary, custName, monthStr) => {
   if (!summary || !summary.items || summary.items.length === 0) return '';
   const lines = [
-    `🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr || ''}${custName ? ` - ${custName}` : ''}:`,
+    `🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr || ''}${custName ? ` - ${custName}` : ''} (không tính tiền hàng):`,
   ];
   summary.items.forEach(it => {
     const qtyFormatted = Number(it.quantity.toFixed(2)).toLocaleString('vi-VN');
@@ -1448,7 +1448,7 @@ const CustomerDebtHistoryModal = forwardRef(({
                             <View style={styles.meatSummaryTitleGroup}>
                               <Text style={styles.meatSummaryHeaderIcon}>🥩</Text>
                               <Text style={styles.meatSummaryHeaderTitle}>
-                                Sản lượng thịt {month.monthLabel}:
+                                Sản lượng thịt {month.monthLabel} (không tính tiền hàng):
                               </Text>
                             </View>
                             <TouchableOpacity

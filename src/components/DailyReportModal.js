@@ -18,6 +18,7 @@ import PopupModal from './PopupModal';
 import ExportDailyReportModal from './ExportDailyReportModal';
 import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import InvoiceImageUploadModal from './InvoiceImageUploadModal';
+import DailyBundlePreviewModal from './DailyBundlePreviewModal';
 import { showGlobalToast } from '../store/toastStore';
 import { matchSearch } from '../utils/searchHelper';
 import { downloadOrShareImage } from '../utils/imageShareHelper';
@@ -33,6 +34,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   const exportDailyReportModalRef = useRef(null);
   const invoiceImageViewerModalRef = useRef(null);
   const invoiceImageUploadModalRef = useRef(null);
+  const dailyBundlePreviewModalRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(''); // Định dạng DD/MM/YYYY
@@ -1394,6 +1396,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         const result = generateDuplicateDebtsImage({
           selectedDate,
           transactions: currentTransactions,
+          customers: rawCustomers,
           returnDetails: true,
         });
 
@@ -1911,25 +1914,14 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     }
   };
 
-  // Xử lý tự động xuất trọn bộ 3 ảnh: Báo cáo công nợ ngày, Khách quen sót đơn, Đơn nợ trùng
-  const handleExportDailyBundle = async () => {
-    if (bundleExporting) return;
-    setBundleExporting(true);
-    try {
-      showGlobalToast('Đang tạo và chuẩn bị 3 ảnh báo cáo ngày...', 'info', 'Đang xử lý', 2500);
-      await exportDailyReportBundle({
-        selectedDate,
-        transactions: (currentTransactions && currentTransactions.length > 0) ? currentTransactions : rawTransactions,
-        payments: (currentPayments && currentPayments.length > 0) ? currentPayments : rawPayments,
-        customers: rawCustomers,
-        onProgress: (msg) => showGlobalToast(msg, 'info', 'Tiến trình xuất ảnh', 1800),
-      });
-    } catch (err) {
-      console.error('Lỗi khi xuất trọn bộ ảnh báo cáo:', err);
-      showGlobalToast('Không thể tạo trọn bộ ảnh báo cáo. Vui lòng thử lại.', 'error');
-    } finally {
-      setBundleExporting(false);
-    }
+  // Xử lý mở Modal xem trước & chia sẻ trọn bộ 3 ảnh: Báo cáo công nợ ngày, Khách quen sót đơn, Đơn nợ trùng
+  const handleExportDailyBundle = () => {
+    dailyBundlePreviewModalRef.current?.open({
+      selectedDate,
+      transactions: (currentTransactions && currentTransactions.length > 0) ? currentTransactions : rawTransactions,
+      payments: (currentPayments && currentPayments.length > 0) ? currentPayments : rawPayments,
+      customers: rawCustomers,
+    });
   };
 
   // Xử lý chuyển đổi bộ lọc trạng thái và tự động xóa từ khóa tìm kiếm trong ô search
@@ -2503,16 +2495,11 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               <TouchableOpacity
                 style={styles.exportBundleBtn}
                 onPress={handleExportDailyBundle}
-                disabled={bundleExporting}
                 activeOpacity={0.7}
               >
-                {bundleExporting ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.exportBundleBtnText} numberOfLines={1}>
-                    📦 TẢI TRỌN BỘ 3 ẢNH
-                  </Text>
-                )}
+                <Text style={styles.exportBundleBtnText} numberOfLines={1}>
+                  📦 TRỌN BỘ 3 ẢNH
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -2560,6 +2547,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       />
       {/* Modal xem ảnh hóa đơn phóng to */}
       <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
+      {/* Modal xem trước & chia sẻ trọn bộ 3 ảnh ngày kèm ảnh dài chống lỗi Zalo Mobile */}
+      <DailyBundlePreviewModal ref={dailyBundlePreviewModalRef} />
       {/* Popup xác nhận xóa - render sau cùng để luôn ở trên cùng */}
       <PopupModal ref={popupModalRef} />
     </>

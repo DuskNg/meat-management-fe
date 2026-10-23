@@ -172,8 +172,8 @@ const DatePickerInput = ({
   // Trạng thái hover/press để đổi màu viền
   const [pressed, setPressed] = useState(false);
 
-  // Chuyển chuỗi hiển thị thành Date object
-  const parsedDate = parseDisplayToDate(value);
+  // Chuyển chuỗi hiển thị thành Date object (hỗ trợ cả DD/MM/YYYY lẫn YYYY-MM-DD)
+  const parsedDate = convertToDateObj(value) || parseDisplayToDate(value);
 
   // Tên thứ trong tuần bằng tiếng Việt
   const weekday = getWeekdayVi(parsedDate);
@@ -262,7 +262,7 @@ const DatePickerInput = ({
             dense && styles.dateDisplayTextDense,
             !value && placeholder ? { color: '#94A3B8', fontWeight: 'normal' } : null,
           ]}>
-            {value || placeholder || formatDateToDisplay(new Date())}
+            {value ? formatDateToDisplay(parsedDate) : (placeholder || formatDateToDisplay(new Date()))}
           </Text>
         </View>
 

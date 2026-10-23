@@ -1118,21 +1118,40 @@ export const DUPLICATE_COLOR_PALETTES = [
  * @param {Object} params
  * @param {string} params.selectedDate - Ngày xuất báo cáo (DD/MM/YYYY)
  * @param {Array} params.transactions - Danh sách các giao dịch nợ (hoặc timeline items)
+ * @param {Array} [params.customers=[]] - Danh sách khách hàng để tra cứu tên chính xác
  * @param {boolean} [params.returnDetails=false] - Trả về object { dataUrl, totalDupAmount, duplicateCustomerCount, duplicateCount, fileName }
  */
-export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], returnDetails = false }) => {
+export const generateDuplicateDebtsImage = ({
+  selectedDate,
+  transactions = [],
+  customers = [],
+  returnDetails = false,
+}) => {
   if (typeof document === 'undefined') return null;
 
   try {
+    // 0. Tạo bản đồ tra cứu tên khách hàng từ ID để đảm bảo không bị sót đơn trùng
+    const customerIdToNameMap = {};
+    (customers || []).forEach((c) => {
+      if (c && (c.id || c._id) && c.name) {
+        customerIdToNameMap[String(c.id || c._id)] = c.name;
+      }
+    });
+
     // 1. Chuẩn hóa helper xử lý dữ liệu
-    const getCustomerKey = (item) => {
-      if (!item) return 'khach_an_danh';
-      const name = item.customer?.name || item.customerName || (item.customerId ? String(item.customerId) : 'khach_an_danh');
-      return name.trim().toLowerCase();
+    const getCustomerDisplayName = (item) => {
+      if (item.customer?.name) return item.customer.name;
+      if (item.customerName) return item.customerName;
+      if (item.customerId && customerIdToNameMap[String(item.customerId)]) {
+        return customerIdToNameMap[String(item.customerId)];
+      }
+      return 'Khách vãng lai';
     };
 
-    const getCustomerDisplayName = (item) => {
-      return item.customer?.name || item.customerName || 'Khách vãng lai';
+    const getCustomerKey = (item) => {
+      if (!item) return 'khach_an_danh';
+      const name = getCustomerDisplayName(item);
+      return name.trim().toLowerCase();
     };
 
     const getItemAmount = (item) => {
@@ -1322,8 +1341,8 @@ export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], r
 
     const totalHeight = listStartY + listHeight + footerGap + footerHeight + bottomPadding;
 
-    // Tỉ lệ scale phù hợp: Mobile dùng 1.5x để tối ưu bộ nhớ RAM/Safari tránh crash, PC dùng 2x sắc nét
-    const scale = isMobile ? 1.5 : 2;
+    // Tỉ lệ scale phù hợp: Mobile dùng 1.25x - 1.5x để tối ưu bộ nhớ RAM/Safari tránh crash, PC dùng 2x sắc nét
+    const scale = isMobile ? (numRows > 14 ? 1.25 : 1.5) : 2;
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(totalHeight * scale);
@@ -1559,6 +1578,124 @@ export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], r
 };
 
 /**
+ * ── 4. GHÉP TRỌN BỘ ẢNH BÁO CÁO THÀNH 1 ẢNH DÀI TỔNG HỢP (SUPER COMPACT ALL-IN-ONE) ──
+ * Giải pháp tối thượng cho Zalo Mobile:
+ * - Tránh 100% bug Zalo gửi nhiều ảnh bị trùng nhau
+ * - Tránh 100% việc trình duyệt mobile chặn tải nhiều file
+ * - Khách hàng và kế toán chỉ cần 1 ảnh duy nhất để xem trọn vẹn 3 nội dung
+ *
+ * @param {Object} params
+ * @param {string} params.selectedDate - Ngày xuất báo cáo (DD/MM/YYYY)
+ * @param {string} [params.img1] - Data URI ảnh Báo cáo công nợ ngày
+ * @param {string} [params.img2] - Data URI ảnh Khách quen chưa có đơn
+ * @param {string} [params.img3] - Data URI ảnh Báo cáo đơn nợ trùng
+ * @returns {Promise<string|null>} Data URI ảnh dài tổng hợp
+ */
+export const generateCombinedDailyBundleImage = async ({
+  selectedDate,
+  img1,
+  img2,
+  img3,
+}) => {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return null;
+
+  const validEntries = [
+    { img: img1, title: 'BÁO CÁO CÔNG NỢ & THU TIỀN TRONG NGÀY' },
+    { img: img2, title: 'DANH SÁCH KHÁCH QUEN CHƯA LÊN ĐƠN HÔM NAY' },
+    { img: img3, title: 'BÁO CÁO ĐƠN NỢ TRÙNG TRONG NGÀY' },
+  ].filter((item) => item.img && typeof item.img === 'string' && item.img.length > 50 && !item.img.startsWith('data:,'));
+
+  if (validEntries.length === 0) return null;
+
+  try {
+    const loadHtmlImage = (dataUri) => {
+      return new Promise((resolve) => {
+        const imageObj = new window.Image();
+        imageObj.crossOrigin = 'anonymous';
+        imageObj.onload = () => resolve(imageObj);
+        imageObj.onerror = () => resolve(null);
+        imageObj.src = dataUri;
+      });
+    };
+
+    const loadedResults = await Promise.all(
+      validEntries.map(async (entry) => {
+        const domImg = await loadHtmlImage(entry.img);
+        return domImg ? { domImg, title: entry.title } : null;
+      })
+    );
+
+    const activeImages = loadedResults.filter(Boolean);
+    if (activeImages.length === 0) return null;
+
+    const maxImgWidth = Math.max(...activeImages.map((it) => it.domImg.naturalWidth || it.domImg.width || 800));
+    const padding = 20;
+    const canvasWidth = Math.max(maxImgWidth + padding * 2, 900);
+    const bannerHeight = 84;
+    const sectionGap = 24;
+
+    let totalImagesHeight = 0;
+    activeImages.forEach((it) => {
+      totalImagesHeight += (it.domImg.naturalHeight || it.domImg.height || 600);
+    });
+
+    const canvasHeight = bannerHeight + totalImagesHeight + sectionGap * (activeImages.length - 1) + padding * 2;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // Nền trắng xám hiện đại
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // Banner chính (Xanh lục đậm #065F46)
+    ctx.fillStyle = '#065F46';
+    ctx.fillRect(0, 0, canvasWidth, bannerHeight);
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 24px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`📦 TRỌN BỘ BÁO CÁO TỔNG HỢP TOÀN DIỆN NGÀY ${selectedDate}`, canvasWidth / 2, bannerHeight / 2 - 10);
+
+    ctx.fillStyle = '#A7F3D0';
+    ctx.font = 'bold 13.5px Arial, sans-serif';
+    ctx.fillText(`(Gồm: Báo cáo công nợ ngày • Khách chưa lên đơn • Đơn nợ trùng)`, canvasWidth / 2, bannerHeight / 2 + 16);
+
+    let curY = bannerHeight + padding;
+
+    activeImages.forEach((it) => {
+      const imgW = it.domImg.naturalWidth || it.domImg.width;
+      const imgH = it.domImg.naturalHeight || it.domImg.height;
+      const drawX = Math.round((canvasWidth - imgW) / 2);
+
+      // Khung nền và ảnh
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(drawX, curY, imgW, imgH);
+      ctx.drawImage(it.domImg, drawX, curY, imgW, imgH);
+
+      // Viền phân tách
+      ctx.strokeStyle = '#94A3B8';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(drawX, curY, imgW, imgH);
+
+      curY += imgH + sectionGap;
+    });
+
+    const combinedUri = canvas.toDataURL('image/png');
+    canvas.width = 0;
+    canvas.height = 0;
+    return combinedUri;
+  } catch (combineErr) {
+    console.error('[GENERATE COMBINED DAILY BUNDLE ERROR]', combineErr);
+    return null;
+  }
+};
+
+/**
  * ── HÀM CHÍNH: XUẤT VÀ TẢI TRỌN BỘ 3 ẢNH BÁO CÁO ──
  *
  * @param {Object} params
@@ -1566,14 +1703,16 @@ export const generateDuplicateDebtsImage = ({ selectedDate, transactions = [], r
  * @param {Array} [params.transactions] - Danh sách giao dịch nợ (nếu có sẵn)
  * @param {Array} [params.payments] - Danh sách thanh toán (nếu có sẵn)
  * @param {Array} [params.customers] - Danh sách khách hàng (nếu có sẵn)
+ * @param {boolean} [params.returnImagesOnly=false] - Nếu true, chỉ trả về các ảnh mà không tự động download/share
  * @param {Function} [params.onProgress] - Callback cập nhật trạng thái tiến trình
- * @returns {Promise<{ success: boolean, count: number }>}
+ * @returns {Promise<{ success: boolean, count: number, img1?: string, img2?: string, img3?: string, combinedImg?: string, itemsToExport?: Array }>}
  */
 export const exportDailyReportBundle = async ({
   selectedDate,
   transactions = null,
   payments = null,
   customers = null,
+  returnImagesOnly = false,
   onProgress = null,
 } = {}) => {
   if (Platform.OS !== 'web' || typeof document === 'undefined') {
@@ -1689,14 +1828,29 @@ export const exportDailyReportBundle = async ({
       img3 = generateDuplicateDebtsImage({
         selectedDate: dateStr,
         transactions: finalTransactions,
+        customers: finalCustomers,
       });
     } catch (e3) {
       console.warn('Lỗi khi vẽ ảnh 3 (Đơn trùng):', e3);
     }
 
+    // 5. Tạo Ảnh Dài Tổng Hợp All-In-One (Tránh lỗi trùng ảnh Zalo trên mobile)
+    let combinedImg = null;
+    try {
+      combinedImg = await generateCombinedDailyBundleImage({
+        selectedDate: dateStr,
+        img1,
+        img2,
+        img3,
+      });
+    } catch (combErr) {
+      console.warn('Lỗi khi ghép ảnh tổng hợp:', combErr);
+    }
+
     const itemsToExport = [];
     if (img1) {
       itemsToExport.push({
+        id: 'img1',
         imageUri: img1,
         fileName: `1_BaoCaoCongNo_Ngay_${dateFileClean}.png`,
         title: `Báo cáo công nợ ngày ${dateStr}`,
@@ -1704,6 +1858,7 @@ export const exportDailyReportBundle = async ({
     }
     if (img2) {
       itemsToExport.push({
+        id: 'img2',
         imageUri: img2,
         fileName: `2_KhachChuaLenDon_Ngay_${dateFileClean}.png`,
         title: `Khách chưa lên đơn ngày ${dateStr}`,
@@ -1711,6 +1866,7 @@ export const exportDailyReportBundle = async ({
     }
     if (img3 && typeof img3 === 'string' && img3.length > 50 && !img3.startsWith('data:,')) {
       itemsToExport.push({
+        id: 'img3',
         imageUri: img3,
         fileName: `3_DonNoTrung_Ngay_${dateFileClean}.png`,
         title: `Đơn nợ trùng ngày ${dateStr}`,
@@ -1719,21 +1875,43 @@ export const exportDailyReportBundle = async ({
       console.warn('Không tạo được ảnh đơn trùng (img3 rỗng hoặc lỗi bộ nhớ).');
     }
 
-    if (itemsToExport.length === 0) {
+    if (itemsToExport.length === 0 && !combinedImg) {
       showGlobalToast('Không thể tạo hình ảnh báo cáo (dữ liệu trống hoặc thiết bị không hỗ trợ).', 'warning');
       return { success: false, count: 0 };
     }
 
+    // Nếu chỉ yêu cầu sinh ảnh để hiển thị trên Modal xem trước:
+    if (returnImagesOnly) {
+      return {
+        success: true,
+        count: itemsToExport.length,
+        img1,
+        img2,
+        img3,
+        combinedImg,
+        itemsToExport,
+        dateStr,
+      };
+    }
+
     onProgress?.(`Đang xuất ${itemsToExport.length} ảnh báo cáo...`);
 
-    // 5. Tự động tải tất cả file về máy tính (PC) hoặc chuyển tiếp Zalo (Mobile)
+    // Tự động tải tất cả file về máy tính (PC) hoặc chuyển tiếp Zalo (Mobile)
     const shareResult = await downloadOrShareMultipleImages({
       items: itemsToExport,
       title: `Trọn bộ 3 ảnh báo cáo ngày ${dateStr}`,
       text: `Báo cáo công nợ, khách chưa lên đơn và đơn trùng ngày ${dateStr}`,
     });
 
-    return { success: shareResult?.success ?? true, count: itemsToExport.length };
+    return {
+      success: shareResult?.success ?? true,
+      count: itemsToExport.length,
+      img1,
+      img2,
+      img3,
+      combinedImg,
+      itemsToExport,
+    };
   } catch (err) {
     console.error('[EXPORT DAILY REPORT BUNDLE ERROR]', err);
     showGlobalToast('Đã xảy ra lỗi khi tạo trọn bộ ảnh báo cáo. Vui lòng thử lại.', 'error');

@@ -54,22 +54,29 @@ export const base64ToBlob = (base64Data, contentType = 'image/png') => {
 
 /**
  * Tạo đối tượng File an toàn từ Blob (tương thích cả trình duyệt cũ / Safari)
+ * Bổ sung lastModified và index riêng biệt để tránh bug ContentProvider Android / Zalo cache trùng URI
  * @param {Blob} blob
  * @param {string} fileName
+ * @param {number} [index=0]
  * @returns {File|Blob|null}
  */
-const createFileFromBlob = (blob, fileName) => {
+export const createFileFromBlob = (blob, fileName, index = 0) => {
   if (!blob) return null;
+  const modTimestamp = Date.now() + (index + 1) * 1000;
   try {
     if (typeof File !== 'undefined') {
-      return new File([blob], fileName, { type: blob.type || 'image/png' });
+      return new File([blob], fileName, {
+        type: blob.type || 'image/png',
+        lastModified: modTimestamp,
+      });
     }
   } catch (fileErr) {
     console.warn('Trình duyệt không hỗ trợ File constructor, sử dụng Blob:', fileErr);
   }
   try {
     blob.name = fileName;
-    blob.lastModifiedDate = new Date();
+    blob.lastModified = modTimestamp;
+    blob.lastModifiedDate = new Date(modTimestamp);
   } catch (e) {}
   return blob;
 };
@@ -383,20 +390,25 @@ export const downloadOrShareMultipleImages = async ({
       const item = items[i];
       if (!item.imageUri) continue;
 
-      const fileName = item.fileName || `Bao_cao_${i + 1}.png`;
+      const rawFileName = item.fileName || `Bao_cao_${i + 1}.png`;
+      const extMatch = rawFileName.match(/\.[a-zA-Z0-9]+$/);
+      const ext = extMatch ? extMatch[0] : '.png';
+      const cleanBase = rawFileName.replace(ext, '');
+      const uniqueFileName = `${cleanBase}_${i + 1}_${Date.now().toString(36)}${ext}`;
+
       if (item.imageUri.startsWith('data:image/')) {
         const blob = base64ToBlob(item.imageUri);
         if (blob) {
-          blobDownloads.push({ blob, fileName });
-          const file = createFileFromBlob(blob, fileName);
+          blobDownloads.push({ blob, fileName: rawFileName });
+          const file = createFileFromBlob(blob, uniqueFileName, i);
           if (file) filesToShare.push(file);
         }
       } else if (item.imageUri.startsWith('http://') || item.imageUri.startsWith('https://')) {
         try {
           const res = await fetch(item.imageUri);
           const blob = await res.blob();
-          blobDownloads.push({ blob, fileName });
-          const file = createFileFromBlob(blob, fileName);
+          blobDownloads.push({ blob, fileName: rawFileName });
+          const file = createFileFromBlob(blob, uniqueFileName, i);
           if (file) filesToShare.push(file);
         } catch (fetchErr) {
           console.warn('[MultiShare] Không thể fetch file:', item.fileName, fetchErr);
