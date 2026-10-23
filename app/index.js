@@ -2410,7 +2410,7 @@ export default function DashboardScreen() {
               style={[styles.addEmployeeButtonFull, { flex: 1.2, minWidth: 150, backgroundColor: '#059669' }]}
               onPress={() => {
                 refetchEmployees();
-                monthlySalaryNotificationModalRef.current?.open(salaryMonth);
+                monthlySalaryNotificationModalRef.current?.open(salaryMonth, employees);
               }}
               activeOpacity={0.8}
             >
@@ -2477,6 +2477,7 @@ export default function DashboardScreen() {
         <EmployeeHistoryModal ref={employeeHistoryModalRef} employee={selectedEmployee} onRefresh={refetchEmployees} />
         <EmployeeSalaryShareModal ref={employeeSalaryShareModalRef} />
         <PaySalaryModal ref={paySalaryModalRef} onSuccess={refetchEmployees} />
+        <MonthlySalaryNotificationModal ref={monthlySalaryNotificationModalRef} />
 
         {/* Nút nổi và Bảng nhật ký nhanh của nhân viên (Dành riêng cho Chủ Workspace) */}
         {auth.user?.isWorkspaceOwner && (

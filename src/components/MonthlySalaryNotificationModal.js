@@ -29,10 +29,15 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
 
   // Mở modal từ bên ngoài thông qua ref
   useImperativeHandle(ref, () => ({
-    open: async (targetMonthKey) => {
+    open: async (targetMonthKey, initialEmployees) => {
       const now = new Date();
       const currentMonthKey = targetMonthKey || `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
       setMonthKey(currentMonthKey);
+      
+      // Nếu có sẵn dữ liệu nhân viên từ màn hình cha, hiển thị tức thì không cần đợi
+      if (Array.isArray(initialEmployees) && initialEmployees.length > 0) {
+        setEmployees(initialEmployees);
+      }
       setVisible(true);
 
       // Kiểm tra trạng thái đã xuất ảnh trong localStorage
@@ -40,7 +45,9 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
       const savedState = typeof window !== 'undefined' ? localStorage.getItem(storageKey) === 'true' : false;
       setIsExportedChecked(savedState);
 
-      await fetchEmployeesData(currentMonthKey);
+      // Nếu chưa có dữ liệu ban đầu thì hiện loading, nếu đã có thì đồng bộ ngầm
+      const shouldShowLoading = !(Array.isArray(initialEmployees) && initialEmployees.length > 0);
+      await fetchEmployeesData(currentMonthKey, shouldShowLoading);
     },
     close: () => {
       setVisible(false);
@@ -48,20 +55,20 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
   }));
 
   // Tải danh sách nhân viên theo tháng
-  const fetchEmployeesData = async (targetMonthKey) => {
+  const fetchEmployeesData = async (targetMonthKey, showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const res = await api.get(`/employees?monthKey=${targetMonthKey}`);
       if (res.data?.success && Array.isArray(res.data.data)) {
         setEmployees(res.data.data);
-      } else {
+      } else if (showLoading) {
         setEmployees([]);
       }
     } catch (err) {
       console.error('Lỗi khi tải dữ liệu lương nhân viên:', err);
       showGlobalToast('Không thể tải dữ liệu lương nhân viên.', 'error');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
@@ -704,6 +711,7 @@ export default MonthlySalaryNotificationModal;
 
 const styles = StyleSheet.create({
   modalView: {
+    width: '100%',
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
