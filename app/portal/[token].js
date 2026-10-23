@@ -2325,7 +2325,9 @@ export default function PortalScreen() {
   // Dữ liệu bảng kê sau khi áp dụng thanh tìm kiếm nhanh
   const displayInvoiceData = useMemo(() => {
     if (!invoiceData?.sortedDays) return invoiceData;
-    const q = (searchKeyword || '').trim();
+    const rawQ = (searchKeyword || '').trim();
+    // Bỏ qua nếu từ khóa bị trình duyệt tự động điền tài khoản admin '0000000000'
+    const q = rawQ === '0000000000' ? '' : rawQ;
     if (!q) return invoiceData;
 
     let filteredTotalMeat = 0;
@@ -2745,11 +2747,14 @@ export default function PortalScreen() {
         <View style={styles.headerRightButtons}>
           <TouchableOpacity
             style={styles.headerDebtActionBtn}
-            onPress={() =>
+            onPress={() => {
+              if (searchKeyword?.trim() === '0000000000') {
+                setSearchKeyword('');
+              }
               portalDebtActionModalRef.current?.open({
                 defaultCustomerId: selectedCustomerId,
-              })
-            }
+              });
+            }}
             activeOpacity={0.8}
           >
             <Text style={styles.headerDebtActionBtnText}>⚡ Thu / Sửa nợ</Text>
@@ -2941,10 +2946,22 @@ export default function PortalScreen() {
                     placeholder="Tìm kiếm theo ngày, tên thịt..."
                     placeholderTextColor="#94A3B8"
                     value={searchKeyword}
-                    onChangeText={setSearchKeyword}
+                    onChangeText={(text) => {
+                      // Chặn hoàn toàn trình duyệt vô tình tự động điền tài khoản admin '0000000000' vào ô tìm kiếm
+                      if (text === '0000000000' || text?.trim() === '0000000000') {
+                        setSearchKeyword('');
+                        return;
+                      }
+                      setSearchKeyword(text);
+                    }}
                     onFocus={() => setIsSearchFocused(true)}
                     onBlur={() => setIsSearchFocused(false)}
                     returnKeyType="search"
+                    autoComplete="off"
+                    autoCorrect={false}
+                    spellCheck={false}
+                    name="portal_search_meat_input"
+                    id="portal_search_meat_input"
                   />
                   {searchKeyword.trim() ? (
                     <View style={styles.searchActionWrap}>
@@ -3489,6 +3506,10 @@ export default function PortalScreen() {
         apiHost={API_HOST}
         onRefresh={() => {
           fetchPortalData(selectedCustomerId, sessionToken, true);
+        }}
+        onClose={() => {
+          // Tự động dọn sạch nếu trình duyệt vô tình autofill chuỗi '0000000000' vào ô tìm kiếm
+          setSearchKeyword((prev) => (prev?.trim() === '0000000000' ? '' : prev));
         }}
       />
     </SafeAreaView>

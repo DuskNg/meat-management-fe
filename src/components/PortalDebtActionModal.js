@@ -79,7 +79,7 @@ const getWeekdayName = (dateVal) => {
   return weekdays[d.getDay()];
 };
 
-const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh }, ref) => {
+const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }, ref) => {
   const [visible, setVisible] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [actionToken, setActionToken] = useState(null);
@@ -169,9 +169,17 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh }, ref) =>
       }
     },
     close: () => {
-      setVisible(false);
+      handleClose();
     },
   }));
+
+  // Đóng modal và kích hoạt callback dọn dẹp nếu có
+  const handleClose = () => {
+    setVisible(false);
+    if (typeof onClose === 'function') {
+      onClose();
+    }
+  };
 
   // Xác thực mã PIN bảo mật chủ buôn
   const handleVerifyPin = async () => {
@@ -741,7 +749,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh }, ref) =>
 
   return (
     <>
-      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+      <SmoothModal visible={visible} onClose={handleClose}>
         <View style={styles.modalView}>
           {/* HEADER CHUẨN BOTTOM-SHEET */}
           <View style={styles.header}>
@@ -751,7 +759,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh }, ref) =>
             </View>
             <TouchableOpacity
               style={styles.closeBtn}
-              onPress={() => setVisible(false)}
+              onPress={handleClose}
               activeOpacity={0.7}
             >
               <Text style={styles.closeBtnText}>✕</Text>
@@ -773,18 +781,38 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh }, ref) =>
                   Vui lòng nhập mã PIN bảo mật của bạn để mở khóa quyền chỉnh sửa và thu công nợ trực tiếp:
                 </Text>
 
+                {/* Dummy hidden inputs ngăn chặn tuyệt đối Chrome Autofill tài khoản đăng nhập ra ngoài ô tìm kiếm */}
+                {Platform.OS === 'web' && (
+                  <View style={{ position: 'absolute', opacity: 0, height: 0, width: 0, pointerEvents: 'none' }}>
+                    <TextInput autoComplete="username" tabIndex={-1} />
+                    <TextInput autoComplete="new-password" tabIndex={-1} />
+                  </View>
+                )}
+
                 <TextInput
-                  style={styles.pinTextInput}
+                  style={[
+                    styles.pinTextInput,
+                    Platform.OS === 'web' && {
+                      // @ts-ignore
+                      WebkitTextSecurity: 'disc',
+                    },
+                  ]}
                   value={pinInput}
                   onChangeText={(t) => {
-                    setPinInput(t);
+                    const cleaned = t.replace(/[^0-9]/g, '');
+                    setPinInput(cleaned);
                     setPinError('');
                   }}
                   placeholder="••••"
                   placeholderTextColor="#94A3B8"
                   keyboardType="number-pad"
                   maxLength={6}
-                  secureTextEntry
+                  secureTextEntry={Platform.OS !== 'web'}
+                  autoComplete="one-time-code"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  name="portal_action_pin_input"
+                  id="portal_action_pin_input"
                   autoFocus
                   onSubmitEditing={handleVerifyPin}
                 />
@@ -1832,6 +1860,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     outlineStyle: 'none',
     outlineWidth: 0,
+    // @ts-ignore
+    WebkitTextSecurity: 'disc',
   },
   pinErrorText: {
     fontSize: 12,
