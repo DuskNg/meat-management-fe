@@ -405,10 +405,13 @@ const computeMeatVolumeSummary = (filteredTrans, filteredPays) => {
 };
 
 // Helper định dạng văn bản tổng hợp sản lượng thịt để gửi Zalo / SMS
-const buildMonthlyMeatSummaryText = (summary, custName, monthStr) => {
+const buildMonthlyMeatSummaryText = (summary, custName, rangeStr) => {
   if (!summary || !summary.items || summary.items.length === 0) return '';
+  const rangeTitle = rangeStr?.startsWith('THÁNG') || rangeStr?.startsWith('TỪ') || rangeStr?.startsWith('(')
+    ? rangeStr
+    : `THÁNG ${rangeStr || ''}`;
   const lines = [
-    `🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr || ''}${custName ? ` - ${custName}` : ''} (không tính tiền hàng):`,
+    `🥩 TỔNG HỢP SẢN LƯỢNG THỊT ${rangeTitle}${custName ? ` - ${custName}` : ''} (không tính tiền hàng):`,
   ];
   summary.items.forEach(it => {
     const qtyFormatted = Number(it.quantity.toFixed(2)).toLocaleString('vi-VN');
@@ -774,11 +777,11 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         return true;
       });
 
-      // Tính toán tổng hợp sản lượng thịt khi xuất theo tháng (theo yêu cầu: chỉ khi xuất theo tháng mới thêm)
-      const meatSummary = isFullMonth ? computeMeatVolumeSummary(filteredTrans, filteredPays) : { items: [], grandTotalQty: 0 };
+      // Tính toán tổng hợp sản lượng thịt theo khoảng ngày đang lọc (áp dụng cho mọi khung ngày: cả tháng hoặc từ ngày X đến ngày Y)
+      const meatSummary = computeMeatVolumeSummary(filteredTrans, filteredPays);
       setMonthlyMeatSummary(meatSummary);
-      setIsExportMonth(Boolean(isFullMonth && meatSummary.items.length > 0));
-      const hasMeatSummary = Boolean(isFullMonth && meatSummary.items.length > 0);
+      const hasMeatSummary = Boolean(meatSummary.items && meatSummary.items.length > 0);
+      setIsExportMonth(hasMeatSummary);
 
       const daysInMonth = new Date(yyyy, mm, 0).getDate();
 
@@ -1558,11 +1561,15 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         ctx.lineWidth = 1.2;
         ctx.strokeRect(meatStartX, curMeatY, meatPanelWidth, meatHeaderHeight);
 
+        const meatRangeHeaderTitle = isFullMonth
+          ? `THÁNG ${monthStr}`
+          : (activeFrom === activeTo ? `NGÀY ${activeFrom}` : `(TỪ ${activeFrom} ĐẾN ${activeTo})`);
+
         ctx.fillStyle = '#1E3A8A';
         ctx.font = 'bold 13.5px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`🥩 TỔNG HỢP SẢN LƯỢNG THỊT THÁNG ${monthStr} (không tính tiền hàng)`, meatStartX + meatPanelWidth / 2, curMeatY + meatHeaderHeight / 2);
+        ctx.fillText(`🥩 TỔNG HỢP SẢN LƯỢNG THỊT ${meatRangeHeaderTitle} (không tính tiền hàng)`, meatStartX + meatPanelWidth / 2, curMeatY + meatHeaderHeight / 2);
         curMeatY += meatHeaderHeight;
 
         // 2. Từng loại thịt
@@ -1748,8 +1755,18 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
   // Xử lý sao chép văn bản tóm tắt sản lượng thịt theo tháng
   const handleCopyMeatSummary = async () => {
-    if (!isExportMonth || monthlyMeatSummary.items.length === 0) return;
-    const text = buildMonthlyMeatSummaryText(monthlyMeatSummary, customer?.name, selectedMonth || fromDate?.substring(3));
+    if (!monthlyMeatSummary.items || monthlyMeatSummary.items.length === 0) return;
+    const fromD = parseDDMMYYYY(fromDate, false);
+    const toD = parseDDMMYYYY(toDate, true);
+    const isFull = fromD && toD &&
+      fromD.getDate() === 1 &&
+      fromD.getMonth() === toD.getMonth() &&
+      fromD.getFullYear() === toD.getFullYear() &&
+      toD.getDate() === new Date(toD.getFullYear(), toD.getMonth() + 1, 0).getDate();
+    const rangeLabel = isFull
+      ? `THÁNG ${selectedMonth || fromDate?.substring(3)}`
+      : (fromDate === toDate ? `NGÀY ${fromDate}` : `(Từ ${fromDate} đến ${toDate})`);
+    const text = buildMonthlyMeatSummaryText(monthlyMeatSummary, customer?.name, rangeLabel);
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(text);
@@ -1780,8 +1797,19 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       : selectedMonth.replace('/', '-');
     const fileName = `CongNo_${safeName}_${safeRange}.png`;
 
-    const meatText = (isExportMonth && monthlyMeatSummary.items.length > 0)
-      ? `\n\n${buildMonthlyMeatSummaryText(monthlyMeatSummary, customer?.name, selectedMonth || fromDate?.substring(3))}`
+    const fromD = parseDDMMYYYY(fromDate, false);
+    const toD = parseDDMMYYYY(toDate, true);
+    const isFull = fromD && toD &&
+      fromD.getDate() === 1 &&
+      fromD.getMonth() === toD.getMonth() &&
+      fromD.getFullYear() === toD.getFullYear() &&
+      toD.getDate() === new Date(toD.getFullYear(), toD.getMonth() + 1, 0).getDate();
+    const rangeLabel = isFull
+      ? `THÁNG ${selectedMonth || fromDate?.substring(3)}`
+      : (fromDate === toDate ? `NGÀY ${fromDate}` : `(Từ ${fromDate} đến ${toDate})`);
+
+    const meatText = (monthlyMeatSummary.items && monthlyMeatSummary.items.length > 0)
+      ? `\n\n${buildMonthlyMeatSummaryText(monthlyMeatSummary, customer?.name, rangeLabel)}`
       : '';
 
     await downloadOrShareImage({
@@ -2247,13 +2275,31 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                       </Text>
 
                       {/* KHỐI TỔNG HỢP SẢN LƯỢNG THỊT TRONG THÁNG (CHỈ HIỆN KHI XUẤT THEO THÁNG) */}
-                      {isExportMonth && monthlyMeatSummary.items.length > 0 && (
+                      {/* BẢNG TỔNG HỢP SẢN LƯỢNG THỊT THEO KHUNG NGÀY ĐANG LỌC */}
+                      {monthlyMeatSummary.items && monthlyMeatSummary.items.length > 0 && (
                         <View style={styles.monthlyMeatBox}>
                           <View style={styles.monthlyMeatHeader}>
                             <View style={styles.monthlyMeatTitleGroup}>
                               <Text style={styles.monthlyMeatHeaderIcon}>🥩</Text>
                               <Text style={styles.monthlyMeatHeaderTitle}>
-                                TỔNG HỢP SẢN LƯỢNG THỊT THÁNG {selectedMonth || fromDate?.substring(3)} (không tính tiền hàng)
+                                TỔNG HỢP SẢN LƯỢNG THỊT {
+                                  (() => {
+                                    const fromD = parseDDMMYYYY(fromDate, false);
+                                    const toD = parseDDMMYYYY(toDate, true);
+                                    const isFull = fromD && toD &&
+                                      fromD.getDate() === 1 &&
+                                      fromD.getMonth() === toD.getMonth() &&
+                                      fromD.getFullYear() === toD.getFullYear() &&
+                                      toD.getDate() === new Date(toD.getFullYear(), toD.getMonth() + 1, 0).getDate();
+                                    if (isFull) {
+                                      return `THÁNG ${selectedMonth || fromDate?.substring(3)}`;
+                                    }
+                                    if (fromDate === toDate) {
+                                      return `NGÀY ${fromDate}`;
+                                    }
+                                    return `(Từ ${fromDate} đến ${toDate})`;
+                                  })()
+                                } (không tính tiền hàng)
                               </Text>
                             </View>
                             <TouchableOpacity
