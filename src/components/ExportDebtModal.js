@@ -422,6 +422,148 @@ const buildMonthlyMeatSummaryText = (summary, custName, rangeStr) => {
   return lines.join('\n');
 };
 
+// Helper format số lượng kg chuẩn Việt Nam (thay dấu chấm bằng dấu phẩy, ví dụ: 153,4)
+const formatVolumeQty = (qty) => {
+  if (qty == null || isNaN(qty)) return '0';
+  const rounded = Math.round(qty * 100) / 100;
+  return rounded.toString().replace('.', ',');
+};
+
+// Helper tính toán chi tiết bảng sản lượng (Mặt hàng, Số kg, Đơn giá, Thành tiền) và phát hiện các khoản dạng Tiền hàng
+const computeDetailedVolumeSummary = (filteredTrans, filteredPays) => {
+  const map = {};
+  let grandTotalQty = 0;
+  let grandTotalAmount = 0;
+  const quickMoneyList = [];
+
+  (filteredTrans || []).forEach(t => {
+    const amt = parseFloat(t.totalAmount || 0);
+    const dateFormatted = (() => {
+      const d = new Date(t.date);
+      if (isNaN(d.getTime())) return '';
+      const dd = d.getDate().toString().padStart(2, '0');
+      const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    })();
+
+    if (t.items && t.items.length > 0) {
+      t.items.forEach(item => {
+        const rawName = (item.product?.name || item.productName || 'Thịt').trim();
+        const q = parseFloat(item.quantity);
+        const p = parseFloat(item.price);
+        const itemAmt = parseFloat(item.amount) || Math.round((q || 0) * (p || 0));
+
+        const isQuick = rawName === 'Tiền hàng' ||
+                        rawName.toLowerCase().startsWith('tiền') ||
+                        t.note === 'Ghi nợ nhanh' ||
+                        item.quantity == null ||
+                        isNaN(q) ||
+                        q <= 0;
+
+        if (isQuick) {
+          quickMoneyList.push({
+            date: dateFormatted,
+            amount: itemAmt || amt,
+            note: t.note || rawName || 'Ghi nợ nhanh / Tiền hàng',
+          });
+          return;
+        }
+
+        if (!isNaN(q) && q > 0) {
+          const unitPrice = (!isNaN(p) && p > 0) ? p : (itemAmt > 0 ? Math.round(itemAmt / q) : 0);
+          // Gom nhóm theo Tên + Đơn giá để bảo đảm chuẩn xác: Số kg x Đơn giá = Thành tiền
+          const groupKey = `${rawName.toLowerCase()}___${unitPrice}`;
+
+          if (!map[groupKey]) {
+            map[groupKey] = {
+              name: rawName,
+              quantity: 0,
+              price: unitPrice,
+              amount: 0,
+              unit: item.product?.unit || 'kg',
+            };
+          }
+          map[groupKey].quantity += q;
+          map[groupKey].amount += itemAmt;
+          grandTotalQty += q;
+          grandTotalAmount += itemAmt;
+        }
+      });
+    } else {
+      // Giao dịch không có danh sách items -> Là dạng tiền hàng (nợ nhanh)
+      quickMoneyList.push({
+        date: dateFormatted,
+        amount: amt,
+        note: t.note || 'Ghi nợ nhanh / Tiền hàng',
+      });
+    }
+  });
+
+  // Trừ bớt lượng thịt trả lại nếu có trong payments
+  (filteredPays || []).forEach(p => {
+    if (isReturnPayment(p)) {
+      const returnItems = parseReturnItems(p.note, parseFloat(p.amount || 0));
+      returnItems.forEach(ritem => {
+        if (ritem.quantity && ritem.quantity > 0) {
+          const cleanReturnName = ritem.name.replace(/\[TRẢ HÀNG\]|\[TRẢ LẠI HÀNG\]|\[NHẬP HÀNG\]/gi, '').trim().toLowerCase();
+          for (const key of Object.keys(map)) {
+            const entry = map[key];
+            if (key.includes(cleanReturnName) || cleanReturnName.includes(entry.name.toLowerCase())) {
+              const deductQty = Math.min(entry.quantity, ritem.quantity);
+              const deductAmt = Math.round(deductQty * entry.price);
+              entry.quantity = Math.max(0, entry.quantity - deductQty);
+              entry.amount = Math.max(0, entry.amount - deductAmt);
+              grandTotalQty = Math.max(0, grandTotalQty - deductQty);
+              grandTotalAmount = Math.max(0, grandTotalAmount - deductAmt);
+              break;
+            }
+          }
+        }
+      });
+    }
+  });
+
+  // Sắp xếp danh sách mặt hàng theo thành tiền giảm dần
+  const items = Object.values(map)
+    .filter(it => it.quantity > 0)
+    .sort((a, b) => b.amount - a.amount || b.quantity - a.quantity);
+
+  return {
+    items,
+    grandTotalQty: Math.round(grandTotalQty * 100) / 100,
+    grandTotalAmount: Math.round(grandTotalAmount),
+    quickMoneyList,
+  };
+};
+
+// Helper định dạng văn bản bảng sản lượng gửi Zalo / SMS
+const buildVolumeSummaryText = (summary, custName, rangeStr) => {
+  if (!summary || !summary.items || summary.items.length === 0) return '';
+  const lines = [
+    `🥩 BẢNG TỔNG HỢP SẢN LƯỢNG MẶT HÀNG`,
+    `Khách hàng: ${custName || ''}`,
+    `Thời gian: ${rangeStr || ''}`,
+    `----------------------------------------`,
+  ];
+  summary.items.forEach(it => {
+    const qtyStr = formatVolumeQty(it.quantity);
+    const priceStr = it.price > 0 ? new Intl.NumberFormat('vi-VN').format(it.price) : '-';
+    const amtStr = new Intl.NumberFormat('vi-VN').format(it.amount);
+    lines.push(`• ${it.name}: ${qtyStr} kg x ${priceStr} = ${amtStr} đ`);
+  });
+  lines.push(`----------------------------------------`);
+  const totalQtyStr = formatVolumeQty(summary.grandTotalQty);
+  const totalAmtStr = new Intl.NumberFormat('vi-VN').format(summary.grandTotalAmount);
+  lines.push(`➡️ CỘNG: ${totalQtyStr} kg | ${totalAmtStr} đ`);
+  if (summary.quickMoneyList && summary.quickMoneyList.length > 0) {
+    const totalQuick = summary.quickMoneyList.reduce((s, x) => s + (x.amount || 0), 0);
+    lines.push(`⚠️ Lưu ý: Có ${summary.quickMoneyList.length} khoản tiền hàng (${new Intl.NumberFormat('vi-VN').format(totalQuick)} đ) không có số kg chi tiết nên chưa tính vào bảng này.`);
+  }
+  return lines.join('\n');
+};
+
+
 // Helper tạo tin nhắn công nợ theo ngày đúng chuẩn gửi Zalo/SMS
 // Quy tắc: Hàng trên cùng là ngày, hàng dưới tên thịt nhân đơn giá thành tiền, hàng cuối cùng là tổng
 const buildDailyMessage = (dateKey, transList, payList, cust) => {
@@ -521,7 +663,7 @@ const buildDailyMessage = (dateKey, transList, payList, cust) => {
 const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [customer, setCustomer] = useState(null);
-  const [activeTab, setActiveTab] = useState('month'); // 'month' | 'day'
+  const [activeTab, setActiveTab] = useState('month'); // 'month' | 'volume' | 'day'
   const [selectedMonth, setSelectedMonth] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -533,6 +675,12 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
   const [monthlyMeatSummary, setMonthlyMeatSummary] = useState({ items: [], grandTotalQty: 0 });
   const [isExportMonth, setIsExportMonth] = useState(false);
   const [isMeatCopied, setIsMeatCopied] = useState(false);
+
+  // State phục vụ tính năng Xuất sản lượng riêng (4 cột: Mặt hàng | Số kg | Đơn giá | Thành tiền)
+  const [volumeImageUri, setVolumeImageUri] = useState(null);
+  const [volumeGenerating, setVolumeGenerating] = useState(false);
+  const [volumeSummary, setVolumeSummary] = useState({ items: [], grandTotalQty: 0, grandTotalAmount: 0, quickMoneyList: [] });
+  const [isVolumeCopied, setIsVolumeCopied] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -565,11 +713,14 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       setTransactions([]);
       setPayments([]);
       setImageUri(null);
+      setVolumeImageUri(null);
       setError('');
       setIsCopied(false);
       setMonthlyMeatSummary({ items: [], grandTotalQty: 0 });
+      setVolumeSummary({ items: [], grandTotalQty: 0, grandTotalAmount: 0, quickMoneyList: [] });
       setIsExportMonth(false);
       setIsMeatCopied(false);
+      setIsVolumeCopied(false);
       fetchData(c.id, c, targetMonth, targetDay);
     },
     close: () => {
@@ -692,6 +843,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
 
       // Tự động tạo ảnh công nợ ngay khi tải xong dữ liệu
       generateDebtImage(transList, payList, currentCust, initialFrom, initialTo);
+      // Tự động tính toán và tạo ảnh bảng sản lượng (không bật popup cảnh báo khi khởi động)
+      generateVolumeImage(transList, payList, currentCust, initialFrom, initialTo, false);
 
     } catch (err) {
       console.error(err);
@@ -1661,6 +1814,277 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     }
   };
 
+  // 4. Tạo file ảnh Bảng sản lượng chi tiết (4 cột: Mặt hàng | Số kg | Đơn giá | Thành tiền) chuẩn như mẫu
+  const generateVolumeImage = (transList, payList, cust, customFromDate, customToDate, triggerPopup = false) => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+    if (!cust) return;
+
+    const activeFrom = customFromDate !== undefined ? customFromDate : fromDate;
+    const activeTo = customToDate !== undefined ? customToDate : toDate;
+
+    setVolumeGenerating(true);
+    setVolumeImageUri(null);
+
+    try {
+      const fromD = parseDDMMYYYY(activeFrom, false);
+      const toD = parseDDMMYYYY(activeTo, true);
+
+      // Lọc các giao dịch trong khoảng ngày
+      const filteredTrans = (transList || []).filter(t => {
+        const d = new Date(t.date);
+        if (isNaN(d.getTime())) return false;
+        if (fromD && toD) {
+          return d >= fromD && d <= toD;
+        }
+        return true;
+      });
+
+      const filteredPays = (payList || []).filter(p => {
+        const pDate = new Date(p.paidAt);
+        if (fromD && toD) {
+          return pDate >= fromD && pDate <= toD;
+        }
+        return true;
+      });
+
+      // Tính toán bảng sản lượng chi tiết và nhận diện các khoản tiền hàng
+      const summary = computeDetailedVolumeSummary(filteredTrans, filteredPays);
+      setVolumeSummary(summary);
+
+      // Kích hoạt Pop-up cảnh báo nếu trong bộ lọc có khoản tiền hàng
+      if (triggerPopup && summary.quickMoneyList && summary.quickMoneyList.length > 0) {
+        const totalQuick = summary.quickMoneyList.reduce((sum, item) => sum + (item.amount || 0), 0);
+        popupRef.current?.show({
+          type: 'info',
+          title: '⚠️ CÓ KHOẢN TIỀN HÀNG (KHÔNG CÓ SỐ KG)',
+          message: `Trong bộ lọc này phát hiện ${summary.quickMoneyList.length} khoản ghi nợ dạng "Tiền hàng" với tổng số tiền ${new Intl.NumberFormat('vi-VN').format(totalQuick)} đ.\n\nDo các khoản này không có số kg chi tiết nên hệ thống không đưa vào bảng sản lượng thịt.`,
+          confirmText: 'ĐÃ HIỂU',
+        });
+      }
+
+      // Chuẩn bị Canvas vẽ ảnh
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        setVolumeGenerating(false);
+        return;
+      }
+
+      const pixelRatio = 2; // Độ phân giải 2x cho màn hình Retina siêu nét
+      const canvasWidth = 720;
+      const rowHeight = 44;
+      const headerHeight = 110;
+      const tableHeaderHeight = 42;
+      const totalRowHeight = 48;
+      const footerHeight = 46;
+      const paddingX = 28;
+      const tableWidth = canvasWidth - paddingX * 2; // 664px
+
+      const itemCount = summary.items.length > 0 ? summary.items.length : 1;
+      const canvasHeight = headerHeight + tableHeaderHeight + itemCount * rowHeight + totalRowHeight + footerHeight;
+
+      canvas.width = canvasWidth * pixelRatio;
+      canvas.height = canvasHeight * pixelRatio;
+      ctx.scale(pixelRatio, pixelRatio);
+
+      // 1. Nền tổng thể: Dark Theme sang trọng như mẫu (#121212)
+      ctx.fillStyle = '#121212';
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+      // 2. Header ảnh
+      // Tên khách hàng
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(cust.name || 'Khách hàng', paddingX, 26);
+
+      // SĐT khách hàng nếu có
+      if (cust.phone) {
+        ctx.fillStyle = '#94A3B8';
+        ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+        ctx.fillText(`📞 ${cust.phone}`, paddingX, 52);
+      }
+
+      // Tiêu đề bảng & Khoảng thời gian
+      ctx.fillStyle = '#38BDF8';
+      ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('🥩 BẢNG TỔNG HỢP SẢN LƯỢNG', canvasWidth - paddingX, 26);
+
+      ctx.fillStyle = '#E2E8F0';
+      ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      const rangeText = (activeFrom && activeTo && activeFrom === activeTo)
+        ? `Ngày ${activeFrom}`
+        : ((activeFrom && activeTo) ? `Từ ${activeFrom} đến ${activeTo}` : `Tháng ${selectedMonth || ''}`);
+      ctx.fillText(rangeText, canvasWidth - paddingX, 52);
+
+      // Đường kẻ phân cách header
+      ctx.strokeStyle = '#27272A';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(paddingX, 86);
+      ctx.lineTo(canvasWidth - paddingX, 86);
+      ctx.stroke();
+
+      // 3. Tọa độ các cột bảng
+      // Cột 1: Mặt hàng (width 244)
+      // Cột 2: Số kg (width 110)
+      // Cột 3: Đơn giá (width 140)
+      // Cột 4: Thành tiền (width 170)
+      const col1X = paddingX;
+      const col2X = paddingX + 244;
+      const col3X = col2X + 110;
+      const col4X = col3X + 140;
+      const tableRight = paddingX + tableWidth;
+
+      let curY = headerHeight;
+
+      // Header bảng
+      ctx.fillStyle = '#18181B';
+      ctx.fillRect(paddingX, curY, tableWidth, tableHeaderHeight);
+
+      ctx.fillStyle = '#A1A1AA';
+      ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.textBaseline = 'middle';
+      const headerTextY = curY + tableHeaderHeight / 2;
+
+      // Cột 1: Mặt hàng (căn trái)
+      ctx.textAlign = 'left';
+      ctx.fillText('Mặt hàng', col1X + 14, headerTextY);
+
+      // Cột 2: Số kg (căn phải)
+      ctx.textAlign = 'right';
+      ctx.fillText('Số kg', col2X + 100, headerTextY);
+
+      // Cột 3: Đơn giá (căn phải)
+      ctx.textAlign = 'right';
+      ctx.fillText('Đơn giá', col3X + 130, headerTextY);
+
+      // Cột 4: Thành tiền (căn phải)
+      ctx.textAlign = 'right';
+      ctx.fillText('Thành tiền', tableRight - 14, headerTextY);
+
+      // Viền kẻ đáy header bảng
+      ctx.strokeStyle = '#27272A';
+      ctx.beginPath();
+      ctx.moveTo(paddingX, curY + tableHeaderHeight);
+      ctx.lineTo(tableRight, curY + tableHeaderHeight);
+      ctx.stroke();
+
+      curY += tableHeaderHeight;
+
+      // 4. Các dòng dữ liệu
+      if (summary.items.length === 0) {
+        ctx.fillStyle = '#121212';
+        ctx.fillRect(paddingX, curY, tableWidth, rowHeight);
+        ctx.fillStyle = '#71717A';
+        ctx.font = 'italic 13.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Không có dữ liệu sản lượng trong khoảng ngày này', canvasWidth / 2, curY + rowHeight / 2);
+        curY += rowHeight;
+      } else {
+        summary.items.forEach((item, idx) => {
+          // Màu nền xen kẽ nhẹ
+          ctx.fillStyle = idx % 2 === 0 ? '#121212' : '#161618';
+          ctx.fillRect(paddingX, curY, tableWidth, rowHeight);
+
+          const rowTextY = curY + rowHeight / 2;
+
+          // Cột 1: Tên mặt hàng
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = '14.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(item.name, col1X + 14, rowTextY);
+
+          // Cột 2: Số kg (định dạng 153,4)
+          ctx.fillStyle = '#F8FAFC';
+          ctx.font = 'bold 14.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+          ctx.textAlign = 'right';
+          const qtyStr = formatVolumeQty(item.quantity);
+          ctx.fillText(qtyStr, col2X + 100, rowTextY);
+
+          // Cột 3: Đơn giá (định dạng 320.000)
+          ctx.fillStyle = '#CBD5E1';
+          ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+          ctx.textAlign = 'right';
+          const priceStr = item.price > 0 ? new Intl.NumberFormat('vi-VN').format(item.price) : '-';
+          ctx.fillText(priceStr, col3X + 130, rowTextY);
+
+          // Cột 4: Thành tiền (định dạng 49.088.000)
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 14.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+          ctx.textAlign = 'right';
+          const amtStr = new Intl.NumberFormat('vi-VN').format(item.amount);
+          ctx.fillText(amtStr, tableRight - 14, rowTextY);
+
+          // Đường kẻ đáy dòng
+          ctx.strokeStyle = '#27272A';
+          ctx.beginPath();
+          ctx.moveTo(paddingX, curY + rowHeight);
+          ctx.lineTo(tableRight, curY + rowHeight);
+          ctx.stroke();
+
+          curY += rowHeight;
+        });
+      }
+
+      // 5. Dòng Cộng (Tổng kết)
+      ctx.fillStyle = '#1C1917'; // Nền đậm ấm áp nổi bật
+      ctx.fillRect(paddingX, curY, tableWidth, totalRowHeight);
+
+      const totalTextY = curY + totalRowHeight / 2;
+
+      // Cột 1: "Cộng"
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('Cộng', col1X + 14, totalTextY);
+
+      // Cột 2: Tổng kg
+      ctx.fillStyle = '#34D399'; // Xanh ngọc nổi bật
+      ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.textAlign = 'right';
+      const totalQtyStr = formatVolumeQty(summary.grandTotalQty);
+      ctx.fillText(totalQtyStr, col2X + 100, totalTextY);
+
+      // Cột 4: Tổng thành tiền
+      ctx.fillStyle = '#FBBF24'; // Vàng kim sang trọng
+      ctx.font = 'bold 16.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.textAlign = 'right';
+      const totalAmtStr = new Intl.NumberFormat('vi-VN').format(summary.grandTotalAmount);
+      ctx.fillText(totalAmtStr, tableRight - 14, totalTextY);
+
+      // Viền bao quanh dòng Cộng
+      ctx.strokeStyle = '#44403C';
+      ctx.beginPath();
+      ctx.moveTo(paddingX, curY + totalRowHeight);
+      ctx.lineTo(tableRight, curY + totalRowHeight);
+      ctx.stroke();
+
+      curY += totalRowHeight;
+
+      // 6. Footer ảnh
+      ctx.fillStyle = '#71717A';
+      ctx.font = '11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+      ctx.fillText(`Xuất lúc: ${timeStr} • Quản lý Thịt Bò Bê`, canvasWidth / 2, curY + footerHeight / 2);
+
+      // Chuyển canvas thành Data URL
+      const dataUri = canvas.toDataURL('image/png');
+      setVolumeImageUri(dataUri);
+    } catch (err) {
+      console.error('[GENERATE VOLUME IMAGE ERROR]', err);
+    } finally {
+      setVolumeGenerating(false);
+    }
+  };
+
   // Xử lý xuất công nợ tháng ra file Excel dạng CSV hỗ trợ tiếng Việt có dấu
   const handleExportExcel = () => {
     if (Platform.OS !== 'web') {
@@ -1860,12 +2284,81 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     await doActualDownloadImage();
   };
 
+  // Xử lý tải ảnh Bảng sản lượng hoặc gửi qua Zalo
+  const handleDownloadVolumeImage = async () => {
+    if (!volumeImageUri) return;
+
+    const safeName = customer?.name?.replace(/\s+/g, '_') || 'Khach';
+    const safeRange = (fromDate && toDate)
+      ? `${fromDate.replace(/\//g, '-')}_den_${toDate.replace(/\//g, '-')}`
+      : (selectedMonth ? selectedMonth.replace('/', '-') : 'TatCa');
+    const fileName = `SanLuong_${safeName}_${safeRange}.png`;
+
+    const rangeLabel = (fromDate && toDate)
+      ? (fromDate === toDate ? `NGÀY ${fromDate}` : `Từ ${fromDate} đến ${toDate}`)
+      : `THÁNG ${selectedMonth || ''}`;
+
+    const text = buildVolumeSummaryText(volumeSummary, customer?.name, rangeLabel);
+
+    await downloadOrShareImage({
+      imageUri: volumeImageUri,
+      fileName,
+      title: `Sản lượng ${customer?.name || ''}`,
+      text: text,
+      phone: customer?.phone,
+      customerName: customer?.name,
+    });
+  };
+
+  // Xử lý sao chép văn bản Bảng sản lượng vào Clipboard
+  const handleCopyVolumeText = async () => {
+    if (!volumeSummary || !volumeSummary.items || volumeSummary.items.length === 0) return;
+    const rangeLabel = (fromDate && toDate)
+      ? (fromDate === toDate ? `NGÀY ${fromDate}` : `Từ ${fromDate} đến ${toDate}`)
+      : `THÁNG ${selectedMonth || ''}`;
+    const text = buildVolumeSummaryText(volumeSummary, customer?.name, rangeLabel);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setIsVolumeCopied(true);
+      showGlobalToast('Đã sao chép bảng sản lượng mặt hàng!', 'success');
+      setTimeout(() => setIsVolumeCopied(false), 2500);
+    } catch (err) {
+      console.error('Lỗi khi sao chép sản lượng:', err);
+      showGlobalToast('Không thể sao chép bảng sản lượng.', 'error');
+    }
+  };
+
+  // Chuyển nhanh sang tab Xuất sản lượng và kích hoạt thông báo nếu có khoản tiền hàng
+  const handleSwitchToVolumeTab = (overrideSummary) => {
+    setActiveTab('volume');
+    const targetSummary = overrideSummary || volumeSummary;
+    if (targetSummary.quickMoneyList && targetSummary.quickMoneyList.length > 0) {
+      const totalQuick = targetSummary.quickMoneyList.reduce((sum, item) => sum + (item.amount || 0), 0);
+      popupRef.current?.show({
+        type: 'info',
+        title: '⚠️ CÓ KHOẢN TIỀN HÀNG (KHÔNG CÓ SỐ KG)',
+        message: `Trong bộ lọc này phát hiện ${targetSummary.quickMoneyList.length} khoản ghi nợ dạng "Tiền hàng" với tổng số tiền ${new Intl.NumberFormat('vi-VN').format(totalQuick)} đ.\n\nDo các khoản này không có số kg chi tiết nên hệ thống không đưa vào bảng sản lượng thịt.`,
+        confirmText: 'ĐÃ HIỂU',
+      });
+    }
+  };
+
   // Xử lý áp dụng các mốc thời gian chọn nhanh (Tháng này, Tháng trước, 1-15, 16-hết, 7 ngày, Toàn bộ)
   const handleApplyPreset = (presetKey) => {
     const range = getPresetRange(presetKey, fromDate, transactions);
     setFromDate(range.from);
     setToDate(range.to);
     generateDebtImage(transactions, payments, customer, range.from, range.to);
+    generateVolumeImage(transactions, payments, customer, range.from, range.to, activeTab === 'volume');
   };
 
   // Xử lý khi thay đổi từ ngày hoặc đến ngày thủ công
@@ -1873,6 +2366,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
     setFromDate(newFrom);
     setToDate(newTo);
     generateDebtImage(transactions, payments, customer, newFrom, newTo);
+    generateVolumeImage(transactions, payments, customer, newFrom, newTo, activeTab === 'volume');
   };
 
   // 5. Chọn ngày để xuất tin nhắn công nợ
@@ -1979,7 +2473,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                 </View>
               </View>
 
-              {/* ── 2 TABS CHUYỂN ĐỔI CHẾ ĐỘ XUẤT ── */}
+              {/* ── 3 TABS CHUYỂN ĐỔI CHẾ ĐỘ XUẤT ── */}
               <View style={styles.tabContainer}>
                 <TouchableOpacity
                   style={[styles.tabButton, activeTab === 'month' && styles.activeTabButton]}
@@ -1987,7 +2481,17 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.tabButtonText, activeTab === 'month' && styles.activeTabButtonText]}>
-                    📸 Xuất bảng kê (Ảnh)
+                    📸 Bảng kê (Ảnh)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.tabButton, activeTab === 'volume' && styles.activeTabButton]}
+                  onPress={() => handleSwitchToVolumeTab()}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.tabButtonText, activeTab === 'volume' && styles.activeTabButtonText]}>
+                    🥩 Xuất sản lượng
                   </Text>
                 </TouchableOpacity>
 
@@ -2002,7 +2506,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.tabButtonText, activeTab === 'day' && styles.activeTabButtonText]}>
-                    💬 Xuất theo ngày (Tin nhắn)
+                    💬 Theo ngày (Tin nhắn)
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -2302,15 +2806,24 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                                 } (không tính tiền hàng)
                               </Text>
                             </View>
-                            <TouchableOpacity
-                              style={[styles.copyMeatButton, isMeatCopied && styles.copyMeatButtonActive]}
-                              onPress={handleCopyMeatSummary}
-                              activeOpacity={0.8}
-                            >
-                              <Text style={styles.copyMeatButtonText}>
-                                {isMeatCopied ? '✓ ĐÃ CHÉP' : '📋 SAO CHÉP TEXT'}
-                              </Text>
-                            </TouchableOpacity>
+                            <View style={{ flexDirection: 'row', gap: 6 }}>
+                              <TouchableOpacity
+                                style={styles.openVolumeTabButton}
+                                onPress={() => handleSwitchToVolumeTab()}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={styles.openVolumeTabButtonText}>🥩 XUẤT BẢNG RIÊNG</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.copyMeatButton, isMeatCopied && styles.copyMeatButtonActive]}
+                                onPress={handleCopyMeatSummary}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={styles.copyMeatButtonText}>
+                                  {isMeatCopied ? '✓ ĐÃ CHÉP' : '📋 SAO CHÉP TEXT'}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
                           </View>
 
                           <View style={styles.monthlyMeatTable}>
@@ -2346,6 +2859,328 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                     </View>
                   )}
                 </>
+              ) : activeTab === 'volume' ? (
+                /* ── NỘI DUNG TAB 2: XUẤT SẢN LƯỢNG (DẠNG ẢNH & BẢNG) ── */
+                <View style={styles.volumeTabContent}>
+                  {/* BỘ LỌC KHOẢNG THỜI GIAN XUẤT SẢN LƯỢNG */}
+                  <View style={styles.dateFilterCard}>
+                    <View style={styles.dateFilterHeader}>
+                      <View style={styles.dateFilterTitleRow}>
+                        <Text style={styles.dateFilterTitleIcon}>📅</Text>
+                        <Text style={styles.dateFilterTitle}>KHOẢNG THỜI GIAN XUẤT SẢN LƯỢNG</Text>
+                      </View>
+                    </View>
+
+                    {/* Danh sách các nút chọn nhanh mốc thời gian */}
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.quickFilterScroll}
+                      contentContainerStyle={styles.quickFilterRow}
+                    >
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('this_month').from &&
+                          toDate === getPresetRange('this_month').to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('this_month')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('this_month').from &&
+                            toDate === getPresetRange('this_month').to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          Tháng này
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('last_month').from &&
+                          toDate === getPresetRange('last_month').to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('last_month')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('last_month').from &&
+                            toDate === getPresetRange('last_month').to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          Tháng trước
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('first_half', fromDate).from &&
+                          toDate === getPresetRange('first_half', fromDate).to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('first_half')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('first_half', fromDate).from &&
+                            toDate === getPresetRange('first_half', fromDate).to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          Đầu tháng (1 - 15)
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('second_half', fromDate).from &&
+                          toDate === getPresetRange('second_half', fromDate).to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('second_half')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('second_half', fromDate).from &&
+                            toDate === getPresetRange('second_half', fromDate).to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          Cuối tháng (16 - hết)
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('last_7_days').from &&
+                          toDate === getPresetRange('last_7_days').to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('last_7_days')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('last_7_days').from &&
+                            toDate === getPresetRange('last_7_days').to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          7 ngày qua
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.quickChip,
+                          fromDate === getPresetRange('all', fromDate, transactions).from &&
+                          toDate === getPresetRange('all', fromDate, transactions).to &&
+                          styles.activeQuickChip
+                        ]}
+                        onPress={() => handleApplyPreset('all')}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.quickChipText,
+                            fromDate === getPresetRange('all', fromDate, transactions).from &&
+                            toDate === getPresetRange('all', fromDate, transactions).to &&
+                            styles.activeQuickChipText
+                          ]}
+                        >
+                          Toàn bộ
+                        </Text>
+                      </TouchableOpacity>
+                    </ScrollView>
+
+                    {/* Chọn ngày tùy chỉnh: Từ ngày -> Đến ngày */}
+                    <View style={styles.dateInputsRow}>
+                      <View style={styles.dateInputCol}>
+                        <Text style={styles.dateInputSubLabel}>Từ ngày:</Text>
+                        <DatePickerInput
+                          value={fromDate}
+                          onChange={(newFrom) => handleDateRangeChange(newFrom, toDate)}
+                          placeholder="DD/MM/YYYY"
+                          allowFuture={true}
+                        />
+                      </View>
+                      <View style={styles.dateArrowWrap}>
+                        <Text style={styles.dateArrowText}>➔</Text>
+                      </View>
+                      <View style={styles.dateInputCol}>
+                        <Text style={styles.dateInputSubLabel}>Đến ngày:</Text>
+                        <DatePickerInput
+                          value={toDate}
+                          onChange={(newTo) => handleDateRangeChange(fromDate, newTo)}
+                          placeholder="DD/MM/YYYY"
+                          allowFuture={true}
+                        />
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* THÔNG BÁO CẢNH BÁO KHOẢN TIỀN HÀNG (NẾU CÓ) */}
+                  {volumeSummary.quickMoneyList && volumeSummary.quickMoneyList.length > 0 && (
+                    <View style={styles.volumeWarningCard}>
+                      <Text style={styles.volumeWarningIcon}>⚠️</Text>
+                      <View style={styles.volumeWarningTextCol}>
+                        <Text style={styles.volumeWarningTitle}>
+                          PHÁT HIỆN {volumeSummary.quickMoneyList.length} KHOẢN DẠNG TIỀN HÀNG (KHÔNG CÓ SỐ KG)
+                        </Text>
+                        <Text style={styles.volumeWarningDesc}>
+                          Tổng số tiền: {new Intl.NumberFormat('vi-VN').format(volumeSummary.quickMoneyList.reduce((s, it) => s + (it.amount || 0), 0))} đ. Do các khoản này không có số kg chi tiết nên hệ thống không đưa vào bảng sản lượng thịt bên dưới.
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* BẢNG TRỰC QUAN SẢN LƯỢNG MẶT HÀNG (TABLE VIEW CHUẨN MẪU) */}
+                  <View style={styles.volumeTableCard}>
+                    {/* Header bảng 4 cột */}
+                    <View style={styles.volumeTableHeaderRow}>
+                      <View style={styles.volumeColItem}>
+                        <Text style={styles.volumeHeaderColText}>Mặt hàng</Text>
+                      </View>
+                      <View style={styles.volumeColQty}>
+                        <Text style={styles.volumeHeaderColText}>Số kg</Text>
+                      </View>
+                      <View style={styles.volumeColPrice}>
+                        <Text style={styles.volumeHeaderColText}>Đơn giá</Text>
+                      </View>
+                      <View style={styles.volumeColAmt}>
+                        <Text style={styles.volumeHeaderColText}>Thành tiền</Text>
+                      </View>
+                    </View>
+
+                    {/* Danh sách các mặt hàng */}
+                    {volumeSummary.items && volumeSummary.items.length > 0 ? (
+                      volumeSummary.items.map((it, idx) => (
+                        <View
+                          key={idx}
+                          style={[
+                            styles.volumeTableRow,
+                            idx % 2 === 1 && styles.volumeTableRowAlt
+                          ]}
+                        >
+                          <View style={styles.volumeColItem}>
+                            <Text style={styles.volumeItemNameText}>{it.name}</Text>
+                          </View>
+                          <View style={styles.volumeColQty}>
+                            <Text style={styles.volumeItemQtyText}>{formatVolumeQty(it.quantity)}</Text>
+                          </View>
+                          <View style={styles.volumeColPrice}>
+                            <Text style={styles.volumeItemPriceText}>
+                              {it.price > 0 ? new Intl.NumberFormat('vi-VN').format(it.price) : '-'}
+                            </Text>
+                          </View>
+                          <View style={styles.volumeColAmt}>
+                            <Text style={styles.volumeItemAmtText}>
+                              {new Intl.NumberFormat('vi-VN').format(it.amount)}
+                            </Text>
+                          </View>
+                        </View>
+                      ))
+                    ) : (
+                      <View style={{ padding: 20, alignItems: 'center' }}>
+                        <Text style={{ color: '#A1A1AA', fontSize: 13, fontStyle: 'italic' }}>
+                          Không có phát sinh sản lượng thịt trong khoảng ngày này
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Dòng Cộng tổng kết */}
+                    <View style={styles.volumeTableTotalRow}>
+                      <View style={styles.volumeColItem}>
+                        <Text style={styles.volumeTotalLabel}>Cộng</Text>
+                      </View>
+                      <View style={styles.volumeColQty}>
+                        <Text style={styles.volumeTotalQtyText}>
+                          {formatVolumeQty(volumeSummary.grandTotalQty)}
+                        </Text>
+                      </View>
+                      <View style={styles.volumeColPrice} />
+                      <View style={styles.volumeColAmt}>
+                        <Text style={styles.volumeTotalAmtText}>
+                          {new Intl.NumberFormat('vi-VN').format(volumeSummary.grandTotalAmount)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* KHUNG XEM TRƯỚC ẢNH VÀ CÁC THAO TÁC XUẤT */}
+                  <View style={styles.imagePreviewSection}>
+                    <Text style={styles.sectionLabel}>📸 Ảnh bảng sản lượng (Xem trước):</Text>
+
+                    {volumeGenerating ? (
+                      <View style={styles.generatingBox}>
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                        <Text style={styles.generatingText}>Đang tạo ảnh bảng sản lượng...</Text>
+                      </View>
+                    ) : volumeImageUri ? (
+                      <View style={styles.previewImageContainer}>
+                        <TouchableOpacity
+                          activeOpacity={0.9}
+                          onPress={() => imagePreviewModalRef.current?.show(volumeImageUri)}
+                          style={styles.imageWrapper}
+                        >
+                          <Image
+                            source={{ uri: volumeImageUri }}
+                            style={styles.previewImage}
+                            resizeMode="contain"
+                          />
+                          <View style={styles.zoomHintBadge}>
+                            <Text style={styles.zoomHintText}>🔍 Chạm để phóng to</Text>
+                          </View>
+                        </TouchableOpacity>
+
+                        {/* NÚT THAO TÁC XUẤT ẢNH & SAO CHÉP */}
+                        <View style={styles.actionButtonsCol}>
+                          <TouchableOpacity
+                            style={styles.downloadImageBtn}
+                            onPress={handleDownloadVolumeImage}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.downloadImageBtnText}>
+                              {isMobileDevice() ? '💬 CHUYỂN TIẾP ZALO (ẢNH)' : '💾 TẢI ẢNH BẢNG SẢN LƯỢNG'}
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.copyMeatTextFullBtn, isVolumeCopied && styles.copyMeatTextFullBtnActive]}
+                            onPress={handleCopyVolumeText}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.copyMeatTextFullBtnText}>
+                              {isVolumeCopied ? '✅ ĐÃ SAO CHÉP' : '📋 SAO CHÉP VĂN BẢN (ZALO)'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.generatingBox}>
+                        <Text style={styles.generatingText}>Chưa có ảnh xem trước</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
               ) : (
                 /* ── NỘI DUNG TAB 2: XUẤT THEO NGÀY (TIN NHẮN COPY) ── */
                 <View style={styles.dayTabContent}>
