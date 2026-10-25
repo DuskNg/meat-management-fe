@@ -18,6 +18,7 @@ import { COLORS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 import { getSocket } from '../utils/socket';
 import AssignBankTransactionModal from './AssignBankTransactionModal';
+import SepayWebhookGuideModal from './SepayWebhookGuideModal';
 import PopupModal from './PopupModal';
 
 const TouchableOpacity = AnimatedPressable;
@@ -48,6 +49,7 @@ export default function BankTransactionsView({ onBack, auth }) {
   const [summary, setSummary] = useState({ totalIn: 0, totalOut: 0, unprocessedCount: 0 });
 
   const assignModalRef = useRef(null);
+  const guideModalRef = useRef(null);
   const popupRef = useRef(null);
 
   // Lấy URL Webhook SePay để hiển thị cho người dùng sao chép
@@ -231,11 +233,27 @@ export default function BankTransactionsView({ onBack, auth }) {
           </Text>
         </View>
 
-        {/* Dòng 4: Nếu đã gán cho khách hàng */}
+        {/* Dòng 4: Nếu đã gán cho khách hàng hoặc có gợi ý khớp */}
         {isProcessed && item.customer && (
           <View style={styles.assignedBox}>
-            <Text style={styles.assignedLabel}>Đã gán cho khách:</Text>
+            <View style={styles.assignedHeaderRow}>
+              <Text style={styles.assignedLabel}>Đã gán cho khách:</Text>
+              {item.payment && (
+                <View style={styles.autoTag}>
+                  <Text style={styles.autoTagText}>⚡ Đã trừ nợ</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.assignedCustomerName}>
+              👤 {item.customer.name} {item.customer.phone ? `(${item.customer.phone})` : ''}
+            </Text>
+          </View>
+        )}
+
+        {isUnprocessed && item.customer && (
+          <View style={styles.suggestedBox}>
+            <Text style={styles.suggestedLabel}>💡 Gợi ý khách hàng khớp tên:</Text>
+            <Text style={styles.suggestedCustomerName}>
               👤 {item.customer.name} {item.customer.phone ? `(${item.customer.phone})` : ''}
             </Text>
           </View>
@@ -246,11 +264,13 @@ export default function BankTransactionsView({ onBack, auth }) {
           {isUnprocessed && (
             <>
               <TouchableOpacity
-                style={styles.assignBtn}
+                style={[styles.assignBtn, item.customer && styles.assignBtnSuggested]}
                 onPress={() => assignModalRef.current?.open(item)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.assignBtnText}>👤 Gán khách & trừ nợ</Text>
+                <Text style={styles.assignBtnText}>
+                  {item.customer ? '👤 Xác nhận gán khách này' : '👤 Gán khách & trừ nợ'}
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -321,13 +341,22 @@ export default function BankTransactionsView({ onBack, auth }) {
                 {webhookUrl}
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.copyWebhookBtn}
-              onPress={handleCopyWebhookUrl}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.copyWebhookBtnText}>Sao chép</Text>
-            </TouchableOpacity>
+            <View style={styles.webhookBtnGroup}>
+              <TouchableOpacity
+                style={styles.guideBtn}
+                onPress={() => guideModalRef.current?.open()}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.guideBtnText}>📖 Hướng dẫn</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.copyWebhookBtn}
+                onPress={handleCopyWebhookUrl}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.copyWebhookBtnText}>Sao chép</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* TABS LỌC TRẠNG THÁI */}
@@ -406,10 +435,14 @@ export default function BankTransactionsView({ onBack, auth }) {
         </View>
       </SafeAreaView>
 
-      {/* Modal gán giao dịch và Popup xác nhận độc lập ở tầng cao nhất */}
+      {/* Modal gán giao dịch, Modal hướng dẫn và Popup xác nhận độc lập ở tầng cao nhất */}
       <AssignBankTransactionModal
         ref={assignModalRef}
         onAssigned={() => fetchTransactions(true)}
+      />
+      <SepayWebhookGuideModal
+        ref={guideModalRef}
+        webhookUrl={webhookUrl}
       />
       <PopupModal ref={popupRef} />
     </>
@@ -540,6 +573,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#15803D',
     marginTop: 2,
+  },
+  webhookBtnGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  guideBtn: {
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  guideBtnText: {
+    color: '#0369A1',
+    fontSize: 11,
+    fontWeight: '700',
   },
   copyWebhookBtn: {
     backgroundColor: '#10B981',
@@ -727,6 +778,41 @@ const styles = StyleSheet.create({
     color: '#1E40AF',
     marginTop: 2,
   },
+  assignedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  autoTag: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  autoTagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  suggestedBox: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  suggestedLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  suggestedCustomerName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400E',
+    marginTop: 2,
+  },
   actionRow: {
     flexDirection: 'row',
     gap: 8,
@@ -742,6 +828,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  assignBtnSuggested: {
+    backgroundColor: '#059669',
   },
   assignBtnText: {
     fontSize: 13,
