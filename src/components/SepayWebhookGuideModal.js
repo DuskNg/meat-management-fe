@@ -98,10 +98,13 @@ const SepayWebhookGuideModal = forwardRef(({ webhookUrl }, ref) => {
                 <Text style={styles.stepHeading}>Điền thông số Webhook</Text>
                 <View style={styles.paramBox}>
                   <Text style={styles.paramLine}>• <Text style={styles.boldText}>Tài khoản ngân hàng:</Text> Chọn tài khoản của bạn</Text>
-                  <Text style={styles.paramLine}>• <Text style={styles.boldText}>URL Webhook:</Text> Dán link đã sao chép ở trên</Text>
+                  <Text style={styles.paramLine}>• <Text style={styles.boldText}>URL Webhook:</Text> Dán link đã sao chép ở trên (máy chủ Backend)</Text>
                   <Text style={styles.paramLine}>• <Text style={styles.boldText}>Kiểu dữ liệu:</Text> Chọn <Text style={styles.highlightText}>JSON (application/json)</Text></Text>
                   <Text style={styles.paramLine}>• <Text style={styles.boldText}>Sự kiện kích hoạt:</Text> Chọn <Text style={styles.highlightText}>Giao dịch tiền vào</Text></Text>
                   <Text style={styles.paramLine}>• <Text style={styles.boldText}>Xác thực:</Text> Chọn Không xác thực (hoặc API Key)</Text>
+                  <Text style={[styles.paramLine, { color: '#B45309', marginTop: 4, fontWeight: '500' }]}>
+                    ⚠️ Lưu ý: Tuyệt đối không dùng domain web tĩnh Vercel vì sẽ bị lỗi 405. Bắt buộc dùng URL máy chủ Backend ở trên!
+                  </Text>
                 </View>
               </View>
             </View>

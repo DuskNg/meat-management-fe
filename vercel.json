@@ -51,6 +51,10 @@
       "destination": "/api/submit-meta"
     },
     {
+      "source": "/api/v1/:path*",
+      "destination": "https://meat-management-be.onrender.com/api/v1/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

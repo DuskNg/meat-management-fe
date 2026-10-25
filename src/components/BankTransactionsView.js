@@ -13,7 +13,7 @@ import {
   ScrollView,
 } from 'react-native';
 import AnimatedPressable from './AnimatedPressable';
-import { api } from '../api/client';
+import { api, API_HOST } from '../api/client';
 import { COLORS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 import { getSocket } from '../utils/socket';
@@ -52,12 +52,12 @@ export default function BankTransactionsView({ onBack, auth }) {
   const guideModalRef = useRef(null);
   const popupRef = useRef(null);
 
-  // Lấy URL Webhook SePay để hiển thị cho người dùng sao chép
+  // Lấy URL Webhook SePay trỏ thẳng vào máy chủ Backend Render (tránh bị lỗi 405 do gọi vào Frontend tĩnh Vercel)
   const webhookUrl = useMemo(() => {
-    if (typeof window !== 'undefined' && window.location) {
-      return `${window.location.protocol}//${window.location.host}/api/v1/bank-transactions/webhook`;
+    if (API_HOST && !API_HOST.includes('localhost') && !API_HOST.includes('127.0.0.1')) {
+      return `${API_HOST}/api/v1/bank-transactions/webhook`;
     }
-    return 'https://domain-cua-ban.com/api/v1/bank-transactions/webhook';
+    return 'https://meat-management-be.onrender.com/api/v1/bank-transactions/webhook';
   }, []);
 
   // Tải danh sách giao dịch từ Backend
