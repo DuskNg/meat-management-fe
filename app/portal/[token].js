@@ -49,6 +49,22 @@ const formatShortPrice = (val) => {
   return new Intl.NumberFormat('vi-VN').format(num);
 };
 
+// Đơn giá tin nhắn Zalo: Bỏ 000 ở cuối và bỏ chữ đ (ví dụ: 155000 -> 155)
+const formatUnitPriceShort = (val) => {
+  if (val == null || isNaN(val)) return '0';
+  const num = Number(val);
+  if (num % 1000 === 0) {
+    return (num / 1000).toString();
+  }
+  return (num / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+};
+
+// Thành tiền tin nhắn Zalo: Giữ nguyên đầy đủ số 0 có dấu chấm, bỏ chữ đ (ví dụ: 6525500 -> 6.525.500)
+const formatAmountNoUnit = (val) => {
+  if (val == null || isNaN(val)) return '0';
+  return new Intl.NumberFormat('vi-VN').format(Math.round(Number(val)));
+};
+
 const formatDate = (isoStr) => {
   if (!isoStr) return '';
   const d = new Date(isoStr);
@@ -1686,9 +1702,7 @@ export default function PortalScreen() {
       if (rawTuyetMsg && lunarTag) {
         const msgLines = rawTuyetMsg.split('\n');
         if (msgLines.length > 0 && !msgLines[0].includes('âm')) {
-          msgLines[0] = targetDay.isToday
-            ? `Hôm nay ${msgLines[0]}${lunarTag}`
-            : `${msgLines[0]}${lunarTag}`;
+          msgLines[0] = `${msgLines[0]}${lunarTag}`;
           return msgLines.join('\n');
         }
       }
@@ -1698,8 +1712,7 @@ export default function PortalScreen() {
     const lines = [];
 
     if (shortDate) {
-      const headerDateLine = targetDay.isToday ? `Hôm nay ${shortDate}${lunarTag}` : `${shortDate}${lunarTag}`;
-      lines.push(headerDateLine);
+      lines.push(`${shortDate}${lunarTag}`);
     }
 
     let dayEntries = targetDay.entries || [];
@@ -1740,8 +1753,8 @@ export default function PortalScreen() {
       }
       line += e.name;
       if (q > 0) line += `: ${q}kg`;
-      if (p > 0) line += ` x ${formatCurrency(p)}`;
-      line += ` = ${isRet ? '-' : ''}${formatCurrency(Math.abs(amt))}`;
+      if (p > 0) line += ` x ${formatUnitPriceShort(p)}`;
+      line += ` = ${isRet ? '-' : ''}${formatAmountNoUnit(Math.abs(amt))}`;
       lines.push(line);
 
       if (isRet) {
@@ -1756,7 +1769,7 @@ export default function PortalScreen() {
       const netAmount = totalMeat - totalReturn;
       if (netAmount > 0) {
         lines.push('--------------------------------');
-        lines.push(`💵 TỔNG TIỀN: ${formatCurrency(netAmount)}`);
+        lines.push(`Tổng tiền: ${formatAmountNoUnit(netAmount)}`);
       }
     }
 
@@ -1812,9 +1825,7 @@ export default function PortalScreen() {
       if (rawTuyetMsg && lunarTag) {
         const msgLines = rawTuyetMsg.split('\n');
         if (msgLines.length > 0 && !msgLines[0].includes('âm')) {
-          msgLines[0] = targetDay.isToday
-            ? `Hôm nay ${msgLines[0]}${lunarTag}`
-            : `${msgLines[0]}${lunarTag}`;
+          msgLines[0] = `${msgLines[0]}${lunarTag}`;
           return msgLines.join('\n');
         }
       }
@@ -1834,8 +1845,7 @@ export default function PortalScreen() {
       if (parts.length >= 2) shortDate = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
     }
     if (shortDate) {
-      const headerDateLine = targetDay.isToday ? `Hôm nay ${shortDate}${lunarTag}` : `${shortDate}${lunarTag}`;
-      lines.push(headerDateLine);
+      lines.push(`${shortDate}${lunarTag}`);
     }
 
     let dayEntries = targetDay.entries || [];
@@ -1880,9 +1890,9 @@ export default function PortalScreen() {
         line += `: ${q}kg`;
       }
       if (p > 0) {
-        line += ` x ${formatCurrency(p)}`;
+        line += ` x ${formatUnitPriceShort(p)}`;
       }
-      line += ` = ${isRet ? '-' : ''}${formatCurrency(Math.abs(amt))}`;
+      line += ` = ${isRet ? '-' : ''}${formatAmountNoUnit(Math.abs(amt))}`;
       lines.push(line);
 
       if (isRet) {
@@ -1894,13 +1904,13 @@ export default function PortalScreen() {
 
     if (!hasMultipleBranches) {
       const netAmount = totalMeat - totalReturn;
-      lines.push(`Tổng tiền: ${formatCurrency(netAmount)}`);
+      lines.push(`Tổng tiền: ${formatAmountNoUnit(netAmount)}`);
     }
 
     return lines.join('\n');
   };
 
-  // Helper lấy nhãn ngày hiển thị kèm âm lịch cho tiêu đề gửi Zalo (ví dụ: Hôm nay 24/10 (15/9 âm) hoặc 24/10 (15/9 âm))
+  // Helper lấy nhãn ngày hiển thị kèm âm lịch cho tiêu đề gửi Zalo (ví dụ: 24/10 (15/9 âm))
   const getShareDateLabel = (targetDay) => {
     if (!targetDay) return '';
     const rawDate = targetDay.displayDate || targetDay.dateKey || '';
@@ -1914,7 +1924,7 @@ export default function PortalScreen() {
     }
     const lunarStr = targetDay.displayLunarDate || (targetDay.dateObj ? getLunarDateString(targetDay.dateObj) : (targetDay.date ? getLunarDateString(targetDay.date) : (targetDay.dateKey ? getLunarDateString(targetDay.dateKey) : '')));
     const lunarTag = lunarStr ? ` (${lunarStr} âm)` : '';
-    return targetDay.isToday ? `Hôm nay ${shortDate}${lunarTag}` : `${shortDate}${lunarTag}`;
+    return `${shortDate}${lunarTag}`;
   };
 
   // Gửi ảnh hóa đơn kèm text hóa đơn ngày đó qua Zalo (Mobile) hoặc tải về (PC)
