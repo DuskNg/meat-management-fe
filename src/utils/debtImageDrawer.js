@@ -1,6 +1,7 @@
 // meat-management-fe/src/utils/debtImageDrawer.js
 import { Platform } from 'react-native';
 import { getLunarDateString } from './lunarCalendar';
+import { buildExportDayGroupsWithFIFO } from './debtAllocationHelper';
 
 /**
  * Chuyển đổi chuỗi DD/MM/YYYY thành đối tượng Date
@@ -273,180 +274,22 @@ export const drawDebtImageCanvas = async ({
   const yyyy = fromD ? fromD.getFullYear() : new Date().getFullYear();
   const monthStr = `${mm.toString().padStart(2, '0')}/${yyyy}`;
 
-  // Lọc giao dịch phát sinh trong khoảng ngày
-  const filteredTrans = (transList || []).filter(t => {
-    const d = new Date(t.date);
-    if (isNaN(d.getTime())) return false;
-    if (fromD && toD) {
-      return d >= fromD && d <= toD;
-    }
-    return true;
-  });
-
-  // Lọc các khoản thanh toán trong khoảng ngày
-  const filteredPays = (payList || []).filter(p => {
-    const pDate = new Date(p.paidAt);
-    if (fromD && toD) {
-      const trimNote = (p.note || '').trim();
-      const hasExplicitTargetMonth = Boolean(
-        trimNote.match(/^Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i) ||
-        trimNote.match(/Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i)
-      );
-
-      if (hasExplicitTargetMonth) {
-        const targetMonth = getPaymentTargetMonth(p);
-        if (isFullMonth) {
-          return targetMonth === monthStr;
-        }
-        return pDate >= fromD && pDate <= toD;
-      }
-
-      const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
-      let effDate = pDate;
-      if (dateMatch) {
-        effDate = new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]), 12, 0, 0);
-      }
-      const inRange = effDate >= fromD && effDate <= toD;
-      const isTarget = isFullMonth && getPaymentTargetMonth(p) === monthStr;
-      return inRange || isTarget;
-    }
-    return true;
-  });
-
-  const daysInMonth = new Date(yyyy, mm, 0).getDate();
-  const currentDate = new Date();
-  const currentMonth = currentDate.getMonth() + 1;
-  const currentYear = currentDate.getFullYear();
-  const currentDay = currentDate.getDate();
-
-  const isCurrentMonth = (mm === currentMonth && yyyy === currentYear);
-  const maxDay = isCurrentMonth ? Math.min(daysInMonth, currentDay) : daysInMonth;
-
-  const dayMap = {};
-  let totalMeatAmount = 0;
-  let totalReturnAmount = 0;
-  let totalPaymentAmount = 0;
-
-  // 1. Thêm giao dịch thịt
-  filteredTrans.forEach(t => {
-    const d = new Date(t.date);
-    const dayNum = d.getDate().toString().padStart(2, '0');
-    const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
-    const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
-    const displayDate = `${dayNum}/${monthNum}`;
-    const displayLunarDate = getLunarDateString(d);
-
-    if (!dayMap[dateKey]) {
-      dayMap[dateKey] = {
-        date: t.date,
-        dateKey,
-        displayDate,
-        displayLunarDate,
-        entries: [],
-      };
-    }
-
-    const amt = parseFloat(t.totalAmount || 0);
-
-    if (t.items && t.items.length > 0) {
-      t.items.forEach(item => {
-        const q = parseFloat(item.quantity);
-        const p = parseFloat(item.price);
-        const itemAmt = parseFloat(item.amount) || Math.round((q || 0) * (p || 0));
-        const rawName = item.product?.name || item.productName || 'Thịt';
-        const isQuick = rawName === 'Tiền hàng' || rawName.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
-
-        totalMeatAmount += itemAmt;
-        dayMap[dateKey].entries.push({
-          type: 'DELIVERY',
-          name: isQuick ? 'TIỀN HÀNG' : rawName.toUpperCase(),
-          quantity: isQuick ? null : (isNaN(q) ? null : q),
-          price: isQuick ? null : (isNaN(p) ? null : p),
-          amount: itemAmt,
-        });
-      });
-    } else {
-      totalMeatAmount += amt;
-      const noteName = (t.note && t.note !== 'Ghi nợ nhanh') ? t.note : 'TIỀN HÀNG';
-      dayMap[dateKey].entries.push({
-        type: 'DELIVERY',
-        name: noteName.toUpperCase(),
-        quantity: null,
-        price: null,
-        amount: amt,
-      });
-    }
-  });
-
-  // 2. Thêm thanh toán & trả hàng
-  filteredPays.forEach(p => {
-    const d = new Date(p.paidAt);
-    const dayNum = d.getDate().toString().padStart(2, '0');
-    const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
-    const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
-    const displayDate = `${dayNum}/${monthNum}`;
-    const displayLunarDate = getLunarDateString(d);
-
-    if (!dayMap[dateKey]) {
-      dayMap[dateKey] = {
-        date: p.paidAt,
-        dateKey,
-        displayDate,
-        displayLunarDate,
-        entries: [],
-      };
-    }
-
-    const amt = parseFloat(p.amount || 0);
-    const isReturn = isReturnPayment(p);
-
-    if (isReturn) {
-      totalReturnAmount += amt;
-      const returnItems = parseReturnItems(p.note, amt);
-      returnItems.forEach(ritem => {
-        dayMap[dateKey].entries.push(ritem);
-      });
-    } else {
-      totalPaymentAmount += amt;
-      dayMap[dateKey].entries.push({
-        type: 'PAYMENT',
-        name: 'ĐÃ THU',
-        quantity: null,
-        price: null,
-        amount: amt,
-      });
-    }
-  });
-
-  const activeDays = Object.values(dayMap).filter(d => d.entries && d.entries.length > 0);
-  const sortedDays = activeDays.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  // Chuẩn hóa thứ tự các món trong ngày: DELIVERY -> RETURN -> TỔNG (đã trừ trả hàng) -> PAYMENT
-  sortedDays.forEach((day) => {
-    const deliveries = (day.entries || []).filter((e) => e.type === 'DELIVERY');
-    const returns = (day.entries || []).filter((e) => e.type === 'RETURN');
-    const payments = (day.entries || []).filter((e) => e.type === 'PAYMENT');
-    const others = (day.entries || []).filter((e) => e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'PAYMENT' && e.type !== 'DAY_TOTAL');
-
-    const newEntries = [...deliveries, ...returns];
-
-    // Hiển thị dòng TỔNG nếu có từ 2 món thịt trở lên hoặc có cả thịt và trả hàng
-    if (deliveries.length > 1 || (deliveries.length >= 1 && returns.length > 0)) {
-      const dayMeatTotal = deliveries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      const dayReturnTotal = returns.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      // Phần tổng trừ đi cả phần trả hàng nếu có
-      const dayFinalTotal = dayMeatTotal - dayReturnTotal;
-
-      newEntries.push({
-        type: 'DAY_TOTAL',
-        name: 'TỔNG',
-        quantity: null,
-        price: null,
-        amount: dayFinalTotal,
-      });
-    }
-
-    day.entries = [...newEntries, ...payments, ...others];
+  // Áp dụng thuật toán phân bổ FIFO chuẩn xác: tiền trả dồn cấn trừ nợ cũ trước, không trừ lẹm vào tháng hiện tại
+  const {
+    sortedDays,
+    totalMeatAmount,
+    totalReturnAmount,
+    totalPaymentAmount,
+    finalDebt,
+    wholeMonthDebt,
+    paymentSummaryText,
+  } = buildExportDayGroupsWithFIFO({
+    transList,
+    payList,
+    fromD,
+    toD,
+    monthStr,
+    getLunarDateString,
   });
 
   // Tính ngày không phát sinh công nợ
@@ -485,58 +328,6 @@ export const drawDebtImageCanvas = async ({
       }
     }
   }
-
-  // Toàn bộ công nợ tháng
-  let wholeMonthMeat = 0;
-  (transList || []).forEach(t => {
-    const d = new Date(t.date);
-    if (!isNaN(d.getTime()) && (d.getMonth() + 1) === mm && d.getFullYear() === yyyy) {
-      if (t.items && t.items.length > 0) {
-        t.items.forEach(it => {
-          wholeMonthMeat += parseFloat(it.amount) || Math.round((parseFloat(it.quantity) || 0) * (parseFloat(it.price) || 0));
-        });
-      } else {
-        wholeMonthMeat += parseFloat(t.totalAmount || 0);
-      }
-    }
-  });
-
-  let wholeMonthReturn = 0;
-  let wholeMonthPayment = 0;
-  (payList || []).forEach(p => {
-    const trimNote = (p.note || '').trim();
-    const hasExplicitTargetMonth = Boolean(
-      trimNote.match(/^Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i) ||
-      trimNote.match(/Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i)
-    );
-
-    let shouldInclude = false;
-    if (hasExplicitTargetMonth) {
-      shouldInclude = (getPaymentTargetMonth(p) === monthStr);
-    } else {
-      const targetMonth = getPaymentTargetMonth(p);
-      const pDate = new Date(p.paidAt);
-      const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
-      let effDate = pDate;
-      if (dateMatch) {
-        effDate = new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]), 12, 0, 0);
-      }
-      const isSameMonth = !isNaN(effDate.getTime()) && (effDate.getMonth() + 1) === mm && effDate.getFullYear() === yyyy;
-      shouldInclude = (targetMonth === monthStr) || isSameMonth;
-    }
-
-    if (shouldInclude) {
-      const amt = parseFloat(p.amount || 0);
-      if (isReturnPayment(p)) {
-        wholeMonthReturn += amt;
-      } else {
-        wholeMonthPayment += amt;
-      }
-    }
-  });
-
-  const wholeMonthDebt = Math.max(0, wholeMonthMeat - wholeMonthReturn - wholeMonthPayment);
-  const finalDebt = Math.max(0, totalMeatAmount - totalReturnAmount - totalPaymentAmount);
 
   // Nếu không có bất kỳ giao dịch nào
   if (sortedDays.length === 0) {
@@ -927,9 +718,10 @@ export const drawDebtImageCanvas = async ({
     ctx.stroke();
 
     ctx.fillStyle = '#047857';
-    ctx.font = 'bold 14px Arial, sans-serif';
+    ctx.font = 'bold 13.5px Arial, sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText('ĐÃ THU:', summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+    const paidLabel = paymentSummaryText ? `ĐÃ THU (${paymentSummaryText}):` : 'ĐÃ THU:';
+    ctx.fillText(paidLabel, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
     ctx.fillStyle = '#059669';
     ctx.font = 'bold 17.5px Arial, sans-serif';
     ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totalPaymentAmount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);

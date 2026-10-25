@@ -1936,7 +1936,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       <View style={styles.modalView}>
         <View style={styles.modalHeaderRow}>
           <Text style={styles.modalTitle}>
-            {activeReportTab === 'day' ? '📊 THỐNG KÊ CÔNG NỢ TRONG NGÀY' : '📊 THỐNG KÊ CÔNG NỢ THEO THÁNG'}
+            {activeFilter === 'duplicate'
+              ? `⚠️ ĐƠN NỢ NGHI TRÙNG (${selectedDate})`
+              : (activeReportTab === 'day' ? '📊 THỐNG KÊ CÔNG NỢ TRONG NGÀY' : '📊 THỐNG KÊ CÔNG NỢ THEO THÁNG')}
           </Text>
           <TouchableOpacity style={styles.closeHeaderBtn} onPress={() => setVisible(false)}>
             <Text style={styles.closeHeaderBtnText}>✕</Text>

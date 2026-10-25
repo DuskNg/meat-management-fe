@@ -112,6 +112,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   const [isMissingFile, setIsMissingFile] = useState(false);
   const [syncedUrls, setSyncedUrls] = useState({}); // lưu cache URL sau khi sync theo id hoặc index
 
+  const [mobileViewMode, setMobileViewMode] = useState('split'); // 'split' (chia đôi 50/50), 'image' (chỉ ảnh), 'data' (chỉ số liệu)
   const containerRef = useRef(null);
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
 
@@ -168,6 +169,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
       setOnPrevDayCallback(() => onPrevDay);
       setOnNextDayCallback(() => onNextDay);
       resetZoom();
+      setMobileViewMode('split');
       setImageLoading(true);
       setImageError(false);
       setIsSyncingCloud(false);
@@ -178,6 +180,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     close: () => {
       setVisible(false);
       resetZoom();
+      setMobileViewMode('split');
       setDayData(null);
       setOnPrevDayCallback(null);
       setOnNextDayCallback(null);
@@ -187,6 +190,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
   const handleClose = () => {
     setVisible(false);
     resetZoom();
+    setMobileViewMode('split');
     setDayData(null);
     setOnPrevDayCallback(null);
     setOnNextDayCallback(null);
@@ -209,7 +213,8 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     if (!dayData) return subtitle || title || '';
     const lines = [];
     const displayDate = dayData.displayDate || dayData.dateKey || '';
-    lines.push(`🧾 HÓA ĐƠN GIAO HÀNG NGÀY ${displayDate}${dayData.displayLunarDate ? ` (${dayData.displayLunarDate} âm)` : ''}`);
+    const lunarStr = dayData.displayLunarDate || (dayData.dateKey ? getLunarDateString(dayData.dateKey) : (dayData.date ? getLunarDateString(dayData.date) : ''));
+    lines.push(`🧾 HÓA ĐƠN GIAO HÀNG NGÀY ${displayDate}${lunarStr ? ` (${lunarStr} âm)` : ''}`);
     if (dayData.customerName) {
       lines.push(`🏢 Khách hàng: ${dayData.customerName}`);
     }
@@ -744,12 +749,55 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
           </View>
         )}
 
+        {/* Thanh chọn chế độ xem nhanh trên Mobile khi có số liệu: Chia đôi / Chỉ ảnh / Chỉ số liệu */}
+        {!isWide && dayData && (
+          <View style={styles.mobileViewModeBar}>
+            <TouchableOpacity
+              style={[styles.mobileViewModeBtn, mobileViewMode === 'split' && styles.mobileViewModeBtnActive]}
+              onPress={() => setMobileViewMode('split')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.mobileViewModeBtnText, mobileViewMode === 'split' && styles.mobileViewModeBtnTextActive]}>
+                ⚖️ Chia đôi (50/50)
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.mobileViewModeBtn, mobileViewMode === 'image' && styles.mobileViewModeBtnActive]}
+              onPress={() => setMobileViewMode('image')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.mobileViewModeBtnText, mobileViewMode === 'image' && styles.mobileViewModeBtnTextActive]}>
+                🖼️ Chỉ ảnh {images.length > 0 ? `(${images.length})` : ''}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.mobileViewModeBtn, mobileViewMode === 'data' && styles.mobileViewModeBtnActive]}
+              onPress={() => setMobileViewMode('data')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.mobileViewModeBtnText, mobileViewMode === 'data' && styles.mobileViewModeBtnTextActive]}>
+                🧾 Chỉ số liệu
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Thân chính modal: Khi có dayData sẽ chia 2 bên (ảnh/video 1 bên, số liệu 1 bên) */}
         <View style={[styles.viewerMainBody, isWide && dayData && styles.viewerMainBodyWide]}>
           {/* Cụm xem ảnh/video + thanh công cụ riêng biệt không đè lên ảnh */}
           <View style={[
             styles.imageViewerSection,
-            dayData && (isWide ? styles.imageViewerSectionSplit : styles.imageViewerSectionMobileSplit),
+            dayData && (
+              isWide
+                ? styles.imageViewerSectionSplit
+                : [
+                    styles.imageViewerSectionMobileSplit,
+                    mobileViewMode === 'data' && styles.hiddenSection,
+                    mobileViewMode === 'image' && styles.fullMobileSection,
+                  ]
+            ),
           ]}>
             {/* Khung hiển thị hình ảnh / video có hỗ trợ Zoom & Kéo */}
             <View
@@ -988,7 +1036,16 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
 
           {/* CỘT PHẢI (HOẶC NỬA DƯỚI TRÊN MOBILE): BẢNG SỐ LIỆU HÓA ĐƠN ĐÓ */}
           {dayData && (
-            <View style={[styles.dayDataBox, isWide ? styles.dayDataBoxSplit : styles.dayDataBoxMobileSplit]}>
+            <View style={[
+              styles.dayDataBox,
+              isWide
+                ? styles.dayDataBoxSplit
+                : [
+                    styles.dayDataBoxMobileSplit,
+                    mobileViewMode === 'image' && styles.hiddenSection,
+                    mobileViewMode === 'data' && styles.fullMobileSection,
+                  ],
+            ]}>
               {/* Header đầu cột phải */}
               <View style={styles.dayDataHeader}>
                 <View style={styles.dayDataTitleRow}>
@@ -1217,6 +1274,50 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 1,
   },
+  mobileViewModeBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0F172A',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    gap: 6,
+  },
+  mobileViewModeBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 6,
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  mobileViewModeBtnActive: {
+    backgroundColor: '#0284C7',
+    borderColor: '#38BDF8',
+  },
+  mobileViewModeBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  mobileViewModeBtnTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  hiddenSection: {
+    display: 'none',
+  },
+  fullMobileSection: {
+    flex: 1,
+    height: '100%',
+    maxHeight: '100%',
+    borderBottomWidth: 0,
+  },
   viewerMainBody: {
     flex: 1,
     display: 'flex',
@@ -1235,12 +1336,14 @@ const styles = StyleSheet.create({
   },
   imageViewerSectionSplit: {
     flex: 1.15,
+    minWidth: 0,
     borderRightWidth: 1,
     borderRightColor: '#334155',
   },
   imageViewerSectionMobileSplit: {
-    height: 520,
-    maxHeight: '70%',
+    flex: 1,
+    maxHeight: '48%',
+    minHeight: 180,
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
   },
@@ -1263,10 +1366,13 @@ const styles = StyleSheet.create({
   },
   dayDataBoxSplit: {
     flex: 0.85,
-    width: '42%',
+    minWidth: 360,
+    maxWidth: 540,
   },
   dayDataBoxMobileSplit: {
     flex: 1,
+    maxHeight: '52%',
+    minHeight: 180,
   },
   dayDataHeader: {
     flexDirection: 'row',

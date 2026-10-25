@@ -24,6 +24,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 import DailyDebtTile from './DailyDebtTile';
 import MoneyInput from './MoneyInput';
 import DatePickerInput from './DatePickerInput';
+import { allocateDebtFIFO } from '../utils/debtAllocationHelper';
 
 // ─── Các hàm tiện ích tính toán ngày hiển thị nhanh ───
 const formatDateToDisplay = (dateObj) => {
@@ -387,157 +388,13 @@ const CustomerDebtHistoryModal = forwardRef(({
       const transactions = transRes.data?.data || [];
       const payments = payRes.data?.data || [];
 
-      // Bản đồ phân bổ nợ - trả để liên kết lịch sử
-      const remainingDebtMap = {};
-      transactions.forEach((t) => {
-        remainingDebtMap[t.id] = parseFloat(t.totalAmount || 0);
-      });
-
-      const remainingPayMap = {};
-      payments.forEach((p) => {
-        remainingPayMap[p.id] = parseFloat(p.amount || 0);
-      });
-
-      const transAllocations = {}; // t.id -> array of { paymentId, date, amount, note }
-      const payAllocations = {};   // p.id -> array of { transactionId, date, amount, note }
-
-      const recordAllocation = (tId, tDate, tNote, pId, pDate, pNote, amount) => {
-        if (!transAllocations[tId]) transAllocations[tId] = [];
-        transAllocations[tId].push({ paymentId: pId, date: pDate, amount, note: pNote });
-
-        if (!payAllocations[pId]) payAllocations[pId] = [];
-        payAllocations[pId].push({ transactionId: tId, date: tDate, amount, note: tNote });
-      };
-
-      // 0. Phân bổ các khoản Trả hàng (Return Goods) trực tiếp vào đơn nợ của chính ngày phát sinh trả hàng
-      const isReturnPayment = (p) => {
-        const trimNote = (p.note || '').trim();
-        return (
-          trimNote.includes('[Trả lại hàng]') ||
-          trimNote.includes('[Trả hàng nhanh]') ||
-          trimNote.includes('Trả hàng') ||
-          trimNote.includes('Trả lại')
-        );
-      };
-
-      payments.forEach((p) => {
-        if (isReturnPayment(p)) {
-          const returnDateKey = toDateKey(p.paidAt);
-          const dayTransactions = transactions
-            .filter((t) => toDateKey(t.date) === returnDateKey)
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-          dayTransactions.forEach((t) => {
-            const debtAmt = remainingDebtMap[t.id];
-            const payAmt = remainingPayMap[p.id];
-            if (debtAmt > 0 && payAmt > 0) {
-              const allocAmt = Math.min(debtAmt, payAmt);
-              remainingDebtMap[t.id] -= allocAmt;
-              remainingPayMap[p.id] -= allocAmt;
-              recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
-            }
-          });
-        }
-      });
-
-      // A. Phân bổ theo ngày cụ thể (Specific Date matching)
-      payments.forEach((p) => {
-        const trimNote = (p.note || '').trim();
-        const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{2})\/(\d{2})\/(\d{4})/);
-        if (dateMatch) {
-          const dateKey = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
-          const dayTransactions = transactions
-            .filter((t) => toDateKey(t.date) === dateKey)
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-          dayTransactions.forEach((t) => {
-            const debtAmt = remainingDebtMap[t.id];
-            const payAmt = remainingPayMap[p.id];
-            if (debtAmt > 0 && payAmt > 0) {
-              const allocAmt = Math.min(debtAmt, payAmt);
-              remainingDebtMap[t.id] -= allocAmt;
-              remainingPayMap[p.id] -= allocAmt;
-              recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
-            }
-          });
-        }
-      });
-
-      // A2. Phân bổ theo cụm ngày / khoảng ngày cụ thể (Specific Date Range matching)
-      payments.forEach((p) => {
-        const trimNote = (p.note || '').trim();
-        const rangeMatch = trimNote.match(/Thanh toán nợ từ ngày (\d{2})\/(\d{2})\/(\d{4}) đến ngày (\d{2})\/(\d{2})\/(\d{4})/i);
-        if (rangeMatch) {
-          const fromParts = [rangeMatch[1], rangeMatch[2], rangeMatch[3]].map(Number);
-          const toParts = [rangeMatch[4], rangeMatch[5], rangeMatch[6]].map(Number);
-          const fromDateObj = new Date(fromParts[2], fromParts[1] - 1, fromParts[0], 0, 0, 0, 0);
-          const toDateObj = new Date(toParts[2], toParts[1] - 1, toParts[0], 23, 59, 59, 999);
-
-          const rangeTransactions = transactions
-            .filter((t) => {
-              const tDate = new Date(t.date);
-              return tDate >= fromDateObj && tDate <= toDateObj;
-            })
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-          rangeTransactions.forEach((t) => {
-            const debtAmt = remainingDebtMap[t.id];
-            const payAmt = remainingPayMap[p.id];
-            if (debtAmt > 0 && payAmt > 0) {
-              const allocAmt = Math.min(debtAmt, payAmt);
-              remainingDebtMap[t.id] -= allocAmt;
-              remainingPayMap[p.id] -= allocAmt;
-              recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
-            }
-          });
-        }
-      });
-
-      // B. Phân bổ theo tháng cụ thể (Specific Month matching)
-      payments.forEach((p) => {
-        const trimNote = (p.note || '').trim();
-        const monthMatch = trimNote.match(/^Thanh toán nợ Tháng (\d{2})\/(\d{4})/);
-        if (monthMatch) {
-          const monthKey = `${monthMatch[1]}/${monthMatch[2]}`;
-          const monthTransactions = transactions
-            .filter((t) => {
-              const d = new Date(t.date);
-              const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-              const yyyy = d.getFullYear();
-              return `${mm}/${yyyy}` === monthKey;
-            })
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-          monthTransactions.forEach((t) => {
-            const debtAmt = remainingDebtMap[t.id];
-            const payAmt = remainingPayMap[p.id];
-            if (debtAmt > 0 && payAmt > 0) {
-              const allocAmt = Math.min(debtAmt, payAmt);
-              remainingDebtMap[t.id] -= allocAmt;
-              remainingPayMap[p.id] -= allocAmt;
-              recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
-            }
-          });
-        }
-      });
-
-      // C. Phân bổ chung FIFO (cho phần còn dư của thanh toán cụ thể và thanh toán chung)
-      // Sắp xếp tăng dần theo thời gian để trả nợ cũ trước
-      const sortedPayments = [...payments].sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt));
-      const sortedTransactions = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-      sortedPayments.forEach((p) => {
-        sortedTransactions.forEach((t) => {
-          const debtAmt = remainingDebtMap[t.id];
-          const payAmt = remainingPayMap[p.id];
-          if (debtAmt > 0 && payAmt > 0) {
-            const allocAmt = Math.min(debtAmt, payAmt);
-            remainingDebtMap[t.id] -= allocAmt;
-            remainingPayMap[p.id] -= allocAmt;
-            recordAllocation(t.id, t.date, t.note, p.id, p.paidAt, p.note, allocAmt);
-          }
-        });
-      });
+      // Phân bổ nợ - trả theo chuẩn FIFO từ utility dùng chung
+      const {
+        remainingDebtMap,
+        remainingPayMap,
+        transAllocations,
+        payAllocations,
+      } = allocateDebtFIFO(transactions, payments);
 
       const map = new Map();
 

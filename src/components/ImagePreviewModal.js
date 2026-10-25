@@ -138,28 +138,35 @@ const ImagePreviewModal = forwardRef((props, ref) => {
   }, [visible]);
 
   // Phơi bày hàm điều khiển ra ngoài ref
-  useImperativeHandle(ref, () => ({
-    open: (url, options = {}) => {
+  useImperativeHandle(ref, () => {
+    const handleOpen = (url, options = {}) => {
       setImageUrl(url);
       setRotation(0);
       setIsDragging(false);
       setVisible(true);
 
-      if (options && options.autoFitWidth) {
+      // Mặc định luôn là 100% (scale = 1, căn giữa { x: 0, y: 0 })
+      setScale(1);
+      setPosition({ x: 0, y: 0 });
+
+      // Chỉ tự động phóng to vừa ngang nếu có tùy chọn autoFitWidth VÀ đang chạy trên thiết bị di động (mobile)
+      if (options && options.autoFitWidth && isMobileDevice()) {
         applyAutoFitWidth(url);
         if (options.isCaptureMode) {
           showGlobalToast('📸 Đã mở full ảnh! Hãy chụp ảnh màn hình để lưu vào Thư viện ảnh.', 'info');
         }
-      } else {
-        setScale(1);
-        setPosition({ x: 0, y: 0 });
       }
-    },
-    close: () => {
-      setVisible(false);
-      resetZoom();
-    },
-  }));
+    };
+
+    return {
+      open: handleOpen,
+      show: handleOpen, // Bí danh tương thích ngược
+      close: () => {
+        setVisible(false);
+        resetZoom();
+      },
+    };
+  });
 
   const handleClose = () => {
     setVisible(false);

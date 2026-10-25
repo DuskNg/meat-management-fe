@@ -24,6 +24,7 @@ import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../utils/d
 import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
 import { getLunarDateString } from '../utils/lunarCalendar';
 import { auditExportDebtData } from '../utils/debtExportAuditHelper';
+import { buildExportDayGroupsWithFIFO, allocateDebtFIFO } from '../utils/debtAllocationHelper';
 
 // Helper: lấy ngày hôm nay dạng DD/MM/YYYY
 const getTodayFormatted = () => {
@@ -574,6 +575,9 @@ const buildDailyMessage = (dateKey, transList, payList, cust) => {
     return buildChiTuyetDailyMessage(dateKey, transList, payList, cust);
   }
 
+  // Chạy phân bổ FIFO để tiền thanh toán trả đúng cho các đơn nợ của ngày này
+  const { remainingPayMap, transAllocations } = allocateDebtFIFO(transList, payList);
+
   const dayTrans = (transList || []).filter(t => {
     const d = new Date(t.date);
     const dd = d.getDate().toString().padStart(2, '0');
@@ -582,15 +586,36 @@ const buildDailyMessage = (dateKey, transList, payList, cust) => {
     return `${dd}/${mm}/${yyyy}` === dateKey;
   });
 
-  const dayPays = (payList || []).filter(p => {
+  // Thu thập các khoản thanh toán được phân bổ cấn trừ cho các đơn hàng của ngày này
+  const dayAllocatedPayments = [];
+  dayTrans.forEach(t => {
+    const allocs = transAllocations[t.id] || [];
+    allocs.forEach(alloc => {
+      dayAllocatedPayments.push(alloc);
+    });
+  });
+
+  // Kiểm tra nếu có khoản thanh toán thực hiện đúng ngày dateKey nhưng là trả dư (prepayment)
+  (payList || []).forEach(p => {
     const d = new Date(p.paidAt);
     const dd = d.getDate().toString().padStart(2, '0');
     const mm = (d.getMonth() + 1).toString().padStart(2, '0');
     const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}` === dateKey;
+    if (`${dd}/${mm}/${yyyy}` === dateKey) {
+      const surplus = remainingPayMap[p.id] || 0;
+      if (surplus > 0) {
+        dayAllocatedPayments.push({
+          paymentId: p.id,
+          amount: surplus,
+          note: p.note,
+          isReturn: isReturnPayment(p),
+          isSurplus: true
+        });
+      }
+    }
   });
 
-  if (dayTrans.length === 0 && dayPays.length === 0) {
+  if (dayTrans.length === 0 && dayAllocatedPayments.length === 0) {
     return `Ngày ${dateKey}\n(Không có phát sinh giao dịch công nợ trong ngày này)`;
   }
 
@@ -631,12 +656,12 @@ const buildDailyMessage = (dateKey, transList, payList, cust) => {
     }
   });
 
-  // Hàng trừ trả lại hàng hoặc đã thanh toán trong ngày
-  dayPays.forEach(p => {
-    const amt = parseFloat(p.amount || 0);
-    if (isReturnPayment(p)) {
+  // Hàng trừ trả lại hàng hoặc đã thanh toán được phân bổ cho ngày này
+  dayAllocatedPayments.forEach(alloc => {
+    const amt = parseFloat(alloc.amount || 0);
+    if (alloc.isReturn) {
       totalReturn += amt;
-      let cleanNote = p.note ? p.note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/g, '').trim() : '';
+      let cleanNote = alloc.note ? alloc.note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]/g, '').trim() : '';
       cleanNote = cleanNote.replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng)\s*[:-]?\s*/gi, '').trim();
       if (cleanNote) {
         lines.push(`- Trả lại hàng: ${cleanNote} (-${new Intl.NumberFormat('vi-VN').format(amt)} đ)`);
@@ -749,6 +774,9 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       // Trích xuất các ngày duy nhất có giao dịch phát sinh
       const daysMap = new Map();
 
+      // Phân bổ FIFO để xác định chính xác các ngày/tháng có giao dịch
+      const { remainingPayMap } = allocateDebtFIFO(transList, payList);
+
       transList.forEach(t => {
         const d = new Date(t.date);
         const dd = d.getDate().toString().padStart(2, '0');
@@ -769,24 +797,30 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       });
 
       payList.forEach(p => {
-        monthsSet.add(getPaymentTargetMonth(p));
+        const surplus = remainingPayMap[p.id] || 0;
+        const isReturn = isReturnPayment(p);
 
-        const d = new Date(p.paidAt);
-        const dd = d.getDate().toString().padStart(2, '0');
-        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-        const yyyy = d.getFullYear();
-        const dateKey = `${dd}/${mm}/${yyyy}`;
+        // Chỉ thêm ngày thanh toán vào danh sách ngày nếu là trả hàng hoặc có tiền trả trước/dư
+        if (isReturn || surplus > 0) {
+          const d = new Date(p.paidAt);
+          const dd = d.getDate().toString().padStart(2, '0');
+          const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+          const yyyy = d.getFullYear();
+          const dateKey = `${dd}/${mm}/${yyyy}`;
 
-        if (!daysMap.has(dateKey)) {
-          daysMap.set(dateKey, {
-            dateKey,
-            date: p.paidAt,
-            totalDebt: 0,
-            hasReturn: false,
-          });
-        }
-        if (isReturnPayment(p)) {
-          daysMap.get(dateKey).hasReturn = true;
+          monthsSet.add(`${mm}/${yyyy}`);
+
+          if (!daysMap.has(dateKey)) {
+            daysMap.set(dateKey, {
+              dateKey,
+              date: p.paidAt,
+              totalDebt: 0,
+              hasReturn: isReturn,
+            });
+          }
+          if (isReturn) {
+            daysMap.get(dateKey).hasReturn = true;
+          }
         }
       });
 
@@ -891,7 +925,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const yyyy = fromD ? fromD.getFullYear() : new Date().getFullYear();
       const monthStr = `${mm.toString().padStart(2, '0')}/${yyyy}`;
 
-      // Lọc các giao dịch phát sinh trong khoảng ngày
+      // Lọc các giao dịch phát sinh trong khoảng ngày (phục vụ bảng tổng hợp sản lượng)
       const filteredTrans = (transList || []).filter(t => {
         const d = new Date(t.date);
         if (isNaN(d.getTime())) return false;
@@ -901,37 +935,8 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         return true;
       });
 
-      const filteredPays = (payList || []).filter(p => {
-        const pDate = new Date(p.paidAt);
-        if (fromD && toD) {
-          const trimNote = (p.note || '').trim();
-          const hasExplicitTargetMonth = Boolean(
-            trimNote.match(/^Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i) ||
-            trimNote.match(/Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i)
-          );
-
-          if (hasExplicitTargetMonth) {
-            const targetMonth = getPaymentTargetMonth(p);
-            if (isFullMonth) {
-              return targetMonth === monthStr;
-            }
-            return pDate >= fromD && pDate <= toD;
-          }
-
-          const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
-          let effDate = pDate;
-          if (dateMatch) {
-            effDate = new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]), 12, 0, 0);
-          }
-          const inRange = effDate >= fromD && effDate <= toD;
-          const isTarget = isFullMonth && getPaymentTargetMonth(p) === monthStr;
-          return inRange || isTarget;
-        }
-        return true;
-      });
-
       // Tính toán tổng hợp sản lượng thịt theo khoảng ngày đang lọc (áp dụng cho mọi khung ngày: cả tháng hoặc từ ngày X đến ngày Y)
-      const meatSummary = computeMeatVolumeSummary(filteredTrans, filteredPays);
+      const meatSummary = computeMeatVolumeSummary(filteredTrans, payList);
       setMonthlyMeatSummary(meatSummary);
       const hasMeatSummary = Boolean(meatSummary.items && meatSummary.items.length > 0);
       setIsExportMonth(hasMeatSummary);
@@ -946,148 +951,24 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
       const isCurrentMonth = (mm === currentMonth && yyyy === currentYear);
       const maxDay = isCurrentMonth ? Math.min(daysInMonth, currentDay) : daysInMonth;
 
-      // Gom toàn bộ giao dịch mua hàng, trả hàng và thanh toán theo từng ngày
-      // dayMap: { [dateKey]: { dateObj, dayStr, entries: [] } }
-      const dayMap = {};
-      let totalMeatAmount = 0;
-      let totalReturnAmount = 0;
-      let totalPaymentAmount = 0;
-
-      // 1. Thêm các món hàng từ giao dịch (Transactions)
-      filteredTrans.forEach(t => {
-        const d = new Date(t.date);
-        const dayNum = d.getDate().toString().padStart(2, '0');
-        const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
-        const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
-        const displayDate = `${dayNum}/${monthNum}`;
-        const displayLunarDate = getLunarDateString(d);
-
-        if (!dayMap[dateKey]) {
-          dayMap[dateKey] = {
-            date: t.date,
-            dateKey,
-            displayDate,
-            displayLunarDate,
-            entries: [],
-          };
-        }
-
-        const amt = parseFloat(t.totalAmount || 0);
-
-        if (t.items && t.items.length > 0) {
-          t.items.forEach(item => {
-            const q = parseFloat(item.quantity);
-            const p = parseFloat(item.price);
-            const itemAmt = parseFloat(item.amount) || Math.round((q || 0) * (p || 0));
-            const rawName = item.product?.name || item.productName || 'Thịt';
-            const isQuick = rawName === 'Tiền hàng' || rawName.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
-
-            totalMeatAmount += itemAmt;
-            dayMap[dateKey].entries.push({
-              type: 'DELIVERY',
-              name: isQuick ? 'TIỀN HÀNG' : rawName.toUpperCase(),
-              quantity: isQuick ? null : (isNaN(q) ? null : q),
-              price: isQuick ? null : (isNaN(p) ? null : p),
-              amount: itemAmt,
-            });
-          });
-        } else {
-          // Giao dịch không có danh sách items (nợ nhanh)
-          totalMeatAmount += amt;
-          const noteName = (t.note && t.note !== 'Ghi nợ nhanh') ? t.note : 'TIỀN HÀNG';
-          dayMap[dateKey].entries.push({
-            type: 'DELIVERY',
-            name: noteName.toUpperCase(),
-            quantity: null,
-            price: null,
-            amount: amt,
-          });
-        }
-      });
-
-      // 2. Thêm các khoản thanh toán / trả hàng từ payments
-      const paymentsForSummary = [];
-      filteredPays.forEach(p => {
-        const d = new Date(p.paidAt);
-        const dayNum = d.getDate().toString().padStart(2, '0');
-        const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
-        const dateKey = `${dayNum}/${monthNum}/${d.getFullYear()}`;
-        const displayDate = `${dayNum}/${monthNum}`;
-        const displayLunarDate = getLunarDateString(d);
-
-        // Trích xuất ngày đã thu định dạng DD/MM/YYYY chuẩn (ví dụ 31/07/2026)
-        const trimNote = (p.note || '').trim();
-        const noteDateMatch = trimNote.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-        const paidDateStr = noteDateMatch
-          ? `${noteDateMatch[1]}/${noteDateMatch[2]}/${noteDateMatch[3]}`
-          : `${dayNum}/${monthNum}/${d.getFullYear()}`;
-
-        if (!dayMap[dateKey]) {
-          dayMap[dateKey] = {
-            date: p.paidAt,
-            dateKey,
-            displayDate,
-            displayLunarDate,
-            entries: [],
-          };
-        }
-
-        const amt = parseFloat(p.amount || 0);
-        const isReturn = isReturnPayment(p);
-
-        if (isReturn) {
-          totalReturnAmount += amt;
-          // Tách từng món trả hàng để hiển thị thành từng dòng riêng biệt như các loại thịt
-          const returnItems = parseReturnItems(p.note, amt);
-          returnItems.forEach(ritem => {
-            dayMap[dateKey].entries.push(ritem);
-          });
-        } else {
-          totalPaymentAmount += amt;
-          // Tiền đã thu: chỉ hiển thị "ĐÃ THU" (không kèm ngày để khách không nhầm là chỉ thu cho ngày đó)
-          const payName = 'ĐÃ THU';
-
-          dayMap[dateKey].entries.push({
-            type: 'PAYMENT',
-            name: payName,
-            quantity: null,
-            price: null,
-            amount: amt,
-          });
-        }
-      });
-
-      // Lọc các ngày thực sự có phát sinh dữ liệu
-      const activeDays = Object.values(dayMap).filter(d => d.entries && d.entries.length > 0);
-      // Sắp xếp theo ngày tăng dần (từ đầu tháng đến cuối tháng)
-      const sortedDays = activeDays.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-      // Chuẩn hóa thứ tự các món trong ngày: DELIVERY -> RETURN -> TỔNG (đã trừ trả hàng) -> PAYMENT
-      sortedDays.forEach((day) => {
-        const deliveries = (day.entries || []).filter((e) => e.type === 'DELIVERY');
-        const returns = (day.entries || []).filter((e) => e.type === 'RETURN');
-        const payments = (day.entries || []).filter((e) => e.type === 'PAYMENT');
-        const others = (day.entries || []).filter((e) => e.type !== 'DELIVERY' && e.type !== 'RETURN' && e.type !== 'PAYMENT' && e.type !== 'DAY_TOTAL');
-
-        const newEntries = [...deliveries, ...returns];
-
-        // Hiển thị dòng TỔNG nếu có từ 2 món thịt trở lên hoặc có cả thịt và trả hàng
-        if (deliveries.length > 1 || (deliveries.length >= 1 && returns.length > 0)) {
-          const dayMeatTotal = deliveries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-          const dayReturnTotal = returns.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-          // Phần tổng trừ đi cả phần trả hàng nếu có
-          const dayFinalTotal = dayMeatTotal - dayReturnTotal;
-
-          newEntries.push({
-            type: 'DAY_TOTAL',
-            name: 'TỔNG',
-            quantity: null,
-            price: null,
-            amount: dayFinalTotal,
-          });
-        }
-
-        day.entries = [...newEntries, ...payments, ...others];
+      // Áp dụng thuật toán phân bổ FIFO chuẩn xác: tiền trả dồn cấn trừ nợ cũ trước, không trừ lẹm vào tháng hiện tại
+      const {
+        sortedDays,
+        totalMeatAmount,
+        totalReturnAmount,
+        totalPaymentAmount,
+        wholeMonthMeat,
+        wholeMonthReturn,
+        wholeMonthPayment,
+        wholeMonthDebt,
+        paymentSummaryText,
+      } = buildExportDayGroupsWithFIFO({
+        transList,
+        payList,
+        fromD,
+        toD,
+        monthStr,
+        getLunarDateString,
       });
 
       // Tính danh sách các ngày không phát sinh công nợ trong khoảng ngày đã chọn
@@ -1130,57 +1011,6 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
           }
         }
       }
-
-      // Tính toán toàn bộ công nợ thực tế trong cả tháng của khách hàng
-      let wholeMonthMeat = 0;
-      (transList || []).forEach(t => {
-        const d = new Date(t.date);
-        if (!isNaN(d.getTime()) && (d.getMonth() + 1) === mm && d.getFullYear() === yyyy) {
-          if (t.items && t.items.length > 0) {
-            t.items.forEach(it => {
-              wholeMonthMeat += parseFloat(it.amount) || Math.round((parseFloat(it.quantity) || 0) * (parseFloat(it.price) || 0));
-            });
-          } else {
-            wholeMonthMeat += parseFloat(t.totalAmount || 0);
-          }
-        }
-      });
-
-      let wholeMonthReturn = 0;
-      let wholeMonthPayment = 0;
-      (payList || []).forEach(p => {
-        const trimNote = (p.note || '').trim();
-        const hasExplicitTargetMonth = Boolean(
-          trimNote.match(/^Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i) ||
-          trimNote.match(/Thanh toán (?:nợ|hóa đơn) [Tt]háng (\d{1,2})\/(\d{4})/i)
-        );
-
-        let shouldInclude = false;
-        if (hasExplicitTargetMonth) {
-          shouldInclude = (getPaymentTargetMonth(p) === monthStr);
-        } else {
-          const targetMonth = getPaymentTargetMonth(p);
-          const pDate = new Date(p.paidAt);
-          const dateMatch = trimNote.match(/^Thanh toán nợ ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
-          let effDate = pDate;
-          if (dateMatch) {
-            effDate = new Date(Number(dateMatch[3]), Number(dateMatch[2]) - 1, Number(dateMatch[1]), 12, 0, 0);
-          }
-          const isSameMonth = !isNaN(effDate.getTime()) && (effDate.getMonth() + 1) === mm && effDate.getFullYear() === yyyy;
-          shouldInclude = (targetMonth === monthStr) || isSameMonth;
-        }
-
-        if (shouldInclude) {
-          const amt = parseFloat(p.amount || 0);
-          if (isReturnPayment(p)) {
-            wholeMonthReturn += amt;
-          } else {
-            wholeMonthPayment += amt;
-          }
-        }
-      });
-
-      const wholeMonthDebt = Math.max(0, wholeMonthMeat - wholeMonthReturn - wholeMonthPayment);
 
       // Lưu state phục vụ Excel & thống kê
       setRows(sortedDays);
@@ -1637,9 +1467,10 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         ctx.stroke();
 
         ctx.fillStyle = '#047857';
-        ctx.font = 'bold 14px Arial, sans-serif';
+        ctx.font = 'bold 13.5px Arial, sans-serif';
         ctx.textAlign = 'right';
-        ctx.fillText('ĐÃ THU:', summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+        const paidLabel = paymentSummaryText ? `ĐÃ THU (${paymentSummaryText}):` : 'ĐÃ THU:';
+        ctx.fillText(paidLabel, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
         ctx.fillStyle = '#059669';
         ctx.font = 'bold 17.5px Arial, sans-serif';
         ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totalPaymentAmount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
@@ -3138,7 +2969,7 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                       <View style={styles.previewImageContainer}>
                         <TouchableOpacity
                           activeOpacity={0.9}
-                          onPress={() => imagePreviewModalRef.current?.show(volumeImageUri)}
+                          onPress={() => imagePreviewModalRef.current?.open(volumeImageUri, { autoFitWidth: isMobileDevice() })}
                           style={styles.imageWrapper}
                         >
                           <Image
@@ -3154,7 +2985,10 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
                         {/* NÚT THAO TÁC XUẤT ẢNH & SAO CHÉP */}
                         <View style={styles.actionButtonsCol}>
                           <TouchableOpacity
-                            style={styles.downloadImageBtn}
+                            style={[
+                              styles.downloadImageBtn,
+                              isMobileDevice() ? styles.zaloActiveColor : styles.normalActiveColor
+                            ]}
                             onPress={handleDownloadVolumeImage}
                             activeOpacity={0.8}
                           >
@@ -4045,5 +3879,240 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: 'bold',
     color: '#1D4ED8',
+  },
+  // ─── STYLES CHO TAB XUẤT SẢN LƯỢNG (DẠNG BẢNG & ẢNH) ───
+  volumeTabContent: {
+    marginTop: 2,
+  },
+  dateArrowWrap: {
+    paddingTop: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateArrowText: {
+    fontSize: 16,
+    color: '#94A3B8',
+    fontWeight: 'bold',
+  },
+  volumeWarningCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  volumeWarningIcon: {
+    fontSize: 16,
+    marginTop: 1,
+  },
+  volumeWarningTextCol: {
+    flex: 1,
+  },
+  volumeWarningTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#B45309',
+    marginBottom: 2,
+  },
+  volumeWarningDesc: {
+    fontSize: 11.5,
+    color: '#92400E',
+    lineHeight: 16,
+  },
+  volumeTableCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    marginBottom: 16,
+    ...SHADOWS.card,
+  },
+  volumeTableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#CBD5E1',
+  },
+  volumeHeaderColText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    letterSpacing: 0.2,
+  },
+  volumeColItem: {
+    flex: 2.2,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingRight: 6,
+  },
+  volumeColQty: {
+    flex: 1.1,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  volumeColPrice: {
+    flex: 1.3,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  volumeColAmt: {
+    flex: 1.6,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingLeft: 4,
+  },
+  volumeTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+  },
+  volumeTableRowAlt: {
+    backgroundColor: '#F8FAFC',
+  },
+  volumeItemNameText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  volumeItemQtyText: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+  volumeItemPriceText: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'right',
+  },
+  volumeItemAmtText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#059669',
+    textAlign: 'right',
+  },
+  volumeTableTotalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#ECFDF5',
+    borderTopWidth: 1.5,
+    borderTopColor: '#A7F3D0',
+  },
+  volumeTotalLabel: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#065F46',
+    textTransform: 'uppercase',
+  },
+  volumeTotalQtyText: {
+    fontSize: 13.5,
+    fontWeight: 'bold',
+    color: '#047857',
+    textAlign: 'right',
+  },
+  volumeTotalAmtText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#047857',
+    textAlign: 'right',
+  },
+  imagePreviewSection: {
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  previewImageContainer: {
+    gap: 12,
+  },
+  imageWrapper: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+    cursor: Platform.OS === 'web' ? 'zoom-in' : undefined,
+    ...SHADOWS.card,
+  },
+  zoomHintBadge: {
+    position: 'absolute',
+    bottom: 12,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  zoomHintText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  actionButtonsCol: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  downloadImageBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+  },
+  downloadImageBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  copyMeatTextFullBtn: {
+    flex: 1,
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  copyMeatTextFullBtnActive: {
+    backgroundColor: '#1D4ED8',
+  },
+  copyMeatTextFullBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  openVolumeTabButton: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  openVolumeTabButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });

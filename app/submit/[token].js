@@ -589,7 +589,7 @@ export default function StaffSubmitScreen() {
     if (fileType === 'VIDEO') {
       setPreviewVideoUrl(url);
     } else {
-      imagePreviewModalRef.current?.open(url, { autoFitWidth: true });
+      imagePreviewModalRef.current?.open(url);
     }
   };
 

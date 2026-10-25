@@ -1644,10 +1644,24 @@ export default function PortalScreen() {
     }
   };
 
-  // Tạo nội dung text chi tiết hóa đơn ngày đó: dòng đầu là ngày (ví dụ 07/10), danh sách món thịt chia gạch ngang từng cơ sở
-  // Tạo nội dung text chi tiết hóa đơn ngày đó: dòng đầu là ngày (ví dụ 07/10), danh sách món thịt chia gạch ngang từng cơ sở
+  // Tạo nội dung text chi tiết hóa đơn ngày đó: dòng đầu là ngày (ví dụ 07/10 hoặc 24/10 (15/9 âm)), danh sách món thịt chia gạch ngang từng cơ sở
   const buildPortalDayInvoiceText = (targetDay, targetCustomerName = null) => {
     if (!targetDay) return '';
+
+    // Lấy ngày ngắn gọn dạng DD/MM (ví dụ: 07/10 hoặc 24/10)
+    const rawDate = targetDay.displayDate || targetDay.dateKey || '';
+    let shortDate = rawDate;
+    if (rawDate.includes('-')) {
+      const parts = rawDate.split('-');
+      if (parts.length === 3) shortDate = `${parts[2]}/${parts[1]}`;
+    } else if (rawDate.includes('/')) {
+      const parts = rawDate.split('/');
+      if (parts.length >= 2) shortDate = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
+    }
+
+    // Lấy chuỗi ngày âm lịch tương ứng (ví dụ: 15/9)
+    const lunarStr = targetDay.displayLunarDate || (targetDay.dateObj ? getLunarDateString(targetDay.dateObj) : (targetDay.date ? getLunarDateString(targetDay.date) : (targetDay.dateKey ? getLunarDateString(targetDay.dateKey) : '')));
+    const lunarTag = lunarStr ? ` (${lunarStr} âm)` : '';
 
     // Kiểm tra nếu là khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
     const isTuyetCustomer = (
@@ -1668,23 +1682,23 @@ export default function PortalScreen() {
           dayEntries = filteredByCust;
         }
       }
-      return buildChiTuyetDailyMessage(targetDay.dateKey || targetDay.displayDate, dayEntries);
+      const rawTuyetMsg = buildChiTuyetDailyMessage(targetDay.dateKey || targetDay.displayDate, dayEntries);
+      if (rawTuyetMsg && lunarTag) {
+        const msgLines = rawTuyetMsg.split('\n');
+        if (msgLines.length > 0 && !msgLines[0].includes('âm')) {
+          msgLines[0] = targetDay.isToday
+            ? `Hôm nay ${msgLines[0]}${lunarTag}`
+            : `${msgLines[0]}${lunarTag}`;
+          return msgLines.join('\n');
+        }
+      }
+      return rawTuyetMsg;
     }
 
     const lines = [];
 
-    // Lấy ngày ngắn gọn dạng DD/MM (ví dụ: 07/10) đưa lên dòng đầu tiên
-    const rawDate = targetDay.displayDate || targetDay.dateKey || '';
-    let shortDate = rawDate;
-    if (rawDate.includes('-')) {
-      const parts = rawDate.split('-');
-      if (parts.length === 3) shortDate = `${parts[2]}/${parts[1]}`;
-    } else if (rawDate.includes('/')) {
-      const parts = rawDate.split('/');
-      if (parts.length >= 2) shortDate = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
-    }
     if (shortDate) {
-      const headerDateLine = targetDay.isToday ? `Hôm nay (${shortDate})` : shortDate;
+      const headerDateLine = targetDay.isToday ? `Hôm nay ${shortDate}${lunarTag}` : `${shortDate}${lunarTag}`;
       lines.push(headerDateLine);
     }
 
@@ -1771,6 +1785,10 @@ export default function PortalScreen() {
   const buildVideoInvoiceText = (targetDay, targetCustomerName = null) => {
     if (!targetDay) return '';
 
+    // Lấy chuỗi ngày âm lịch tương ứng (ví dụ: 15/9)
+    const lunarStr = targetDay.displayLunarDate || (targetDay.dateObj ? getLunarDateString(targetDay.dateObj) : (targetDay.date ? getLunarDateString(targetDay.date) : (targetDay.dateKey ? getLunarDateString(targetDay.dateKey) : '')));
+    const lunarTag = lunarStr ? ` (${lunarStr} âm)` : '';
+
     // Kiểm tra nếu là khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
     const isTuyetCustomer = (
       isChiTuyetToanNgaCustomer(targetCustomerName) ||
@@ -1790,12 +1808,22 @@ export default function PortalScreen() {
           dayEntries = filteredByCust;
         }
       }
-      return buildChiTuyetDailyMessage(targetDay.dateKey || targetDay.displayDate, dayEntries);
+      const rawTuyetMsg = buildChiTuyetDailyMessage(targetDay.dateKey || targetDay.displayDate, dayEntries);
+      if (rawTuyetMsg && lunarTag) {
+        const msgLines = rawTuyetMsg.split('\n');
+        if (msgLines.length > 0 && !msgLines[0].includes('âm')) {
+          msgLines[0] = targetDay.isToday
+            ? `Hôm nay ${msgLines[0]}${lunarTag}`
+            : `${msgLines[0]}${lunarTag}`;
+          return msgLines.join('\n');
+        }
+      }
+      return rawTuyetMsg;
     }
 
     const lines = [];
 
-    // Lấy ngày ngắn gọn dạng DD/MM (ví dụ: 07/10) đưa lên dòng đầu tiên
+    // Lấy ngày ngắn gọn dạng DD/MM (ví dụ: 07/10 hoặc 24/10) đưa lên dòng đầu tiên
     const rawDate = targetDay.displayDate || targetDay.dateKey || '';
     let shortDate = rawDate;
     if (rawDate.includes('-')) {
@@ -1806,7 +1834,8 @@ export default function PortalScreen() {
       if (parts.length >= 2) shortDate = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
     }
     if (shortDate) {
-      lines.push(shortDate);
+      const headerDateLine = targetDay.isToday ? `Hôm nay ${shortDate}${lunarTag}` : `${shortDate}${lunarTag}`;
+      lines.push(headerDateLine);
     }
 
     let dayEntries = targetDay.entries || [];
@@ -1871,6 +1900,23 @@ export default function PortalScreen() {
     return lines.join('\n');
   };
 
+  // Helper lấy nhãn ngày hiển thị kèm âm lịch cho tiêu đề gửi Zalo (ví dụ: Hôm nay 24/10 (15/9 âm) hoặc 24/10 (15/9 âm))
+  const getShareDateLabel = (targetDay) => {
+    if (!targetDay) return '';
+    const rawDate = targetDay.displayDate || targetDay.dateKey || '';
+    let shortDate = rawDate;
+    if (rawDate.includes('-')) {
+      const parts = rawDate.split('-');
+      if (parts.length === 3) shortDate = `${parts[2]}/${parts[1]}`;
+    } else if (rawDate.includes('/')) {
+      const parts = rawDate.split('/');
+      if (parts.length >= 2) shortDate = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
+    }
+    const lunarStr = targetDay.displayLunarDate || (targetDay.dateObj ? getLunarDateString(targetDay.dateObj) : (targetDay.date ? getLunarDateString(targetDay.date) : (targetDay.dateKey ? getLunarDateString(targetDay.dateKey) : '')));
+    const lunarTag = lunarStr ? ` (${lunarStr} âm)` : '';
+    return targetDay.isToday ? `Hôm nay ${shortDate}${lunarTag}` : `${shortDate}${lunarTag}`;
+  };
+
   // Gửi ảnh hóa đơn kèm text hóa đơn ngày đó qua Zalo (Mobile) hoặc tải về (PC)
   const handleShareDayInvoice = async (targetDay, targetCustomerName = null, overrideInvoices = null) => {
     if (!targetDay) return;
@@ -1894,9 +1940,7 @@ export default function PortalScreen() {
     if (isVideoInvoice) {
       const videoText = buildVideoInvoiceText(targetDay, targetCustomerName);
       const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
-      const dateLabel = targetDay.isToday
-        ? `Hôm nay (${targetDay.displayDate || targetDay.dateKey})`
-        : (targetDay.displayDate || targetDay.dateKey || '');
+      const dateLabel = getShareDateLabel(targetDay);
       const phone = portalData?.currentCustomer?.phone || '';
 
       await shareTextToZalo({
@@ -1912,9 +1956,7 @@ export default function PortalScreen() {
       // Nếu không có ảnh hóa đơn: Gửi nội dung tin nhắn hóa đơn ngày đó qua Zalo
       const invoiceText = buildPortalDayInvoiceText(targetDay, targetCustomerName);
       const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
-      const dateLabel = targetDay.isToday
-        ? `Hôm nay (${targetDay.displayDate || targetDay.dateKey})`
-        : (targetDay.displayDate || targetDay.dateKey || '');
+      const dateLabel = getShareDateLabel(targetDay);
       const phone = portalData?.currentCustomer?.phone || '';
 
       await shareTextToZalo({
@@ -1952,9 +1994,7 @@ export default function PortalScreen() {
 
     const invoiceText = buildPortalDayInvoiceText(targetDay, targetCustomerName);
     const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
-    const dateLabel = targetDay.isToday
-      ? `Hôm nay (${targetDay.displayDate || targetDay.dateKey})`
-      : (targetDay.displayDate || targetDay.dateKey || '');
+    const dateLabel = getShareDateLabel(targetDay);
 
     // Nếu chỉ có 1 ảnh: Gửi đơn lẻ
     if (imageItems.length === 1) {
