@@ -52,13 +52,14 @@ export default function BankTransactionsView({ onBack, auth }) {
   const guideModalRef = useRef(null);
   const popupRef = useRef(null);
 
-  // Lấy URL Webhook SePay trỏ thẳng vào máy chủ Backend Render (tránh bị lỗi 405 do gọi vào Frontend tĩnh Vercel)
+  // Lấy URL Webhook SePay trỏ thẳng vào máy chủ Backend Render kèm userId của chủ tài khoản
   const webhookUrl = useMemo(() => {
-    if (API_HOST && !API_HOST.includes('localhost') && !API_HOST.includes('127.0.0.1')) {
-      return `${API_HOST}/api/v1/bank-transactions/webhook`;
-    }
-    return 'https://meat-management-be.onrender.com/api/v1/bank-transactions/webhook';
-  }, []);
+    const base = (API_HOST && !API_HOST.includes('localhost') && !API_HOST.includes('127.0.0.1'))
+      ? API_HOST
+      : 'https://meat-management-be.onrender.com';
+    const uid = auth?.user?.id ? `?userId=${auth.user.id}` : '';
+    return `${base}/api/v1/bank-transactions/webhook${uid}`;
+  }, [auth?.user?.id]);
 
   // Tải danh sách giao dịch từ Backend
   const fetchTransactions = async (isRefresh = false) => {
