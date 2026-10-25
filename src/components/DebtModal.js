@@ -403,6 +403,7 @@ const DebtModal = forwardRef(({ customerId, customerName: propCustomerName, onRe
       if (changedPriceItems.length > 0) {
         priceChangeReasonModalRef.current?.open({
           items: changedPriceItems.map((item) => ({
+            productId: item.product?.id || item.productId,
             productName: item.product?.name,
             oldPrice: Number(item.product?.customPrice ?? item.product?.defaultPrice ?? 0),
             newPrice: item.price,

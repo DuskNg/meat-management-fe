@@ -59,6 +59,20 @@ export const makeOverrideKey = (customerId, productId) => {
 };
 
 /**
+ * Trích xuất ID định danh sản phẩm một cách an toàn và linh hoạt từ đối tượng item
+ */
+export const resolveProductId = (item) => {
+  if (!item) return null;
+  if (item.productId) return String(item.productId);
+  if (item.id) return String(item.id);
+  if (item.product?.id) return String(item.product.id);
+  if (item.productName || item.name) {
+    return `name_${String(item.productName || item.name).trim().toLowerCase().replace(/\s+/g, '_')}`;
+  }
+  return null;
+};
+
+/**
  * Kiểm tra xem trong các mặt hàng thay đổi giá, có mặt hàng nào đã có 2 lần liên tiếp trước đó
  * sửa thành CÙNG MỘT GIÁ và đều bấm "Chỉ lần này" hay không.
  *
@@ -74,7 +88,7 @@ export const checkStreakBeforeOneTime = (customerId, changedItems = []) => {
   const streakItems = [];
 
   for (const item of changedItems) {
-    const prodId = item.productId || item.id;
+    const prodId = resolveProductId(item);
     const newPrice = Number(item.newPrice);
     if (!prodId || isNaN(newPrice)) continue;
 
@@ -109,7 +123,7 @@ export const recordOneTimeOverride = (customerId, changedItems = []) => {
   }
 
   for (const item of changedItems) {
-    const prodId = item.productId || item.id;
+    const prodId = resolveProductId(item);
     const newPrice = Number(item.newPrice);
     if (!prodId || isNaN(newPrice)) continue;
 
@@ -141,7 +155,7 @@ export const clearOverrideHistory = (customerId, changedItems = []) => {
   }
 
   for (const item of changedItems) {
-    const prodId = item.productId || item.id;
+    const prodId = resolveProductId(item);
     if (!prodId) continue;
     const key = makeOverrideKey(customerId, prodId);
     removeStoredData(key);

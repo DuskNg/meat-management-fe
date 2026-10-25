@@ -4200,6 +4200,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         const basePrice = Number(hasCustom ? matchedP.customPrice : (matchedP.defaultPrice ?? matchedP.baseDefaultPrice ?? 0));
         if (basePrice > 0 && Math.abs(currentP - basePrice) > 0.01) {
           changedPriceItems.push({
+            productId: matchedP.id || it.matchedProductId,
             productName: matchedP.name || it.rawName,
             oldPrice: basePrice,
             newPrice: currentP,
