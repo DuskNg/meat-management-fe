@@ -19,6 +19,46 @@ export const isMobileDevice = () => {
 };
 
 /**
+ * Kiểm tra xem người dùng có đang truy cập từ trình duyệt tích hợp của Zalo (In-App Browser / WebView) hay không
+ * @returns {boolean}
+ */
+export const isZaloBrowser = () => {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Zalo/i.test(ua);
+};
+
+/**
+ * Hàm sao chép nội dung văn bản vào Clipboard an toàn (hỗ trợ cả Clipboard API và textarea fallback)
+ * @param {string} text
+ * @returns {Promise<boolean>}
+ */
+export const copyTextToClipboard = async (text) => {
+  if (!text) return false;
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) {}
+  }
+  if (typeof document !== 'undefined') {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const success = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (success) return true;
+    } catch (_) {}
+  }
+  return false;
+};
+
+/**
  * Chuyển đổi chuỗi Base64 / Data URI sang Blob an toàn, hiệu năng cao và phân bổ bộ nhớ 1 lần
  * @param {string} base64Data
  * @param {string} contentType
@@ -178,15 +218,17 @@ export const downloadOrShareImage = async ({
       }
     }
 
-    // Luôn sao chép trước text hóa đơn vào clipboard trên điện thoại để người dùng có thể Paste ngay vào Zalo chat
-    if (text && typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch (_) {}
+    // Sao chép nội dung text ngầm song song (không await để không làm mất quyền User Activation)
+    if (text) {
+      copyTextToClipboard(text);
     }
 
+    const inZaloApp = isZaloBrowser();
+
     // Thử chia sẻ qua Web Share API (mở bảng chia sẻ hệ thống có Zalo)
+    // Bỏ qua nếu đang mở bên trong Zalo in-app WebView vì Zalo WebView không hỗ trợ Web Share
     if (
+      !inZaloApp &&
       typeof navigator !== 'undefined' &&
       navigator.share &&
       fileToShare &&
@@ -242,12 +284,12 @@ export const downloadOrShareImage = async ({
               if (retryErr.name === 'AbortError') return;
             }
           }
-          console.warn('[WebShare] Bảng chia sẻ file thất bại, chuyển sang lưu ảnh và mở Zalo:', shareErr);
+          console.warn('[WebShare] Bảng chia sẻ file thất bại, chuyển sang lưu ảnh:', shareErr);
         }
       }
     }
 
-    // Fallback: Tự động lưu ảnh vào máy nếu Web Share không mở được
+    // Fallback: Tự động lưu ảnh vào máy nếu Web Share không mở được (hoặc trong Zalo In-App Browser)
     if (localBlob && typeof window !== 'undefined') {
       try {
         const blobUrl = URL.createObjectURL(localBlob);
@@ -264,31 +306,18 @@ export const downloadOrShareImage = async ({
       }
     }
 
-    // Mở trực tiếp cuộc trò chuyện Zalo nếu có số điện thoại
-    if (hasPhone) {
-      const zaloUrl = `https://zalo.me/${cleanPhone}`;
-      if (typeof window !== 'undefined') {
-        window.open(zaloUrl, '_blank');
-      } else {
-        Linking.openURL(zaloUrl).catch(() => {});
-      }
-      showGlobalToast(
-        customerName
-          ? `Đã lưu ảnh & chuyển tiếp tới Zalo của ${customerName} (Text hóa đơn đã sao chép sẵn)!`
-          : 'Đã lưu ảnh & chuyển tiếp tới Zalo (Text hóa đơn đã sao chép sẵn)!',
-        'info'
-      );
-      return;
+    // Đảm bảo sao chép nội dung text vào Clipboard
+    if (text) {
+      await copyTextToClipboard(text);
     }
 
-    // Fallback khi không có số điện thoại: Mở app Zalo
-    const defaultZaloUrl = 'https://zalo.me';
-    if (typeof window !== 'undefined') {
-      window.open(defaultZaloUrl, '_blank');
-    } else {
-      Linking.openURL(defaultZaloUrl).catch(() => {});
-    }
-    showGlobalToast('Đã lưu ảnh vào máy & đang mở Zalo để gửi...', 'info');
+    // Thông báo cho người dùng trên Mobile thay vì redirect sang link zalo.me rỗng
+    showGlobalToast(
+      text
+        ? 'Đã tải ảnh về máy & sao chép nội dung! Bạn chỉ cần chọn ảnh và Dán (Paste) vào Zalo để gửi.'
+        : 'Đã tải ảnh hóa đơn về máy thành công!',
+      'success'
+    );
   } catch (mobileErr) {
     console.error('Lỗi khi chuyển tiếp Zalo trên điện thoại:', mobileErr);
     showGlobalToast('Không thể mở chuyển tiếp Zalo.', 'error');
@@ -416,11 +445,9 @@ export const downloadOrShareMultipleImages = async ({
       }
     }
 
-    // Tự động sao chép trước nội dung text vào clipboard nếu có
-    if (text && typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch (_) {}
+    // Tự động sao chép trước nội dung text vào clipboard nếu có (không await để không chặn user activation)
+    if (text) {
+      copyTextToClipboard(text);
     }
 
     // Hàm tự động tải lưu tất cả các file ảnh về bộ sưu tập thiết bị
@@ -450,9 +477,12 @@ export const downloadOrShareMultipleImages = async ({
       await new Promise((r) => setTimeout(r, 1200));
     };
 
-    // Kiểm tra khả năng hỗ trợ Web Share API
+    const inZaloApp = isZaloBrowser();
+
+    // Kiểm tra khả năng hỗ trợ Web Share API (bỏ qua nếu trong Zalo WebView)
     let canUseWebShare = false;
     if (
+      !inZaloApp &&
       typeof navigator !== 'undefined' &&
       navigator.share &&
       filesToShare.length > 0 &&
@@ -505,24 +535,22 @@ export const downloadOrShareMultipleImages = async ({
       }
     }
 
-    // Fallback khi Web Share không thể mở:
+    // Fallback khi Web Share không thể mở (hoặc trong Zalo In-App Browser):
     // 1. Lưu tất cả ảnh về thư viện ảnh/tệp của máy
     await saveAllImagesLocally();
 
-    // 2. Mở ứng dụng Zalo để người dùng gửi
-    const defaultZaloUrl = 'https://zalo.me';
-    if (typeof window !== 'undefined') {
-      window.open(defaultZaloUrl, '_blank');
-    } else {
-      Linking.openURL(defaultZaloUrl).catch(() => {});
+    // 2. Đảm bảo sao chép nội dung text vào clipboard nếu có
+    if (text) {
+      await copyTextToClipboard(text);
     }
+
     showGlobalToast(
       text
-        ? `Đã lưu ${blobDownloads.length} ảnh vào máy & mở Zalo (Nội dung hóa đơn đã sao chép sẵn vào bộ nhớ tạm)!`
-        : `Đã lưu ${blobDownloads.length} ảnh vào máy & mở Zalo để gửi...`,
+        ? `Đã lưu ${blobDownloads.length} ảnh vào máy & sao chép nội dung! Bạn chỉ cần chọn ảnh và Dán (Paste) vào Zalo để gửi.`
+        : `Đã lưu ${blobDownloads.length} ảnh vào máy thành công!`,
       'success'
     );
-    return { success: true, sharedVia: 'mobile_download_and_zalo' };
+    return { success: true, sharedVia: 'mobile_download' };
 
   } catch (err) {
     console.error('Lỗi khi chuyển tiếp ảnh Zalo hàng loạt trên Mobile:', err);
@@ -555,19 +583,12 @@ export const shareTextToZalo = async ({
     return false;
   }
 
-  // 1. Luôn tự động sao chép text vào clipboard trước
-  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (_) {}
-  }
-
   const isMobile = isMobileDevice();
-  const cleanPhone = phone ? String(phone).replace(/[^0-9]/g, '') : '';
-  const targetZaloUrl = cleanPhone ? `https://zalo.me/${cleanPhone}` : 'https://zalo.me';
+  const inZaloApp = isZaloBrowser();
 
-  // 2. Trên Mobile: Ưu tiên dùng Web Share API (chỉ chia sẻ text)
-  if (isMobile && typeof navigator !== 'undefined' && navigator.share) {
+  // 1. Trên Mobile (nếu KHÔNG phải trong Zalo in-app WebView) và trình duyệt hỗ trợ Web Share API:
+  // BẮT BUỘC gọi navigator.share TRƯỚC HẾT để không làm mất quyền User Activation
+  if (isMobile && !inZaloApp && typeof navigator !== 'undefined' && navigator.share) {
     try {
       let canShareText = true;
       if (navigator.canShare) {
@@ -578,22 +599,41 @@ export const shareTextToZalo = async ({
         }
       }
       if (canShareText) {
+        // Sao chép ngầm vào clipboard song song (không await chặn quyền user gesture)
+        copyTextToClipboard(text);
+
         await navigator.share({
           title: title || 'Hóa đơn giao hàng',
           text,
         });
-        showGlobalToast('Đã chuyển tiếp nội dung hóa đơn sang Zalo thành công!', 'success');
+        showGlobalToast('Đã mở bảng chuyển tiếp tin nhắn sang Zalo!', 'success');
         return true;
       }
     } catch (err) {
       if (err.name === 'AbortError') {
+        // Người dùng chủ động đóng hộp thoại chia sẻ
         return false;
       }
-      console.warn('Web Share text error, fallback to open Zalo URL:', err);
+      console.warn('[WebShare Text] Không thể mở bảng chia sẻ, chuyển sang phương án copy:', err);
     }
   }
 
-  // 3. Fallback (PC hoặc khi Web Share không khả dụng): Mở liên kết Zalo
+  // 2. Sao chép nội dung vào Clipboard
+  await copyTextToClipboard(text);
+
+  // 3. Xử lý theo thiết bị:
+  if (isMobile) {
+    // Trên Mobile (kể cả trong Zalo In-App Browser): TUYỆT ĐỐI KHÔNG redirect sang link zalo.me vì link không nhận text
+    showGlobalToast(
+      'Đã sao chép nội dung hóa đơn! Bạn chỉ cần chạm giữ và Dán (Paste) vào khung chat Zalo để gửi.',
+      'success'
+    );
+    return true;
+  }
+
+  // Trên PC: Mở Zalo Web hoặc chat Zalo theo SĐT và thông báo đã copy text
+  const cleanPhone = phone ? String(phone).replace(/[^0-9]/g, '') : '';
+  const targetZaloUrl = cleanPhone ? `https://zalo.me/${cleanPhone}` : 'https://chat.zalo.me';
   if (typeof window !== 'undefined') {
     window.open(targetZaloUrl, '_blank');
   } else {
@@ -602,8 +642,8 @@ export const shareTextToZalo = async ({
 
   showGlobalToast(
     customerName
-      ? `Đã sao chép nội dung hóa đơn & chuyển tiếp tới Zalo của [${customerName}]! Dán (Ctrl+V) để gửi.`
-      : 'Đã sao chép nội dung hóa đơn & mở Zalo! Hãy dán (Ctrl+V) để gửi.',
+      ? `Đã sao chép nội dung hóa đơn & mở Zalo của [${customerName}]! Nhấn Ctrl+V để gửi.`
+      : 'Đã sao chép nội dung hóa đơn & mở Zalo! Nhấn Ctrl+V để gửi.',
     'success'
   );
   return true;

@@ -1947,16 +1947,19 @@ export default function PortalScreen() {
     // Nếu hóa đơn là dạng video: CHỈ GỬI TEXT (tên thịt số cân, thành tiền, dòng cuối là tổng tiền), KHÔNG gửi ảnh/video
     const isVideoInvoice = (images && images.length > 0 && images.some(isVideoInvoiceItem)) || Boolean(targetDay.isVideo);
 
+    const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
+    const dateLabel = getShareDateLabel(targetDay);
+    const resolvedPhone = targetCustomerName
+      ? (portalData?.branches?.find((b) => b.name === targetCustomerName)?.phone || portalData?.currentCustomer?.phone || '')
+      : (portalData?.currentCustomer?.phone || portalInfo?.customers?.[0]?.phone || portalInfo?.phone || '');
+
     if (isVideoInvoice) {
       const videoText = buildVideoInvoiceText(targetDay, targetCustomerName);
-      const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
-      const dateLabel = getShareDateLabel(targetDay);
-      const phone = portalData?.currentCustomer?.phone || '';
 
       await shareTextToZalo({
         text: videoText,
         title: `Hóa đơn ngày ${dateLabel}${custName ? ` - ${custName}` : ''}`,
-        phone,
+        phone: resolvedPhone,
         customerName: custName,
       });
       return;
@@ -1965,14 +1968,11 @@ export default function PortalScreen() {
     if (!images || images.length === 0) {
       // Nếu không có ảnh hóa đơn: Gửi nội dung tin nhắn hóa đơn ngày đó qua Zalo
       const invoiceText = buildPortalDayInvoiceText(targetDay, targetCustomerName);
-      const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
-      const dateLabel = getShareDateLabel(targetDay);
-      const phone = portalData?.currentCustomer?.phone || '';
 
       await shareTextToZalo({
         text: invoiceText,
         title: `Hóa đơn ngày ${dateLabel}${custName ? ` - ${custName}` : ''}`,
-        phone,
+        phone: resolvedPhone,
         customerName: custName,
       });
       return;
@@ -2003,8 +2003,6 @@ export default function PortalScreen() {
     }
 
     const invoiceText = buildPortalDayInvoiceText(targetDay, targetCustomerName);
-    const custName = targetCustomerName || portalInfo?.name || portalData?.currentCustomer?.name || '';
-    const dateLabel = getShareDateLabel(targetDay);
 
     // Nếu chỉ có 1 ảnh: Gửi đơn lẻ
     if (imageItems.length === 1) {
@@ -2014,7 +2012,7 @@ export default function PortalScreen() {
         title: `Hóa đơn ngày ${dateLabel}${custName ? ` - ${custName}` : ''}`,
         text: invoiceText,
         customerName: custName,
-        phone: portalData?.currentCustomer?.phone || '',
+        phone: resolvedPhone,
       });
       return;
     }
