@@ -23,6 +23,24 @@ export const api = axios.create({
   timeout: 60000, // Hết hạn kết nối mặc định sau 60 giây (60000ms) để hỗ trợ gọi AI
 });
 
+// Helper chuẩn hóa URL hình ảnh/video (tự động đính kèm API_HOST và chuyển hướng qua proxy stream cho Cloudflare R2)
+export const resolveMediaUrl = (url) => {
+  if (!url) return '';
+  let finalUrl = url;
+  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+    finalUrl = `${API_HOST}${url}`;
+  }
+  // Với video Cloudinary có đuôi .mov từ iPhone, tự động chuyển sang .mp4 để trình duyệt máy tính Windows xem mượt mà
+  if (finalUrl && finalUrl.includes('res.cloudinary.com') && /\.mov(\?.*)?$/i.test(finalUrl)) {
+    finalUrl = finalUrl.replace(/\.mov(\?.*)?$/i, '.mp4$1');
+  }
+  // Với media (cả hình ảnh và video) trên Cloudflare R2, chuyển tiếp qua Media Streaming Proxy của Backend để tránh lỗi CORS và hỗ trợ Range 206
+  if (finalUrl && (finalUrl.includes('.r2.dev') || finalUrl.includes('r2.cloudflarestorage.com'))) {
+    return `${API_HOST}/api/v1/media/stream?url=${encodeURIComponent(finalUrl)}`;
+  }
+  return finalUrl;
+};
+
 // 1. Request Interceptor: Tự động đính kèm Access Token và Thiết bị máy khách vào mọi yêu cầu
 api.interceptors.request.use(
   (config) => {

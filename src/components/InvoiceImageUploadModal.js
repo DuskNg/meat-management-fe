@@ -16,7 +16,7 @@ import SmoothModal from './SmoothModal';
 import CustomSelect from './CustomSelect';
 import DatePickerInput from './DatePickerInput';
 import InvoiceImageViewerModal from './InvoiceImageViewerModal';
-import { api, API_HOST } from '../api/client';
+import { api, API_HOST, resolveMediaUrl } from '../api/client';
 import { COLORS, SHADOWS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 import {
@@ -53,14 +53,9 @@ const formatCurrency = (amount) => {
   }).format(amount || 0).replace('₫', 'đ');
 };
 
-// Chuẩn hóa đường dẫn ảnh đầy đủ (Cloudinary hoặc local uploads)
+// Chuẩn hóa đường dẫn ảnh đầy đủ (Cloudinary, local uploads, hoặc Cloudflare R2 proxy)
 const getFullImageUrl = (path) => {
-  if (!path) return '';
-  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:image/')) {
-    return path;
-  }
-  const host = API_HOST || '';
-  return `${host}${path.startsWith('/') ? '' : '/'}${path}`;
+  return resolveMediaUrl(path);
 };
 
 // Lấy khoảng ngày nhanh cho bộ lọc quản lý ảnh

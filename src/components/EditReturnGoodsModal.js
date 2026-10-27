@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../api/client';
+import { api, resolveMediaUrl } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import ProductListModal from './ProductListModal';
 import DatePickerInput from './DatePickerInput';
@@ -877,7 +877,7 @@ const EditReturnGoodsModal = forwardRef(({ onRefresh }, ref) => {
                             <Text style={styles.videoTextMini}>VIDEO</Text>
                           </View>
                         ) : (
-                          <Image source={{ uri: inv.imageUrl }} style={styles.invThumbnailMini} />
+                          <Image source={{ uri: resolveMediaUrl(inv.imageUrl) }} style={styles.invThumbnailMini} />
                         )}
                         <TouchableOpacity
                           style={styles.removeInvBtnMini}

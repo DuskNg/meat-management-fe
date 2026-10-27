@@ -12,8 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
-import { API_HOST } from '../api/client';
-import { api } from '../api/client';
+import { API_HOST, api, resolveMediaUrl } from '../api/client';
 import axios from 'axios';
 import { downloadOrShareImage, shareTextToZalo, isMobileDevice } from '../utils/imageShareHelper';
 import { showGlobalToast } from '../store/toastStore';
@@ -26,7 +25,12 @@ const checkIsVideoUrl = (url) => {
   if (!url || typeof url !== 'string') return false;
   if (url.startsWith('data:video/')) return true;
   if (url.includes('/video/upload/')) return true;
-  return /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(url);
+  if (url.includes('/meat_invoices/videos/')) return true;
+  let decoded = url;
+  try {
+    decoded = decodeURIComponent(url);
+  } catch (_) {}
+  return /\.(mp4|mov|webm|m4v|avi|mkv)(\?.*)?$/i.test(decoded) || /\.(mp4|mov|webm|m4v|avi|mkv)/i.test(decoded);
 };
 
 // Định dạng tiền tệ VND
@@ -291,14 +295,9 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
 
   const currentItem = images[currentIndex];
 
-  // Chuẩn hóa đường dẫn ảnh đầy đủ
+  // Chuẩn hóa đường dẫn ảnh đầy đủ (tự động đính kèm API_HOST và định tuyến qua proxy stream cho Cloudflare R2)
   const getFullImageUrl = (path) => {
-    if (!path) return '';
-    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:image/') || path.startsWith('data:video/')) {
-      return path;
-    }
-    const host = API_HOST || '';
-    return `${host}${path.startsWith('/') ? '' : '/'}${path}`;
+    return resolveMediaUrl(path);
   };
 
   // URL hiện tại — ưu tiên URL đã được sync Cloudinary nếu có
@@ -517,7 +516,7 @@ const InvoiceImageViewerModal = forwardRef((props, ref) => {
     }
   };
 
-  const isVideo = checkIsVideoUrl(currentUrl);
+  const isVideo = checkIsVideoUrl(currentUrl) || checkIsVideoUrl(rawUrl) || currentItem?.fileType === 'VIDEO' || Boolean(currentItem?.isVideo);
 
   // Tự động tính toán tổng hợp (Tổng tiền, Tổng kg, Tiền trả hàng) từ danh sách món nếu không được truyền vào
   const daySummary = useMemo(() => {

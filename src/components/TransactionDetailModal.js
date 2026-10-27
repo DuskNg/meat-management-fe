@@ -12,7 +12,7 @@ import {
   Image,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
-import { api, API_HOST } from '../api/client';
+import { api, API_HOST, resolveMediaUrl } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
@@ -117,13 +117,9 @@ const TransactionDetailModal = forwardRef(({
     return /\.(mp4|mov|webm|m4v|avi|mkv)($|\?)/i.test(url);
   };
 
-  // Chuẩn hóa đường dẫn đầy đủ của ảnh
+  // Chuẩn hóa đường dẫn đầy đủ của ảnh (tự động đính kèm API_HOST và định tuyến qua proxy stream cho Cloudflare R2)
   const getFullImageUrl = (path) => {
-    if (!path) return '';
-    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:image/')) {
-      return path;
-    }
-    return `${API_HOST}${path.startsWith('/') ? '' : '/'}${path}`;
+    return resolveMediaUrl(path);
   };
 
   // Helper phân loại Trả hàng

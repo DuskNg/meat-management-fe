@@ -18,7 +18,7 @@ import CustomSelect from './CustomSelect';
 import DatePickerInput from './DatePickerInput';
 import MoneyInput from './MoneyInput';
 import { COLORS, FONTS, SHADOWS } from '../theme';
-import { API_HOST } from '../api/client';
+import { API_HOST, resolveMediaUrl } from '../api/client';
 import { showGlobalToast } from '../store/toastStore';
 import { isMobileDevice } from '../utils/imageShareHelper';
 
@@ -36,20 +36,6 @@ const formatDisplayDate = (dateVal) => {
     }
   }
   return String(dateVal);
-};
-
-// Helper chuẩn hóa URL hình ảnh/video
-const resolveMediaUrl = (url) => {
-  if (!url) return '';
-  let finalUrl = url;
-  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:') && !url.startsWith('blob:')) {
-    finalUrl = `${API_HOST}${url}`;
-  }
-  // Với video Cloudinary có đuôi .mov từ iPhone, tự động chuyển sang .mp4 để trình duyệt máy tính Windows xem mượt mà
-  if (finalUrl && finalUrl.includes('res.cloudinary.com') && /\.mov(\?.*)?$/i.test(finalUrl)) {
-    finalUrl = finalUrl.replace(/\.mov(\?.*)?$/i, '.mp4$1');
-  }
-  return finalUrl;
 };
 
 // Helper lấy phần tử DOM thực tế từ ref

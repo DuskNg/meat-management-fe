@@ -15,7 +15,7 @@ import MoneyInput from './MoneyInput';
 import DatePickerInput from './DatePickerInput';
 import CustomSelect from './CustomSelect';
 import SmoothModal from './SmoothModal';
-import { api } from '../api/client';
+import { api, resolveMediaUrl } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 
@@ -602,7 +602,7 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
                         <Text style={styles.videoThumbLabel} numberOfLines={1}>VIDEO</Text>
                       </View>
                     ) : (
-                      <Image source={{ uri: m.fileData || m.url }} style={styles.imageThumb} resizeMode="cover" />
+                      <Image source={{ uri: resolveMediaUrl(m.fileData || m.url) }} style={styles.imageThumb} resizeMode="cover" />
                     )}
                     <TouchableOpacity
                       style={styles.btnRemoveMediaThumb}

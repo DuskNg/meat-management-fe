@@ -20,24 +20,10 @@ import StaffSubmissionDetailModal from './StaffSubmissionDetailModal';
 import PopupModal from './PopupModal';
 import PriceChangeReasonModal from './PriceChangeReasonModal';
 import MoneyInput from './MoneyInput';
-import { api, API_HOST } from '../api/client';
+import { api, API_HOST, resolveMediaUrl } from '../api/client';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 import { removeDiacritics } from '../utils/searchHelper';
-
-// Helper chuẩn hóa URL hình ảnh/video
-const resolveMediaUrl = (url) => {
-  if (!url) return '';
-  let finalUrl = url;
-  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:') && !url.startsWith('blob:')) {
-    finalUrl = `${API_HOST}${url}`;
-  }
-  // Với video Cloudinary có đuôi .mov từ iPhone, tự động chuyển sang .mp4 để trình duyệt máy tính Windows xem mượt mà
-  if (finalUrl && finalUrl.includes('res.cloudinary.com') && /\.mov(\?.*)?$/i.test(finalUrl)) {
-    finalUrl = finalUrl.replace(/\.mov(\?.*)?$/i, '.mp4$1');
-  }
-  return finalUrl;
-};
 
 // Helper kiểm tra tệp là video an toàn (kể cả khi DB chưa kịp cập nhật fileType)
 const isVideoSubmission = (sub) => {

@@ -45,6 +45,29 @@ const commonReactHooks = [
   'forwardRef'
 ];
 
+const commonReactNativeComponents = [
+  'View',
+  'Text',
+  'StyleSheet',
+  'TouchableOpacity',
+  'ScrollView',
+  'TextInput',
+  'Image',
+  'Modal',
+  'FlatList',
+  'ActivityIndicator',
+  'Switch',
+  'Platform',
+  'Dimensions',
+  'Animated',
+  'StatusBar',
+  'Pressable',
+  'SafeAreaView',
+  'Alert',
+];
+
+const criticalIdentifiers = [...commonReactHooks, ...commonReactNativeComponents];
+
 let errors = 0;
 allFiles.forEach((f) => {
   try {
@@ -59,9 +82,17 @@ allFiles.forEach((f) => {
 
     traverse(ast, {
       Identifier(p) {
-        if (commonReactHooks.includes(p.node.name)) {
+        if (criticalIdentifiers.includes(p.node.name)) {
           if (p.isReferencedIdentifier() && !p.scope.hasBinding(p.node.name)) {
-            console.error(`❌ [LỖI BIẾN/HOOK CHƯA KHAI BÁO]: ${p.node.name} tại file ${path.relative(rootDir, f)} (Dòng ${p.node.loc?.start?.line})`);
+            console.error(`❌ [LỖI BIẾN/HOOK/COMPONENT CHƯA KHAI BÁO]: ${p.node.name} tại file ${path.relative(rootDir, f)} (Dòng ${p.node.loc?.start?.line})`);
+            errors++;
+          }
+        }
+      },
+      JSXIdentifier(p) {
+        if (commonReactNativeComponents.includes(p.node.name)) {
+          if ((p.parent.type === 'JSXOpeningElement' || p.parent.type === 'JSXClosingElement') && !p.scope.hasBinding(p.node.name)) {
+            console.error(`❌ [LỖI COMPONENT JSX CHƯA IMPORT]: <${p.node.name}> tại file ${path.relative(rootDir, f)} (Dòng ${p.node.loc?.start?.line})`);
             errors++;
           }
         }

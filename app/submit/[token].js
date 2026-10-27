@@ -29,6 +29,10 @@ const resolveMediaUrl = (url) => {
   if (finalUrl && finalUrl.includes('res.cloudinary.com') && /\.mov(\?.*)?$/i.test(finalUrl)) {
     finalUrl = finalUrl.replace(/\.mov(\?.*)?$/i, '.mp4$1');
   }
+  // Với media (cả hình ảnh và video) trên Cloudflare R2, chuyển tiếp qua Media Streaming Proxy của Backend để tránh lỗi CORS và hỗ trợ Range 206
+  if (finalUrl && (finalUrl.includes('.r2.dev') || finalUrl.includes('r2.cloudflarestorage.com'))) {
+    return `${API_HOST}/api/v1/media/stream?url=${encodeURIComponent(finalUrl)}`;
+  }
   return finalUrl;
 };
 

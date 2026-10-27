@@ -36,7 +36,7 @@ import { matchSearch } from '../../src/utils/searchHelper';
 import { getLunarDateString } from '../../src/utils/lunarCalendar';
 import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../../src/utils/debtMessageHelper';
 
-import { API_HOST } from '../../src/api/client';
+import { API_HOST, resolveMediaUrl } from '../../src/api/client';
 
 const formatCurrency = (val) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
@@ -1983,9 +1983,7 @@ export default function PortalScreen() {
       .map((img, i) => {
         const rawUrl = typeof img === 'string' ? img : (img?.imageUrl || img?.url);
         if (!rawUrl) return null;
-        const fullUrl = rawUrl.startsWith('http') || rawUrl.startsWith('data:')
-          ? rawUrl
-          : `${API_HOST}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+        const fullUrl = resolveMediaUrl(rawUrl);
         const cName = img?.customerName || (typeof img !== 'string' && img?.customer?.name) || targetCustomerName || '';
         const cleanName = (cName || 'HoaDon').replace(/[^a-zA-Z0-9À-ỹ]/g, '_');
         const dateStr = (targetDay.displayDate || targetDay.dateKey || 'ngay').replace(/[^a-zA-Z0-9]/g, '-');

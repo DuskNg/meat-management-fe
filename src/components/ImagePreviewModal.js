@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { showGlobalToast } from '../store/toastStore';
 import { downloadOrShareImage, isMobileDevice } from '../utils/imageShareHelper';
+import { resolveMediaUrl } from '../api/client';
 
 /**
  * Component hiển thị ảnh phóng to toàn màn hình với các chức năng:
@@ -140,7 +141,8 @@ const ImagePreviewModal = forwardRef((props, ref) => {
   // Phơi bày hàm điều khiển ra ngoài ref
   useImperativeHandle(ref, () => {
     const handleOpen = (url, options = {}) => {
-      setImageUrl(url);
+      const finalUrl = resolveMediaUrl(url);
+      setImageUrl(finalUrl);
       setRotation(0);
       setIsDragging(false);
       setVisible(true);
@@ -151,7 +153,7 @@ const ImagePreviewModal = forwardRef((props, ref) => {
 
       // Chỉ tự động phóng to vừa ngang nếu có tùy chọn autoFitWidth VÀ đang chạy trên thiết bị di động (mobile)
       if (options && options.autoFitWidth && isMobileDevice()) {
-        applyAutoFitWidth(url);
+        applyAutoFitWidth(finalUrl);
         if (options.isCaptureMode) {
           showGlobalToast('📸 Đã mở full ảnh! Hãy chụp ảnh màn hình để lưu vào Thư viện ảnh.', 'info');
         }

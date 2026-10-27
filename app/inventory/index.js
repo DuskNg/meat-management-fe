@@ -5,6 +5,7 @@ import {
   Text,
   View,
   FlatList,
+  ScrollView,
   TextInput,
   ActivityIndicator,
   SafeAreaView,

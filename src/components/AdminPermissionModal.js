@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Modal,
   TouchableOpacity,
+  ScrollView,
   Switch,
   ActivityIndicator,
 } from 'react-native';
@@ -31,14 +32,14 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
   useImperativeHandle(ref, () => ({
     open: (targetUser) => {
       setUser(targetUser);
-      setIsWorkspaceOwner(targetUser.isWorkspaceOwner || false);
-      setCanManageCustomers(targetUser.canManageCustomers);
-      setCanManageDebt(targetUser.canManageDebt);
-      setCanManageBadDebt(targetUser.canManageBadDebt);
-      setCanManageEmployees(targetUser.canManageEmployees);
-      setCanManageStore(targetUser.canManageStore);
-      setCanManageInventory(targetUser.canManageInventory);
-      setCanManageShop(targetUser.canManageShop);
+      setIsWorkspaceOwner(Boolean(targetUser.isWorkspaceOwner));
+      setCanManageCustomers(Boolean(targetUser.canManageCustomers));
+      setCanManageDebt(Boolean(targetUser.canManageDebt));
+      setCanManageBadDebt(Boolean(targetUser.canManageBadDebt));
+      setCanManageEmployees(Boolean(targetUser.canManageEmployees));
+      setCanManageStore(Boolean(targetUser.canManageStore));
+      setCanManageInventory(Boolean(targetUser.canManageInventory));
+      setCanManageShop(Boolean(targetUser.canManageShop));
       setErrorMsg('');
       setVisible(true);
     },
@@ -51,7 +52,7 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
   }));
 
   // Trạng thái tính toán xem đã chọn toàn bộ quyền chưa
-  const isAllSelected = 
+  const isAllSelected = Boolean(
     isWorkspaceOwner &&
     canManageCustomers && 
     canManageDebt && 
@@ -59,7 +60,8 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
     canManageEmployees && 
     canManageStore && 
     canManageInventory &&
-    canManageShop;
+    canManageShop
+  );
 
   // Bật hoặc tắt toàn bộ quyền
   const handleToggleAll = (value) => {
