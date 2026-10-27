@@ -62,6 +62,8 @@ export const getSocket = () => {
             canManageStore: false,
             canManageInventory: false,
             canManageShop: false,
+            canManageProfit: false,
+            canManageTransactions: false,
           };
           useAuthStore.getState().updateUser({
             ...resetPermissions,
@@ -80,6 +82,8 @@ export const getSocket = () => {
           canManageStore: permissions.canManageStore,
           canManageInventory: permissions.canManageInventory,
           canManageShop: permissions.canManageShop,
+          canManageProfit: permissions.canManageProfit,
+          canManageTransactions: permissions.canManageTransactions,
         };
 
         const updatedWorkspaceMember = currentUser.workspaceMember ? {
@@ -91,6 +95,8 @@ export const getSocket = () => {
           canManageStore: permissions.canManageStore,
           canManageInventory: permissions.canManageInventory,
           canManageShop: permissions.canManageShop,
+          canManageProfit: permissions.canManageProfit,
+          canManageTransactions: permissions.canManageTransactions,
         } : null;
 
         useAuthStore.getState().updateUser({

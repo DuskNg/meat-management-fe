@@ -1906,7 +1906,7 @@ export default function DashboardScreen() {
             )}
 
             {/* Chức năng: Quản lý lợi nhuận */}
-            {auth.hasPermission('canManageDebt') && (
+            {auth.hasPermission('canManageProfit') && (
               <TouchableOpacity
                 style={[styles.menuCard, { borderColor: '#0284C7', backgroundColor: '#F0F9FF' }]}
                 onPress={() => {
@@ -1925,7 +1925,7 @@ export default function DashboardScreen() {
             )}
 
             {/* Chức năng: Quản lý giao dịch ngân hàng (SePay Webhook) */}
-            {auth.hasPermission('canManageDebt') && (
+            {auth.hasPermission('canManageTransactions') && (
               <TouchableOpacity
                 style={[styles.menuCard, { borderColor: '#10B981', backgroundColor: '#ECFDF5' }]}
                 onPress={() => {
@@ -2120,6 +2120,23 @@ export default function DashboardScreen() {
 
   // MÀN HÌNH QUẢN LÝ GIAO DỊCH NGÂN HÀNG (SEPAY WEBHOOK)
   if (currentView === 'bank_transactions') {
+    if (!auth.hasPermission('canManageTransactions')) {
+      return (
+        <SafeAreaView style={styles.container}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+            <Text style={{ fontSize: 16, color: '#EF4444', fontWeight: 'bold', marginBottom: 12 }}>
+              Bạn không có quyền truy cập Quản lý giao dịch ngân hàng
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: '#0284C7', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 }}
+              onPress={() => router.replace({ pathname: '/', params: { view: 'menu' } })}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>Quay lại menu</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      );
+    }
     return (
       <BankTransactionsView
         onBack={() => router.replace({ pathname: '/', params: { view: 'menu' } })}
@@ -3310,21 +3327,25 @@ export default function DashboardScreen() {
                   </View>
                 </TouchableOpacity>
 
-                <View style={styles.smartDebtMenuDivider} />
+                {auth.hasPermission('canManageProfit') && (
+                  <>
+                    <View style={styles.smartDebtMenuDivider} />
 
-                <TouchableOpacity
-                  style={styles.smartDebtMenuItem}
-                  onPress={() => {
-                    setShowDebtToolsMenu(false);
-                    profitManagementModalRef.current?.open();
-                  }}
-                >
-                  <Text style={styles.smartDebtMenuIcon}>📈</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.smartDebtMenuTitle}>Quản lý lợi nhuận & đối soát lò</Text>
-                    <Text style={styles.smartDebtMenuSub}>Đối soát tiền bán, tiền nhập, kết luận lãi/lỗ theo tháng</Text>
-                  </View>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.smartDebtMenuItem}
+                      onPress={() => {
+                        setShowDebtToolsMenu(false);
+                        profitManagementModalRef.current?.open();
+                      }}
+                    >
+                      <Text style={styles.smartDebtMenuIcon}>📈</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.smartDebtMenuTitle}>Quản lý lợi nhuận & đối soát lò</Text>
+                        <Text style={styles.smartDebtMenuSub}>Đối soát tiền bán, tiền nhập, kết luận lãi/lỗ theo tháng</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </>
+                )}
 
                 </ScrollView>
               </View>

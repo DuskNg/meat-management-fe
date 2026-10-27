@@ -503,6 +503,12 @@ export default function AdminDashboard() {
                               <View style={[styles.badge, item.canManageShop ? [styles.activeBadge, { borderColor: '#14B8A6', backgroundColor: '#14B8A615' }] : styles.inactiveBadge]}>
                                 <Text style={styles.badgeText}>Cửa hàng</Text>
                               </View>
+                              <View style={[styles.badge, item.canManageProfit ? [styles.activeBadge, { borderColor: '#10B981', backgroundColor: '#10B98115' }] : styles.inactiveBadge]}>
+                                <Text style={styles.badgeText}>Lợi nhuận</Text>
+                              </View>
+                              <View style={[styles.badge, item.canManageTransactions ? [styles.activeBadge, { borderColor: '#6366F1', backgroundColor: '#6366F115' }] : styles.inactiveBadge]}>
+                                <Text style={styles.badgeText}>Giao dịch</Text>
+                              </View>
                             </View>
                           </View>
                         )

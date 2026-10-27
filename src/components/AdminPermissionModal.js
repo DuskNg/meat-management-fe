@@ -27,6 +27,8 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
   const [canManageStore, setCanManageStore] = useState(false);
   const [canManageInventory, setCanManageInventory] = useState(false);
   const [canManageShop, setCanManageShop] = useState(false);
+  const [canManageProfit, setCanManageProfit] = useState(false);
+  const [canManageTransactions, setCanManageTransactions] = useState(false);
 
   // Phơi bày các hàm điều khiển cho component cha gọi qua ref
   useImperativeHandle(ref, () => ({
@@ -40,6 +42,8 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
       setCanManageStore(Boolean(targetUser.canManageStore));
       setCanManageInventory(Boolean(targetUser.canManageInventory));
       setCanManageShop(Boolean(targetUser.canManageShop));
+      setCanManageProfit(Boolean(targetUser.canManageProfit));
+      setCanManageTransactions(Boolean(targetUser.canManageTransactions));
       setErrorMsg('');
       setVisible(true);
     },
@@ -60,7 +64,9 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
     canManageEmployees && 
     canManageStore && 
     canManageInventory &&
-    canManageShop
+    canManageShop &&
+    canManageProfit &&
+    canManageTransactions
   );
 
   // Bật hoặc tắt toàn bộ quyền
@@ -73,6 +79,8 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
     setCanManageStore(value);
     setCanManageInventory(value);
     setCanManageShop(value);
+    setCanManageProfit(value);
+    setCanManageTransactions(value);
   };
 
   // Xử lý bật/tắt quyền Chủ Workspace
@@ -96,6 +104,8 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
         canManageStore,
         canManageInventory,
         canManageShop,
+        canManageProfit,
+        canManageTransactions,
       });
 
       if (response.data && response.data.success) {
@@ -263,6 +273,34 @@ const AdminPermissionModal = forwardRef(({ onSaveSuccess }, ref) => {
                 onValueChange={setCanManageShop}
                 trackColor={{ false: '#334155', true: '#14B8A6' }}
                 thumbColor={canManageShop ? '#FFFFFF' : '#94A3B8'}
+              />
+            </View>
+
+            {/* Dòng điều khiển phân quyền 8: Quản lý lợi nhuận */}
+            <View style={styles.row}>
+              <View style={styles.infoCol}>
+                <Text style={styles.label}>Quản lý lợi nhuận</Text>
+                <Text style={styles.desc}>Cho phép xem báo cáo đối soát lợi nhuận, chi phí mua/bán và lãi lỗ.</Text>
+              </View>
+              <Switch
+                value={canManageProfit}
+                onValueChange={setCanManageProfit}
+                trackColor={{ false: '#334155', true: '#10B981' }}
+                thumbColor={canManageProfit ? '#FFFFFF' : '#94A3B8'}
+              />
+            </View>
+
+            {/* Dòng điều khiển phân quyền 9: Quản lý giao dịch */}
+            <View style={styles.row}>
+              <View style={styles.infoCol}>
+                <Text style={styles.label}>Quản lý giao dịch</Text>
+                <Text style={styles.desc}>Cho phép xem và đối soát các giao dịch ngân hàng biến động số dư SePay.</Text>
+              </View>
+              <Switch
+                value={canManageTransactions}
+                onValueChange={setCanManageTransactions}
+                trackColor={{ false: '#334155', true: '#6366F1' }}
+                thumbColor={canManageTransactions ? '#FFFFFF' : '#94A3B8'}
               />
             </View>
           </ScrollView>

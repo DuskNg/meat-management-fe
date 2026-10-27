@@ -18,6 +18,8 @@ const PERMISSIONS = [
   { key: 'canManageStore', label: 'Nhà hàng', icon: '🍽️' },
   { key: 'canManageInventory', label: 'Kho', icon: '📦' },
   { key: 'canManageShop', label: 'Cửa hàng giờ', icon: '🎱' },
+  { key: 'canManageProfit', label: 'Lợi nhuận', icon: '📈' },
+  { key: 'canManageTransactions', label: 'Giao dịch', icon: '💳' },
 ];
 
 // Modal phân quyền thành viên workspace — chủ nhà hàng sử dụng (Giao diện Sáng)
@@ -42,6 +44,8 @@ const WorkspaceMemberPermModal = forwardRef(function WorkspaceMemberPermModal(_,
         canManageStore: memberData.canManageStore !== undefined ? !!memberData.canManageStore : (ownerPermissions.canManageStore ?? false),
         canManageInventory: memberData.canManageInventory !== undefined ? !!memberData.canManageInventory : (ownerPermissions.canManageInventory ?? false),
         canManageShop: memberData.canManageShop !== undefined ? !!memberData.canManageShop : (ownerPermissions.canManageShop ?? false),
+        canManageProfit: memberData.canManageProfit !== undefined ? !!memberData.canManageProfit : (ownerPermissions.canManageProfit ?? false),
+        canManageTransactions: memberData.canManageTransactions !== undefined ? !!memberData.canManageTransactions : (ownerPermissions.canManageTransactions ?? false),
       });
       setOwnerPerms(ownerPermissions);
       onSaveRef.current = onSave;
