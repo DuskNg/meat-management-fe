@@ -857,6 +857,16 @@ const resolveCustomerForSub = (sub, custList) => {
     return matchedCust;
   }
 
+  // ƯU TIÊN TUYỆT ĐỐI SỐ 1: Nếu khách hàng đã được khớp từ Bảng Từ Điển AI Tự Học (CustomerAiAlias)
+  // do chủ buôn đã dạy từ các đơn trước -> trả về ngay lập tức, không để regex bên dưới ghi đè!
+  const isMatchedByAiAlias = Boolean(
+    sub.matchedByAiAlias ||
+    (typeof sub.rawAiResponse === 'string' && sub.rawAiResponse.includes('"matched_by_ai_alias":true'))
+  );
+  if (isMatchedByAiAlias && matchedCust) {
+    return matchedCust;
+  }
+
   // Kiểm tra và sửa lỗi nếu AI nhận diện có thông tin rõ ràng
   if (sub.detectedCustomerName) {
     // Làm sạch từ khóa trả hàng nếu có lẫn vào tên khách hàng (ví dụ "Thái Hà trả về", "Gửi lại Cô Thảo"...)
@@ -1083,6 +1093,31 @@ const resolveCustomerForSub = (sub, custList) => {
 
       if (phungKhoangCust) {
         return phungKhoangCust;
+      }
+    }
+
+    // 0g. ĐẶC BIỆT: Khớp ưu tiên khách "268 Khương đình" nếu AI nhận diện có số 268 (ví dụ: "268 Lương P.h", "268 Khương Đình", "268"...) hoặc "khương đình"
+    const isDetectedKhuongDinh = (
+      cleanDetected.includes('268') ||
+      cleanDetectedNoSpace.includes('268') ||
+      cleanDetected.includes('khuong dinh') ||
+      cleanDetectedNoSpace.includes('khuongdinh')
+    );
+
+    if (isDetectedKhuongDinh) {
+      const cust268 = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+        return (cClean.includes('268') && (cClean.includes('khuong') || cClean.includes('dinh')));
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+        return cClean.includes('268');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+        return cClean.includes('khuong dinh') || (cClean.includes('khuong') && cClean.includes('dinh'));
+      }) || null;
+
+      if (cust268) {
+        return cust268;
       }
     }
 
@@ -2064,6 +2099,27 @@ const resolveCustomerForSub = (sub, custList) => {
           return (cClean.includes('126') && cClean.includes('toan')) ||
             (cClean.includes('khanh') && cClean.includes('toan')) ||
             cClean.includes('126');
+        }) || null;
+      }
+    }
+
+    // 5i-2. Ưu tiên khớp khách 268 Khương Đình
+    if (!matchedCust) {
+      if (
+        cleanDetected.includes('268') ||
+        cleanDetectedNoSpace.includes('268') ||
+        cleanDetected.includes('khuong dinh') ||
+        cleanDetectedNoSpace.includes('khuongdinh')
+      ) {
+        matchedCust = custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+          return (cClean.includes('268') && (cClean.includes('khuong') || cClean.includes('dinh')));
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+          return cClean.includes('268');
+        }) || custList.find((c) => {
+          const cClean = removeDiacritics(c.name.toLowerCase().trim()).replace(/^\[test\]_/, '');
+          return cClean.includes('khuong dinh') || (cClean.includes('khuong') && cClean.includes('dinh'));
         }) || null;
       }
     }
@@ -3554,8 +3610,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
             const cleanRawMeat = removeDiacritics((rawName || '').toLowerCase().trim());
 
-            // Quy tắc: Nếu đọc là bê hoặc ở hóa đơn chỉ viết là bê -> Bê ba chỉ
-            if (cleanRawMeat === 'be' || cleanRawMeat === 'thit be' || cleanRawMeat === 'bc' || cleanRawMeat === 'b.' || cleanRawMeat === 'be ba chi') {
+            // ƯU TIÊN TUYỆT ĐỐI SỐ 1: Nếu món thịt đã được khớp từ Bảng Từ Điển AI Tự Học (ProductAiAlias),
+            // giữ nguyên tên sản phẩm chuẩn đã học, TUYỆT ĐỐI không để các rule tĩnh bên dưới ghi đè!
+            if (it.matchedByProductAiAlias && matchedP) {
+              rawName = matchedP.name;
+            } else if (cleanRawMeat === 'be' || cleanRawMeat === 'thit be' || cleanRawMeat === 'bc' || cleanRawMeat === 'b.' || cleanRawMeat === 'be ba chi') {
               rawName = 'Bê ba chỉ';
             } else if (cleanRawMeat === 'chi' || cleanRawMeat === 'chin' || cleanRawMeat === 'thit chi' || cleanRawMeat === 'thit chin') {
               // Quy tắc: chí, chín -> Thịt chín
@@ -3674,9 +3733,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
             return {
               id: it.id || `temp_${sub.id}_${itemIdx}`,
+              aiRawName: (it.aiRawName || parsedAiData?.items?.[itemIdx]?.name || it.rawName || '').trim(),
               rawName: rawName,
               selectedProduct: matchedP || (rawName ? { id: '__manual__', name: rawName, unit: 'kg' } : null),
               matchedProductId: matchedP ? matchedP.id : (it.matchedProductId || null),
+              matchedByProductAiAlias: Boolean(it.matchedByProductAiAlias),
               quantity: rawQty,
               price: priceStr,
               amount: amountStr,
@@ -4161,6 +4222,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         const price = parseFloat(it.price) || 0;
         const amount = parseFloat(it.amount) || Math.round(qty * price);
         return {
+          id: it.id,
+          aiRawName: it.aiRawName || '',
           matchedProductId: it.selectedProduct?.id !== '__manual__' ? it.selectedProduct?.id : it.matchedProductId,
           rawName: it.selectedProduct?.name || it.rawName || (card.isReturn ? 'Thịt trả lại' : 'Thịt'),
           quantity: qty,
@@ -4337,6 +4400,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           showGlobalToast(`🎉 Đã nhập nợ cho ${card.customer.name} thành công!`, 'success');
         }
         const updatedSub = res.data?.data?.submission;
+        const learnedAliasInfo = res.data?.data?.learnedAlias;
+        const learnedProductAliasesInfo = res.data?.data?.learnedProductAliases;
+        const autoUpdatedSet = new Set(learnedAliasInfo?.autoUpdatedIds || []);
+        const autoUpdatedProdSubIds = learnedProductAliasesInfo?.autoUpdatedSubmissionIds || [];
+
         setSubmissions((prev) =>
           prev.map((s) => {
             if (s.id === subId) {
@@ -4350,13 +4418,21 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                 items: payload.items,
               };
             }
+            if (autoUpdatedSet.has(s.id)) {
+              return {
+                ...s,
+                matchedCustomerId: card.customer.id,
+                matchedCustomer: card.customer,
+                matchedByAiAlias: true,
+              };
+            }
             return s;
           })
         );
-        // Đồng bộ cập nhật ngay lập tức vào cardDataMap
+        // Đồng bộ cập nhật ngay lập tức vào cardDataMap (bao gồm cả các đơn cùng chữ viết tay vừa được AI tự động học)
         setCardDataMap((prev) => {
           const currentCard = prev[subId] || card;
-          return {
+          const nextMap = {
             ...prev,
             [subId]: {
               ...currentCard,
@@ -4369,7 +4445,20 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               isSaving: false,
             },
           };
+          autoUpdatedSet.forEach((otherId) => {
+            if (nextMap[otherId]) {
+              nextMap[otherId] = {
+                ...nextMap[otherId],
+                customer: card.customer,
+              };
+            }
+          });
+          return nextMap;
         });
+        // Nếu AI vừa học thêm tên viết tắt món thịt mới và tự cập nhật các đơn chờ duyệt khác, tải lại danh sách đơn để đồng bộ ngay
+        if (autoUpdatedProdSubIds.length > 0) {
+          fetchSubmissions();
+        }
         // Cập nhật lại cache bảng giá riêng của khách hàng này ngay lập tức
         if (card.customer?.id) {
           fetchProductsForCustomer(card.customer.id, true);

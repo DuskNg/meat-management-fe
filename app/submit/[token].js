@@ -810,7 +810,28 @@ export default function StaffSubmitScreen() {
         ],
       };
 
-      const res = await api.post(`/staff-submissions/public/submit/${token}`, payload);
+      // Tự động thử lại tối đa 3 lần nếu mạng 4G/WiFi chập chờn hoặc máy chủ đang bận
+      let res = null;
+      let lastUploadErr = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          res = await api.post(`/staff-submissions/public/submit/${token}`, payload);
+          if (res?.data?.success) break;
+        } catch (postErr) {
+          lastUploadErr = postErr;
+          const status = postErr.response?.status;
+          // Nếu lỗi 400/403/404 (sai PIN, link khóa...) thì không retry
+          if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+            throw postErr;
+          }
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 2000 * attempt));
+          }
+        }
+      }
+      if (!res && lastUploadErr) {
+        throw lastUploadErr;
+      }
 
       if (res.data?.success && res.data?.data?.length > 0) {
         const savedSubmission = res.data.data[0];
