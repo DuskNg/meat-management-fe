@@ -14,7 +14,8 @@ import AddPeriodicCustomerModal from './AddPeriodicCustomerModal';
 import { COLORS, FONTS, SHADOWS } from '../theme';
 import { api } from '../api/client';
 import { showGlobalToast } from '../store/toastStore';
-import { drawDebtImageCanvas } from '../utils/debtImageDrawer';
+import { drawDebtImageCanvas, parseDDMMYYYY } from '../utils/debtImageDrawer';
+import { allocateDebtFIFO } from '../utils/debtAllocationHelper';
 import {
   downloadOrShareMultipleImages,
   downloadOrShareImage,
@@ -182,6 +183,14 @@ export const TARGET_RESTAURANTS_CONFIG = [
     matchTerms: ['hồng hạnh', 'hồng hạnh hqv'],
     expectedId: '441f3eba-dbdd-41f6-9a66-c0377967e61b',
   },
+  {
+    key: 'chi_tuyet',
+    name: 'Chị Tuyết',
+    groupName: 'Các nhà hàng riêng lẻ',
+    matchTerms: ['chị tuyết', 'chị tuyết(toan nga thái dũng)', 'tuyết'],
+    expectedId: '585fa225-f5e2-407d-89ea-c0afecc8263b',
+    isTextCopy: true,
+  },
 ];
 
 // Helper tính khoảng ngày theo kỳ
@@ -235,6 +244,173 @@ const formatCurrency = (amount) => {
   return new Intl.NumberFormat('vi-VN').format(num) + ' đ';
 };
 
+// Helper kiểm tra khách hàng có xuất dạng copy text hay không (Chị Tuyết)
+export const isTextCopyCustomer = (item) => {
+  if (!item) return false;
+  if (item.isTextCopy) return true;
+  const name = (item.name || '').toLowerCase();
+  return name.includes('tuyết') || name.includes('tuyet') || item.notes === 'text_copy';
+};
+
+// Helper tạo nội dung công nợ dạng text theo đúng mẫu (Ảnh 2) kèm chi tiết các ngày đã thanh toán
+export const generateCustomerDebtText = ({
+  transList = [],
+  payList = [],
+  fromDate,
+  toDate,
+}) => {
+  const fromD = parseDDMMYYYY(fromDate, false);
+  const toD = parseDDMMYYYY(toDate, true);
+
+  // 1. Lọc các giao dịch mua hàng phát sinh trong khoảng [fromD, toD]
+  const filteredTrans = (transList || []).filter((t) => {
+    const d = new Date(t.date);
+    if (isNaN(d.getTime())) return false;
+    if (fromD && toD) {
+      return d >= fromD && d <= toD;
+    }
+    return true;
+  });
+
+  // Helper nhận diện khoản trả lại hàng
+  const isReturn = (p) => {
+    const note = p?.note || '';
+    return (
+      note.includes('[Trả lại hàng]') ||
+      note.includes('[Trả hàng nhanh]') ||
+      note.includes('[Trả hàng]') ||
+      note.toLowerCase().startsWith('trả hàng') ||
+      note.toLowerCase().startsWith('trả lại hàng')
+    );
+  };
+
+  // 2. Gom tiền mua thịt theo từng ngày
+  const dayMap = {};
+  filteredTrans.forEach((t) => {
+    const d = new Date(t.date);
+    const dayNum = d.getDate().toString().padStart(2, '0');
+    const monthNum = (d.getMonth() + 1).toString().padStart(2, '0');
+    const dateKey = `${dayNum}/${monthNum}`;
+    if (!dayMap[dateKey]) {
+      dayMap[dateKey] = {
+        date: d,
+        dateKey,
+        meatAmount: 0,
+        returnAmount: 0,
+      };
+    }
+    dayMap[dateKey].meatAmount += parseFloat(t.totalAmount || 0);
+  });
+
+  // 3. Gom tiền hàng trả theo ngày phát sinh trả hàng trong khoảng lọc
+  (payList || []).forEach((p) => {
+    if (isReturn(p)) {
+      const pDate = new Date(p.paidAt);
+      if (isNaN(pDate.getTime())) return;
+      if (fromD && toD && (pDate < fromD || pDate > toD)) return;
+
+      const dayNum = pDate.getDate().toString().padStart(2, '0');
+      const monthNum = (pDate.getMonth() + 1).toString().padStart(2, '0');
+      const dateKey = `${dayNum}/${monthNum}`;
+      if (!dayMap[dateKey]) {
+        dayMap[dateKey] = {
+          date: pDate,
+          dateKey,
+          meatAmount: 0,
+          returnAmount: 0,
+        };
+      }
+      dayMap[dateKey].returnAmount += parseFloat(p.amount || 0);
+    }
+  });
+
+  // 4. Sắp xếp các ngày theo thứ tự tăng dần
+  const sortedDays = Object.values(dayMap).sort((a, b) => a.date - b.date);
+
+  // Helper làm tròn nghìn và format có dấu chấm phân cách
+  const formatThousand = (val) => {
+    const rounded = Math.round((Number(val) || 0) / 1000) * 1000;
+    return new Intl.NumberFormat('vi-VN').format(rounded);
+  };
+
+  // 5. Tạo các dòng ngày: DD/MM: <tiền sau khi trừ trả hàng>
+  const dayLines = sortedDays.map((d) => {
+    const netDay = d.meatAmount - d.returnAmount;
+    return `${d.dateKey}: ${formatThousand(netDay)}`;
+  });
+
+  // 6. Tính tổng tiền mua thực tế (đã trừ hàng trả)
+  const totalNetMeat = sortedDays.reduce((sum, d) => sum + (d.meatAmount - d.returnAmount), 0);
+
+  // 7. Lấy danh sách các khoản thanh toán tiền nợ (tiền mặt / chuyển khoản, không phải trả hàng)
+  let totalPaymentAmount = 0;
+  const paymentAllocMap = new Map();
+
+  try {
+    const { transAllocations } = allocateDebtFIFO(transList, payList);
+    filteredTrans.forEach((t) => {
+      const allocs = transAllocations[t.id] || [];
+      allocs.forEach((alloc) => {
+        if (!alloc.isReturn && alloc.amount > 0) {
+          totalPaymentAmount += alloc.amount;
+          if (!paymentAllocMap.has(alloc.paymentId)) {
+            paymentAllocMap.set(alloc.paymentId, {
+              paymentId: alloc.paymentId,
+              date: new Date(alloc.date),
+              amount: 0,
+            });
+          }
+          paymentAllocMap.get(alloc.paymentId).amount += alloc.amount;
+        }
+      });
+    });
+  } catch (err) {
+    console.warn('Lỗi phân bổ FIFO cho Chị Tuyết:', err);
+  }
+
+  // Bổ sung các khoản thanh toán thực phát sinh trong khoảng lọc [fromD, toD] nếu chưa được gom
+  (payList || []).forEach((p) => {
+    if (!isReturn(p)) {
+      const pDate = new Date(p.paidAt);
+      if (fromD && toD && pDate >= fromD && pDate <= toD) {
+        if (!paymentAllocMap.has(p.id)) {
+          const amt = parseFloat(p.amount || 0);
+          totalPaymentAmount += amt;
+          paymentAllocMap.set(p.id, {
+            paymentId: p.id,
+            date: pDate,
+            amount: amt,
+          });
+        }
+      }
+    }
+  });
+
+  const paymentList = Array.from(paymentAllocMap.values()).sort((a, b) => a.date - b.date);
+
+  // 8. Tính số tiền còn nợ
+  const remainingDebt = totalNetMeat - totalPaymentAmount;
+
+  // 9. Ghép thành văn bản hoàn chỉnh theo đúng cấu trúc Ảnh 2
+  const lines = [
+    ...dayLines,
+    '-------------------------',
+    `Tổng: ${formatThousand(totalNetMeat)} - ${formatThousand(totalPaymentAmount)} = ${formatThousand(remainingDebt)}đ`,
+  ];
+
+  // 10. Thêm bên dưới phần text đó là những ngày đã thanh toán, và số tiền đã thanh toán (ví dụ: 1/10: trả 5.300.000đ)
+  if (paymentList.length > 0) {
+    lines.push('');
+    paymentList.forEach((pay) => {
+      const d = pay.date;
+      const dayStr = `${d.getDate()}/${d.getMonth() + 1}`;
+      lines.push(`${dayStr}: trả ${formatThousand(pay.amount)}đ`);
+    });
+  }
+
+  return lines.join('\n');
+};
+
 const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -276,6 +452,7 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
             groupName: cfg.groupName || 'Các nhà hàng riêng lẻ',
             reminderDays: cfg.reminderDays || '1,15',
             notes: cfg.notes,
+            isTextCopy: isTextCopyCustomer({ name: cust.name, notes: cfg.notes }),
             currentDebt: Number(cust.currentDebt) || 0,
             customer: cust,
             monthPurchase: 0,
@@ -308,6 +485,7 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
               phone: cust.phone,
               groupName: cfg.groupName,
               reminderDays: '1,15',
+              isTextCopy: Boolean(cfg.isTextCopy || isTextCopyCustomer(cust)),
               currentDebt: Number(cust.currentDebt) || 0,
               customer: cust,
               monthPurchase: 0,
@@ -444,11 +622,35 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
     const imagesToProcess = [];
     const fromDate = currentRange.fromDate;
     const toDate = currentRange.toDate;
+    let copiedTextCustName = '';
 
     try {
       for (let i = 0; i < targets.length; i++) {
         const item = targets[i];
         setExportProgress({ current: i + 1, total: targets.length, currentName: item.name });
+
+        // Nếu là khách xuất công nợ dạng copy text (Chị Tuyết)
+        if (isTextCopyCustomer(item)) {
+          try {
+            const [transRes, payRes] = await Promise.all([
+              api.get(`/transactions?customerId=${item.id}`).catch(() => ({ data: { data: [] } })),
+              api.get(`/payments?customerId=${item.id}`).catch(() => ({ data: { data: [] } })),
+            ]);
+            const debtText = generateCustomerDebtText({
+              transList: transRes.data?.data || [],
+              payList: payRes.data?.data || [],
+              fromDate,
+              toDate,
+            });
+            if (debtText && typeof navigator !== 'undefined' && navigator.clipboard) {
+              await navigator.clipboard.writeText(debtText);
+              copiedTextCustName = item.name;
+            }
+          } catch (tErr) {
+            console.error(`Lỗi tạo text công nợ ${item.name}:`, tErr);
+          }
+          continue;
+        }
 
         try {
           // Lấy dữ liệu mua và thanh toán của khách hàng
@@ -504,7 +706,13 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
           localStorage.setItem(`periodic_debt_reminder_${periodType}_${todayKey}`, 'completed');
         }
 
-        showGlobalToast(`Đã xuất thành công ${imagesToProcess.length} ảnh công nợ!`, 'success');
+        if (copiedTextCustName) {
+          showGlobalToast(`Đã xuất ${imagesToProcess.length} ảnh và sao chép công nợ ${copiedTextCustName} dạng text!`, 'success');
+        } else {
+          showGlobalToast(`Đã xuất thành công ${imagesToProcess.length} ảnh công nợ!`, 'success');
+        }
+      } else if (copiedTextCustName) {
+        showGlobalToast(`Đã sao chép công nợ ${copiedTextCustName} dạng text vào bộ nhớ tạm!`, 'success');
       } else {
         showGlobalToast('Không có dữ liệu công nợ nào trong kỳ đối soát này.', 'warning');
       }
@@ -529,11 +737,34 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
     const imagesToProcess = [];
     const fromDate = currentRange.fromDate;
     const toDate = currentRange.toDate;
+    let copiedTextCustName = '';
 
     try {
       for (let i = 0; i < targetItems.length; i++) {
         const item = targetItems[i];
         setExportProgress({ current: i + 1, total: targetItems.length, currentName: item.name });
+
+        if (isTextCopyCustomer(item)) {
+          try {
+            const [transRes, payRes] = await Promise.all([
+              api.get(`/transactions?customerId=${item.id}`).catch(() => ({ data: { data: [] } })),
+              api.get(`/payments?customerId=${item.id}`).catch(() => ({ data: { data: [] } })),
+            ]);
+            const debtText = generateCustomerDebtText({
+              transList: transRes.data?.data || [],
+              payList: payRes.data?.data || [],
+              fromDate,
+              toDate,
+            });
+            if (debtText && typeof navigator !== 'undefined' && navigator.clipboard) {
+              await navigator.clipboard.writeText(debtText);
+              copiedTextCustName = item.name;
+            }
+          } catch (tErr) {
+            console.error(`Lỗi tạo text công nợ ${item.name}:`, tErr);
+          }
+          continue;
+        }
 
         try {
           const [transRes, payRes] = await Promise.all([
@@ -578,7 +809,13 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
         });
 
         const actionText = isMobileDevice() ? 'chuyển tiếp Zalo' : 'tải về máy tính';
-        showGlobalToast(`Đã ${actionText} thành công ${imagesToProcess.length} ảnh của ${groupName}!`, 'success');
+        if (copiedTextCustName) {
+          showGlobalToast(`Đã ${actionText} ${imagesToProcess.length} ảnh & sao chép text ${copiedTextCustName}!`, 'success');
+        } else {
+          showGlobalToast(`Đã ${actionText} thành công ${imagesToProcess.length} ảnh của ${groupName}!`, 'success');
+        }
+      } else if (copiedTextCustName) {
+        showGlobalToast(`Đã sao chép công nợ ${copiedTextCustName} dạng text vào bộ nhớ tạm!`, 'success');
       } else {
         showGlobalToast(`Không thể tạo ảnh công nợ cho nhóm ${groupName}.`, 'warning');
       }
@@ -634,6 +871,44 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
     } catch (err) {
       console.error(`Lỗi xuất riêng cho ${item.name}:`, err);
       showGlobalToast(`Lỗi xuất công nợ cho ${item.name}`, 'error');
+    }
+  };
+
+  // ─── HÀNH ĐỘNG 3: SAO CHÉP CÔNG NỢ DẠNG TEXT (CHO KHÁCH CHỊ TUYẾT) ───
+  const handleCopyTextDebt = async (item) => {
+    try {
+      showGlobalToast(`Đang lấy dữ liệu công nợ ${item.name}...`, 'info');
+      const fromDate = currentRange.fromDate;
+      const toDate = currentRange.toDate;
+
+      const [transRes, payRes] = await Promise.all([
+        api.get(`/transactions?customerId=${item.id}`).catch(() => ({ data: { data: [] } })),
+        api.get(`/payments?customerId=${item.id}`).catch(() => ({ data: { data: [] } })),
+      ]);
+
+      const transList = transRes.data?.data || [];
+      const payList = payRes.data?.data || [];
+
+      const debtText = generateCustomerDebtText({
+        transList,
+        payList,
+        fromDate,
+        toDate,
+      });
+
+      if (!debtText) {
+        showGlobalToast(`Không có dữ liệu công nợ của ${item.name} trong kỳ này.`, 'warning');
+        return;
+      }
+
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(debtText);
+      }
+
+      showGlobalToast(`Đã sao chép công nợ ${item.name} dạng text thành công!`, 'success');
+    } catch (err) {
+      console.error(`Lỗi sao chép công nợ text cho ${item.name}:`, err);
+      showGlobalToast(`Có lỗi xảy ra khi sao chép công nợ ${item.name}.`, 'error');
     }
   };
 
@@ -873,17 +1148,30 @@ const PeriodicDebtReminderModal = forwardRef(({ onRefresh }, ref) => {
                         </TouchableOpacity>
 
                         <View style={styles.rowRightActions}>
-                          {/* Nút gửi Zalo / Tải ảnh riêng lẻ nhỏ gọn */}
-                          <TouchableOpacity
-                            style={styles.singleShareBtn}
-                            onPress={() => handleExportSingleToZalo(item)}
-                            activeOpacity={0.7}
-                            disabled={exporting}
-                          >
-                            <Text style={styles.singleShareBtnText}>
-                              {isMobileDevice() ? '💬 Zalo' : '💾 Tải'}
-                            </Text>
-                          </TouchableOpacity>
+                          {/* Nút gửi Zalo / Tải ảnh riêng lẻ hoặc Copy text cho Chị Tuyết */}
+                          {isTextCopyCustomer(item) ? (
+                            <TouchableOpacity
+                              style={[styles.singleShareBtn, styles.copyTextBtn]}
+                              onPress={() => handleCopyTextDebt(item)}
+                              activeOpacity={0.7}
+                              disabled={exporting}
+                            >
+                              <Text style={[styles.singleShareBtnText, styles.copyTextBtnText]}>
+                                📋 Copy text
+                              </Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <TouchableOpacity
+                              style={styles.singleShareBtn}
+                              onPress={() => handleExportSingleToZalo(item)}
+                              activeOpacity={0.7}
+                              disabled={exporting}
+                            >
+                              <Text style={styles.singleShareBtnText}>
+                                {isMobileDevice() ? '💬 Zalo' : '💾 Tải'}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
 
                           {/* Nút xóa icon nhỏ thanh mảnh */}
                           <TouchableOpacity
@@ -1255,6 +1543,15 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     fontSize: 10.5,
     fontWeight: '600',
+  },
+  copyTextBtn: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#818CF8',
+    paddingHorizontal: 7,
+  },
+  copyTextBtnText: {
+    color: '#4338CA',
+    fontWeight: '700',
   },
   deleteCustomerBtn: {
     width: 24,
