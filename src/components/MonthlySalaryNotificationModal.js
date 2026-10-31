@@ -186,12 +186,11 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
       const width = 1000;
       const colWidths = {
         stt: 45,
-        name: 210,
-        dailyRate: 140,
-        workingDays: 105,
-        calculatedSalary: 155,
-        advances: 145,
-        remainingSalary: 160,
+        name: 230,
+        workingDays: 115,
+        calculatedSalary: 170,
+        advances: 175,
+        remainingSalary: 225,
       };
 
       const startTableY = 210;
@@ -228,7 +227,9 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
         if (startText) workSubLines.push(startText);
         if (emp.leaveDays > 0) workSubLines.push(`(Nghỉ ${emp.leaveDays}c)`);
 
-        const maxLines = Math.max(nameLines.length, advanceLines.length, 1 + workSubLines.length);
+        const dailyRate = emp.dailySalary || Math.round((emp.baseSalary || 0) / (emp.totalDaysInMonth || lastDay));
+        const dailyRateText = `(~${formatCurrency(dailyRate)}/ngày)`;
+        const maxLines = Math.max(nameLines.length, advanceLines.length, 1 + workSubLines.length, emp.isPartiallyPaid ? 3 : 2);
         const rowHeight = Math.max(rowMinHeight, maxLines * 18 + 14);
         return {
           ...emp,
@@ -237,6 +238,7 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
           advanceLines,
           startText,
           workSubLines,
+          dailyRateText,
           rowHeight,
         };
       });
@@ -326,11 +328,6 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
       ctx.fillText('HỌ VÀ TÊN', curX + 10, tableHeadY + 21);
       curX += colWidths.name;
 
-      // Tiền làm / ngày
-      ctx.textAlign = 'right';
-      ctx.fillText('LƯƠNG/NGÀY', curX + colWidths.dailyRate - 10, tableHeadY + 21);
-      curX += colWidths.dailyRate;
-
       // Số công
       ctx.textAlign = 'center';
       ctx.fillText('SỐ CÔNG', curX + colWidths.workingDays / 2, tableHeadY + 21);
@@ -380,13 +377,6 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
         });
         colX += colWidths.name;
 
-        // Cột Lương / ngày
-        ctx.fillStyle = '#334155';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'right';
-        ctx.fillText(formatCurrency(row.dailySalary || Math.round((row.baseSalary || 0) / (row.totalDaysInMonth || lastDay))), colX + colWidths.dailyRate - 10, rowY + 24);
-        colX += colWidths.dailyRate;
-
         // Cột Số công (Kèm ngày vào làm giữa tháng ví dụ: (từ 10/10))
         ctx.fillStyle = '#0284C7';
         ctx.font = 'bold 13px Arial';
@@ -430,17 +420,27 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
         }
         colX += colWidths.advances;
 
-        // Cột Thực lĩnh
-        ctx.fillStyle = (row.remainingSalary || 0) < 0 ? '#EF4444' : '#059669';
-        ctx.font = 'bold 13px Arial';
+        // Cột Thực lĩnh (kèm mức lương/ngày mở ngoặc bên dưới)
         const displayRem = row.isPaid
           ? `${formatCurrency(row.monthNetSalary || row.calculatedSalary)} (Đủ)`
           : formatCurrency(row.remainingSalary || 0);
-        ctx.fillText(displayRem, colX + colWidths.remainingSalary - 10, rowY + (row.isPartiallyPaid ? 18 : 24));
-        if (row.isPartiallyPaid) {
+
+        const hasPartial = Boolean(row.isPartiallyPaid);
+        const remBaseY = rowY + (row.rowHeight - (hasPartial ? 32 : 18)) / 2 + 3;
+
+        ctx.fillStyle = (row.remainingSalary || 0) < 0 ? '#EF4444' : '#059669';
+        ctx.font = 'bold 13px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(displayRem, colX + colWidths.remainingSalary - 10, remBaseY);
+
+        ctx.fillStyle = '#64748B';
+        ctx.font = '11px Arial';
+        ctx.fillText(row.dailyRateText, colX + colWidths.remainingSalary - 10, remBaseY + 15);
+
+        if (hasPartial) {
           ctx.fillStyle = '#D97706';
           ctx.font = '10px Arial';
-          ctx.fillText(`(Đã trả: ${formatCurrency(row.totalPaidSalary)})`, colX + colWidths.remainingSalary - 10, rowY + 32);
+          ctx.fillText(`(Đã trả: ${formatCurrency(row.totalPaidSalary)})`, colX + colWidths.remainingSalary - 10, remBaseY + 28);
         }
 
         rowY += row.rowHeight;
@@ -462,7 +462,7 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
 
       // Tổng số công
       ctx.textAlign = 'center';
-      const sumWorkX = paddingX + colWidths.stt + colWidths.name + colWidths.dailyRate;
+      const sumWorkX = paddingX + colWidths.stt + colWidths.name;
       ctx.fillText(`${summary.totalWorkingDays} công`, sumWorkX + colWidths.workingDays / 2, rowY + footerSummaryHeight / 2);
 
       // Tổng tạm ứng
@@ -613,12 +613,11 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
                   {/* Header Cột */}
                   <View style={styles.tableHeaderRow}>
                     <Text style={[styles.thText, { width: 40, textAlign: 'center' }]}>STT</Text>
-                    <Text style={[styles.thText, { width: 170 }]}>HỌ VÀ TÊN</Text>
-                    <Text style={[styles.thText, { width: 120, textAlign: 'right' }]}>LƯƠNG/NGÀY</Text>
-                    <Text style={[styles.thText, { width: 95, textAlign: 'center' }]}>SỐ CÔNG</Text>
-                    <Text style={[styles.thText, { width: 140, textAlign: 'right' }]}>TẠM ỨNG</Text>
-                    <Text style={[styles.thText, { width: 130, textAlign: 'right' }]}>THỰC LĨNH</Text>
-                    <Text style={[styles.thText, { width: 95, textAlign: 'center' }]}>TRẠNG THÁI</Text>
+                    <Text style={[styles.thText, { width: 180 }]}>HỌ VÀ TÊN</Text>
+                    <Text style={[styles.thText, { width: 110, textAlign: 'center' }]}>SỐ CÔNG</Text>
+                    <Text style={[styles.thText, { width: 150, textAlign: 'right' }]}>TẠM ỨNG</Text>
+                    <Text style={[styles.thText, { width: 150, textAlign: 'right' }]}>THỰC LĨNH</Text>
+                    <Text style={[styles.thText, { width: 100, textAlign: 'center' }]}>TRẠNG THÁI</Text>
                   </View>
 
                   {/* Dòng dữ liệu */}
@@ -638,15 +637,12 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
                         <Text style={[styles.tdText, { width: 40, textAlign: 'center', color: '#64748B' }]}>
                           {index + 1}
                         </Text>
-                        <View style={{ width: 170 }}>
+                        <View style={{ width: 180 }}>
                           <Text style={[styles.tdText, { fontWeight: 'bold', color: '#0F172A' }]} numberOfLines={1}>
                             {emp.name}
                           </Text>
                         </View>
-                        <Text style={[styles.tdText, { width: 120, textAlign: 'right', color: '#334155' }]}>
-                          {formatCurrency(emp.dailySalary || Math.round((emp.baseSalary || 0) / (emp.totalDaysInMonth || 30)))}
-                        </Text>
-                        <View style={{ width: 95, alignItems: 'center', justifyContent: 'center' }}>
+                        <View style={{ width: 110, alignItems: 'center', justifyContent: 'center' }}>
                           <Text style={[styles.tdText, { fontWeight: '600', color: '#0284C7' }]}>
                             {emp.workingDays ?? 0}/{emp.totalDaysInMonth ?? 30}
                           </Text>
@@ -662,7 +658,7 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
                           )}
                         </View>
                         {/* Cột Tạm ứng tách chi tiết từng lần ứng */}
-                        <View style={{ width: 140, alignItems: 'flex-end', justifyContent: 'center' }}>
+                        <View style={{ width: 150, alignItems: 'flex-end', justifyContent: 'center' }}>
                           {emp.advances && emp.advances.length > 0 ? (
                             emp.advances.map((adv, aIdx) => {
                               const advDate = adv.date ? new Date(adv.date) : null;
@@ -698,18 +694,28 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
                             <Text style={[styles.tdText, { color: '#94A3B8', textAlign: 'right' }]}>-</Text>
                           )}
                         </View>
-                        <Text style={[
-                          styles.tdText,
-                          {
-                            width: 130,
-                            textAlign: 'right',
-                            fontWeight: 'bold',
-                            color: (emp.remainingSalary || 0) < 0 ? '#EF4444' : '#059669',
-                          }
-                        ]}>
-                          {formatCurrency(emp.remainingSalary || 0)}
-                        </Text>
-                        <View style={{ width: 95, alignItems: 'center', justifyContent: 'center' }}>
+                        {/* Cột Thực lĩnh kèm mức lương ngày mở ngoặc bên dưới */}
+                        <View style={{ width: 150, alignItems: 'flex-end', justifyContent: 'center' }}>
+                          <Text style={[
+                            styles.tdText,
+                            {
+                              textAlign: 'right',
+                              fontWeight: 'bold',
+                              color: (emp.remainingSalary || 0) < 0 ? '#EF4444' : '#059669',
+                            }
+                          ]}>
+                            {formatCurrency(emp.remainingSalary || 0)}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1, textAlign: 'right' }}>
+                            (~{formatCurrency(emp.dailySalary || Math.round((emp.baseSalary || 0) / (emp.totalDaysInMonth || 30)))}/ngày)
+                          </Text>
+                          {emp.isPartiallyPaid && (
+                            <Text style={{ fontSize: 10, color: '#D97706', marginTop: 1, textAlign: 'right' }}>
+                              (Đã trả: {formatCurrency(emp.totalPaidSalary)})
+                            </Text>
+                          )}
+                        </View>
+                        <View style={{ width: 100, alignItems: 'center', justifyContent: 'center' }}>
                           <View style={[
                             styles.statusBadge,
                             {
