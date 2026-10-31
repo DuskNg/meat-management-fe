@@ -51,6 +51,10 @@
       "destination": "/api/submit-meta"
     },
     {
+      "source": "/portal/salary/:match*",
+      "destination": "/api/salary-portal-meta"
+    },
+    {
       "source": "/api/v1/:path*",
       "destination": "https://meat-management-be.onrender.com/api/v1/:path*"
     },

@@ -88,6 +88,13 @@ export default function EmployeeSalaryPortalScreen() {
   };
 
 
+  // Đặt tiêu đề tab trình duyệt thành "Quản lý lương"
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = 'Quản lý lương';
+    }
+  }, []);
+
   // 1. Tải thông tin ban đầu của token khi mở link
   useEffect(() => {
     if (!token) return;
