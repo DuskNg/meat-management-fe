@@ -39,9 +39,6 @@ const formatShortDate = (dateStr) => {
 export default function EmployeeSalaryPortalScreen() {
   const { token } = useLocalSearchParams();
 
-  // Tab chính của cổng: 'SALARY' (Bảng lương) - Tab 'RULES' (Nội quy) hiện tại disabled theo yêu cầu
-  const [activeTab] = useState('SALARY');
-
   // State thông tin ban đầu
   const [initLoading, setInitLoading] = useState(true);
   const [portalInfo, setPortalInfo] = useState(null);
@@ -657,37 +654,15 @@ export default function EmployeeSalaryPortalScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
-      {/* HEADER CỔNG NHÂN SỰ */}
+      {/* HEADER CỔNG KIỂM TRA BẢNG LƯƠNG (TINH GỌN, KHÔNG DÙNG TAB THỪA) */}
       <View style={styles.topBar}>
         <View style={styles.topBarLeft}>
-          <Text style={styles.merchantTitle}>🏪 {merchantName}</Text>
-          <Text style={styles.portalSubTitle}>CỔNG KIỂM TRA BẢNG LƯƠNG & CHẤM CÔNG</Text>
+          <Text style={styles.merchantTitle} numberOfLines={1}>🏪 {merchantName}</Text>
+          <Text style={styles.portalSubTitle}>BẢNG LƯƠNG & CHẤM CÔNG THÁNG NÀY</Text>
         </View>
         <View style={styles.secureBadge}>
-          <Text style={styles.secureBadgeText}>🛡️ Bảo mật mã riêng</Text>
+          <Text style={styles.secureBadgeText}>🛡️ Bảo mật</Text>
         </View>
-      </View>
-
-      {/* THANH CHUYỂN TAB CHÍNH (TAB NỘI QUY DISABLED KHÔNG CHO BẤM VÀO) */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'SALARY' && styles.tabItemActive]}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.tabItemText, activeTab === 'SALARY' && styles.tabItemTextActive]}>
-            💰 BẢNG LƯƠNG THÁNG NÀY
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabItem, styles.tabItemDisabled]}
-          disabled={true}
-          activeOpacity={1}
-        >
-          <Text style={styles.tabItemTextDisabled}>
-            🔒 NỘI QUY & QUY ĐỊNH
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {/* NỘI DUNG TAB BẢNG LƯƠNG */}
@@ -817,10 +792,11 @@ const styles = StyleSheet.create({
     color: '#0F172A',
   },
   portalSubTitle: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
+    fontSize: 11.5,
+    color: '#0284C7',
+    fontWeight: '700',
     marginTop: 2,
+    letterSpacing: 0.3,
   },
   secureBadge: {
     backgroundColor: '#F0FDF4',
@@ -834,40 +810,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#16A34A',
     fontWeight: 'bold',
-  },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 12,
-  },
-  tabItem: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderBottomWidth: 2.5,
-    borderBottomColor: 'transparent',
-  },
-  tabItemActive: {
-    borderBottomColor: '#0284C7',
-  },
-  tabItemDisabled: {
-    opacity: 0.45,
-    backgroundColor: '#F8FAFC',
-  },
-  tabItemText: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#64748B',
-  },
-  tabItemTextActive: {
-    color: '#0284C7',
-  },
-  tabItemTextDisabled: {
-    fontSize: 12.5,
-    fontWeight: 'bold',
-    color: '#94A3B8',
   },
   scrollContent: {
     flex: 1,
