@@ -497,171 +497,126 @@ export default function EmployeeSalaryPortalScreen() {
             <Text style={styles.ownerTableCardHint}>Bấm vào dòng nhân viên để xem chi tiết</Text>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.ownerTableMinWidth}>
-              {/* Header Bảng */}
-              <View style={styles.ownerTableHeaderRow}>
-                <Text style={[styles.ownerTh, { width: 34, textAlign: 'center' }]}>STT</Text>
-                <Text style={[styles.ownerTh, { width: 145 }]}>HỌ VÀ TÊN</Text>
-                <Text style={[styles.ownerTh, { width: 100, textAlign: 'right' }]}>LƯƠNG CỨNG</Text>
-                <Text style={[styles.ownerTh, { width: 78, textAlign: 'center' }]}>SỐ CÔNG</Text>
-                <Text style={[styles.ownerTh, { width: 105, textAlign: 'right' }]}>LƯƠNG CÔNG</Text>
-                <Text style={[styles.ownerTh, { width: 135, textAlign: 'right' }]}>TẠM ỨNG</Text>
-                <Text style={[styles.ownerTh, { width: 125, textAlign: 'right' }]}>THỰC LĨNH</Text>
-                <Text style={[styles.ownerTh, { width: 92, textAlign: 'center' }]}>TRẠNG THÁI</Text>
-              </View>
-
-              {/* Danh sách nhân viên */}
-              {employeesSalary.map((item, idx) => {
-                const emp = item.employee || {};
-                const sal = item.salary || {};
-                const pay = item.payment || {};
-                const advList = item.advances || [];
-                const isPaid = Boolean(pay.isPaid || sal.isPaid);
-                const isPartiallyPaid = Boolean(pay.isPartiallyPaid || sal.isPartiallyPaid);
-
-                return (
-                  <TouchableOpacity
-                    key={emp.id || idx}
-                    style={[
-                      styles.ownerTableRow,
-                      idx % 2 === 1 && styles.ownerTableRowAlt,
-                    ]}
-                    onPress={() => setSelectedOwnerEmpId(emp.id)}
-                    activeOpacity={0.7}
-                  >
-                    {/* STT */}
-                    <Text style={[styles.ownerTd, { width: 34, textAlign: 'center', color: '#64748B' }]}>
-                      {idx + 1}
-                    </Text>
-
-                    {/* HỌ VÀ TÊN + MÃ */}
-                    <View style={{ width: 145, paddingRight: 6 }}>
-                      <Text style={styles.ownerEmpName}>{emp.name}</Text>
-                      <Text style={styles.ownerEmpCode}>
-                        🔑 Mã: <Text style={{ fontWeight: 'bold', color: '#0369A1' }}>{emp.accessCode || '----'}</Text>
-                      </Text>
-                    </View>
-
-                    {/* LƯƠNG CỨNG */}
-                    <Text style={[styles.ownerTd, { width: 100, textAlign: 'right', fontWeight: '600' }]}>
-                      {formatCurrency(sal.baseSalary)}
-                    </Text>
-
-                    {/* SỐ CÔNG */}
-                    <View style={{ width: 78, alignItems: 'center' }}>
-                      <Text style={styles.ownerWorkDaysText}>
-                        {item.workingDays}/{totalDays}
-                      </Text>
-                      {item.startDayText ? (
-                        <Text style={styles.ownerStartDaySub}>{item.startDayText}</Text>
-                      ) : null}
-                    </View>
-
-                    {/* LƯƠNG CÔNG */}
-                    <Text style={[styles.ownerTd, { width: 105, textAlign: 'right', fontWeight: '600' }]}>
-                      {formatCurrency(sal.calculatedSalary)}
-                    </Text>
-
-                    {/* TẠM ỨNG (Tách từng lần ứng) */}
-                    <View style={{ width: 135, alignItems: 'flex-end' }}>
-                      {advList.length > 0 ? (
-                        advList.map((adv, aIdx) => {
-                          const dShort = formatShortDate(adv.date);
-                          return (
-                            <Text key={adv.id || aIdx} style={styles.ownerAdvanceItemText}>
-                              {dShort ? `(${dShort}) ` : ''}-{formatCurrency(adv.amount)}
-                            </Text>
-                          );
-                        })
-                      ) : sal.totalAdvances > 0 ? (
-                        <Text style={styles.ownerAdvanceItemText}>
-                          -{formatCurrency(sal.totalAdvances)}
-                        </Text>
-                      ) : (
-                        <Text style={{ fontSize: 12, color: '#94A3B8' }}>-</Text>
-                      )}
-                    </View>
-
-                    {/* THỰC LĨNH (Kèm đơn giá ngày & đã trả 1 phần) */}
-                    <View style={{ width: 125, alignItems: 'flex-end' }}>
-                      <Text style={styles.ownerNetSalaryText}>
-                        {formatCurrency(isPaid ? sal.monthNetSalary : sal.finalAmount)}
-                      </Text>
-                      <Text style={styles.ownerDailySubText}>
-                        (~{formatCurrency(sal.dailySalary)}/ngày)
-                      </Text>
-                      {isPartiallyPaid && sal.totalPaidSalary > 0 ? (
-                        <Text style={styles.ownerPaidPartSubText}>
-                          (Đã trả: {formatCurrency(sal.totalPaidSalary)})
-                        </Text>
-                      ) : null}
-                    </View>
-
-                    {/* TRẠNG THÁI */}
-                    <View style={{ width: 92, alignItems: 'center' }}>
-                      <View
-                        style={[
-                          styles.ownerStatusBadge,
-                          isPaid
-                            ? styles.ownerStatusBadgePaid
-                            : isPartiallyPaid
-                            ? styles.ownerStatusBadgePartial
-                            : styles.ownerStatusBadgeUnpaid,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.ownerStatusBadgeText,
-                            isPaid
-                              ? styles.ownerStatusTextPaid
-                              : isPartiallyPaid
-                              ? styles.ownerStatusTextPartial
-                              : styles.ownerStatusTextUnpaid,
-                          ]}
-                        >
-                          {isPaid ? 'Đã trả' : isPartiallyPaid ? 'Trả 1 phần' : 'Chưa trả'}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-
-              {/* Dòng TỔNG CỘNG cuối bảng */}
-              <View style={styles.ownerTableFooterRow}>
-                <Text style={[styles.ownerFooterText, { width: 179 }]}>
-                  TỔNG CỘNG ({employeesSalary.length} NV)
-                </Text>
-                <Text style={[styles.ownerFooterText, { width: 100, textAlign: 'right' }]}>
-                  {formatCurrency(summary.totalBaseSalary)}
-                </Text>
-                <Text style={[styles.ownerFooterText, { width: 78, textAlign: 'center' }]}>
-                  {summary.totalWorkingDays} công
-                </Text>
-                <Text style={[styles.ownerFooterText, { width: 105, textAlign: 'right' }]}>
-                  {formatCurrency(summary.totalCalculatedSalary)}
-                </Text>
-                <Text
-                  style={[
-                    styles.ownerFooterText,
-                    { width: 135, textAlign: 'right', color: '#DC2626' },
-                  ]}
-                >
-                  {summary.totalAdvances > 0 ? `-${formatCurrency(summary.totalAdvances)}` : '-'}
-                </Text>
-                <Text
-                  style={[
-                    styles.ownerFooterText,
-                    { width: 125, textAlign: 'right', color: '#059669', fontSize: 13.5 },
-                  ]}
-                >
-                  {formatCurrency(summary.totalRemainingSalary)}
-                </Text>
-                <View style={{ width: 92 }} />
-              </View>
+          {/* Bảng 4 cột: TÊN - SỐ CÔNG - TẠM ỨNG - THỰC LĨNH (Fit 100% màn hình, không cuộn ngang) */}
+          <View style={{ width: '100%' }}>
+            {/* Header Bảng 4 cột */}
+            <View style={styles.ownerTableHeaderRow}>
+              <Text style={[styles.ownerTh, { flex: 1.35, textAlign: 'left' }]}>TÊN</Text>
+              <Text style={[styles.ownerTh, { flex: 0.85, textAlign: 'center' }]}>SỐ CÔNG</Text>
+              <Text style={[styles.ownerTh, { flex: 1.0, textAlign: 'right' }]}>TẠM ỨNG</Text>
+              <Text style={[styles.ownerTh, { flex: 1.2, textAlign: 'right' }]}>THỰC LĨNH</Text>
             </View>
-          </ScrollView>
+
+            {/* Danh sách nhân viên */}
+            {employeesSalary.map((item, idx) => {
+              const emp = item.employee || {};
+              const sal = item.salary || {};
+              const pay = item.payment || {};
+              const advList = item.advances || [];
+              const isPaid = Boolean(pay.isPaid || sal.isPaid);
+              const isPartiallyPaid = Boolean(pay.isPartiallyPaid || sal.isPartiallyPaid);
+
+              return (
+                <TouchableOpacity
+                  key={emp.id || idx}
+                  style={[
+                    styles.ownerTableRow,
+                    idx % 2 === 1 && styles.ownerTableRowAlt,
+                  ]}
+                  onPress={() => setSelectedOwnerEmpId(emp.id)}
+                  activeOpacity={0.7}
+                >
+                  {/* CỘT 1: TÊN & MÃ */}
+                  <View style={{ flex: 1.35, paddingRight: 4 }}>
+                    <Text style={styles.ownerEmpName} numberOfLines={2}>
+                      {emp.name}
+                    </Text>
+                    {emp.accessCode ? (
+                      <Text style={styles.ownerEmpCode}>
+                        🔑 <Text style={{ fontWeight: 'bold', color: '#0369A1' }}>{emp.accessCode}</Text>
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  {/* CỘT 2: SỐ CÔNG */}
+                  <View style={{ flex: 0.85, alignItems: 'center', paddingHorizontal: 2 }}>
+                    <Text style={styles.ownerWorkDaysText}>
+                      {item.workingDays}/{totalDays}
+                    </Text>
+                    {item.startDayText ? (
+                      <Text style={styles.ownerStartDaySub}>{item.startDayText}</Text>
+                    ) : null}
+                  </View>
+
+                  {/* CỘT 3: TẠM ỨNG (Tách từng lần ứng nếu có) */}
+                  <View style={{ flex: 1.0, alignItems: 'flex-end', paddingHorizontal: 2 }}>
+                    {advList.length > 0 ? (
+                      advList.map((adv, aIdx) => {
+                        const dShort = formatShortDate(adv.date);
+                        return (
+                          <Text key={adv.id || aIdx} style={styles.ownerAdvanceItemText}>
+                            {dShort ? `(${dShort}) ` : ''}-{formatCurrency(adv.amount)}
+                          </Text>
+                        );
+                      })
+                    ) : sal.totalAdvances > 0 ? (
+                      <Text style={styles.ownerAdvanceItemText}>
+                        -{formatCurrency(sal.totalAdvances)}
+                      </Text>
+                    ) : (
+                      <Text style={{ fontSize: 12, color: '#94A3B8' }}>-</Text>
+                    )}
+                  </View>
+
+                  {/* CỘT 4: THỰC LĨNH */}
+                  <View style={{ flex: 1.2, alignItems: 'flex-end', paddingLeft: 2 }}>
+                    <Text style={styles.ownerNetSalaryText}>
+                      {formatCurrency(isPaid ? sal.monthNetSalary : sal.finalAmount)}
+                    </Text>
+                    {isPaid ? (
+                      <View style={[styles.ownerStatusBadge, styles.ownerStatusBadgePaid, { marginTop: 2, paddingHorizontal: 4, paddingVertical: 1 }]}>
+                        <Text style={[styles.ownerStatusBadgeText, styles.ownerStatusTextPaid, { fontSize: 9.5 }]}>Đã trả</Text>
+                      </View>
+                    ) : isPartiallyPaid && sal.totalPaidSalary > 0 ? (
+                      <Text style={styles.ownerPaidPartSubText}>
+                        (Đã: {formatCurrency(sal.totalPaidSalary)})
+                      </Text>
+                    ) : sal.dailySalary ? (
+                      <Text style={styles.ownerDailySubText}>
+                        (~{formatCurrency(sal.dailySalary)}/ng)
+                      </Text>
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* Dòng TỔNG CỘNG cuối bảng */}
+            <View style={styles.ownerTableFooterRow}>
+              <Text style={[styles.ownerFooterText, { flex: 1.35, textAlign: 'left' }]} numberOfLines={1}>
+                TỔNG ({employeesSalary.length} NV)
+              </Text>
+              <Text style={[styles.ownerFooterText, { flex: 0.85, textAlign: 'center' }]}>
+                {summary.totalWorkingDays} công
+              </Text>
+              <Text
+                style={[
+                  styles.ownerFooterText,
+                  { flex: 1.0, textAlign: 'right', color: '#DC2626' },
+                ]}
+              >
+                {summary.totalAdvances > 0 ? `-${formatCurrency(summary.totalAdvances)}` : '-'}
+              </Text>
+              <Text
+                style={[
+                  styles.ownerFooterText,
+                  { flex: 1.2, textAlign: 'right', color: '#059669', fontSize: 13 },
+                ]}
+              >
+                {formatCurrency(summary.totalRemainingSalary)}
+              </Text>
+            </View>
+          </View>
         </View>
       </View>
     );
@@ -1337,6 +1292,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0284C7',
     paddingVertical: 9,
     paddingHorizontal: 8,
+    width: '100%',
   },
   ownerTh: {
     fontSize: 11,
@@ -1351,6 +1307,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
+    width: '100%',
   },
   ownerTableRowAlt: {
     backgroundColor: '#F8FAFC',
@@ -1437,6 +1394,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderTopWidth: 1.5,
     borderTopColor: '#0284C7',
+    width: '100%',
   },
   ownerFooterText: {
     fontSize: 12.5,
