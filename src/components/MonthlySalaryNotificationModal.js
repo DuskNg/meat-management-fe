@@ -110,10 +110,10 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
     let totalWorkingDays = 0;
 
     employees.forEach((emp) => {
-      totalBase += (emp.baseSalary || 0);
-      totalAdvances += (emp.totalAdvances || 0);
-      totalRemaining += (emp.remainingSalary || 0);
-      totalWorkingDays += (emp.workingDays || 0);
+      totalBase += Number(emp.baseSalary) || 0;
+      totalAdvances += Number(emp.totalAdvances) || 0;
+      totalRemaining += Number(emp.remainingSalary) || 0;
+      totalWorkingDays += Number(emp.workingDays) || 0;
     });
 
     return {
@@ -469,9 +469,9 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
 
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#0369A1';
-      ctx.font = 'bold 13px Arial';
+      ctx.font = 'bold 12px Arial';
       ctx.textAlign = 'left';
-      ctx.fillText(`TỔNG CỘNG (${employees.length} NHÂN VIÊN)`, paddingX + colWidths.stt + 10, rowY + footerSummaryHeight / 2);
+      ctx.fillText(`TỔNG CỘNG (${employees.length} NV)`, paddingX + colWidths.stt + 6, rowY + footerSummaryHeight / 2);
 
       // Tổng lương cứng
       ctx.textAlign = 'right';
