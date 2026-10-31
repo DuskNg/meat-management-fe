@@ -63,7 +63,10 @@ const parseReturnItems = (note, defaultAmount = 0) => {
 
   const isNoteLevelImport = /\b(nhập hàng|nhập thịt|nhập kho|nhập lô|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(note || '');
 
-  let text = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '').trim();
+  let text = note
+    .replace(/[-–—:\s]*\[[^\]]*(?:dọn dẹp|cloudinary|không xem được|ảnh\/video|đã xóa)[^\]]*\]/gi, '')
+    .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
+    .trim();
   const parts = text.split(/[,;\n]/).map(p => p.trim()).filter(Boolean);
 
   if (parts.length === 0) {

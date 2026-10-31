@@ -1023,7 +1023,8 @@ const resolveCustomerForSub = (sub, custList) => {
     }
 
     // 0e. ĐẶC BIỆT: Khớp ưu tiên khách "Thuỷ gà(thủy lê zalo nhóm bò)" nếu AI nhận diện là "Chị Huy Ga", "Huy Ga", "Chi Huy Ga", "C Huy Ga", "Chị Thủy Gà", "Thuỷ Gà", "Thuy Ga", "Thuy Le"...
-    const isDetectedThuyGa = (
+    // LƯU Ý: Tuyệt đối loại trừ "Chị Thúy Nga" (không chứa 'nga') để tránh nhầm do 'nga' chứa chuỗi con 'ga'!
+    const isDetectedThuyGa = !cleanDetected.includes('nga') && !cleanDetectedNoSpace.includes('nga') && (
       cleanDetectedNoSpace === 'chihuyga' ||
       cleanDetectedNoSpace === 'chuyga' ||
       cleanDetectedNoSpace === 'huyga' ||
@@ -1040,8 +1041,8 @@ const resolveCustomerForSub = (sub, custList) => {
       cleanDetected === 'c thuy ga' ||
       cleanDetected === 'thuy ga' ||
       cleanDetected === 'thuy le' ||
-      (cleanDetected.includes('huy') && cleanDetected.includes('ga')) ||
-      (cleanDetected.includes('thuy') && cleanDetected.includes('ga')) ||
+      (cleanDetected.includes('huy') && /\bga\b/.test(cleanDetected)) ||
+      (cleanDetected.includes('thuy') && /\bga\b/.test(cleanDetected)) ||
       (cleanDetected.includes('thuy') && cleanDetected.includes('le')) ||
       cleanDetectedNoSpace.includes('huyga') ||
       cleanDetectedNoSpace.includes('thuyga') ||
@@ -1051,10 +1052,17 @@ const resolveCustomerForSub = (sub, custList) => {
     if (isDetectedThuyGa) {
       const thuyGaCust = custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase().trim());
-        return (cClean.includes('thuy') && cClean.includes('ga')) || (cClean.includes('thuy') && cClean.includes('le'));
+        if (cClean.includes('nga')) return false;
+        return (
+          (cClean.includes('thuy') && /\bga\b/.test(cClean)) ||
+          (cClean.includes('thuy') && cClean.includes('le')) ||
+          cClean.includes('thuy ga') ||
+          cClean.includes('thuy le')
+        );
       }) || custList.find((c) => {
         const cClean = removeDiacritics(c.name.toLowerCase().trim());
-        return cClean.includes('ga') && (cClean.includes('thuy') || cClean.includes('huy'));
+        if (cClean.includes('nga')) return false;
+        return /\bga\b/.test(cClean) && (cClean.includes('thuy') || cClean.includes('huy'));
       }) || null;
 
       if (thuyGaCust) {

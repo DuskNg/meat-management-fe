@@ -81,6 +81,27 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
     }).format(amount || 0).replace('₫', 'đ');
   };
 
+  // Helper lấy nhãn ngày bắt đầu vào làm giữa tháng (ví dụ: "(từ 10/10)")
+  const getEmployeeStartDayText = (emp, currentMonthKey) => {
+    if (emp.startDayText) return emp.startDayText;
+    if (!emp.joinedMidMonth && !(emp.startDayInMonth && emp.startDayInMonth > 1)) {
+      return '';
+    }
+    const [mStr] = (currentMonthKey || '').split('/');
+    const monthNum = parseInt(mStr, 10) || (new Date().getMonth() + 1);
+    let dayNum = emp.startDayInMonth;
+    if (!dayNum && emp.startDate) {
+      const d = new Date(emp.startDate);
+      if (!isNaN(d.getTime())) {
+        dayNum = d.getDate();
+      }
+    }
+    if (dayNum && dayNum > 1) {
+      return `(từ ${dayNum.toString().padStart(2, '0')}/${monthNum.toString().padStart(2, '0')})`;
+    }
+    return '';
+  };
+
   // Tính tổng kết lương toàn bộ nhân viên
   const summary = useMemo(() => {
     let totalBase = 0;
@@ -184,11 +205,38 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
 
       const rowsLayout = employees.map((emp, idx) => {
         const nameLines = wrapText(tempCtx, emp.name || '---', colWidths.name - 16);
-        const rowHeight = Math.max(rowMinHeight, nameLines.length * 18 + 14);
+
+        // Tách chi tiết từng lần tạm ứng (kèm ngày ứng nếu có)
+        const advanceLines = [];
+        if (emp.advances && emp.advances.length > 0) {
+          emp.advances.forEach((adv) => {
+            const advDate = adv.date ? new Date(adv.date) : null;
+            const dateStr = advDate && !isNaN(advDate.getTime())
+              ? `${advDate.getDate().toString().padStart(2, '0')}/${(advDate.getMonth() + 1).toString().padStart(2, '0')}`
+              : '';
+            const text = dateStr ? `(${dateStr}) -${formatCurrency(adv.amount)}` : `-${formatCurrency(adv.amount)}`;
+            advanceLines.push(text);
+          });
+        } else if (emp.totalAdvances > 0) {
+          advanceLines.push(`-${formatCurrency(emp.totalAdvances)}`);
+        } else {
+          advanceLines.push('-');
+        }
+
+        const startText = getEmployeeStartDayText(emp, monthKey);
+        const workSubLines = [];
+        if (startText) workSubLines.push(startText);
+        if (emp.leaveDays > 0) workSubLines.push(`(Nghỉ ${emp.leaveDays}c)`);
+
+        const maxLines = Math.max(nameLines.length, advanceLines.length, 1 + workSubLines.length);
+        const rowHeight = Math.max(rowMinHeight, maxLines * 18 + 14);
         return {
           ...emp,
           stt: idx + 1,
           nameLines,
+          advanceLines,
+          startText,
+          workSubLines,
           rowHeight,
         };
       });
@@ -339,16 +387,22 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
         ctx.fillText(formatCurrency(row.dailySalary || Math.round((row.baseSalary || 0) / (row.totalDaysInMonth || lastDay))), colX + colWidths.dailyRate - 10, rowY + 24);
         colX += colWidths.dailyRate;
 
-        // Cột Số công
+        // Cột Số công (Kèm ngày vào làm giữa tháng ví dụ: (từ 10/10))
         ctx.fillStyle = '#0284C7';
         ctx.font = 'bold 13px Arial';
         ctx.textAlign = 'center';
         const workingDaysText = `${row.workingDays ?? 0}/${row.totalDaysInMonth ?? lastDay}`;
-        ctx.fillText(workingDaysText, colX + colWidths.workingDays / 2, rowY + (row.leaveDays > 0 ? 18 : 24));
-        if (row.leaveDays > 0) {
-          ctx.fillStyle = '#EF4444';
-          ctx.font = '10px Arial';
-          ctx.fillText(`(Nghỉ ${row.leaveDays}c)`, colX + colWidths.workingDays / 2, rowY + 32);
+        const hasWorkSubs = row.workSubLines && row.workSubLines.length > 0;
+        const workBaseY = rowY + (row.rowHeight - (hasWorkSubs ? row.workSubLines.length * 14 : 0)) / 2 + 2;
+        ctx.fillText(workingDaysText, colX + colWidths.workingDays / 2, workBaseY);
+
+        if (hasWorkSubs) {
+          row.workSubLines.forEach((subText, sIdx) => {
+            const isLeave = subText.includes('Nghỉ');
+            ctx.fillStyle = isLeave ? '#EF4444' : '#0284C7';
+            ctx.font = isLeave ? '10px Arial' : 'bold 10px Arial';
+            ctx.fillText(subText, colX + colWidths.workingDays / 2, workBaseY + 13 + sIdx * 12);
+          });
         }
         colX += colWidths.workingDays;
 
@@ -359,10 +413,21 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
         ctx.fillText(formatCurrency(row.calculatedSalary || 0), colX + colWidths.calculatedSalary - 10, rowY + 24);
         colX += colWidths.calculatedSalary;
 
-        // Cột Tạm ứng
-        ctx.fillStyle = row.totalAdvances > 0 ? '#EF4444' : '#94A3B8';
-        ctx.font = '12px Arial';
-        ctx.fillText(row.totalAdvances > 0 ? `-${formatCurrency(row.totalAdvances)}` : '-', colX + colWidths.advances - 10, rowY + 24);
+        // Cột Tạm ứng (Tách từng lần ứng)
+        if (row.totalAdvances > 0) {
+          ctx.fillStyle = '#EF4444';
+          ctx.font = '12px Arial';
+          ctx.textAlign = 'right';
+          const startAdvY = rowY + (row.rowHeight - (row.advanceLines.length - 1) * 18) / 2 + 4;
+          row.advanceLines.forEach((advText, aIdx) => {
+            ctx.fillText(advText, colX + colWidths.advances - 10, startAdvY + aIdx * 18);
+          });
+        } else {
+          ctx.fillStyle = '#94A3B8';
+          ctx.font = '12px Arial';
+          ctx.textAlign = 'right';
+          ctx.fillText('-', colX + colWidths.advances - 10, rowY + row.rowHeight / 2 + 4);
+        }
         colX += colWidths.advances;
 
         // Cột Thực lĩnh
@@ -551,7 +616,7 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
                     <Text style={[styles.thText, { width: 170 }]}>HỌ VÀ TÊN</Text>
                     <Text style={[styles.thText, { width: 120, textAlign: 'right' }]}>LƯƠNG/NGÀY</Text>
                     <Text style={[styles.thText, { width: 95, textAlign: 'center' }]}>SỐ CÔNG</Text>
-                    <Text style={[styles.thText, { width: 120, textAlign: 'right' }]}>TẠM ỨNG</Text>
+                    <Text style={[styles.thText, { width: 140, textAlign: 'right' }]}>TẠM ỨNG</Text>
                     <Text style={[styles.thText, { width: 130, textAlign: 'right' }]}>THỰC LĨNH</Text>
                     <Text style={[styles.thText, { width: 95, textAlign: 'center' }]}>TRẠNG THÁI</Text>
                   </View>
@@ -581,26 +646,58 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
                         <Text style={[styles.tdText, { width: 120, textAlign: 'right', color: '#334155' }]}>
                           {formatCurrency(emp.dailySalary || Math.round((emp.baseSalary || 0) / (emp.totalDaysInMonth || 30)))}
                         </Text>
-                        <View style={{ width: 95, alignItems: 'center' }}>
+                        <View style={{ width: 95, alignItems: 'center', justifyContent: 'center' }}>
                           <Text style={[styles.tdText, { fontWeight: '600', color: '#0284C7' }]}>
                             {emp.workingDays ?? 0}/{emp.totalDaysInMonth ?? 30}
                           </Text>
+                          {Boolean(getEmployeeStartDayText(emp, monthKey)) && (
+                            <Text style={{ fontSize: 10, color: '#0284C7', fontWeight: 'bold', marginTop: 1 }}>
+                              {getEmployeeStartDayText(emp, monthKey)}
+                            </Text>
+                          )}
                           {emp.leaveDays > 0 && (
-                            <Text style={{ fontSize: 10, color: '#EF4444' }}>
+                            <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 1 }}>
                               (Nghỉ {emp.leaveDays}c)
                             </Text>
                           )}
                         </View>
-                        <Text style={[
-                          styles.tdText,
-                          {
-                            width: 120,
-                            textAlign: 'right',
-                            color: emp.totalAdvances > 0 ? '#EF4444' : '#94A3B8',
-                          }
-                        ]}>
-                          {emp.totalAdvances > 0 ? `-${formatCurrency(emp.totalAdvances)}` : '-'}
-                        </Text>
+                        {/* Cột Tạm ứng tách chi tiết từng lần ứng */}
+                        <View style={{ width: 140, alignItems: 'flex-end', justifyContent: 'center' }}>
+                          {emp.advances && emp.advances.length > 0 ? (
+                            emp.advances.map((adv, aIdx) => {
+                              const advDate = adv.date ? new Date(adv.date) : null;
+                              const dateStr = advDate && !isNaN(advDate.getTime())
+                                ? `${advDate.getDate().toString().padStart(2, '0')}/${(advDate.getMonth() + 1).toString().padStart(2, '0')}`
+                                : '';
+                              return (
+                                <View
+                                  key={adv.id || aIdx}
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'flex-end',
+                                    marginVertical: 1,
+                                  }}
+                                >
+                                  {dateStr ? (
+                                    <Text style={{ fontSize: 11, color: '#64748B', marginRight: 4 }}>
+                                      ({dateStr})
+                                    </Text>
+                                  ) : null}
+                                  <Text style={{ fontSize: 13, color: '#EF4444', fontWeight: '500' }}>
+                                    -${formatCurrency(adv.amount)}
+                                  </Text>
+                                </View>
+                              );
+                            })
+                          ) : emp.totalAdvances > 0 ? (
+                            <Text style={[styles.tdText, { color: '#EF4444', textAlign: 'right' }]}>
+                              -${formatCurrency(emp.totalAdvances)}
+                            </Text>
+                          ) : (
+                            <Text style={[styles.tdText, { color: '#94A3B8', textAlign: 'right' }]}>-</Text>
+                          )}
+                        </View>
                         <Text style={[
                           styles.tdText,
                           {

@@ -63,7 +63,10 @@ export const parseReturnItems = (note, defaultAmount) => {
   const isNoteLevelImport = /\b(nhập hàng|nhập thịt|nhập kho|nhập lô|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(note || '');
 
   // Loại bỏ các tag hệ thống và tiền tố
-  let text = note.replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '').trim();
+  let text = note
+    .replace(/[-–—:\s]*\[[^\]]*(?:dọn dẹp|cloudinary|không xem được|ảnh\/video|đã xóa)[^\]]*\]/gi, '')
+    .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
+    .trim();
   text = text.replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '').trim();
   if (!text) {
     return [{
@@ -509,23 +512,35 @@ export const drawDebtImageCanvas = async ({
           ctx.stroke();
         }
 
+        // Giới hạn độ rộng chữ cột Tên hàng để không bao giờ tràn sang cột SL / Đơn giá / Thành tiền
+        const fitEntryName = (rawText) => {
+          const str = String(rawText || '');
+          const maxW = colWidths[1] - 14;
+          if (ctx.measureText(str).width <= maxW) return str;
+          let trimmed = str;
+          while (trimmed.length > 1 && ctx.measureText(`${trimmed}...`).width > maxW) {
+            trimmed = trimmed.slice(0, -1);
+          }
+          return `${trimmed.trim()}...`;
+        };
+
         ctx.textAlign = 'left';
         if (isDayTotal) {
           ctx.fillStyle = '#0F172A';
           ctx.font = 'bold 13.5px Arial, sans-serif';
-          ctx.fillText(entry.name, pColX[1] + 8, midY);
+          ctx.fillText(fitEntryName(entry.name), pColX[1] + 8, midY);
         } else if (entry.type === 'RETURN') {
           ctx.fillStyle = '#DC2626';
           ctx.font = '13.5px Arial, sans-serif';
-          ctx.fillText(entry.name, pColX[1] + 8, midY);
+          ctx.fillText(fitEntryName(entry.name), pColX[1] + 8, midY);
         } else if (entry.type === 'PAYMENT') {
           ctx.fillStyle = '#059669';
           ctx.font = '13.5px Arial, sans-serif';
-          ctx.fillText(entry.name, pColX[1] + 8, midY);
+          ctx.fillText(fitEntryName(entry.name), pColX[1] + 8, midY);
         } else {
           ctx.fillStyle = '#0F172A';
           ctx.font = '13.5px Arial, sans-serif';
-          ctx.fillText(entry.name, pColX[1] + 8, midY);
+          ctx.fillText(fitEntryName(entry.name), pColX[1] + 8, midY);
         }
 
         ctx.textAlign = 'right';

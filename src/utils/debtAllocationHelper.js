@@ -34,70 +34,210 @@ export const toDateKey = (dateVal) => {
 export const parseReturnItems = (note, defaultAmount) => {
   if (!note) return [{ type: 'RETURN', name: 'TRẢ HÀNG', quantity: null, price: null, amount: defaultAmount }];
 
-  const cleanNote = note
-    .replace(/^\[Trả lại hàng\]|^\[Trả hàng nhanh\]|^\[Trả hàng\]/i, '')
-    .replace(/^Trả lại hàng:?|^Trả hàng nhanh:?|^Trả hàng:?/i, '')
+  const isNoteLevelImport = /\b(nhập hàng|nhập thịt|nhập kho|nhập lô|mua thịt|mua hàng|nhap hang|nhap thit)\b/i.test(note || '');
+
+  // Loại bỏ các tag hệ thống (trả hàng, nhập hàng, dọn dẹp ảnh cũ...) và tiền tố
+  let text = note
+    .replace(/[-–—:\s]*\[[^\]]*(?:dọn dẹp|cloudinary|không xem được|ảnh\/video|đã xóa)[^\]]*\]/gi, '')
+    .replace(/\[Trả lại hàng\]|\[Trả hàng nhanh\]|\[Trả hàng\]|\[Nhập hàng\]/gi, '')
     .trim();
+  text = text.replace(/^(?:Trả hàng nhanh|Trả lại hàng|Trả hàng|Nhập hàng)\s*[:-]?\s*/gi, '').trim();
 
-  if (!cleanNote) {
-    return [{ type: 'RETURN', name: 'TRẢ HÀNG', quantity: null, price: null, amount: defaultAmount }];
+  if (!text) {
+    return [{
+      type: 'RETURN',
+      name: isNoteLevelImport ? 'NHẬP HÀNG' : 'TRẢ HÀNG',
+      quantity: null,
+      price: null,
+      amount: defaultAmount,
+    }];
   }
 
-  // Tách các món trả hàng theo dấu phẩy hoặc dấu chấm phẩy
-  const parts = cleanNote.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+  // Hàm phụ chuẩn hóa tên món và gắn tiền tố tương ứng NHẬP: hoặc TRẢ:
+  const formatReturnItemName = (rawName, isPartImport) => {
+    let clean = (rawName || '').trim();
+    // 0. Xóa các ghi chú hệ thống trong ngoặc vuông nếu còn sót
+    clean = clean.replace(/[-–—:\s]*\[[^\]]*(?:dọn dẹp|cloudinary|không xem được|ảnh\/video|đã xóa)[^\]]*\]/gi, ' ').trim();
+    // 1. Xóa số tiền nằm trong ngoặc đơn: ví dụ (1.288.000), (986.400 Đ)
+    clean = clean.replace(/\(\s*[\d.,]+\s*[đ₫kKVND]?\s*\)/gi, ' ').trim();
+    // 2. Xóa các tiền tố trả hàng / nhập hàng
+    clean = clean.replace(/^(TRẢ HÀNG NHANH|TRẢ LẠI HÀNG|TRẢ HÀNG|TRẢ LẠI|TRẢ|NHẬP HÀNG|NHẬP THỊT|NHẬP)\s*[:-]?\s*/gi, ' ').trim();
+    // 3. Xóa các hậu tố nhập hàng hoặc số lượng lặp lại ở đuôi
+    clean = clean.replace(/[-–—:]*\s*(?:NHẬP HÀNG|NHẬP THỊT|NHẬP TÁI(?:\s*\d+)?|NHẬP GẦU(?:\s*\d+)?|NHẬP\s+[a-zA-ZÀ-ỹ]+(?:\s*\d+)?)\s*$/gi, ' ').trim();
+    clean = clean.replace(/[-–—:]*\s*\d+(?:[.,]\d+)?\s*(?:kg|kilo)?\s+[a-zA-ZÀ-ỹ\s()]+\s*$/gi, ' ').trim();
+    // 4. Xóa dấu gạch nối hoặc khoảng trắng thừa ở đầu/cuối
+    clean = clean.replace(/^[-–—:\s]+|[-–—:\s]+$/g, '').trim().toUpperCase();
+
+    if (isPartImport || isNoteLevelImport) {
+      return clean ? `NHẬP: ${clean}` : 'NHẬP HÀNG';
+    }
+    return clean ? `TRẢ: ${clean}` : 'TRẢ HÀNG';
+  };
+
+  // Tách nhiều món nếu phân tách bởi dấu phẩy hoặc dấu chấm phẩy
+  const parts = text.split(/[,;\n]\s*(?=[a-zA-Z\d\u00C0-\u1EF9])/).map((s) => s.trim()).filter(Boolean);
   if (parts.length === 0) {
-    return [{ type: 'RETURN', name: 'TRẢ HÀNG', quantity: null, price: null, amount: defaultAmount }];
+    return [{
+      type: 'RETURN',
+      name: isNoteLevelImport ? 'NHẬP HÀNG' : 'TRẢ HÀNG',
+      quantity: null,
+      price: null,
+      amount: defaultAmount,
+    }];
   }
 
-  const items = [];
-  parts.forEach((part) => {
-    // Định dạng: 10kg Sườn non x 120k = 1.200.000 đ hoặc Sườn non: 1.200.000 đ
-    const matchFull = part.match(/^([\d.,]+)\s*(kg|g|con|miếng)?\s+(.+?)\s*[xX*]\s*([\d.,]+k?)\s*=\s*([\d.,]+)/i);
-    const matchSimple = part.match(/^([\d.,]+)\s*(kg|g|con|miếng)?\s+(.+?)(?:\s*\(?([-\d.,]+)\s*(?:đ|k|vnđ)?\)?)?$/i);
+  const results = [];
 
+  for (let part of parts) {
+    part = part.trim();
+    if (!part) continue;
+
+    const isPartImport = /\b(nhập hàng|nhập thịt|nhập tái|nhập gầu|nhập kho|nhập lô|mua thịt|mua hàng|nhap hang|nhap thit|nhap)\b/i.test(part) || isNoteLevelImport;
+
+    // 0. Định dạng đầy đủ có nhân đơn giá: 10kg Sườn non x 120k = 1.200.000
+    const matchFull = part.match(/^([\d.,]+)\s*(kg|kilo|g|con|miếng)?\s+(.+?)\s*[xX*]\s*([\d.,]+k?)\s*=\s*([\d.,]+)/i);
     if (matchFull) {
       const q = parseFloat(matchFull[1].replace(',', '.'));
-      const unit = matchFull[2] || 'kg';
-      const name = matchFull[3].trim().toUpperCase();
-      let pStr = matchFull[4].toLowerCase().replace(',', '.');
-      let p = pStr.endsWith('k') ? parseFloat(pStr.replace('k', '')) * 1000 : parseFloat(pStr);
+      const rawProdName = matchFull[3].trim();
+      const pStr = matchFull[4].toLowerCase().replace(',', '.');
+      const p = pStr.endsWith('k') ? parseFloat(pStr.replace('k', '')) * 1000 : parseFloat(pStr.replace(/\./g, ''));
       const amt = parseFloat(matchFull[5].replace(/\./g, '').replace(',', '.'));
-
-      items.push({
+      results.push({
         type: 'RETURN',
-        name: `TRẢ LẠI: ${name}`,
+        name: formatReturnItemName(rawProdName, isPartImport),
         quantity: isNaN(q) ? null : q,
         price: isNaN(p) ? null : p,
         amount: isNaN(amt) ? defaultAmount : amt,
-        unit,
       });
-    } else if (matchSimple) {
-      const q = parseFloat(matchSimple[1].replace(',', '.'));
-      const unit = matchSimple[2] || 'kg';
-      const name = matchSimple[3].trim().toUpperCase();
-      const amtStr = matchSimple[4];
-      let amt = amtStr ? parseFloat(amtStr.replace(/[^0-9]/g, '')) : null;
-
-      items.push({
-        type: 'RETURN',
-        name: `TRẢ LẠI: ${name}`,
-        quantity: isNaN(q) ? null : q,
-        price: null,
-        amount: amt !== null && !isNaN(amt) ? amt : defaultAmount,
-        unit,
-      });
-    } else {
-      items.push({
-        type: 'RETURN',
-        name: `TRẢ LẠI: ${part.toUpperCase()}`,
-        quantity: null,
-        price: null,
-        amount: defaultAmount,
-      });
+      continue;
     }
-  });
 
-  return items.length > 0 ? items : [{ type: 'RETURN', name: 'TRẢ HÀNG', quantity: null, price: null, amount: defaultAmount }];
+    // 1. Kiểm tra định dạng chuẩn: <số lượng><đơn vị> <tên thịt> (<thành tiền>)
+    // Ví dụ: '1.66kg Bắp giây (630.800)' hoặc '2.61kg Tái (bò) (626.400 đ)'
+    const oldFormatRegex = /^(\d+(?:[.,]\d+)?)\s*(?:kg|kilo|g|con|miếng)?\s+(.+?)(?:\s*\(\s*([\d.,]+)[\s\u00a0]*[đ₫kKVND]?\s*\))?(?:\s*[-–—:]\s*(.*))?$/i;
+    const oldMatch = part.match(oldFormatRegex);
+    if (oldMatch) {
+      const tokenAfter = oldMatch[2].trim();
+      const startsWithNumber = /^\d+/.test(tokenAfter);
+      if (!startsWithNumber) {
+        const qty = parseFloat(oldMatch[1].replace(',', '.'));
+        const rawProdName = oldMatch[2].trim();
+        const amtStr = oldMatch[3] ? oldMatch[3].replace(/\./g, '').replace(/,/g, '') : null;
+        let amt = amtStr ? parseFloat(amtStr) : 0;
+        if (!amt) {
+          const innerParen = part.match(/\(\s*([\d.,]+)[\s\u00a0]*[đ₫kKVND]?\s*\)/i);
+          if (innerParen) amt = parseFloat(innerParen[1].replace(/\./g, '').replace(/,/g, ''));
+        }
+        if (!amt && parts.length === 1) amt = defaultAmount;
+        const price = (qty && qty > 0 && amt > 0) ? Math.round(amt / qty) : null;
+        results.push({
+          type: 'RETURN',
+          name: formatReturnItemName(rawProdName, isPartImport),
+          quantity: !isNaN(qty) ? qty : null,
+          price: price,
+          amount: amt,
+        });
+        continue;
+      }
+    }
+
+    // 2. Kiểm tra định dạng nhập nhanh: <tên thịt> <đơn giá> <số lượng>[kg][(ghi chú)]
+    let amtFromParen = null;
+    const parenAmtMatch = part.match(/\(\s*([\d.,]+)[\s\u00a0]*[đ₫kKVND]?\s*\)\s*$/i);
+    if (parenAmtMatch) {
+      amtFromParen = parseFloat(parenAmtMatch[1].replace(/\./g, '').replace(/,/g, ''));
+      part = part.slice(0, part.lastIndexOf(parenAmtMatch[0])).trim();
+    }
+
+    const quickMatch = part.match(/^([a-zA-ZÀ-ỹ\s()+-]+?)\s+(\d+(?:[.,]\d+)?\s*[kK]?)\s+([\d]+(?:[.,]\d+)?)\s*(?:kg|kilo)?\s*(\([a-zA-Z0-9\s]+\))?$/i);
+    if (quickMatch) {
+      let rawProdName = quickMatch[1].trim();
+      const extraNote = quickMatch[4] ? ` ${quickMatch[4].trim()}` : '';
+      if (extraNote) rawProdName += extraNote;
+
+      const num1Str = quickMatch[2].trim().toLowerCase().replace('k', '');
+      const num2Str = quickMatch[3].trim().replace(',', '.');
+
+      const num1 = parseFloat(num1Str.replace(',', '.'));
+      const num2 = parseFloat(num2Str);
+
+      let price = null;
+      let qty = null;
+
+      if (num1 >= 50 && num2 < 50) {
+        price = num1 < 1000 ? num1 * 1000 : num1;
+        qty = num2;
+      } else if (num2 >= 50 && num1 < 50) {
+        price = num2 < 1000 ? num2 * 1000 : num2;
+        qty = num1;
+      } else {
+        if (num1 >= 50) {
+          price = num1 < 1000 ? num1 * 1000 : num1;
+          qty = num2;
+        } else {
+          qty = num1;
+          price = num2 < 1000 ? num2 * 1000 : num2;
+        }
+      }
+
+      let amt = amtFromParen;
+      if (!amt && qty && price) {
+        amt = Math.round(qty * price);
+      }
+      if (!amt && parts.length === 1 && defaultAmount) {
+        amt = defaultAmount;
+      }
+
+      results.push({
+        type: 'RETURN',
+        name: formatReturnItemName(rawProdName, isPartImport),
+        quantity: qty,
+        price: price,
+        amount: amt || 0,
+      });
+      continue;
+    }
+
+    // 3. Nếu chỉ có <tên thịt> <số lượng>kg (không có đơn giá ghi trong ghi chú)
+    const nameQtyMatch = part.match(/^([a-zA-ZÀ-ỹ\s()+-]+?)\s+(\d+(?:[.,]\d+)?)\s*(?:kg|kilo)\s*(\([a-zA-Z0-9\s]+\))?$/i);
+    if (nameQtyMatch) {
+      let rawProdName = nameQtyMatch[1].trim();
+      if (nameQtyMatch[3]) rawProdName += ` ${nameQtyMatch[3].trim()}`;
+      const qty = parseFloat(nameQtyMatch[2].replace(',', '.'));
+      let amt = amtFromParen;
+      if (!amt) {
+        const innerParen = part.match(/\(\s*([\d.,]+)[\s\u00a0]*[đ₫kKVND]?\s*\)/i);
+        if (innerParen) amt = parseFloat(innerParen[1].replace(/\./g, '').replace(/,/g, ''));
+      }
+      if (!amt && parts.length === 1) amt = defaultAmount;
+      const price = (qty && qty > 0 && amt > 0) ? Math.round(amt / qty) : null;
+      results.push({
+        type: 'RETURN',
+        name: formatReturnItemName(rawProdName, isPartImport),
+        quantity: !isNaN(qty) ? qty : null,
+        price: price,
+        amount: amt || 0,
+      });
+      continue;
+    }
+
+    // 4. Fallback không tách được số: Giữ tên gốc đã làm sạch
+    results.push({
+      type: 'RETURN',
+      name: formatReturnItemName(part, isPartImport),
+      quantity: null,
+      price: null,
+      amount: amtFromParen || (parts.length === 1 ? defaultAmount : 0),
+    });
+  }
+
+  return results.length > 0 ? results : [{
+    type: 'RETURN',
+    name: isNoteLevelImport ? 'NHẬP HÀNG' : 'TRẢ HÀNG',
+    quantity: null,
+    price: null,
+    amount: defaultAmount,
+  }];
 };
 
 /**
