@@ -82,3 +82,4 @@ module.exports = async (req, res) => {
     return res.redirect(302, '/index.html');
   }
 };
+
