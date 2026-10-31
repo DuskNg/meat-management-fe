@@ -405,9 +405,6 @@ export default function EmployeeSalaryPortalScreen() {
               </Text>
               <Text style={styles.formulaNote}>* Nếu kết quả bằng hoặc dưới 0 thì không ứng thêm.</Text>
             </View>
-            <Text style={styles.ruleTextAlert}>
-              ⛔ Tuyệt đối không tự ý lấy tiền bán hàng hoặc tiền thu hộ để tạm ứng.
-            </Text>
           </View>
         </View>
       </View>
