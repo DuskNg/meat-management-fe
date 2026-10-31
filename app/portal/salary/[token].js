@@ -63,6 +63,31 @@ export default function EmployeeSalaryPortalScreen() {
   // State khi Chủ cơ sở bấm xem chi tiết 1 nhân viên cụ thể trong bảng tổng hợp
   const [selectedOwnerEmpId, setSelectedOwnerEmpId] = useState(null);
 
+  // Helper đọc và lưu mã xác thực trên máy cá nhân của nhân viên / chủ cơ sở
+  const getSavedCode = () => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        return window.localStorage.getItem(`salary_portal_code_${token}`);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const saveCodeToStorage = (code) => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        if (code) {
+          window.localStorage.setItem(`salary_portal_code_${token}`, code);
+        } else {
+          window.localStorage.removeItem(`salary_portal_code_${token}`);
+        }
+      } catch (_) {}
+    }
+  };
+
+
   // 1. Tải thông tin ban đầu của token khi mở link
   useEffect(() => {
     if (!token) return;
@@ -76,6 +101,21 @@ export default function EmployeeSalaryPortalScreen() {
       const res = await axios.get(`${API_HOST}/api/v1/portal/staff/info/${token}`);
       if (res.data?.success) {
         setPortalInfo(res.data.data);
+
+        // Tự động khôi phục đăng nhập từ cache máy cá nhân
+        const savedCode = getSavedCode();
+        if (savedCode) {
+          try {
+            setPinInput(savedCode);
+            await fetchSalaryData(monthKey, savedCode);
+            setIsUnlocked(true);
+          } catch (autoErr) {
+            // Nếu mã cũ đã đổi hoặc không còn hợp lệ thì xóa cache
+            saveCodeToStorage(null);
+            setPinInput('');
+            setIsUnlocked(false);
+          }
+        }
       }
     } catch (err) {
       console.error('Lỗi tải thông tin portal nhân viên:', err);
@@ -105,6 +145,8 @@ export default function EmployeeSalaryPortalScreen() {
     try {
       await fetchSalaryData(monthKey, cleanCode);
       setIsUnlocked(true);
+      // Lưu cache vào máy cá nhân để những lần sau tự động mở ngay không cần nhập lại
+      saveCodeToStorage(cleanCode);
     } catch (err) {
       setPinError(
         err.response?.data?.message ||
@@ -158,8 +200,9 @@ export default function EmployeeSalaryPortalScreen() {
     fetchSalaryData(newMonthKey, (pinInput || '').trim()).catch(() => {});
   };
 
-  // Khóa lại để nhập mã khác
+  // Khóa lại để nhập mã khác (xóa cache trên máy cá nhân)
   const handleLockAgain = () => {
+    saveCodeToStorage(null);
     setIsUnlocked(false);
     setPinInput('');
     setPinError('');
@@ -719,6 +762,9 @@ export default function EmployeeSalaryPortalScreen() {
               </Text>
               <Text style={styles.roleGuideItem}>
                 👑 <Text style={styles.bold}>Chủ cơ sở:</Text> Nhập mã quản lý của chủ để quan sát toàn bộ thông tin & trạng thái lương của tất cả nhân viên.
+              </Text>
+              <Text style={[styles.roleGuideItem, { color: '#0369A1', marginTop: 4, fontWeight: '500' }]}>
+                💾 <Text style={styles.bold}>Ghi nhớ tự động:</Text> Sau khi nhập đúng mã lần đầu, hệ thống sẽ tự động lưu trên máy này. Những lần sau vào link sẽ mở xem ngay mà không cần nhập lại mã.
               </Text>
             </View>
           </View>
