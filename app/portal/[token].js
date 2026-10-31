@@ -2369,6 +2369,50 @@ export default function PortalScreen() {
     );
   }, [portalData?.transactions, portalData?.payments, portalData?.summary, fromDate, toDate, sortOrder, branchList]);
 
+  // Danh sách các ngày chưa có công nợ trong khoảng thời gian đã lọc
+  const emptyDaysNote = useMemo(() => {
+    if (!fromDate || !toDate) return '';
+    const fromD = parseDDMMYYYY(fromDate, false);
+    const toD = parseDDMMYYYY(toDate, true);
+    if (!fromD || !toD || isNaN(fromD.getTime()) || isNaN(toD.getTime())) return '';
+
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    if (fromD > today) return '';
+
+    const endLimit = toD < today ? new Date(toD) : today;
+    endLimit.setHours(23, 59, 59, 999);
+
+    // Tập hợp các ngày đã có công nợ (có tiền thịt hoặc có giao hàng nợ)
+    const debtDateKeys = new Set();
+    (invoiceData?.sortedDays || []).forEach((d) => {
+      const hasDebt = (Number(d.meatSum) > 0) || (d.entries || []).some((e) => e.type === 'MEAT' || e.type === 'DELIVERY');
+      if (hasDebt && d.dateKey) {
+        debtDateKeys.add(d.dateKey);
+      }
+    });
+
+    const emptyDays = [];
+    const cur = new Date(fromD);
+    cur.setHours(0, 0, 0, 0);
+
+    let count = 0;
+    while (cur <= endLimit && count < 100) {
+      count++;
+      const dd = String(cur.getDate()).padStart(2, '0');
+      const mm = String(cur.getMonth() + 1).padStart(2, '0');
+      const yyyy = cur.getFullYear();
+      const dateKey = `${dd}/${mm}/${yyyy}`;
+      if (!debtDateKeys.has(dateKey)) {
+        emptyDays.push(`${dd}/${mm}`);
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    if (emptyDays.length === 0) return '';
+    return `* Các ngày chưa có công nợ: ${emptyDays.join(', ')}`;
+  }, [fromDate, toDate, invoiceData?.sortedDays]);
+
 
 
   // Dữ liệu bảng kê sau khi áp dụng thanh tìm kiếm nhanh
@@ -3045,6 +3089,15 @@ export default function PortalScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+
+              {/* Chú thích các ngày chưa có công nợ trong khoảng thời gian đã lọc */}
+              {Boolean(emptyDaysNote) && (
+                <View style={styles.emptyDaysNoteWrap}>
+                  <Text style={styles.emptyDaysNoteText}>
+                    {emptyDaysNote}
+                  </Text>
+                </View>
+              )}
 
               {/* BẢNG DỮ LIỆU INVOICE - VỪA KHÍT 100% CHIỀU RỘNG, KHÔNG SCROLL NGANG */}
               {displayInvoiceData?.sortedDays && displayInvoiceData.sortedDays.length > 0 ? (
@@ -4820,5 +4873,17 @@ const styles = StyleSheet.create({
   invSumFinalValue: {
     fontSize: 16.5,
     fontWeight: 'bold',
+  },
+  emptyDaysNoteWrap: {
+    paddingHorizontal: 8,
+    paddingTop: 2,
+    paddingBottom: 6,
+    marginTop: -4,
+  },
+  emptyDaysNoteText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontStyle: 'italic',
+    lineHeight: 16,
   },
 });
