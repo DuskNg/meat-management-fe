@@ -17,7 +17,7 @@ import { API_HOST } from '../../../src/api/client';
 
 const formatCurrency = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '0 đ';
-  return new Intl.NumberFormat('vi-VN').format(Math.round(val)) + ' đ';
+  return new Intl.NumberFormat('vi-VN').format(Math.round(Number(val))) + ' đ';
 };
 
 const formatDateVN = (dateStr) => {
@@ -27,22 +27,27 @@ const formatDateVN = (dateStr) => {
   return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
 };
 
+const formatShortDate = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const dd = d.getDate().toString().padStart(2, '0');
+  const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+  return `${dd}/${mm}`;
+};
+
 export default function EmployeeSalaryPortalScreen() {
   const { token } = useLocalSearchParams();
 
-  // Tab chính của cổng: 'SALARY' (Bảng lương) hoặc 'RULES' (Nội quy quy định)
-  const [activeTab, setActiveTab] = useState('SALARY');
+  // Tab chính của cổng: 'SALARY' (Bảng lương) - Tab 'RULES' (Nội quy) hiện tại disabled theo yêu cầu
+  const [activeTab] = useState('SALARY');
 
   // State thông tin ban đầu
   const [initLoading, setInitLoading] = useState(true);
   const [portalInfo, setPortalInfo] = useState(null);
   const [initError, setInitError] = useState('');
 
-  // State chọn nhân viên (đối với link chung)
-  const [selectedEmpId, setSelectedEmpId] = useState('');
-  const [selectedEmp, setSelectedEmp] = useState(null);
-
-  // State xác thực PIN
+  // State xác thực Mã (mã nhân viên hoặc mã chủ cơ sở)
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
@@ -58,6 +63,9 @@ export default function EmployeeSalaryPortalScreen() {
   const [salaryData, setSalaryData] = useState(null);
   const [dataError, setDataError] = useState('');
 
+  // State khi Chủ cơ sở bấm xem chi tiết 1 nhân viên cụ thể trong bảng tổng hợp
+  const [selectedOwnerEmpId, setSelectedOwnerEmpId] = useState(null);
+
   // 1. Tải thông tin ban đầu của token khi mở link
   useEffect(() => {
     if (!token) return;
@@ -68,38 +76,16 @@ export default function EmployeeSalaryPortalScreen() {
     try {
       setInitLoading(true);
       setInitError('');
-      // Ưu tiên gọi API staff portal chung
       const res = await axios.get(`${API_HOST}/api/v1/portal/staff/info/${token}`);
       if (res.data?.success) {
-        const info = res.data.data;
-        setPortalInfo(info);
-
-        if (info.isGeneral) {
-          // Link chung: Nếu có danh sách nhân viên, chọn người đầu tiên làm mặc định
-          if (info.employees && info.employees.length > 0) {
-            setSelectedEmpId(info.employees[0].id);
-            setSelectedEmp(info.employees[0]);
-          }
-        } else {
-          // Link riêng 1 nhân viên
-          if (!info.hasPin) {
-            setIsUnlocked(true);
-            fetchSalaryData(monthKey, '', info.employeeId);
-          }
-        }
+        setPortalInfo(res.data.data);
       }
     } catch (err) {
       console.error('Lỗi tải thông tin portal nhân viên:', err);
-      // Fallback thử link cũ nếu lỗi
       try {
         const fallbackRes = await axios.get(`${API_HOST}/api/v1/portal/employee-salary/info/${token}`);
         if (fallbackRes.data?.success) {
-          const info = fallbackRes.data.data;
-          setPortalInfo({ ...info, isGeneral: false });
-          if (!info.hasPin) {
-            setIsUnlocked(true);
-            fetchSalaryData(monthKey, '', info.employeeId);
-          }
+          setPortalInfo({ ...fallbackRes.data.data, isGeneral: false });
           return;
         }
       } catch (_) {}
@@ -109,49 +95,46 @@ export default function EmployeeSalaryPortalScreen() {
     }
   };
 
-  // 2. Xác thực PIN mở khóa bảng lương
-  const handleUnlockWithPin = async () => {
-    const empId = portalInfo?.isGeneral ? selectedEmpId : portalInfo?.employeeId;
-    if (!empId) {
-      setPinError('Vui lòng chọn nhân viên cần tra cứu.');
-      return;
-    }
-
-    const currentTarget = portalInfo?.isGeneral
-      ? portalInfo?.employees?.find((e) => e.id === empId)
-      : portalInfo;
-
-    if (currentTarget?.hasPin && !pinInput.trim()) {
-      setPinError('Vui lòng nhập 4 số cuối số điện thoại của bạn.');
+  // 2. Xác thực Mã mở khóa bảng lương (hỗ trợ cả Mã nhân viên lẫn Mã người chủ)
+  const handleUnlockWithCode = async () => {
+    const cleanCode = (pinInput || '').trim();
+    if (!cleanCode) {
+      setPinError('Vui lòng nhập mã xác thực được cấp.');
       return;
     }
 
     setVerifying(true);
     setPinError('');
     try {
-      await fetchSalaryData(monthKey, pinInput.trim(), empId);
+      await fetchSalaryData(monthKey, cleanCode);
       setIsUnlocked(true);
     } catch (err) {
-      setPinError(err.response?.data?.message || 'Mã PIN không đúng, vui lòng kiểm tra lại 4 số cuối SĐT.');
+      setPinError(
+        err.response?.data?.message ||
+          'Mã xác thực không chính xác. Vui lòng kiểm tra lại mã được cấp.'
+      );
     } finally {
       setVerifying(false);
     }
   };
 
-  // 3. Tải chi tiết dữ liệu lương
-  const fetchSalaryData = async (targetMonth, targetPin, empId) => {
+  // 3. Tải chi tiết dữ liệu lương theo mã xác thực
+  const fetchSalaryData = async (targetMonth, targetCode) => {
     setDataLoading(true);
     setDataError('');
     try {
-      const pinToUse = targetPin !== undefined ? targetPin : pinInput.trim();
-      const targetId = empId || (portalInfo?.isGeneral ? selectedEmpId : portalInfo?.employeeId);
+      const codeToUse = targetCode !== undefined ? targetCode : (pinInput || '').trim();
+      const empIdParam =
+        !portalInfo?.isGeneral && portalInfo?.employeeId
+          ? `&employeeId=${encodeURIComponent(portalInfo.employeeId)}`
+          : '';
 
-      const url = portalInfo?.isGeneral
-        ? `${API_HOST}/api/v1/portal/staff/salary/${token}?employeeId=${targetId}&monthKey=${targetMonth}&pin=${encodeURIComponent(pinToUse)}`
-        : `${API_HOST}/api/v1/portal/employee-salary/data/${token}?monthKey=${targetMonth}&pin=${encodeURIComponent(pinToUse)}`;
+      const url = `${API_HOST}/api/v1/portal/staff/salary/${token}?monthKey=${encodeURIComponent(
+        targetMonth
+      )}&pin=${encodeURIComponent(codeToUse)}${empIdParam}`;
 
       const res = await axios.get(url, {
-        headers: { 'x-portal-pin': pinToUse },
+        headers: { 'x-portal-pin': codeToUse },
       });
 
       if (res.data?.success) {
@@ -175,15 +158,469 @@ export default function EmployeeSalaryPortalScreen() {
     const date = new Date(y, m - 1 + delta, 1);
     const newMonthKey = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
     setMonthKey(newMonthKey);
-    fetchSalaryData(newMonthKey, pinInput.trim()).catch(() => {});
+    fetchSalaryData(newMonthKey, (pinInput || '').trim()).catch(() => {});
   };
 
-  // Đổi sang nhân viên khác
+  // Khóa lại để nhập mã khác
   const handleLockAgain = () => {
     setIsUnlocked(false);
     setPinInput('');
     setPinError('');
     setSalaryData(null);
+    setSelectedOwnerEmpId(null);
+  };
+
+  // Render chi tiết bảng lương của 1 nhân viên (dùng chung cho chế độ Cá nhân và khi Chủ bấm xem chi tiết 1 nhân viên)
+  const renderSingleEmployeeSalaryDetail = (empDetailData, isFromOwnerTable = false) => {
+    const salary = empDetailData?.salary;
+    const stats = empDetailData?.stats;
+    const leaves = empDetailData?.leaves || [];
+    const advances = empDetailData?.advances || [];
+    const employee = empDetailData?.employee;
+    const payment = empDetailData?.payment;
+    const totalDays = empDetailData?.totalDaysInMonth || 30;
+    const workingDays = empDetailData?.workingDays ?? totalDays;
+    const startDayText = empDetailData?.startDayText || '';
+
+    const isPaid = Boolean(payment?.isPaid || salary?.isPaid);
+    const isPartiallyPaid = Boolean(payment?.isPartiallyPaid || salary?.isPartiallyPaid);
+    const totalPaidSalary = Number(payment?.totalPaidSalary || salary?.totalPaidSalary || 0);
+
+    return (
+      <View style={styles.singleDetailContainer}>
+        {isFromOwnerTable && (
+          <TouchableOpacity
+            style={styles.backToTableBtn}
+            onPress={() => setSelectedOwnerEmpId(null)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.backToTableBtnText}>⬅️ Quay lại bảng tổng hợp tất cả nhân viên</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Thanh thông tin nhân viên */}
+        <View style={styles.employeeBar}>
+          <View style={styles.employeeBarLeft}>
+            <Text style={styles.employeeBarName}>👤 {employee?.name}</Text>
+            <Text style={styles.employeeBarRole}>
+              {employee?.role ? `💼 ${employee.role}` : '💼 Nhân viên'}
+              {employee?.accessCode ? ` • 🔑 Mã: ${employee.accessCode}` : ''}
+            </Text>
+          </View>
+          {!isFromOwnerTable && (
+            <TouchableOpacity style={styles.lockBtn} onPress={handleLockAgain} activeOpacity={0.7}>
+              <Text style={styles.lockBtnText}>🔒 Đổi mã</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Card Lương thực lĩnh */}
+        <View style={styles.netSalaryCard}>
+          <Text style={styles.netSalaryLabel}>
+            {isPartiallyPaid
+              ? `LƯƠNG THỰC LĨNH CÒN LẠI THÁNG ${monthKey}`
+              : `LƯƠNG THỰC LĨNH THÁNG ${monthKey}`}
+          </Text>
+          <Text style={styles.netSalaryAmount}>
+            {formatCurrency(isPaid ? (salary?.monthNetSalary || salary?.finalAmount) : salary?.finalAmount)}
+          </Text>
+          <View style={styles.netSalaryStatusWrap}>
+            {isPaid ? (
+              <Text style={[styles.netSalaryStatus, styles.statusPaid]}>
+                ✅ ĐÃ THANH TOÁN ĐỦ
+              </Text>
+            ) : isPartiallyPaid ? (
+              <Text style={[styles.netSalaryStatus, styles.statusPartial]}>
+                🟡 TRẢ 1 PHẦN (ĐÃ NHẬN: {formatCurrency(totalPaidSalary)})
+              </Text>
+            ) : (
+              <Text style={[styles.netSalaryStatus, styles.statusUnpaid]}>
+                ⏳ CHƯA THANH TOÁN
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Chi tiết tính lương */}
+        <View style={styles.detailCard}>
+          <Text style={styles.cardHeaderTitle}>📊 CHI TIẾT TÍNH LƯƠNG THÁNG {monthKey}</Text>
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailRowLabel}>Lương cứng tháng:</Text>
+            <Text style={styles.detailRowVal}>{formatCurrency(salary?.baseSalary)}</Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailRowLabel}>
+              Đơn giá 1 ngày công ({totalDays} ngày):
+            </Text>
+            <Text style={styles.detailRowVal}>~{formatCurrency(salary?.dailySalary)}/ngày</Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailRowLabel}>Số ngày công thực tế:</Text>
+            <Text style={[styles.detailRowVal, { color: '#0284C7', fontWeight: 'bold' }]}>
+              {workingDays}/{totalDays} công {startDayText ? `${startDayText}` : ''}
+            </Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailRowLabel}>Lương theo ngày công:</Text>
+            <Text style={styles.detailRowVal}>{formatCurrency(salary?.calculatedSalary)}</Text>
+          </View>
+
+          {stats?.leaveDays > 0 && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailRowLabel, { color: '#EF4444' }]}>
+                Khấu trừ nghỉ làm ({stats.leaveDays} buổi):
+              </Text>
+              <Text style={[styles.detailRowVal, { color: '#EF4444', fontWeight: 'bold' }]}>
+                -{formatCurrency(stats.leaveDeduction)}
+              </Text>
+            </View>
+          )}
+
+          {stats?.totalAdvances > 0 && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailRowLabel, { color: '#D97706' }]}>
+                Tổng đã tạm ứng trong tháng:
+              </Text>
+              <Text style={[styles.detailRowVal, { color: '#D97706', fontWeight: 'bold' }]}>
+                -{formatCurrency(stats.totalAdvances)}
+              </Text>
+            </View>
+          )}
+
+          {totalPaidSalary > 0 && (
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailRowLabel, { color: '#059669' }]}>
+                Đã thanh toán trong tháng:
+              </Text>
+              <Text style={[styles.detailRowVal, { color: '#059669', fontWeight: 'bold' }]}>
+                -{formatCurrency(totalPaidSalary)}
+              </Text>
+            </View>
+          )}
+
+          <View style={[styles.detailRow, styles.detailRowTotal]}>
+            <Text style={styles.detailRowTotalLabel}>
+              {isPartiallyPaid ? 'Thực lĩnh còn lại:' : 'Thực lĩnh cuối tháng:'}
+            </Text>
+            <Text style={styles.detailRowTotalVal}>
+              {formatCurrency(isPaid ? (salary?.monthNetSalary || salary?.finalAmount) : salary?.finalAmount)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Danh sách các lần tạm ứng */}
+        {advances.length > 0 && (
+          <View style={styles.detailCard}>
+            <Text style={styles.cardHeaderTitle}>
+              💸 CHI TIẾT TỪNG LẦN TẠM ỨNG ({advances.length} LẦN)
+            </Text>
+            {advances.map((adv, idx) => (
+              <View key={adv.id || idx} style={styles.listItemRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listItemDate}>📅 Ngày ứng: {formatDateVN(adv.date)}</Text>
+                  {adv.note ? <Text style={styles.listItemNote}>Ghi chú: {adv.note}</Text> : null}
+                </View>
+                <Text style={styles.listItemAmountAdvance}>-{formatCurrency(adv.amount)}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Danh sách ngày nghỉ làm */}
+        {leaves.length > 0 && (
+          <View style={styles.detailCard}>
+            <Text style={styles.cardHeaderTitle}>🏖️ LỊCH SỬ NGHỈ LÀM TRONG THÁNG</Text>
+            {leaves.map((leaf, idx) => (
+              <View key={leaf.id || idx} style={styles.listItemRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listItemDate}>📅 Ngày nghỉ: {formatDateVN(leaf.date)}</Text>
+                  {leaf.note ? <Text style={styles.listItemNote}>Lý do: {leaf.note}</Text> : null}
+                </View>
+                <View style={styles.leaveBadge}>
+                  <Text style={styles.leaveBadgeText}>
+                    {leaf.shift === 'HALF' ? 'Nửa ngày (-0.5 buổi)' : 'Cả ngày (-1 buổi)'}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Quy định tạm ứng lương */}
+        <View style={styles.detailCard}>
+          <Text style={styles.cardHeaderTitle}>💵 QUY ĐỊNH TẠM ỨNG LƯƠNG</Text>
+          <View style={styles.ruleBody}>
+            <Text style={styles.ruleBullet}>
+              • <Text style={styles.bold}>Hạn mức ứng:</Text> Tối đa{' '}
+              <Text style={styles.highlightText}>50% tiền công thực tế đã làm</Text> trong tháng.
+            </Text>
+            <View style={styles.formulaBox}>
+              <Text style={styles.formulaTitle}>📐 CÔNG THỨC TÍNH SỐ TIỀN ĐƯỢC ỨNG THÊM:</Text>
+              <Text style={styles.formulaContent}>
+                Số được ứng thêm = (50% tiền công đã làm) − (Lương đã ứng trong tháng)
+              </Text>
+              <Text style={styles.formulaNote}>* Nếu kết quả bằng hoặc dưới 0 thì không ứng thêm.</Text>
+            </View>
+            <Text style={styles.ruleTextAlert}>
+              ⛔ Tuyệt đối không tự ý lấy tiền bán hàng hoặc tiền thu hộ để tạm ứng.
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  // Render giao diện dành cho Người Chủ (Quan sát toàn bộ nhân viên & trạng thái lương)
+  const renderOwnerOverview = () => {
+    const employeesSalary = salaryData?.employeesSalary || [];
+    const summary = salaryData?.summary || {};
+    const totalDays = salaryData?.totalDaysInMonth || 30;
+
+    // Nếu chủ đang bấm xem chi tiết 1 nhân viên
+    if (selectedOwnerEmpId) {
+      const targetEmpData = employeesSalary.find((item) => item.employee?.id === selectedOwnerEmpId);
+      if (targetEmpData) {
+        return renderSingleEmployeeSalaryDetail(targetEmpData, true);
+      }
+    }
+
+    return (
+      <View style={styles.ownerContainer}>
+        {/* Header chế độ Chủ cơ sở */}
+        <View style={styles.ownerTopBanner}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.ownerBannerTitle}>👑 CHẾ ĐỘ CHỦ CƠ SỞ (QUAN SÁT TẤT CẢ)</Text>
+            <Text style={styles.ownerBannerSub}>
+              Mã quản lý: {salaryData?.ownerCode} • Theo dõi toàn bộ lương & trạng thái từng nhân viên
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.lockBtn} onPress={handleLockAgain} activeOpacity={0.7}>
+            <Text style={styles.lockBtnText}>🔒 Khóa lại</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Lưới 2 cột tổng quan tháng */}
+        <View style={styles.ownerSummaryGrid}>
+          <View style={styles.ownerSummaryBox}>
+            <Text style={styles.ownerSumLabel}>NHÂN SỰ & TRẠNG THÁI</Text>
+            <Text style={styles.ownerSumPrimary}>{summary.totalEmployees || 0} nhân viên</Text>
+            <Text style={styles.ownerSumSub}>
+              ✅ {summary.paidCount || 0} đã trả • 🟡 {summary.partialCount || 0} trả 1 phần • ⏳{' '}
+              {summary.unpaidCount || 0} chưa trả
+            </Text>
+          </View>
+
+          <View style={styles.ownerSummaryBox}>
+            <Text style={styles.ownerSumLabel}>TỔNG LƯƠNG CỨNG & CÔNG</Text>
+            <Text style={styles.ownerSumPrimary}>{formatCurrency(summary.totalBaseSalary)}</Text>
+            <Text style={styles.ownerSumSub}>
+              Tổng công: {summary.totalWorkingDays || 0} công (Lương công:{' '}
+              {formatCurrency(summary.totalCalculatedSalary)})
+            </Text>
+          </View>
+
+          <View style={styles.ownerSummaryBox}>
+            <Text style={styles.ownerSumLabel}>TỔNG TẠM ỨNG & ĐÃ TRẢ</Text>
+            <Text style={[styles.ownerSumPrimary, { color: '#DC2626' }]}>
+              -{formatCurrency(summary.totalAdvances)}
+            </Text>
+            <Text style={styles.ownerSumSub}>
+              Đã thanh toán lương: {formatCurrency(summary.totalPaidSalary)}
+            </Text>
+          </View>
+
+          <View style={[styles.ownerSummaryBox, styles.ownerSummaryBoxHighlight]}>
+            <Text style={[styles.ownerSumLabel, { color: '#047857' }]}>TỔNG THỰC LĨNH CÒN PHẢI TRẢ</Text>
+            <Text style={[styles.ownerSumPrimary, { color: '#059669', fontSize: 16 }]}>
+              {formatCurrency(summary.totalRemainingSalary)}
+            </Text>
+            <Text style={styles.ownerSumSub}>
+              Tổng thực lĩnh tháng: {formatCurrency(summary.totalNetSalary)}
+            </Text>
+          </View>
+        </View>
+
+        {/* BẢNG CHI TIẾT LƯƠNG & TRẠNG THÁI TỪNG NHÂN VIÊN */}
+        <View style={styles.ownerTableCard}>
+          <View style={styles.ownerTableCardHeader}>
+            <Text style={styles.ownerTableCardTitle}>
+              📋 CHI TIẾT LƯƠNG & TRẠNG THÁI TỪNG NHÂN VIÊN ({employeesSalary.length})
+            </Text>
+            <Text style={styles.ownerTableCardHint}>Bấm vào dòng nhân viên để xem chi tiết</Text>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.ownerTableMinWidth}>
+              {/* Header Bảng */}
+              <View style={styles.ownerTableHeaderRow}>
+                <Text style={[styles.ownerTh, { width: 34, textAlign: 'center' }]}>STT</Text>
+                <Text style={[styles.ownerTh, { width: 145 }]}>HỌ VÀ TÊN</Text>
+                <Text style={[styles.ownerTh, { width: 100, textAlign: 'right' }]}>LƯƠNG CỨNG</Text>
+                <Text style={[styles.ownerTh, { width: 78, textAlign: 'center' }]}>SỐ CÔNG</Text>
+                <Text style={[styles.ownerTh, { width: 105, textAlign: 'right' }]}>LƯƠNG CÔNG</Text>
+                <Text style={[styles.ownerTh, { width: 135, textAlign: 'right' }]}>TẠM ỨNG</Text>
+                <Text style={[styles.ownerTh, { width: 125, textAlign: 'right' }]}>THỰC LĨNH</Text>
+                <Text style={[styles.ownerTh, { width: 92, textAlign: 'center' }]}>TRẠNG THÁI</Text>
+              </View>
+
+              {/* Danh sách nhân viên */}
+              {employeesSalary.map((item, idx) => {
+                const emp = item.employee || {};
+                const sal = item.salary || {};
+                const pay = item.payment || {};
+                const advList = item.advances || [];
+                const isPaid = Boolean(pay.isPaid || sal.isPaid);
+                const isPartiallyPaid = Boolean(pay.isPartiallyPaid || sal.isPartiallyPaid);
+
+                return (
+                  <TouchableOpacity
+                    key={emp.id || idx}
+                    style={[
+                      styles.ownerTableRow,
+                      idx % 2 === 1 && styles.ownerTableRowAlt,
+                    ]}
+                    onPress={() => setSelectedOwnerEmpId(emp.id)}
+                    activeOpacity={0.7}
+                  >
+                    {/* STT */}
+                    <Text style={[styles.ownerTd, { width: 34, textAlign: 'center', color: '#64748B' }]}>
+                      {idx + 1}
+                    </Text>
+
+                    {/* HỌ VÀ TÊN + MÃ */}
+                    <View style={{ width: 145, paddingRight: 6 }}>
+                      <Text style={styles.ownerEmpName}>{emp.name}</Text>
+                      <Text style={styles.ownerEmpCode}>
+                        🔑 Mã: <Text style={{ fontWeight: 'bold', color: '#0369A1' }}>{emp.accessCode || '----'}</Text>
+                      </Text>
+                    </View>
+
+                    {/* LƯƠNG CỨNG */}
+                    <Text style={[styles.ownerTd, { width: 100, textAlign: 'right', fontWeight: '600' }]}>
+                      {formatCurrency(sal.baseSalary)}
+                    </Text>
+
+                    {/* SỐ CÔNG */}
+                    <View style={{ width: 78, alignItems: 'center' }}>
+                      <Text style={styles.ownerWorkDaysText}>
+                        {item.workingDays}/{totalDays}
+                      </Text>
+                      {item.startDayText ? (
+                        <Text style={styles.ownerStartDaySub}>{item.startDayText}</Text>
+                      ) : null}
+                    </View>
+
+                    {/* LƯƠNG CÔNG */}
+                    <Text style={[styles.ownerTd, { width: 105, textAlign: 'right', fontWeight: '600' }]}>
+                      {formatCurrency(sal.calculatedSalary)}
+                    </Text>
+
+                    {/* TẠM ỨNG (Tách từng lần ứng) */}
+                    <View style={{ width: 135, alignItems: 'flex-end' }}>
+                      {advList.length > 0 ? (
+                        advList.map((adv, aIdx) => {
+                          const dShort = formatShortDate(adv.date);
+                          return (
+                            <Text key={adv.id || aIdx} style={styles.ownerAdvanceItemText}>
+                              {dShort ? `(${dShort}) ` : ''}-{formatCurrency(adv.amount)}
+                            </Text>
+                          );
+                        })
+                      ) : sal.totalAdvances > 0 ? (
+                        <Text style={styles.ownerAdvanceItemText}>
+                          -{formatCurrency(sal.totalAdvances)}
+                        </Text>
+                      ) : (
+                        <Text style={{ fontSize: 12, color: '#94A3B8' }}>-</Text>
+                      )}
+                    </View>
+
+                    {/* THỰC LĨNH (Kèm đơn giá ngày & đã trả 1 phần) */}
+                    <View style={{ width: 125, alignItems: 'flex-end' }}>
+                      <Text style={styles.ownerNetSalaryText}>
+                        {formatCurrency(isPaid ? sal.monthNetSalary : sal.finalAmount)}
+                      </Text>
+                      <Text style={styles.ownerDailySubText}>
+                        (~{formatCurrency(sal.dailySalary)}/ngày)
+                      </Text>
+                      {isPartiallyPaid && sal.totalPaidSalary > 0 ? (
+                        <Text style={styles.ownerPaidPartSubText}>
+                          (Đã trả: {formatCurrency(sal.totalPaidSalary)})
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    {/* TRẠNG THÁI */}
+                    <View style={{ width: 92, alignItems: 'center' }}>
+                      <View
+                        style={[
+                          styles.ownerStatusBadge,
+                          isPaid
+                            ? styles.ownerStatusBadgePaid
+                            : isPartiallyPaid
+                            ? styles.ownerStatusBadgePartial
+                            : styles.ownerStatusBadgeUnpaid,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.ownerStatusBadgeText,
+                            isPaid
+                              ? styles.ownerStatusTextPaid
+                              : isPartiallyPaid
+                              ? styles.ownerStatusTextPartial
+                              : styles.ownerStatusTextUnpaid,
+                          ]}
+                        >
+                          {isPaid ? 'Đã trả' : isPartiallyPaid ? 'Trả 1 phần' : 'Chưa trả'}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {/* Dòng TỔNG CỘNG cuối bảng */}
+              <View style={styles.ownerTableFooterRow}>
+                <Text style={[styles.ownerFooterText, { width: 179 }]}>
+                  TỔNG CỘNG ({employeesSalary.length} NV)
+                </Text>
+                <Text style={[styles.ownerFooterText, { width: 100, textAlign: 'right' }]}>
+                  {formatCurrency(summary.totalBaseSalary)}
+                </Text>
+                <Text style={[styles.ownerFooterText, { width: 78, textAlign: 'center' }]}>
+                  {summary.totalWorkingDays} công
+                </Text>
+                <Text style={[styles.ownerFooterText, { width: 105, textAlign: 'right' }]}>
+                  {formatCurrency(summary.totalCalculatedSalary)}
+                </Text>
+                <Text
+                  style={[
+                    styles.ownerFooterText,
+                    { width: 135, textAlign: 'right', color: '#DC2626' },
+                  ]}
+                >
+                  {summary.totalAdvances > 0 ? `-${formatCurrency(summary.totalAdvances)}` : '-'}
+                </Text>
+                <Text
+                  style={[
+                    styles.ownerFooterText,
+                    { width: 125, textAlign: 'right', color: '#059669', fontSize: 13.5 },
+                  ]}
+                >
+                  {formatCurrency(summary.totalRemainingSalary)}
+                </Text>
+                <View style={{ width: 92 }} />
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    );
   };
 
   // Loading ban đầu
@@ -192,7 +629,7 @@ export default function EmployeeSalaryPortalScreen() {
       <SafeAreaView style={styles.centerContainer}>
         <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <ActivityIndicator size="large" color="#0284C7" />
-        <Text style={styles.loadingText}>Đang tải cổng thông tin nhân sự...</Text>
+        <Text style={styles.loadingText}>Đang tải cổng kiểm tra lương...</Text>
       </SafeAreaView>
     );
   }
@@ -204,7 +641,7 @@ export default function EmployeeSalaryPortalScreen() {
         <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <View style={styles.errorCard}>
           <Text style={styles.errorIcon}>⚠️</Text>
-          <Text style={styles.errorTitle}>Không Thể Mở Cổng Nhân Sự</Text>
+          <Text style={styles.errorTitle}>Không Thể Mở Cổng Tra Cứu Lương</Text>
           <Text style={styles.errorDesc}>{initError}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={loadPortalInfo} activeOpacity={0.8}>
             <Text style={styles.retryBtnText}>Thử lại</Text>
@@ -214,358 +651,131 @@ export default function EmployeeSalaryPortalScreen() {
     );
   }
 
-  const salary = salaryData?.salary;
-  const stats = salaryData?.stats;
-  const leaves = salaryData?.leaves || [];
-  const advances = salaryData?.advances || [];
-  const employee = salaryData?.employee;
   const merchantName = portalInfo?.merchantName || salaryData?.merchantName || 'Cửa hàng';
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
-      {/* HEADER CỔNG NHÂN SỰ CHUNG */}
+      {/* HEADER CỔNG NHÂN SỰ */}
       <View style={styles.topBar}>
         <View style={styles.topBarLeft}>
           <Text style={styles.merchantTitle}>🏪 {merchantName}</Text>
-          <Text style={styles.portalSubTitle}>CỔNG THÔNG TIN NHÂN SỰ & QUY ĐỊNH</Text>
+          <Text style={styles.portalSubTitle}>CỔNG KIỂM TRA BẢNG LƯƠNG & CHẤM CÔNG</Text>
         </View>
         <View style={styles.secureBadge}>
-          <Text style={styles.secureBadgeText}>🛡️ Nội bộ</Text>
+          <Text style={styles.secureBadgeText}>🛡️ Bảo mật mã riêng</Text>
         </View>
       </View>
 
-      {/* THANH CHUYỂN TAB CHÍNH */}
+      {/* THANH CHUYỂN TAB CHÍNH (TAB NỘI QUY DISABLED KHÔNG CHO BẤM VÀO) */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tabItem, activeTab === 'SALARY' && styles.tabItemActive]}
-          onPress={() => setActiveTab('SALARY')}
           activeOpacity={0.8}
         >
           <Text style={[styles.tabItemText, activeTab === 'SALARY' && styles.tabItemTextActive]}>
-            💰 BẢNG LƯƠNG
+            💰 BẢNG LƯƠNG THÁNG NÀY
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'RULES' && styles.tabItemActive]}
-          onPress={() => setActiveTab('RULES')}
-          activeOpacity={0.8}
+          style={[styles.tabItem, styles.tabItemDisabled]}
+          disabled={true}
+          activeOpacity={1}
         >
-          <Text style={[styles.tabItemText, activeTab === 'RULES' && styles.tabItemTextActive]}>
-            📜 NỘI QUY & QUY ĐỊNH
+          <Text style={styles.tabItemTextDisabled}>
+            🔒 NỘI QUY & QUY ĐỊNH
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* NỘI DUNG THEO TAB */}
-      {activeTab === 'SALARY' ? (
-        <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {!isUnlocked ? (
-            /* KHỐI XÁC THỰC MỞ KHÓA BẢNG LƯƠNG */
-            <View style={styles.authCard}>
-              <View style={styles.authIconWrap}>
-                <Text style={styles.authIcon}>🔐</Text>
-              </View>
-              <Text style={styles.authTitle}>TRA CỨU BẢNG LƯƠNG CÁ NHÂN</Text>
-              <Text style={styles.authSub}>
-                Để bảo mật thu nhập riêng tư, vui lòng chọn tên của bạn và nhập 4 số cuối số điện thoại cá nhân:
-              </Text>
-
-              {/* Danh sách chọn nhân viên (nếu là link chung) */}
-              {portalInfo?.isGeneral && (
-                <View style={styles.empSelectSection}>
-                  <Text style={styles.fieldLabel}>👤 Bạn là ai? (Chọn tên của bạn):</Text>
-                  <View style={styles.empChipsList}>
-                    {(portalInfo.employees || []).map((emp) => {
-                      const isSelected = selectedEmpId === emp.id;
-                      return (
-                        <TouchableOpacity
-                          key={emp.id}
-                          style={[styles.empChip, isSelected && styles.empChipSelected]}
-                          onPress={() => {
-                            setSelectedEmpId(emp.id);
-                            setSelectedEmp(emp);
-                            setPinError('');
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.empChipText, isSelected && styles.empChipTextSelected]}>
-                            {emp.name} {emp.role ? `(${emp.role})` : ''}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              )}
-
-              {/* Ô nhập PIN */}
-              <View style={styles.pinSection}>
-                <Text style={styles.fieldLabel}>🔒 Nhập 4 số cuối số điện thoại của bạn:</Text>
-                <View style={styles.pinInputWrap}>
-                  <TextInput
-                    style={styles.pinInput}
-                    placeholder="Ví dụ: 6655"
-                    placeholderTextColor="#94A3B8"
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    secureTextEntry
-                    value={pinInput}
-                    onChangeText={(text) => {
-                      setPinInput(text);
-                      setPinError('');
-                    }}
-                    onSubmitEditing={handleUnlockWithPin}
-                  />
-                </View>
-              </View>
-
-              {pinError ? <Text style={styles.pinErrorText}>⚠️ {pinError}</Text> : null}
-
-              <TouchableOpacity
-                style={[styles.unlockBtn, verifying && { opacity: 0.7 }]}
-                onPress={handleUnlockWithPin}
-                disabled={verifying}
-                activeOpacity={0.8}
-              >
-                {verifying ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.unlockBtnText}>MỞ KHÓA BẢNG LƯƠNG 🔓</Text>
-                )}
-              </TouchableOpacity>
-
-              <Text style={styles.securityNotice}>
-                🛡️ Mật khẩu là 4 số cuối số điện thoại của bạn đã đăng ký với cửa hàng. Không ai có thể xem trộm lương của người khác.
-              </Text>
+      {/* NỘI DUNG TAB BẢNG LƯƠNG */}
+      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {!isUnlocked ? (
+          /* KHỐI NHẬP MÃ XÁC THỰC MỞ KHÓA */
+          <View style={styles.authCard}>
+            <View style={styles.authIconWrap}>
+              <Text style={styles.authIcon}>🔐</Text>
             </View>
-          ) : (
-            /* KHỐI HIỂN THỊ CHI TIẾT BẢNG LƯƠNG ĐÃ MỞ KHÓA */
-            <View style={styles.salarySection}>
-              {/* Thanh thông tin người xem & nút khóa lại */}
-              <View style={styles.employeeBar}>
-                <View style={styles.employeeBarLeft}>
-                  <Text style={styles.employeeBarName}>👤 {employee?.name || selectedEmp?.name}</Text>
-                  <Text style={styles.employeeBarRole}>{employee?.role ? `💼 ${employee.role}` : '💼 Nhân viên'}</Text>
-                </View>
-                {portalInfo?.isGeneral && (
-                  <TouchableOpacity style={styles.lockBtn} onPress={handleLockAgain} activeOpacity={0.7}>
-                    <Text style={styles.lockBtnText}>🔒 Khóa lại</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+            <Text style={styles.authTitle}>NHẬP MÃ XÁC THỰC KIỂM TRA LƯƠNG</Text>
+            <Text style={styles.authSub}>
+              Mỗi nhân viên được cấp 1 mã xác thực riêng biệt. Vui lòng nhập mã của bạn để xem thông tin lương tháng này:
+            </Text>
 
-              {/* Điều khiển chọn tháng */}
-              <View style={styles.monthSelector}>
-                <TouchableOpacity style={styles.monthArrowBtn} onPress={() => adjustMonth(-1)}>
-                  <Text style={styles.monthArrowText}>◀️ Tháng trước</Text>
-                </TouchableOpacity>
-                <View style={styles.monthCenter}>
-                  <Text style={styles.monthCenterLabel}>Kỳ lương</Text>
-                  <Text style={styles.monthCenterValue}>Tháng {monthKey}</Text>
-                </View>
-                <TouchableOpacity style={styles.monthArrowBtn} onPress={() => adjustMonth(1)}>
-                  <Text style={styles.monthArrowText}>Tháng sau ▶️</Text>
-                </TouchableOpacity>
+            {/* Ô nhập Mã xác thực */}
+            <View style={styles.pinSection}>
+              <Text style={styles.fieldLabel}>🔑 Mã xác thực của bạn:</Text>
+              <View style={styles.pinInputWrap}>
+                <TextInput
+                  style={styles.pinInput}
+                  placeholder="Nhập mã xác thực..."
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="number-pad"
+                  maxLength={10}
+                  value={pinInput}
+                  onChangeText={(text) => {
+                    setPinInput(text);
+                    setPinError('');
+                  }}
+                  onSubmitEditing={handleUnlockWithCode}
+                />
               </View>
+            </View>
 
-              {dataLoading ? (
-                <ActivityIndicator size="large" color="#0284C7" style={{ marginVertical: 30 }} />
-              ) : dataError ? (
-                <Text style={styles.dataErrorText}>⚠️ {dataError}</Text>
+            {pinError ? <Text style={styles.pinErrorText}>⚠️ {pinError}</Text> : null}
+
+            <TouchableOpacity
+              style={[styles.unlockBtn, verifying && { opacity: 0.7 }]}
+              onPress={handleUnlockWithCode}
+              disabled={verifying}
+              activeOpacity={0.8}
+            >
+              {verifying ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <>
-                  {/* Card Lương thực lĩnh */}
-                  <View style={styles.netSalaryCard}>
-                    <Text style={styles.netSalaryLabel}>LƯƠNG THỰC LĨNH THÁNG {monthKey}</Text>
-                    <Text style={styles.netSalaryAmount}>{formatCurrency(salary?.finalAmount)}</Text>
-                    <View style={styles.netSalaryStatusWrap}>
-                      <Text style={[styles.netSalaryStatus, salaryData?.payment?.isPaid ? styles.statusPaid : styles.statusUnpaid]}>
-                        {salaryData?.payment?.isPaid ? '✅ ĐÃ THANH TOÁN' : '⏳ ĐANG TÍNH TOÁN / CHỜ THANH TOÁN'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Chi tiết tính lương */}
-                  <View style={styles.detailCard}>
-                    <Text style={styles.cardHeaderTitle}>📊 CHI TIẾT TÍNH LƯƠNG</Text>
-
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailRowLabel}>Lương cơ bản tháng:</Text>
-                      <Text style={styles.detailRowVal}>{formatCurrency(salary?.baseSalary)}</Text>
-                    </View>
-
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailRowLabel}>
-                        Đơn giá 1 ngày công ({salaryData?.totalDaysInMonth} ngày):
-                      </Text>
-                      <Text style={styles.detailRowVal}>~{formatCurrency(salary?.dailySalary)}/buổi</Text>
-                    </View>
-
-                    {stats?.leaveDays > 0 && (
-                      <View style={styles.detailRow}>
-                        <Text style={[styles.detailRowLabel, { color: '#EF4444' }]}>
-                          Khấu trừ nghỉ làm ({stats.leaveDays} buổi):
-                        </Text>
-                        <Text style={[styles.detailRowVal, { color: '#EF4444', fontWeight: 'bold' }]}>
-                          -{formatCurrency(stats.leaveDeduction)}
-                        </Text>
-                      </View>
-                    )}
-
-                    {stats?.totalAdvances > 0 && (
-                      <View style={styles.detailRow}>
-                        <Text style={[styles.detailRowLabel, { color: '#D97706' }]}>
-                          Đã tạm ứng trong tháng:
-                        </Text>
-                        <Text style={[styles.detailRowVal, { color: '#D97706', fontWeight: 'bold' }]}>
-                          -{formatCurrency(stats.totalAdvances)}
-                        </Text>
-                      </View>
-                    )}
-
-                    <View style={[styles.detailRow, styles.detailRowTotal]}>
-                      <Text style={styles.detailRowTotalLabel}>Thực lĩnh cuối tháng:</Text>
-                      <Text style={styles.detailRowTotalVal}>{formatCurrency(salary?.finalAmount)}</Text>
-                    </View>
-                  </View>
-
-                  {/* Danh sách các lần tạm ứng */}
-                  {advances.length > 0 && (
-                    <View style={styles.detailCard}>
-                      <Text style={styles.cardHeaderTitle}>💸 LỊCH SỬ TẠM ỨNG TRONG THÁNG</Text>
-                      {advances.map((adv, idx) => (
-                        <View key={adv.id || idx} style={styles.listItemRow}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.listItemDate}>📅 Ngày: {formatDateVN(adv.date)}</Text>
-                            {adv.note ? <Text style={styles.listItemNote}>Lý do: {adv.note}</Text> : null}
-                          </View>
-                          <Text style={styles.listItemAmountAdvance}>-{formatCurrency(adv.amount)}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* Danh sách ngày nghỉ làm */}
-                  {leaves.length > 0 && (
-                    <View style={styles.detailCard}>
-                      <Text style={styles.cardHeaderTitle}>🏖️ LỊCH SỬ NGHỈ LÀM TRONG THÁNG</Text>
-                      {leaves.map((leaf, idx) => (
-                        <View key={leaf.id || idx} style={styles.listItemRow}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.listItemDate}>📅 Ngày nghỉ: {formatDateVN(leaf.date)}</Text>
-                            {leaf.note ? <Text style={styles.listItemNote}>Lý do: {leaf.note}</Text> : null}
-                          </View>
-                          <View style={styles.leaveBadge}>
-                            <Text style={styles.leaveBadgeText}>
-                              {leaf.shift === 'HALF' ? 'Nửa ngày (-0.5 buổi)' : 'Cả ngày (-1 buổi)'}
-                            </Text>
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* QUY ĐỊNH TẠM ỨNG LƯƠNG (CHUYỂN SANG TAB BẢNG LƯƠNG) */}
-                  <View style={styles.detailCard}>
-                    <Text style={styles.cardHeaderTitle}>💵 QUY ĐỊNH TẠM ỨNG LƯƠNG</Text>
-                    <View style={styles.ruleBody}>
-                      <Text style={styles.ruleBullet}>
-                        • <Text style={styles.bold}>Hạn mức ứng:</Text> Tối đa <Text style={styles.highlightText}>50% tiền công thực tế đã làm</Text> trong tháng (không tính lãi, cửa hàng đồng ý).
-                      </Text>
-                      <View style={styles.formulaBox}>
-                        <Text style={styles.formulaTitle}>📐 CÔNG THỨC TÍNH SỐ TIỀN ĐƯỢC ỨNG THÊM:</Text>
-                        <Text style={styles.formulaContent}>
-                          Số được ứng thêm = (50% tiền công đã làm) − (Lương đã ứng trong tháng)
-                        </Text>
-                        <Text style={styles.formulaNote}>* Nếu kết quả bằng hoặc dưới 0 thì không ứng thêm.</Text>
-                      </View>
-                      <Text style={styles.ruleBullet}>
-                        • <Text style={styles.bold}>Đối chiếu & khấu trừ:</Text> Mỗi lần ứng ghi rõ ngày và số tiền để trừ khi chốt lương cuối tháng hoặc khi nghỉ việc.
-                      </Text>
-                      <Text style={styles.ruleTextAlert}>
-                        ⛔ Tuyệt đối không tự ý lấy tiền bán hàng hoặc tiền thu hộ để tạm ứng.
-                      </Text>
-                    </View>
-                  </View>
-                </>
+                <Text style={styles.unlockBtnText}>XÁC THỰC & XEM BẢNG LƯƠNG 🔓</Text>
               )}
-            </View>
-          )}
-        </ScrollView>
-      ) : (
-        /* TAB 2: NỘI QUY QUY ĐỊNH CỦA CỬA HÀNG */
-        <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.rulesContainer}>
-            {/* MỤC 1: GIỜ GIẤC & TRÁCH NHIỆM LÀM VIỆC (ĐƯA LÊN ĐẦU) */}
-            <View style={styles.ruleCard}>
-              <View style={styles.ruleCardHeader}>
-                <Text style={styles.ruleCardTitle}>⏰ 1. GIỜ GIẤC & TRÁCH NHIỆM LÀM VIỆC</Text>
-              </View>
-              <View style={styles.ruleBody}>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Vào ca lúc 03h sáng:</Text> Đi làm đúng giờ, không tự ý bỏ ca (việc đột xuất phải báo trước cho quản lý).
-                </Text>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Soạn & giao hàng:</Text> Đúng loại thịt, đúng cân, đủ túi; lấy đủ chữ ký/xác nhận của khách.
-                </Text>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Vệ sinh & an toàn:</Text> Rửa sạch dao/thớt/máy và dọn khu vực sau ca; tuân thủ an toàn dao, máy, xe.
-                </Text>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Cam kết hai bên:</Text> Cửa hàng cấp đồ bảo hộ, bảo đảm an toàn, trả lương đúng hạn và lắng nghe nhân viên giải thích khi có sai sót (không phạt tiền, không cắt lương trái luật).
-                </Text>
-              </View>
-            </View>
+            </TouchableOpacity>
 
-            {/* MỤC 2: CHẾ ĐỘ THƯỞNG & ĐÃI NGỘ (CHO XUỐNG DƯỚI) */}
-            <View style={styles.ruleCard}>
-              <View style={styles.ruleCardHeader}>
-                <Text style={styles.ruleCardTitle}>🎁 2. CHẾ ĐỘ THƯỞNG & TĂNG LƯƠNG</Text>
-              </View>
-              <View style={styles.ruleBody}>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Thưởng trách nhiệm (200.000đ/tháng):</Text> Đi làm đúng giờ, đủ công, không vi phạm quy định.
-                </Text>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Thưởng thâm niên (xét mỗi kỳ 06 tháng):</Text>
-                </Text>
-                <View style={styles.subBulletList}>
-                  <Text style={styles.subBulletText}>- Mất thưởng trách nhiệm ≤ 1 tháng: thưởng <Text style={styles.bold}>1.500.000đ</Text></Text>
-                  <Text style={styles.subBulletText}>- Mất thưởng trách nhiệm 2 tháng: thưởng <Text style={styles.bold}>1.000.000đ</Text></Text>
-                  <Text style={styles.subBulletText}>- Từ 3 tháng không đạt: không thưởng kỳ đó</Text>
-                </View>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Thưởng lễ tết (200.000đ/dịp):</Text> Tết Dương lịch 1/1, Giỗ Tổ 10/3 ÂL, 30/4 - 1/5, Quốc khánh 2/9.
-                </Text>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Xét tăng lương:</Text> Định kỳ 12 tháng/lần theo tay nghề và chất lượng công việc (hai bên thống nhất).
-                </Text>
-              </View>
-            </View>
-
-            {/* MỤC 3: NGHỈ VIỆC & BÀN GIAO */}
-            <View style={styles.ruleCard}>
-              <View style={styles.ruleCardHeader}>
-                <Text style={styles.ruleCardTitle}>🚪 3. NGHỈ VIỆC & BÀN GIAO</Text>
-              </View>
-              <View style={styles.ruleBody}>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Thông báo trước 15 ngày:</Text> Nhân viên có nguyện vọng nghỉ việc cần báo trước 15 ngày để cửa hàng thu xếp nhân sự.
-                </Text>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Bàn giao đầy đủ:</Text> Bàn giao công việc, thịt hàng, tiền bạc và dụng cụ làm việc trước khi nghỉ.
-                </Text>
-                <Text style={styles.ruleBullet}>
-                  • <Text style={styles.bold}>Quyết toán quyền lợi:</Text> Cửa hàng đối chiếu và thanh toán đầy đủ lương cùng toàn bộ quyền lợi theo quy định.
-                </Text>
-              </View>
+            <View style={styles.roleGuideBox}>
+              <Text style={styles.roleGuideItem}>
+                👤 <Text style={styles.bold}>Nhân viên:</Text> Nhập mã cá nhân được cấp để xem bảng lương, ngày công và tạm ứng của riêng mình.
+              </Text>
+              <Text style={styles.roleGuideItem}>
+                👑 <Text style={styles.bold}>Chủ cơ sở:</Text> Nhập mã quản lý của chủ để quan sát toàn bộ thông tin & trạng thái lương của tất cả nhân viên.
+              </Text>
             </View>
           </View>
-        </ScrollView>
-      )}
+        ) : (
+          /* KHỐI HIỂN THỊ DỮ LIỆU SAU KHI NHẬP MÃ THÀNH CÔNG */
+          <View style={styles.salarySection}>
+            {/* Điều khiển chọn tháng */}
+            <View style={styles.monthSelector}>
+              <TouchableOpacity style={styles.monthArrowBtn} onPress={() => adjustMonth(-1)}>
+                <Text style={styles.monthArrowText}>◀️ Tháng trước</Text>
+              </TouchableOpacity>
+              <View style={styles.monthCenter}>
+                <Text style={styles.monthCenterLabel}>Kỳ lương tra cứu</Text>
+                <Text style={styles.monthCenterValue}>Tháng {monthKey}</Text>
+              </View>
+              <TouchableOpacity style={styles.monthArrowBtn} onPress={() => adjustMonth(1)}>
+                <Text style={styles.monthArrowText}>Tháng sau ▶️</Text>
+              </TouchableOpacity>
+            </View>
+
+            {dataLoading ? (
+              <ActivityIndicator size="large" color="#0284C7" style={{ marginVertical: 30 }} />
+            ) : dataError ? (
+              <Text style={styles.dataErrorText}>⚠️ {dataError}</Text>
+            ) : salaryData?.isOwnerView ? (
+              renderOwnerOverview()
+            ) : (
+              renderSingleEmployeeSalaryDetail(salaryData, false)
+            )}
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -642,6 +852,10 @@ const styles = StyleSheet.create({
   tabItemActive: {
     borderBottomColor: '#0284C7',
   },
+  tabItemDisabled: {
+    opacity: 0.45,
+    backgroundColor: '#F8FAFC',
+  },
   tabItemText: {
     fontSize: 13,
     fontWeight: 'bold',
@@ -649,6 +863,11 @@ const styles = StyleSheet.create({
   },
   tabItemTextActive: {
     color: '#0284C7',
+  },
+  tabItemTextDisabled: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+    color: '#94A3B8',
   },
   scrollContent: {
     flex: 1,
@@ -661,11 +880,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     alignItems: 'center',
+    maxWidth: 480,
+    alignSelf: 'center',
+    width: '92%',
   },
   authIconWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: '#E0F2FE',
     justifyContent: 'center',
     alignItems: 'center',
@@ -675,7 +897,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
   },
   authTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#0F172A',
     textAlign: 'center',
@@ -688,41 +910,11 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 16,
   },
-  empSelectSection: {
-    width: '100%',
-    marginBottom: 16,
-  },
   fieldLabel: {
     fontSize: 13,
     fontWeight: 'bold',
     color: '#334155',
     marginBottom: 8,
-  },
-  empChipsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  empChip: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
-  empChipSelected: {
-    backgroundColor: '#E0F2FE',
-    borderColor: '#0284C7',
-  },
-  empChipText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  empChipTextSelected: {
-    color: '#0369A1',
-    fontWeight: 'bold',
   },
   pinSection: {
     width: '100%',
@@ -733,12 +925,12 @@ const styles = StyleSheet.create({
   },
   pinInput: {
     backgroundColor: '#F8FAFC',
-    height: 48,
+    height: 50,
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#CBD5E1',
     paddingHorizontal: 16,
-    fontSize: 16,
+    fontSize: 18,
     color: '#0F172A',
     fontWeight: 'bold',
     textAlign: 'center',
@@ -746,7 +938,7 @@ const styles = StyleSheet.create({
   },
   pinErrorText: {
     color: '#EF4444',
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '600',
     marginBottom: 12,
     textAlign: 'center',
@@ -758,22 +950,48 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 4,
   },
   unlockBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
   },
-  securityNotice: {
-    fontSize: 11,
-    color: '#94A3B8',
-    textAlign: 'center',
-    marginTop: 14,
-    lineHeight: 16,
+  roleGuideBox: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  roleGuideItem: {
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 17,
   },
   salarySection: {
-    padding: 14,
+    padding: 12,
+  },
+  singleDetailContainer: {
+    gap: 0,
+  },
+  backToTableBtn: {
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#7DD3FC',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  backToTableBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#0369A1',
   },
   employeeBar: {
     flexDirection: 'row',
@@ -880,6 +1098,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#064E3B',
     color: '#34D399',
   },
+  statusPartial: {
+    backgroundColor: '#78350F',
+    color: '#FCD34D',
+  },
   statusUnpaid: {
     backgroundColor: '#451A03',
     color: '#FBBF24',
@@ -952,7 +1174,7 @@ const styles = StyleSheet.create({
   listItemAmountAdvance: {
     fontSize: 13,
     fontWeight: 'bold',
-    color: '#D97706',
+    color: '#DC2626',
   },
   leaveBadge: {
     backgroundColor: '#FEF2F2',
@@ -973,28 +1195,6 @@ const styles = StyleSheet.create({
     marginVertical: 20,
     fontSize: 13,
   },
-  rulesContainer: {
-    padding: 14,
-  },
-  ruleCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 12,
-  },
-  ruleCardHeader: {
-    marginBottom: 10,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  ruleCardTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#0F172A',
-  },
   ruleBody: {
     gap: 6,
   },
@@ -1002,16 +1202,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#334155',
     lineHeight: 19,
-  },
-  subBulletList: {
-    paddingLeft: 12,
-    gap: 3,
-    marginVertical: 2,
-  },
-  subBulletText: {
-    fontSize: 12.5,
-    color: '#475569',
-    lineHeight: 18,
   },
   ruleTextAlert: {
     fontSize: 12.5,
@@ -1057,44 +1247,209 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 4,
   },
-  exampleBox: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
+  // ─── STYLES DÀNH CHO CHẾ ĐỘ CHỦ CƠ SỞ (OWNER VIEW) ───
+  ownerContainer: {
+    gap: 12,
+  },
+  ownerTopBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFBEB',
     borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  ownerBannerTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  ownerBannerSub: {
+    fontSize: 11.5,
+    color: '#B45309',
+    marginTop: 2,
+  },
+  ownerSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  ownerSummaryBox: {
+    width: '48.5%',
+    flexGrow: 1,
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     padding: 10,
-    marginVertical: 6,
-  },
-  exampleTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#475569',
-    marginBottom: 4,
-  },
-  exampleText: {
-    fontSize: 12,
-    color: '#475569',
-    lineHeight: 17,
-  },
-  highlightSection: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 8,
-    gap: 6,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  highlightSectionTitle: {
-    fontSize: 12.5,
-    fontWeight: 'bold',
+  ownerSummaryBoxHighlight: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  ownerSumLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    marginBottom: 3,
+  },
+  ownerSumPrimary: {
+    fontSize: 14.5,
+    fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 4,
   },
-  highlightSectionText: {
+  ownerSumSub: {
+    fontSize: 11,
+    color: '#475569',
+    marginTop: 3,
+    lineHeight: 15,
+  },
+  ownerTableCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  ownerTableCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#F8FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    gap: 4,
+  },
+  ownerTableCardTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  ownerTableCardHint: {
+    fontSize: 11,
+    color: '#0284C7',
+    fontStyle: 'italic',
+  },
+  ownerTableMinWidth: {
+    minWidth: 814,
+  },
+  ownerTableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0284C7',
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+  },
+  ownerTh: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  ownerTableRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  ownerTableRowAlt: {
+    backgroundColor: '#F8FAFC',
+  },
+  ownerTd: {
+    fontSize: 12.5,
+    color: '#0F172A',
+  },
+  ownerEmpName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  ownerEmpCode: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  ownerWorkDaysText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0284C7',
+  },
+  ownerStartDaySub: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#0369A1',
+    marginTop: 1,
+  },
+  ownerAdvanceItemText: {
     fontSize: 12,
-    color: '#334155',
-    lineHeight: 17,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginBottom: 2,
+  },
+  ownerNetSalaryText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  ownerDailySubText: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  ownerPaidPartSubText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#D97706',
+    marginTop: 1,
+  },
+  ownerStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  ownerStatusBadgePaid: {
+    backgroundColor: '#DCFCE7',
+  },
+  ownerStatusBadgePartial: {
+    backgroundColor: '#FEF3C7',
+  },
+  ownerStatusBadgeUnpaid: {
+    backgroundColor: '#F1F5F9',
+  },
+  ownerStatusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  ownerStatusTextPaid: {
+    color: '#15803D',
+  },
+  ownerStatusTextPartial: {
+    color: '#B45309',
+  },
+  ownerStatusTextUnpaid: {
+    color: '#475569',
+  },
+  ownerTableFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderTopWidth: 1.5,
+    borderTopColor: '#0284C7',
+  },
+  ownerFooterText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0369A1',
   },
   errorCard: {
     backgroundColor: '#FFFFFF',

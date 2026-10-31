@@ -1276,7 +1276,7 @@ export default function DashboardScreen() {
                 {item.name}
               </Text>
               <Text style={styles.customerPhone} numberOfLines={1}>
-                {item.role ? `💼 ${item.role}` : '💼 Nhân viên'} {item.phone ? `• 📞 ${item.phone}` : ''}
+                {item.role ? `💼 ${item.role}` : '💼 Nhân viên'} {item.phone ? `• 📞 ${item.phone}` : ''} {item.accessCode ? `• 🔑 Mã lương: ${item.accessCode}` : ''}
               </Text>
               {item.startDate ? (
                 <Text style={{ fontSize: 11, color: '#0284C7', marginTop: 2 }} numberOfLines={1}>
