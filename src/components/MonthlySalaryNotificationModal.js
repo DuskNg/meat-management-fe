@@ -681,14 +681,14 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
                                     </Text>
                                   ) : null}
                                   <Text style={{ fontSize: 13, color: '#EF4444', fontWeight: '500' }}>
-                                    -${formatCurrency(adv.amount)}
+                                    -{formatCurrency(adv.amount)}
                                   </Text>
                                 </View>
                               );
                             })
                           ) : emp.totalAdvances > 0 ? (
                             <Text style={[styles.tdText, { color: '#EF4444', textAlign: 'right' }]}>
-                              -${formatCurrency(emp.totalAdvances)}
+                              -{formatCurrency(emp.totalAdvances)}
                             </Text>
                           ) : (
                             <Text style={[styles.tdText, { color: '#94A3B8', textAlign: 'right' }]}>-</Text>
