@@ -2507,12 +2507,19 @@ export default function PortalScreen() {
       // Thực hiện quy chuẩn xuất ảnh: PC tải về máy, Mobile chuyển tiếp Zalo
       const cleanName = (customerName || 'KhachHang').replace(/[^a-zA-Z0-9À-ỹ]/g, '_');
       const fileName = `BangKeCongNo_${cleanName}_${fromDate.replace(/\//g, '-')}_${toDate.replace(/\//g, '-')}.png`;
+      const resolvedPhone =
+        portalData?.currentCustomer?.phone ||
+        portalInfo?.customers?.[0]?.phone ||
+        portalInfo?.phone ||
+        '';
+
       await downloadOrShareImage({
         imageUri: dataUrl,
         fileName,
         title: `Bảng kê công nợ ${customerName}`,
         text: `Bảng kê công nợ ${customerName} (${presetLabel})`,
         customerName: customerName,
+        phone: resolvedPhone,
       });
     } catch (err) {
       console.error('Lỗi khi xuất ảnh bảng kê:', err);

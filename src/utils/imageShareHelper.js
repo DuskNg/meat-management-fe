@@ -223,12 +223,8 @@ export const downloadOrShareImage = async ({
       copyTextToClipboard(text);
     }
 
-    const inZaloApp = isZaloBrowser();
-
-    // Thử chia sẻ qua Web Share API (mở bảng chia sẻ hệ thống có Zalo)
-    // Bỏ qua nếu đang mở bên trong Zalo in-app WebView vì Zalo WebView không hỗ trợ Web Share
+    // Thử chia sẻ qua Web Share API (mở bảng chia sẻ hệ thống có Zalo trên thiết bị di động)
     if (
-      !inZaloApp &&
       typeof navigator !== 'undefined' &&
       navigator.share &&
       fileToShare &&
@@ -289,14 +285,14 @@ export const downloadOrShareImage = async ({
       }
     }
 
-    // Fallback: Tự động lưu ảnh vào máy nếu Web Share không mở được (hoặc trong Zalo In-App Browser)
+    // Fallback: Tự động lưu ảnh vào máy nếu Web Share không khả dụng
     if (localBlob && typeof window !== 'undefined') {
       try {
         const blobUrl = URL.createObjectURL(localBlob);
         const link = document.createElement('a');
         link.href = blobUrl;
         link.download = fileName;
-        link.target = '_blank';
+        // Không dùng target="_blank" trên mobile để tránh Zalo/WebView chặn hoặc hiện popup thoát ứng dụng
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -311,11 +307,28 @@ export const downloadOrShareImage = async ({
       await copyTextToClipboard(text);
     }
 
-    // Thông báo cho người dùng trên Mobile thay vì redirect sang link zalo.me rỗng
+    // Mở trực tiếp cuộc trò chuyện Zalo nếu có số điện thoại
+    if (hasPhone) {
+      const zaloUrl = `https://zalo.me/${cleanPhone}`;
+      if (typeof window !== 'undefined') {
+        window.open(zaloUrl, '_blank');
+      } else {
+        Linking.openURL(zaloUrl).catch(() => {});
+      }
+      showGlobalToast(
+        customerName
+          ? `Đã lưu ảnh & chuyển tiếp tới Zalo của ${customerName}!`
+          : 'Đã lưu ảnh & chuyển tiếp tới Zalo!',
+        'success'
+      );
+      return;
+    }
+
+    // Nếu không có số điện thoại và đang trong Zalo, thông báo đã lưu ảnh thành công
     showGlobalToast(
       text
-        ? 'Đã tải ảnh về máy & sao chép nội dung! Bạn chỉ cần chọn ảnh và Dán (Paste) vào Zalo để gửi.'
-        : 'Đã tải ảnh hóa đơn về máy thành công!',
+        ? 'Đã lưu ảnh công nợ & sao chép nội dung! Bạn có thể chọn ảnh để gửi trong Zalo.'
+        : 'Đã lưu ảnh công nợ thành công!',
       'success'
     );
   } catch (mobileErr) {
@@ -477,12 +490,9 @@ export const downloadOrShareMultipleImages = async ({
       await new Promise((r) => setTimeout(r, 1200));
     };
 
-    const inZaloApp = isZaloBrowser();
-
-    // Kiểm tra khả năng hỗ trợ Web Share API (bỏ qua nếu trong Zalo WebView)
+    // Kiểm tra khả năng hỗ trợ Web Share API trên thiết bị di động
     let canUseWebShare = false;
     if (
-      !inZaloApp &&
       typeof navigator !== 'undefined' &&
       navigator.share &&
       filesToShare.length > 0 &&
@@ -588,7 +598,7 @@ export const shareTextToZalo = async ({
 
   // 1. Trên Mobile (nếu KHÔNG phải trong Zalo in-app WebView) và trình duyệt hỗ trợ Web Share API:
   // BẮT BUỘC gọi navigator.share TRƯỚC HẾT để không làm mất quyền User Activation
-  if (isMobile && !inZaloApp && typeof navigator !== 'undefined' && navigator.share) {
+  if (isMobile && typeof navigator !== 'undefined' && navigator.share) {
     try {
       let canShareText = true;
       if (navigator.canShare) {
