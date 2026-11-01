@@ -342,30 +342,24 @@ export const generateCustomerDebtText = ({
   // 6. Tính tổng tiền mua thực tế (đã trừ hàng trả)
   const totalNetMeat = sortedDays.reduce((sum, d) => sum + (d.meatAmount - d.returnAmount), 0);
 
-  // 7. Lấy danh sách các khoản thanh toán tiền nợ trong tháng (không phải trả hàng)
+  // 7. Lấy danh sách các khoản thanh toán tiền nợ trong kỳ (dựa vào ngày thanh toán paidAt thực tế, không lấy hàng trả)
   const paymentAllocMap = new Map();
   let totalPaymentAmount = 0;
 
   (payList || []).forEach((p) => {
     if (!isReturn(p)) {
-      const pDate = new Date(p.paidAt || p.createdAt);
-      const cDate = p.createdAt ? new Date(p.createdAt) : null;
-      let effectiveDate = pDate;
-      let isInRange = fromD && toD ? (pDate >= fromD && pDate <= toD) : true;
-      if (!isInRange && cDate && fromD && toD && (cDate >= fromD && cDate <= toD)) {
-        effectiveDate = cDate;
-        isInRange = true;
-      }
-      if (isInRange) {
-        if (!paymentAllocMap.has(p.id)) {
-          const amt = parseFloat(p.amount || 0);
-          totalPaymentAmount += amt;
-          paymentAllocMap.set(p.id, {
-            paymentId: p.id,
-            date: effectiveDate,
-            amount: amt,
-          });
-        }
+      const pDate = new Date(p.paidAt);
+      if (isNaN(pDate.getTime())) return;
+      if (fromD && toD && (pDate < fromD || pDate > toD)) return;
+
+      if (!paymentAllocMap.has(p.id)) {
+        const amt = parseFloat(p.amount || 0);
+        totalPaymentAmount += amt;
+        paymentAllocMap.set(p.id, {
+          paymentId: p.id,
+          date: pDate,
+          amount: amt,
+        });
       }
     }
   });
