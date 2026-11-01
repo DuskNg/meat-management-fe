@@ -15,11 +15,61 @@ import SmoothModal from './SmoothModal';
 import DatePickerInput from './DatePickerInput';
 import { showGlobalToast } from '../store/toastStore';
 
+// Chuyển đổi linh hoạt chuỗi ngày (hỗ trợ cả DD/MM/YYYY lẫn YYYY-MM-DD) thành đối tượng Date
+const parseDateFlexible = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val !== 'string') return null;
+
+  const trimmed = val.trim();
+  if (trimmed.includes('/')) {
+    const parts = trimmed.split('/');
+    if (parts.length === 3) {
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const y = parseInt(parts[2], 10);
+      const date = new Date(y, m - 1, d);
+      return isNaN(date.getTime()) ? null : date;
+    }
+  }
+  if (trimmed.includes('-')) {
+    const parts = trimmed.split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      const date = new Date(y, m - 1, d);
+      return isNaN(date.getTime()) ? null : date;
+    }
+  }
+  const parsed = new Date(trimmed);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
+// Chuyển chuỗi ngày sang chuẩn ISO YYYY-MM-DD để gửi lên API
+const toISODate = (val) => {
+  const d = parseDateFlexible(val);
+  if (!d) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+// Lấy ngày hiện tại dạng DD/MM/YYYY
+const getTodayDisplay = () => {
+  const now = new Date();
+  const d = String(now.getDate()).padStart(2, '0');
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const y = now.getFullYear();
+  return `${d}/${m}/${y}`;
+};
+
 // Modal ghi nhận nhân viên xin nghỉ và tự động trừ buổi lương
 const EmployeeLeaveModal = forwardRef(({ onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [employee, setEmployee] = useState(null);
-  const [leaveDate, setLeaveDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [leaveDate, setLeaveDate] = useState(getTodayDisplay);
   const [shift, setShift] = useState('FULL'); // 'FULL' (Cả ngày = 1 buổi), 'HALF' (Nửa ngày = 0.5 buổi)
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,7 +78,7 @@ const EmployeeLeaveModal = forwardRef(({ onRefresh }, ref) => {
   useImperativeHandle(ref, () => ({
     open: (targetEmployee) => {
       setEmployee(targetEmployee || null);
-      setLeaveDate(new Date().toISOString().split('T')[0]);
+      setLeaveDate(getTodayDisplay());
       setShift('FULL');
       setNote('');
       setError('');
@@ -49,10 +99,11 @@ const EmployeeLeaveModal = forwardRef(({ onRefresh }, ref) => {
   // Tính số ngày của tháng được chọn để tính số tiền trừ chính xác
   const getDaysInMonth = (dateStr) => {
     try {
-      const parts = dateStr.split('-');
-      const y = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      return new Date(y, m, 0).getDate();
+      const d = parseDateFlexible(dateStr);
+      if (d) {
+        return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      }
+      return 30;
     } catch {
       return 30;
     }
@@ -62,6 +113,9 @@ const EmployeeLeaveModal = forwardRef(({ onRefresh }, ref) => {
   const baseSalary = employee?.baseSalary ? parseFloat(employee.baseSalary) : 0;
   const dailySalary = totalDays > 0 ? Math.round(baseSalary / totalDays) : 0;
   const deductAmount = shift === 'HALF' ? Math.round(dailySalary * 0.5) : dailySalary;
+
+  const parsedLeaveDate = parseDateFlexible(leaveDate) || new Date();
+  const displayMonthYear = `${String(parsedLeaveDate.getMonth() + 1).padStart(2, '0')}/${parsedLeaveDate.getFullYear()}`;
 
   // Xác nhận ghi nhận xin nghỉ
   const handleSubmit = async () => {
@@ -75,12 +129,18 @@ const EmployeeLeaveModal = forwardRef(({ onRefresh }, ref) => {
       return;
     }
 
+    const isoDate = toISODate(leaveDate);
+    if (!isoDate) {
+      setError('Định dạng ngày xin nghỉ không hợp lệ.');
+      return;
+    }
+
     setError('');
     setLoading(true);
     try {
       const response = await api.post('/employees/leave', {
         employeeId: employee.id,
-        date: leaveDate,
+        date: isoDate,
         shift,
         note: note.trim() || null,
       });
@@ -187,7 +247,7 @@ const EmployeeLeaveModal = forwardRef(({ onRefresh }, ref) => {
               <Text style={styles.previewAmount}>-{formatCurrency(deductAmount)}</Text>
             </View>
             <Text style={styles.previewNote}>
-              💡 Số tiền này sẽ tự động khấu trừ vào bảng lương thực lĩnh tháng {leaveDate.slice(5, 7)}/{leaveDate.slice(0, 4)} của nhân viên.
+              💡 Số tiền này sẽ tự động khấu trừ vào bảng lương thực lĩnh tháng {displayMonthYear} của nhân viên.
             </Text>
           </View>
 
