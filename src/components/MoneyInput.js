@@ -1,6 +1,6 @@
 // meat-management-fe/src/components/MoneyInput.js
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TextInput, Platform } from 'react-native';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import { StyleSheet, View, TextInput, Platform, Pressable } from 'react-native';
 import { COLORS } from '../theme';
 
 /**
@@ -9,7 +9,7 @@ import { COLORS } from '../theme';
  * Đuôi ".000" nằm trực tiếp trong chuỗi hiển thị của ô nhập -> 100% không bị hở khoảng trắng.
  * Con trỏ chuột nằm tự nhiên ở phần số người dùng nhập (trước .000).
  */
-const MoneyInput = ({
+const MoneyInput = forwardRef(({
   value,            // Số VNĐ (number: 130000) hoặc chuỗi nghìn/chuỗi VNĐ
   onChangeValue,    // Callback nhận giá trị VNĐ thực (number: 130000)
   onChangeText,     // Callback nhận chuỗi VNĐ đầy đủ (string: "130.000")
@@ -21,7 +21,11 @@ const MoneyInput = ({
   error = false,
   textAlign = 'left',
   ...props
-}) => {
+}, ref) => {
+  const inputRef = useRef(null);
+
+  useImperativeHandle(ref, () => inputRef.current);
+
   // Chuyển đổi input value thành thông tin hiển thị (hỗ trợ cả tròn nghìn và số lẻ chính xác)
   const parseValue = (val) => {
     if (val === undefined || val === null || val === '') return { thousandsText: '', isOdd: false, fullText: '' };
@@ -107,7 +111,8 @@ const MoneyInput = ({
   const textColor = flatInputStyle.color || flatStyle.color || COLORS.text || '#0F172A';
 
   return (
-    <View
+    <Pressable
+      onPress={() => inputRef.current?.focus()}
       style={[
         styles.container,
         {
@@ -120,11 +125,13 @@ const MoneyInput = ({
             : (flatStyle.borderColor || flatInputStyle.borderColor || COLORS.border || '#E2E8F0'),
           paddingHorizontal: flatStyle.paddingHorizontal !== undefined ? flatStyle.paddingHorizontal : (flatInputStyle.paddingHorizontal !== undefined ? flatInputStyle.paddingHorizontal : 10),
           justifyContent: textAlign === 'right' ? 'flex-end' : 'flex-start',
+          cursor: 'text',
         },
         style,
       ]}
     >
       <TextInput
+        ref={inputRef}
         style={[
           styles.input,
           {
@@ -133,6 +140,7 @@ const MoneyInput = ({
             color: textColor,
             textAlign: textAlign === 'right' ? 'right' : 'left',
             width: '100%',
+            height: '100%',
           },
         ]}
         value={displayValue}
@@ -141,14 +149,22 @@ const MoneyInput = ({
         placeholderTextColor={COLORS.textLight || '#94A3B8'}
         keyboardType="number-pad"
         editable={!disabled}
-        selection={selection}
-        onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+        selection={Platform.OS !== 'web' ? selection : undefined}
+        onSelectionChange={Platform.OS !== 'web' ? (e) => setSelection(e.nativeEvent.selection) : undefined}
         selectTextOnFocus={true}
+        onFocus={(e) => {
+          if (Platform.OS === 'web' && e?.target?.select) {
+            try {
+              e.target.select();
+            } catch (_) {}
+          }
+          if (props.onFocus) props.onFocus(e);
+        }}
         {...props}
       />
-    </View>
+    </Pressable>
   );
-};
+});
 
 export default MoneyInput;
 
@@ -168,5 +184,7 @@ const styles = StyleSheet.create({
     outlineColor: 'transparent',
     outlineStyle: 'none',
     shadowOpacity: 0,
+    height: '100%',
+    flex: 1,
   },
 });
