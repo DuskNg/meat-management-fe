@@ -2292,16 +2292,16 @@ export default function PortalScreen() {
     );
   }, [portalData?.transactions, portalData?.payments, portalData?.summary, fromDate, toDate, sortOrder, branchList]);
 
-  // Danh sách các ngày chưa có công nợ trong khoảng thời gian đã lọc
-  const emptyDaysNote = useMemo(() => {
-    if (!fromDate || !toDate) return '';
+  // Danh sách các ngày chưa có công nợ hoặc thông báo đầy đủ công nợ trong khoảng thời gian đã lọc
+  const emptyDaysInfo = useMemo(() => {
+    if (!fromDate || !toDate) return null;
     const fromD = parseDDMMYYYY(fromDate, false);
     const toD = parseDDMMYYYY(toDate, true);
-    if (!fromD || !toD || isNaN(fromD.getTime()) || isNaN(toD.getTime())) return '';
+    if (!fromD || !toD || isNaN(fromD.getTime()) || isNaN(toD.getTime())) return null;
 
     const today = new Date();
     today.setHours(23, 59, 59, 999);
-    if (fromD > today) return '';
+    if (fromD > today) return null;
 
     const endLimit = toD < today ? new Date(toD) : today;
     endLimit.setHours(23, 59, 59, 999);
@@ -2332,9 +2332,22 @@ export default function PortalScreen() {
       cur.setDate(cur.getDate() + 1);
     }
 
-    if (emptyDays.length === 0) return '';
-    return `* Các ngày chưa có công nợ: ${emptyDays.join(', ')}`;
+    if (count === 0 || debtDateKeys.size === 0) return null;
+
+    if (emptyDays.length === 0) {
+      return {
+        hasEmptyDays: false,
+        text: '✓ Không thiếu ngày nào (đầy đủ công nợ tất cả các ngày trong kỳ)',
+      };
+    }
+
+    return {
+      hasEmptyDays: true,
+      text: `* Các ngày chưa có công nợ: ${emptyDays.join(', ')}`,
+    };
   }, [fromDate, toDate, invoiceData?.sortedDays]);
+
+  const emptyDaysNote = emptyDaysInfo?.hasEmptyDays ? emptyDaysInfo.text : '';
 
 
 
@@ -3013,12 +3026,18 @@ export default function PortalScreen() {
                 </View>
               </View>
 
-              {/* Chú thích các ngày chưa có công nợ trong khoảng thời gian đã lọc */}
-              {Boolean(emptyDaysNote) && (
+              {/* Chú thích các ngày chưa có công nợ hoặc thông báo đầy đủ công nợ */}
+              {emptyDaysInfo && (
                 <View style={styles.emptyDaysNoteWrap}>
-                  <Text style={styles.emptyDaysNoteText}>
-                    {emptyDaysNote}
-                  </Text>
+                  {emptyDaysInfo.hasEmptyDays ? (
+                    <Text style={styles.emptyDaysNoteText}>
+                      {emptyDaysInfo.text}
+                    </Text>
+                  ) : (
+                    <Text style={styles.allDaysCompleteText}>
+                      {emptyDaysInfo.text}
+                    </Text>
+                  )}
                 </View>
               )}
 
@@ -4811,6 +4830,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748B',
     fontStyle: 'italic',
+    lineHeight: 16,
+  },
+  allDaysCompleteText: {
+    fontSize: 11.5,
+    color: '#16A34A',
+    fontWeight: '600',
     lineHeight: 16,
   },
 });
