@@ -1,6 +1,7 @@
 // meat-management-fe/src/components/PaymentModal.js
 import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import MoneyInput from './MoneyInput';
+import DatePickerInput from './DatePickerInput';
 import {
   StyleSheet,
   Text,
@@ -18,12 +19,40 @@ import PinSetupModal from './PinSetupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
 import { useResourceLock } from '../hooks/useResourceLock';
 
+// Helper: lấy ngày hôm nay dạng DD/MM/YYYY
+const getTodayFormatted = () => {
+  const today = new Date();
+  const d = String(today.getDate()).padStart(2, '0');
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const y = today.getFullYear();
+  return `${d}/${m}/${y}`;
+};
+
+// Helper: chuyển DD/MM/YYYY sang ISO string (đặt 12:00 trưa để tránh lệch múi giờ UTC)
+const parseDateString = (str) => {
+  if (!str) return null;
+  const parts = str.trim().split(/[\/\-]/);
+  if (parts.length !== 3) return null;
+  const day = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const year = parseInt(parts[2], 10);
+  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+  const dateObj = new Date(year, month - 1, day, 12, 0, 0);
+  if (
+    dateObj.getFullYear() !== year ||
+    dateObj.getMonth() !== month - 1 ||
+    dateObj.getDate() !== day
+  ) return null;
+  return dateObj.toISOString();
+};
+
 const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
 
   // Tự động khóa khách hàng khi mở modal thu tiền
   useResourceLock('CUSTOMER', customerId, visible, () => setVisible(false));
   const [amountVND, setAmountVND] = useState(0);
+  const [dateStr, setDateStr] = useState(getTodayFormatted());
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,7 +75,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
 
   // 1. Phơi bày các hàm điều khiển Modal ra ngoài component cha (Customer Detail)
   useImperativeHandle(ref, () => ({
-    open: (defaultAmount = '', monthKey = null, defaultNote = '') => {
+    open: (defaultAmount = '', monthKey = null, defaultNote = '', defaultDate = null) => {
       setVisible(true);
       // Làm tròn số nợ đề xuất để tránh lỗi phần thập phân (float) của tiền VNĐ
       const numericAmount = defaultAmount ? Math.round(parseFloat(defaultAmount)) : 0;
@@ -54,6 +83,7 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
       setMaxAmount((monthKey && defaultAmount) ? numericAmount : null);
       setTargetMonthKey(monthKey);
       setNote(defaultNote || '');
+      setDateStr(defaultDate || getTodayFormatted());
       setError('');
     },
     close: () => {
@@ -114,20 +144,21 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
       return;
     }
 
+    const isoDate = parseDateString(dateStr);
+    if (!isoDate) {
+      setError('Ngày thanh toán không đúng định dạng (Ví dụ: 14/06/2026).');
+      isSubmittingRef.current = false;
+      return;
+    }
+
     setError('');
     setLoading(true);
     isSubmittingRef.current = true;
     try {
       // Nếu có chọn tháng cụ thể, tự động thêm tiền tố đặc thù để khấu trừ đúng tháng đó kèm ngày thanh toán cụ thể
       let finalNote = note.trim();
-      let finalPaidAt = undefined;
+      let finalPaidAt = isoDate;
       if (targetMonthKey) {
-        const d = new Date();
-        const dd = d.getDate().toString().padStart(2, '0');
-        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-        const yyyy = d.getFullYear();
-        const dateStr = `${dd}/${mm}/${yyyy}`;
-
         const prefix = `Thanh toán nợ Tháng ${targetMonthKey} (ngày ${dateStr})`;
         finalNote = finalNote ? `${prefix} - ${finalNote}` : prefix;
       }
@@ -154,82 +185,96 @@ const PaymentModal = forwardRef(({ customerId, onRefresh }, ref) => {
   };
 
   return (
-    <SmoothModal visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.modalView}>
-        <Text style={styles.modalTitle}>🟢 THU TIỀN KHÁCH TRẢ NỢ</Text>
+    <>
+      <SmoothModal visible={visible} onClose={() => setVisible(false)}>
+        <View style={styles.modalView}>
+          <Text style={styles.modalTitle}>🟢 THU TIỀN KHÁCH TRẢ NỢ</Text>
 
-        {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
+          {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
 
-        <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-          {/* Nhập số tiền thu được */}
-          <Text style={styles.label}>1. Số tiền khách đã trả (VND):</Text>
-          <MoneyInput
-            style={styles.amountInputContainer}
-            inputStyle={styles.amountInput}
-            value={amountVND}
-            onChangeValue={(val) => {
-              setAmountVND(val);
-              setError('');
-            }}
-            placeholder="Ví dụ: 500"
-          />
+          <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
+            {/* Nhập số tiền thu được */}
+            <Text style={styles.label}>1. Số tiền khách đã trả (VND):</Text>
+            <MoneyInput
+              style={styles.amountInputContainer}
+              inputStyle={styles.amountInput}
+              value={amountVND}
+              onChangeValue={(val) => {
+                setAmountVND(val);
+                setError('');
+              }}
+              placeholder="Ví dụ: 500"
+            />
 
-          {/* Các nút bấm điền nhanh số tiền chẵn */}
-          <Text style={styles.subLabel}>Bấm chọn nhanh số tiền chẵn:</Text>
-          <View style={styles.quickAmountContainer}>
-            {[50000, 100000, 200000, 500000, 1000000].map((val) => (
-              <TouchableOpacity
-                key={val}
-                style={styles.quickAmountButton}
-                onPress={() => handleQuickAmount(val)}
-              >
-                <Text style={styles.quickAmountText}>
-                  {val >= 1000000 ? `${val / 1000000} Triệu` : `${val / 1000}k`}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {/* Các nút bấm điền nhanh số tiền chẵn */}
+            <Text style={styles.subLabel}>Bấm chọn nhanh số tiền chẵn:</Text>
+            <View style={styles.quickAmountContainer}>
+              {[50000, 100000, 200000, 500000, 1000000].map((val) => (
+                <TouchableOpacity
+                  key={val}
+                  style={styles.quickAmountButton}
+                  onPress={() => handleQuickAmount(val)}
+                >
+                  <Text style={styles.quickAmountText}>
+                    {val >= 1000000 ? `${val / 1000000} Triệu` : `${val / 1000}k`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Ô chọn ngày thanh toán */}
+            <Text style={[styles.label, { marginTop: 6 }]}>2. Ngày thanh toán:</Text>
+            <View style={styles.datePickerWrapper}>
+              <DatePickerInput
+                value={dateStr}
+                onChange={(val) => {
+                  setDateStr(val);
+                  setError('');
+                }}
+                allowFuture={true}
+              />
+            </View>
+
+            {/* Ghi chú phương thức */}
+            <Text style={[styles.label, { marginTop: 15 }]}>3. Cách thanh toán / Ghi chú (Có thể bỏ qua):</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ví dụ: Chuyển khoản Vietcombank / Tiền mặt"
+              placeholderTextColor={COLORS.textLight}
+              value={note}
+              onChangeText={setNote}
+            />
+          </ScrollView>
+
+          {/* Các nút hành động */}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.button, styles.submitButton]}
+              onPress={() => requirePin(handleSubmit)}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.submitButtonText}>XÁC NHẬN THU TIỀN</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton]}
+              onPress={() => setVisible(false)}
+              disabled={loading}
+            >
+              <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
+            </TouchableOpacity>
           </View>
-
-          {/* Ghi chú phương thức */}
-          <Text style={[styles.label, { marginTop: 15 }]}>2. Cách thanh toán / Ghi chú (Có thể bỏ qua):</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ví dụ: Chuyển khoản Vietcombank / Tiền mặt"
-            placeholderTextColor={COLORS.textLight}
-            value={note}
-            onChangeText={setNote}
-          />
-        </ScrollView>
-
-        {/* Các nút hành động */}
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.button, styles.submitButton]}
-            onPress={() => requirePin(handleSubmit)}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.submitButtonText}>XÁC NHẬN THU TIỀN</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, styles.cancelButton]}
-            onPress={() => setVisible(false)}
-            disabled={loading}
-          >
-            <Text style={styles.cancelButtonText}>HỦY BỎ</Text>
-          </TouchableOpacity>
         </View>
-      </View>
+      </SmoothModal>
 
-      {/* Modal nhập PIN khi phiên hết hạn */}
+      {/* Modal nhập PIN khi phiên hết hạn & Modal tạo PIN độc lập ở tầng cao nhất */}
       <PinInputModal ref={pinInputRef} />
-      {/* Modal tạo PIN lần đầu */}
       <PinSetupModal ref={pinSetupRef} />
-    </SmoothModal>
+    </>
   );
 });
 
@@ -293,6 +338,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginBottom: 15,
+  },
+  datePickerWrapper: {
+    marginBottom: 8,
   },
   quickAmountButton: {
     backgroundColor: COLORS.inputBg,

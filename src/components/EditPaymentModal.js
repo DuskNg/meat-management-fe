@@ -181,7 +181,8 @@ const EditPaymentModal = forwardRef(({ onRefresh, editReturnGoodsModalRef }, ref
   };
 
   return (
-    <SmoothModal zIndex={25000} visible={visible} onClose={() => setVisible(false)}>
+    <>
+      <SmoothModal zIndex={25000} visible={visible} onClose={() => setVisible(false)}>
       <View style={styles.modalView}>
         <Text style={styles.modalTitle}>✏️ SỬA LƯỢT THU TIỀN</Text>
 
@@ -255,12 +256,12 @@ const EditPaymentModal = forwardRef(({ onRefresh, editReturnGoodsModalRef }, ref
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Modal nhập PIN khi phiên hết hạn */}
-      <PinInputModal ref={pinInputRef} />
-      {/* Modal tạo PIN lần đầu */}
-      <PinSetupModal ref={pinSetupRef} />
     </SmoothModal>
+
+      {/* Modal nhập PIN khi phiên hết hạn & Modal tạo PIN độc lập ở tầng cao nhất */}
+      <PinInputModal ref={pinInputRef} />
+      <PinSetupModal ref={pinSetupRef} />
+    </>
   );
 });
 
