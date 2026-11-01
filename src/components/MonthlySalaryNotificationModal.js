@@ -102,6 +102,32 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
     return '';
   };
 
+  // Lấy chi tiết các ngày nghỉ của nhân viên (ví dụ: "(Nghỉ 1c: 31/10)" hoặc "(Nghỉ 2c: 15/10, 31/10)")
+  const getEmployeeLeaveText = (emp) => {
+    if (!emp.leaveDays || emp.leaveDays <= 0) return '';
+    const leaves = emp.leaves || [];
+    if (!Array.isArray(leaves) || leaves.length === 0) {
+      return `(Nghỉ ${emp.leaveDays}c)`;
+    }
+
+    const dateList = leaves
+      .map((l) => {
+        const d = l.date ? new Date(l.date) : null;
+        if (!d || isNaN(d.getTime())) return '';
+        const dd = d.getDate().toString().padStart(2, '0');
+        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+        const isHalf = l.shift === 'HALF';
+        return isHalf ? `${dd}/${mm}(0.5c)` : `${dd}/${mm}`;
+      })
+      .filter(Boolean);
+
+    if (dateList.length === 0) {
+      return `(Nghỉ ${emp.leaveDays}c)`;
+    }
+
+    return `(Nghỉ ${emp.leaveDays}c: ${dateList.join(', ')})`;
+  };
+
   // Tính tổng kết lương toàn bộ nhân viên
   const summary = useMemo(() => {
     let totalBase = 0;
@@ -225,8 +251,18 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
 
         const startText = getEmployeeStartDayText(emp, monthKey);
         const workSubLines = [];
-        if (startText) workSubLines.push(startText);
-        if (emp.leaveDays > 0) workSubLines.push(`(Nghỉ ${emp.leaveDays}c)`);
+        if (startText) {
+          workSubLines.push({ text: startText, isLeave: false });
+        }
+        if (emp.leaveDays > 0) {
+          const leaveText = getEmployeeLeaveText(emp);
+          const leaveLines = wrapText(tempCtx, leaveText, colWidths.workingDays - 4);
+          if (leaveLines && leaveLines.length > 0) {
+            leaveLines.forEach((l) => workSubLines.push({ text: l, isLeave: true }));
+          } else {
+            workSubLines.push({ text: leaveText, isLeave: true });
+          }
+        }
 
         const dailyRate = emp.dailySalary || Math.round((emp.baseSalary || 0) / (emp.totalDaysInMonth || lastDay));
         const dailyRateText = `(~${formatCurrency(dailyRate)}/ngày)`;
@@ -400,11 +436,12 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
         ctx.fillText(workingDaysText, colX + colWidths.workingDays / 2, workBaseY);
 
         if (hasWorkSubs) {
-          row.workSubLines.forEach((subText, sIdx) => {
-            const isLeave = subText.includes('Nghỉ');
+          row.workSubLines.forEach((sub, sIdx) => {
+            const isLeave = sub && sub.isLeave;
+            const textToDraw = typeof sub === 'string' ? sub : (sub?.text || '');
             ctx.fillStyle = isLeave ? '#EF4444' : '#0284C7';
             ctx.font = isLeave ? '10px Arial' : 'bold 10px Arial';
-            ctx.fillText(subText, colX + colWidths.workingDays / 2, workBaseY + 14 + sIdx * 13);
+            ctx.fillText(textToDraw, colX + colWidths.workingDays / 2, workBaseY + 14 + sIdx * 13);
           });
         }
         colX += colWidths.workingDays;
@@ -665,18 +702,18 @@ const MonthlySalaryNotificationModal = forwardRef((props, ref) => {
                         <Text style={[styles.tdText, { width: 120, textAlign: 'right', color: '#0F172A', fontWeight: '500' }]}>
                           {formatCurrency(emp.baseSalary || 0)}
                         </Text>
-                        <View style={{ width: 100, alignItems: 'center', justifyContent: 'flex-start' }}>
+                        <View style={{ width: 105, alignItems: 'center', justifyContent: 'flex-start', paddingHorizontal: 2 }}>
                           <Text style={[styles.tdText, { fontWeight: '600', color: '#0284C7' }]}>
                             {emp.workingDays ?? 0}/{emp.totalDaysInMonth ?? 30}
                           </Text>
                           {Boolean(getEmployeeStartDayText(emp, monthKey)) && (
-                            <Text style={{ fontSize: 10, color: '#0284C7', fontWeight: 'bold', marginTop: 1 }}>
+                            <Text style={{ fontSize: 10, color: '#0284C7', fontWeight: 'bold', marginTop: 1, textAlign: 'center' }}>
                               {getEmployeeStartDayText(emp, monthKey)}
                             </Text>
                           )}
                           {emp.leaveDays > 0 && (
-                            <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 1 }}>
-                              (Nghỉ {emp.leaveDays}c)
+                            <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 1, textAlign: 'center' }}>
+                              {getEmployeeLeaveText(emp)}
                             </Text>
                           )}
                         </View>
