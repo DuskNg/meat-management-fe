@@ -1190,6 +1190,21 @@ export default function DashboardScreen() {
       return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
     };
 
+    const formatEmpLeaveDates = (leaves) => {
+      if (!Array.isArray(leaves) || leaves.length === 0) return '';
+      const dateList = leaves
+        .map((l) => {
+          const d = l.date ? new Date(l.date) : null;
+          if (!d || isNaN(d.getTime())) return '';
+          const day = d.getDate();
+          const month = d.getMonth() + 1;
+          const isHalf = l.shift === 'HALF';
+          return isHalf ? `${day}/${month}(0.5b)` : `${day}/${month}`;
+        })
+        .filter(Boolean);
+      return dateList.length > 0 ? ` (${dateList.join(', ')})` : '';
+    };
+
     // Tính toán thông tin lương luỹ kế tính đến ngày hiện tại (đã trừ tạm ứng và trừ đợt trả lương)
     const computeCurrentSalaryInfo = () => {
       if (item.currentRemainingSalary !== undefined && item.currentWorkingDays !== undefined) {
@@ -1343,7 +1358,7 @@ export default function DashboardScreen() {
                 )}
                 {(item.totalAdvances > 0 || item.leaveDays > 0) && (
                   <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 2, textAlign: 'right' }}>
-                    (Gốc: {formatCurrency(item.baseSalary)}{item.leaveDays > 0 ? ` - Nghỉ ${item.leaveDays} buổi: -${formatCurrency(item.leaveDeduction)}` : ''}{item.totalAdvances > 0 ? ` - Ứng: -${formatCurrency(item.totalAdvances)}` : ''})
+                    (Gốc: {formatCurrency(item.baseSalary)}{item.leaveDays > 0 ? ` - Nghỉ ${item.leaveDays} buổi${formatEmpLeaveDates(item.leaves)}: -${formatCurrency(item.leaveDeduction)}` : ''}{item.totalAdvances > 0 ? ` - Ứng: -${formatCurrency(item.totalAdvances)}` : ''})
                   </Text>
                 )}
                 {item.carryOver < 0 && (
