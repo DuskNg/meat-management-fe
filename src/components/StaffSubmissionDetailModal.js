@@ -292,6 +292,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   // Xử lý kéo di chuyển ảnh bằng chuột / cảm ứng
   const handleMouseDown = (e) => {
     if (scale <= 1) return;
+    if (e?.target?.closest?.('button, [role="button"], [data-focusable="true"]')) return;
     setIsDragging(true);
     dragStartRef.current = {
       x: e.clientX,
@@ -360,20 +361,13 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     };
   }, [visible, currentIndex, submissions.length, handlePrev, handleNext]);
 
-  // Xử lý khi nhấn nút Nhập công nợ trong modal chi tiết
+  // Xử lý khi nhấn nút Nhập công nợ trong modal chi tiết: Khôi phục logic cũ, giữ nguyên đơn vừa lưu để xem
   const handleSaveAndAutoNext = async (subId) => {
     if (!handleSaveCard) return;
-    const success = await handleSaveCard(subId);
-    // Nếu thành công và còn hóa đơn tiếp theo, tự động chuyển tiếp!
-    if (success) {
-      const list = submissionsRef.current || submissions;
-      const curIdx = list.findIndex((s) => s.id === subId);
-      if (curIdx >= 0 && curIdx < list.length - 1) {
-        goToIndex(curIdx + 1);
-      } else if (curIdx >= list.length - 1) {
-        showGlobalToast('Đã đến hóa đơn cuối cùng trong danh sách!', 'info');
-      }
-    }
+    await handleSaveCard(subId);
+    // Logic cũ: Giữ nguyên tại đơn vừa lưu để người dùng kiểm tra đối chiếu (VẪN XEM ĐƯỢC ĐƠN ĐÓ).
+    // Trạng thái đơn lập tức cập nhật thành "✓ ĐÃ LÊN NỢ" và nút đổi thành "🔄 CẬP NHẬT LẠI".
+    // Người dùng có thể bấm nút "Sau ▶" (hoặc "ĐƠN TIẾP ▶" / phím mũi tên phải) bất cứ lúc nào khi đã xem xong.
   };
 
   // Xử lý khi nhấn nút Bỏ qua / Xóa trong modal xem to: Tự động chuyển tiếp sang hóa đơn kế tiếp
@@ -584,9 +578,20 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
               <Text style={styles.btnHeaderZaloText}>{isVideo ? '💬 Zalo' : '💬 Zalo ảnh'}</Text>
             </TouchableOpacity>
 
-            {/* Thông tin vị trí hóa đơn */}
+            {/* Thông tin vị trí hóa đơn & 2 nút điều hướng lùi/tiến tiện lợi */}
             <View style={styles.navCenterInfoWrap}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 6 : 8 }}>
+                {/* Nút lùi nhanh trên Header */}
+                <TouchableOpacity
+                  style={[styles.headerNavBtn, currentIndex <= 0 && styles.headerNavBtnDisabled]}
+                  onPress={handlePrev}
+                  disabled={currentIndex <= 0}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Hóa đơn trước"
+                >
+                  <Text style={[styles.headerNavBtnText, currentIndex <= 0 && styles.headerNavBtnTextDisabled]}>◀</Text>
+                </TouchableOpacity>
+
                 <Text style={[styles.navCardIndexTitle, isMobile && styles.navCardIndexTitleMobile]}>
                   #{submissions.length - currentIndex}
                 </Text>
@@ -596,6 +601,17 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                     {isApproved ? '✓ ĐÃ LÊN NỢ' : 'CHƯA LÊN NỢ'}
                   </Text>
                 </View>
+
+                {/* Nút tiến nhanh trên Header */}
+                <TouchableOpacity
+                  style={[styles.headerNavBtn, currentIndex >= submissions.length - 1 && styles.headerNavBtnDisabled]}
+                  onPress={handleNext}
+                  disabled={currentIndex >= submissions.length - 1}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Hóa đơn tiếp theo"
+                >
+                  <Text style={[styles.headerNavBtnText, currentIndex >= submissions.length - 1 && styles.headerNavBtnTextDisabled]}>▶</Text>
+                </TouchableOpacity>
               </View>
               <Text style={styles.navCounterSubtitle}>
                 ({currentIndex + 1} / {submissions.length})
@@ -746,7 +762,6 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   disabled={currentIndex <= 0}
                   activeOpacity={0.8}
                   accessibilityLabel="Hóa đơn trước"
-                  {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
                 >
                   <Text style={[styles.floatingNavBtnText, isMobile && styles.floatingNavBtnTextMobile, currentIndex <= 0 && styles.floatingNavBtnTextDisabled]}>
                     {isMobile ? '◀' : '◀ Trước'}
@@ -764,7 +779,6 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                   disabled={currentIndex >= submissions.length - 1}
                   activeOpacity={0.8}
                   accessibilityLabel="Hóa đơn tiếp theo"
-                  {...(Platform.OS === 'web' ? { onMouseDown: (e) => e.stopPropagation() } : {})}
                 >
                   <Text style={[styles.floatingNavBtnText, isMobile && styles.floatingNavBtnTextMobile, currentIndex >= submissions.length - 1 && styles.floatingNavBtnTextDisabled]}>
                     {isMobile ? '▶' : 'Sau ▶'}
@@ -1285,6 +1299,17 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                         </Text>
                       )}
                     </TouchableOpacity>
+
+                    {/* Khi đơn đã lưu (isApproved): Nút chuyển nhanh sang đơn kế tiếp để người dùng bấm khi đã xem xong đơn cũ */}
+                    {isApproved && currentIndex < submissions.length - 1 && (
+                      <TouchableOpacity
+                        style={[styles.btnSaveAction, { backgroundColor: '#059669', flex: 0.9, marginLeft: 6 }]}
+                        onPress={handleNext}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.btnSaveActionText}>ĐƠN TIẾP ▶</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               </View>

@@ -4464,7 +4464,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           return nextMap;
         });
         // Nếu AI vừa học thêm tên viết tắt món thịt mới và tự cập nhật các đơn chờ duyệt khác, tải lại danh sách đơn để đồng bộ ngay
-        if (autoUpdatedProdSubIds.length > 0) {
+        // Nếu AI vừa học thêm tên viết tắt món thịt mới và tự cập nhật các đơn chờ duyệt khác, tải lại danh sách đơn để đồng bộ ngay
+        // LƯU Ý: CHỈ fetch lại khi modal chi tiết KHÔNG MỞ, tuyệt đối không fetch khi đang duyệt trong modal để không làm mất đơn vừa duyệt khỏi submissions
+        if (autoUpdatedProdSubIds.length > 0 && !detailModalRef.current?.isOpen?.()) {
           fetchSubmissions();
         }
         // Cập nhật lại cache bảng giá riêng của khách hàng này ngay lập tức
@@ -4472,10 +4474,6 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           fetchProductsForCustomer(card.customer.id, true);
         }
         if (onRefresh) onRefresh();
-        // Nếu vừa xác nhận lý do từ pop-up khi đang mở modal chi tiết, tự động chuyển tiếp sang hóa đơn tiếp theo
-        if (confirmedReason !== undefined && detailModalRef.current?.isOpen?.()) {
-          detailModalRef.current?.next?.();
-        }
         return true;
       }
       return false;

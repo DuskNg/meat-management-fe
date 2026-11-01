@@ -1,5 +1,5 @@
 // meat-management-fe/src/components/MoneyInput.js
-import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, TextInput, Platform, Pressable } from 'react-native';
 import { COLORS } from '../theme';
 
@@ -9,7 +9,7 @@ import { COLORS } from '../theme';
  * Đuôi ".000" nằm trực tiếp trong chuỗi hiển thị của ô nhập -> 100% không bị hở khoảng trắng.
  * Con trỏ chuột nằm tự nhiên ở phần số người dùng nhập (trước .000).
  */
-const MoneyInput = forwardRef(({
+const MoneyInput = ({
   value,            // Số VNĐ (number: 130000) hoặc chuỗi nghìn/chuỗi VNĐ
   onChangeValue,    // Callback nhận giá trị VNĐ thực (number: 130000)
   onChangeText,     // Callback nhận chuỗi VNĐ đầy đủ (string: "130.000")
@@ -21,10 +21,8 @@ const MoneyInput = forwardRef(({
   error = false,
   textAlign = 'left',
   ...props
-}, ref) => {
+}) => {
   const inputRef = useRef(null);
-
-  useImperativeHandle(ref, () => inputRef.current);
 
   // Chuyển đổi input value thành thông tin hiển thị (hỗ trợ cả tròn nghìn và số lẻ chính xác)
   const parseValue = (val) => {
@@ -164,7 +162,7 @@ const MoneyInput = forwardRef(({
       />
     </Pressable>
   );
-});
+};
 
 export default MoneyInput;
 
