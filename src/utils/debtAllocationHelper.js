@@ -454,6 +454,7 @@ export const buildExportDayGroupsWithFIFO = ({
 
   // Tập hợp danh sách các ngày thanh toán đã đóng góp vào tổng tiền đã thu trong kỳ lọc
   const paymentDatesSet = new Set();
+  const paymentBreakdownMap = new Map();
 
   // Gom các khoản thanh toán được phân bổ theo ngày nợ (dateKey)
   // Map: dateKey -> Map<paymentId, { amount, date, isReturn, note }>
@@ -548,6 +549,14 @@ export const buildExportDayGroupsWithFIFO = ({
         const payDateKey = toDateKey(pAlloc.date);
         if (payDateKey) {
           paymentDatesSet.add(payDateKey);
+          if (!paymentBreakdownMap.has(payDateKey)) {
+            paymentBreakdownMap.set(payDateKey, {
+              date: new Date(pAlloc.date),
+              dateKey: payDateKey,
+              amount: 0,
+            });
+          }
+          paymentBreakdownMap.get(payDateKey).amount += amt;
         }
 
         // Chỉ chèn dòng ĐÃ THU dưới từng ngày nếu includePaymentInDailyRows = true
@@ -606,6 +615,14 @@ export const buildExportDayGroupsWithFIFO = ({
           const payDateKey = toDateKey(p.paidAt);
           if (payDateKey) {
             paymentDatesSet.add(payDateKey);
+            if (!paymentBreakdownMap.has(payDateKey)) {
+              paymentBreakdownMap.set(payDateKey, {
+                date: pDate,
+                dateKey: payDateKey,
+                amount: 0,
+              });
+            }
+            paymentBreakdownMap.get(payDateKey).amount += surplus;
           }
 
           if (includePaymentInDailyRows) {
@@ -741,6 +758,19 @@ export const buildExportDayGroupsWithFIFO = ({
     paymentSummaryText = `Khoản thu ngày ${sortedPayDates.slice(0, 3).map(formatPayDateForDisplay).join(', ')}...`;
   }
 
+  // Danh sách chi tiết các khoản thanh toán gom theo ngày để hiển thị minh bạch từng ngày thanh toán bao nhiêu
+  const paymentBreakdown = Array.from(paymentBreakdownMap.values())
+    .filter((item) => item.amount > 0)
+    .sort((a, b) => {
+      const [d1, m1, y1] = a.dateKey.split('/').map(Number);
+      const [d2, m2, y2] = b.dateKey.split('/').map(Number);
+      return new Date(y1, m1 - 1, d1) - new Date(y2, m2 - 1, d2);
+    })
+    .map((item) => ({
+      ...item,
+      displayDate: formatPayDateForDisplay(item.dateKey),
+    }));
+
   return {
     sortedDays,
     totalMeatAmount,
@@ -753,5 +783,6 @@ export const buildExportDayGroupsWithFIFO = ({
     wholeMonthDebt,
     paymentDates: sortedPayDates,
     paymentSummaryText,
+    paymentBreakdown,
   };
 };

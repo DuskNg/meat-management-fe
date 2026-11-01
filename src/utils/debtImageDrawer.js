@@ -286,6 +286,7 @@ export const drawDebtImageCanvas = async ({
     finalDebt,
     wholeMonthDebt,
     paymentSummaryText,
+    paymentBreakdown,
   } = buildExportDayGroupsWithFIFO({
     transList,
     payList,
@@ -390,7 +391,10 @@ export const drawDebtImageCanvas = async ({
   const maxRowsInCol = Math.max(leftEntriesCount, rightEntriesCount, 1);
   const tableContentHeight = maxRowsInCol * rowHeight;
 
-  const summaryRowsCount = 1 + (totalReturnAmount > 0 ? 1 : 0) + (totalPaymentAmount > 0 ? 1 : 0) + 1 + (!isFullMonth ? 1 : 0);
+  const paymentRowsCount = (paymentBreakdown && paymentBreakdown.length > 1)
+    ? (paymentBreakdown.length + 1)
+    : (totalPaymentAmount > 0 ? 1 : 0);
+  const summaryRowsCount = 1 + (totalReturnAmount > 0 ? 1 : 0) + paymentRowsCount + 1 + (!isFullMonth ? 1 : 0);
   const summaryHeight = summaryRowsCount * summaryRowHeight;
   const summaryStartY = startTableY + tableHeaderHeight + tableContentHeight + 16;
   const emptyDaysHeight = (!isSplit && emptyDays.length > 0) ? 28 : 0;
@@ -720,27 +724,75 @@ export const drawDebtImageCanvas = async ({
     curSummaryY += summaryRowHeight;
   }
 
-  // 3. Đã thu
+  // 3. Đã thu (Liệt kê chi tiết ngày nào thanh toán bao nhiêu)
   if (totalPaymentAmount > 0) {
-    ctx.fillStyle = '#F0FDF4';
-    ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
-    ctx.strokeStyle = '#BBF7D0';
-    ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+    if (!paymentBreakdown || paymentBreakdown.length <= 1) {
+      const pItem = paymentBreakdown && paymentBreakdown[0];
+      const paidLabel = pItem
+        ? `ĐÃ THU (Khoản thu ngày ${pItem.displayDate}):`
+        : (paymentSummaryText ? `ĐÃ THU (${paymentSummaryText}):` : 'ĐÃ THU:');
 
-    ctx.beginPath();
-    ctx.moveTo(summaryStartX + summaryColLeftWidth, curSummaryY);
-    ctx.lineTo(summaryStartX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
-    ctx.stroke();
+      ctx.fillStyle = '#F0FDF4';
+      ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+      ctx.strokeStyle = '#BBF7D0';
+      ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
 
-    ctx.fillStyle = '#047857';
-    ctx.font = 'bold 13.5px Arial, sans-serif';
-    ctx.textAlign = 'right';
-    const paidLabel = paymentSummaryText ? `ĐÃ THU (${paymentSummaryText}):` : 'ĐÃ THU:';
-    ctx.fillText(paidLabel, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
-    ctx.fillStyle = '#059669';
-    ctx.font = 'bold 17.5px Arial, sans-serif';
-    ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totalPaymentAmount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
-    curSummaryY += summaryRowHeight;
+      ctx.beginPath();
+      ctx.moveTo(summaryStartX + summaryColLeftWidth, curSummaryY);
+      ctx.lineTo(summaryStartX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
+      ctx.stroke();
+
+      ctx.fillStyle = '#047857';
+      ctx.font = 'bold 13.5px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(paidLabel, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+      ctx.fillStyle = '#059669';
+      ctx.font = 'bold 17.5px Arial, sans-serif';
+      ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totalPaymentAmount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
+      curSummaryY += summaryRowHeight;
+    } else {
+      // Khi có nhiều ngày thanh toán: Liệt kê chi tiết từng ngày thanh toán bao nhiêu vào bảng
+      paymentBreakdown.forEach((pItem) => {
+        ctx.fillStyle = '#F0FDF4';
+        ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+        ctx.strokeStyle = '#BBF7D0';
+        ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+
+        ctx.beginPath();
+        ctx.moveTo(summaryStartX + summaryColLeftWidth, curSummaryY);
+        ctx.lineTo(summaryStartX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
+        ctx.stroke();
+
+        ctx.fillStyle = '#047857';
+        ctx.font = 'bold 13.5px Arial, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`ĐÃ THU (Ngày ${pItem.displayDate}):`, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+        ctx.fillStyle = '#059669';
+        ctx.font = 'bold 16.5px Arial, sans-serif';
+        ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(pItem.amount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
+        curSummaryY += summaryRowHeight;
+      });
+
+      // Dòng TỔNG ĐÃ THU để tiện đối soát với Tổng tiền hàng
+      ctx.fillStyle = '#DCFCE7';
+      ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+      ctx.strokeStyle = '#86EFAC';
+      ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+
+      ctx.beginPath();
+      ctx.moveTo(summaryStartX + summaryColLeftWidth, curSummaryY);
+      ctx.lineTo(summaryStartX + summaryColLeftWidth, curSummaryY + summaryRowHeight);
+      ctx.stroke();
+
+      ctx.fillStyle = '#166534';
+      ctx.font = 'bold 14px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('TỔNG ĐÃ THU:', summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+      ctx.fillStyle = '#15803D';
+      ctx.font = 'bold 17.5px Arial, sans-serif';
+      ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totalPaymentAmount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
+      curSummaryY += summaryRowHeight;
+    }
   }
 
   // 4. Còn lại phải thu
