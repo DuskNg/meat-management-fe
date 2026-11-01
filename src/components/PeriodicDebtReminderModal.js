@@ -342,43 +342,27 @@ export const generateCustomerDebtText = ({
   // 6. Tính tổng tiền mua thực tế (đã trừ hàng trả)
   const totalNetMeat = sortedDays.reduce((sum, d) => sum + (d.meatAmount - d.returnAmount), 0);
 
-  // 7. Lấy danh sách các khoản thanh toán tiền nợ (tiền mặt / chuyển khoản, không phải trả hàng)
-  let totalPaymentAmount = 0;
+  // 7. Lấy danh sách các khoản thanh toán tiền nợ trong tháng (không phải trả hàng)
   const paymentAllocMap = new Map();
+  let totalPaymentAmount = 0;
 
-  try {
-    const { transAllocations } = allocateDebtFIFO(transList, payList);
-    filteredTrans.forEach((t) => {
-      const allocs = transAllocations[t.id] || [];
-      allocs.forEach((alloc) => {
-        if (!alloc.isReturn && alloc.amount > 0) {
-          totalPaymentAmount += alloc.amount;
-          if (!paymentAllocMap.has(alloc.paymentId)) {
-            paymentAllocMap.set(alloc.paymentId, {
-              paymentId: alloc.paymentId,
-              date: new Date(alloc.date),
-              amount: 0,
-            });
-          }
-          paymentAllocMap.get(alloc.paymentId).amount += alloc.amount;
-        }
-      });
-    });
-  } catch (err) {
-    console.warn('Lỗi phân bổ FIFO cho Chị Tuyết:', err);
-  }
-
-  // Bổ sung các khoản thanh toán thực phát sinh trong khoảng lọc [fromD, toD] nếu chưa được gom
   (payList || []).forEach((p) => {
     if (!isReturn(p)) {
-      const pDate = new Date(p.paidAt);
-      if (fromD && toD && pDate >= fromD && pDate <= toD) {
+      const pDate = new Date(p.paidAt || p.createdAt);
+      const cDate = p.createdAt ? new Date(p.createdAt) : null;
+      let effectiveDate = pDate;
+      let isInRange = fromD && toD ? (pDate >= fromD && pDate <= toD) : true;
+      if (!isInRange && cDate && fromD && toD && (cDate >= fromD && cDate <= toD)) {
+        effectiveDate = cDate;
+        isInRange = true;
+      }
+      if (isInRange) {
         if (!paymentAllocMap.has(p.id)) {
           const amt = parseFloat(p.amount || 0);
           totalPaymentAmount += amt;
           paymentAllocMap.set(p.id, {
             paymentId: p.id,
-            date: pDate,
+            date: effectiveDate,
             amount: amt,
           });
         }
@@ -391,22 +375,34 @@ export const generateCustomerDebtText = ({
   // 8. Tính số tiền còn nợ
   const remainingDebt = totalNetMeat - totalPaymentAmount;
 
-  // 9. Ghép thành văn bản hoàn chỉnh theo đúng cấu trúc Ảnh 2
+  // 9. Xác định tháng hiển thị
+  let monthNum = fromD ? fromD.getMonth() + 1 : (toD ? toD.getMonth() + 1 : (new Date().getMonth() + 1));
+  if (sortedDays.length > 0 && !fromD) {
+    monthNum = sortedDays[0].date.getMonth() + 1;
+  }
+
+  // 10. Ghép thành văn bản hoàn chỉnh theo đúng cấu trúc người dùng yêu cầu
   const lines = [
-    ...dayLines,
+    `TIỀN HÀNG THÁNG ${monthNum}:`,
+    ...(dayLines.length > 0 ? dayLines : ['(Chưa có phát sinh tiền hàng)']),
+    `TỔNG TIỀN HÀNG: ${formatThousand(totalNetMeat)}đ`,
     '-------------------------',
-    `Tổng: ${formatThousand(totalNetMeat)} - ${formatThousand(totalPaymentAmount)} = ${formatThousand(remainingDebt)}đ`,
+    `ĐÃ TRẢ TRONG THÁNG ${monthNum}`,
   ];
 
-  // 10. Thêm bên dưới phần text đó là những ngày đã thanh toán, và số tiền đã thanh toán (ví dụ: 1/10: trả 5.300.000đ)
   if (paymentList.length > 0) {
-    lines.push('');
     paymentList.forEach((pay) => {
       const d = pay.date;
       const dayStr = `${d.getDate()}/${d.getMonth() + 1}`;
       lines.push(`${dayStr}: trả ${formatThousand(pay.amount)}đ`);
     });
+  } else {
+    lines.push('(Chưa có khoản thanh toán)');
   }
+
+  lines.push(`TỔNG TIỀN TRẢ: ${formatThousand(totalPaymentAmount)}đ`);
+  lines.push('-------------------------');
+  lines.push(`CÒN LẠI: ${formatThousand(totalNetMeat)} - ${formatThousand(totalPaymentAmount)} = ${formatThousand(remainingDebt)}đ`);
 
   return lines.join('\n');
 };
