@@ -105,7 +105,7 @@ const QuickNavPill = React.memo(
           isApproved && { color: '#059669' },
         ]}
       >
-        #{idx + 1} {sub.detectedCustomerName || customerName || 'Đơn'}
+        #{idx + 1} {(isApproved && customerName) ? customerName : (sub.detectedCustomerName || customerName || 'Đơn')}
       </Text>
       {isApproved ? (
         <Text style={{ fontSize: isMobile ? 9 : 10 }}>✅</Text>
@@ -1059,8 +1059,8 @@ const resolveCustomerForSub = (sub, custList) => {
   );
 
   // ĐẶC BIỆT QUAN TRỌNG: Nếu hóa đơn đã được duyệt (APPROVED), khách hàng đã được lưu chính thức trong CSDL
-  // nhưng nếu mâu thuẫn 100% với tên bóc tách AI thì phải cho phép regex chuẩn nhận diện lại đúng khách!
-  if (sub.status === 'APPROVED' && matchedCust && !isContradictory) {
+  // Tuyệt đối không cho phép tên AI nhận diện đè lên quyết định của người dùng!
+  if (sub.status === 'APPROVED' && matchedCust) {
     return matchedCust;
   }
 
@@ -3650,15 +3650,10 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                  (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
         })) || null;
 
-        // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp khách hàng đã lưu, không chạy lại regex AI
+        // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp 100% khách hàng đã lưu, không chạy lại regex AI và không dùng isSavedContradictory
         const savedCust = isApproved ? (sub.matchedCustomer || (sub.matchedCustomerId ? custList.find((c) => c.id === sub.matchedCustomerId) : null)) : null;
-        const isSavedContradictory = Boolean(
-          savedCust &&
-          sub.detectedCustomerName &&
-          isCustomerNameContradictory(sub.detectedCustomerName, savedCust.name, custList)
-        );
-        const matchedCust = (isApproved && savedCust && !isSavedContradictory)
-          ? savedCust
+        const matchedCust = isApproved
+          ? (savedCust || resolveCustomerForSub(sub, custList))
           : resolveCustomerForSub(sub, custList);
 
         // NẾU CÓ TỪ KHÓA NHẬP HÀNG:
