@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import PopupModal from './PopupModal';
-import api from '../services/api';
+import { api } from '../api/client';
 import { COLORS, SHADOWS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 import {
@@ -789,3 +789,4 @@ const styles = StyleSheet.create({
 });
 
 export default DuplicateDebtResolveModal;
+
