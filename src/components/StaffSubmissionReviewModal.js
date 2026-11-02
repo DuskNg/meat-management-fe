@@ -4474,6 +4474,10 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           fetchProductsForCustomer(card.customer.id, true);
         }
         if (onRefresh) onRefresh();
+        // Nếu vừa xác nhận cập nhật giá riêng từ pop-up khi đang mở modal chi tiết: tự động next sang đơn mới
+        if (confirmedReason !== undefined && detailModalRef.current?.isOpen?.()) {
+          detailModalRef.current?.next?.();
+        }
         return true;
       }
       return false;
