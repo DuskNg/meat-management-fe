@@ -8,6 +8,7 @@ import { COLORS } from '../theme';
  * Tự động gắn đuôi ".000" mặc định cho các ô nhập tiền VNĐ.
  * Đuôi ".000" nằm trực tiếp trong chuỗi hiển thị của ô nhập -> 100% không bị hở khoảng trắng.
  * Con trỏ chuột nằm tự nhiên ở phần số người dùng nhập (trước .000).
+ * Tự động đồng bộ vị trí thêm/xóa số, không bao giờ bị nhảy thêm đuôi 3 số 0 sau mỗi lần gõ.
  */
 const MoneyInput = ({
   value,            // Số VNĐ (number: 130000) hoặc chuỗi nghìn/chuỗi VNĐ
@@ -26,71 +27,103 @@ const MoneyInput = ({
 
   // Chuyển đổi input value thành thông tin hiển thị (hỗ trợ cả tròn nghìn và số lẻ chính xác)
   const parseValue = (val) => {
-    if (val === undefined || val === null || val === '') return { thousandsText: '', isOdd: false, fullText: '' };
+    if (val === undefined || val === null || val === '') return { raw: '', isOdd: false, fullText: '' };
     const clean = String(val).replace(/[^0-9]/g, '');
-    if (!clean) return { thousandsText: '', isOdd: false, fullText: '' };
+    if (!clean) return { raw: '', isOdd: false, fullText: '' };
     const num = parseInt(clean, 10);
-    if (isNaN(num) || num === 0) return { thousandsText: '', isOdd: false, fullText: '' };
+    if (isNaN(num) || num === 0) return { raw: '', isOdd: false, fullText: '' };
     if (num % 1000 !== 0) {
       return {
-        thousandsText: '',
+        raw: '',
         isOdd: true,
         fullText: new Intl.NumberFormat('vi-VN').format(num),
       };
     }
     const thousands = num >= 1000 ? Math.floor(num / 1000) : num;
     return {
-      thousandsText: new Intl.NumberFormat('vi-VN').format(thousands),
+      raw: String(thousands),
       isOdd: false,
       fullText: '',
     };
   };
 
-  const [parsed, setParsed] = useState(() => parseValue(value));
-  const [selection, setSelection] = useState(undefined);
+  const initialParsed = parseValue(value);
+  const [parsed, setParsed] = useState(() => initialParsed);
+  const rawRef = useRef(initialParsed.raw);
 
   useEffect(() => {
-    setParsed(parseValue(value));
+    const p = parseValue(value);
+    setParsed(p);
+    rawRef.current = p.raw;
   }, [value]);
 
   const handleChangeText = (text) => {
-    const cleanDigits = text.replace(/[^0-9]/g, '');
-    if (!cleanDigits) {
-      setParsed({ thousandsText: '', isOdd: false, fullText: '' });
-      setSelection(undefined);
+    const newDigs = text.replace(/[^0-9]/g, '');
+    if (!newDigs) {
+      rawRef.current = '';
+      setParsed({ raw: '', isOdd: false, fullText: '' });
       if (onChangeValue) onChangeValue(0);
       if (onChangeText) onChangeText('');
       return;
     }
 
-    let numThousands = 0;
-    // Nếu chuỗi kết thúc bằng 000 (do đuôi .000 có sẵn trong hiển thị)
-    if (cleanDigits.length > 3 && cleanDigits.endsWith('000')) {
-      numThousands = Math.floor(parseInt(cleanDigits, 10) / 1000);
+    const prevRaw = rawRef.current;
+    const prevFullDigs = prevRaw ? String(parseInt(prevRaw, 10) * 1000) : '';
+    let newRaw = '';
+
+    if (!prevFullDigs) {
+      newRaw = newDigs;
+    } else if (prevFullDigs.length - newDigs.length > 1) {
+      // Người dùng bôi đen nhiều ký tự hoặc chọn toàn bộ rồi gõ đè số mới
+      newRaw = newDigs;
+    } else if (newDigs.length > prevFullDigs.length) {
+      // Thêm ký tự: xác định vị trí thêm so với prevFullDigs
+      let i = 0;
+      while (i < prevFullDigs.length && prevFullDigs[i] === newDigs[i]) i++;
+      const addedDigit = newDigs[i] || newDigs[newDigs.length - 1];
+      newRaw = i < prevRaw.length
+        ? prevRaw.slice(0, i) + addedDigit + prevRaw.slice(i)
+        : prevRaw + addedDigit;
+    } else if (newDigs.length < prevFullDigs.length) {
+      // Xóa ký tự: xác định vị trí xóa
+      let i = 0;
+      while (i < newDigs.length && newDigs[i] === prevFullDigs[i]) i++;
+      newRaw = i < prevRaw.length
+        ? prevRaw.slice(0, i) + prevRaw.slice(i + 1)
+        : prevRaw.slice(0, -1);
     } else {
-      numThousands = parseInt(cleanDigits, 10);
+      // Thay thế ký tự cùng độ dài
+      let i = 0;
+      while (i < newDigs.length && newDigs[i] === prevFullDigs[i]) i++;
+      newRaw = (i < prevRaw.length && i < newDigs.length)
+        ? prevRaw.slice(0, i) + newDigs[i] + prevRaw.slice(i + 1)
+        : prevRaw;
     }
 
-    if (numThousands <= 0) {
-      setParsed({ thousandsText: '', isOdd: false, fullText: '' });
-      setSelection(undefined);
-      if (onChangeValue) onChangeValue(0);
-      if (onChangeText) onChangeText('');
-      return;
-    }
-
-    const formattedThousands = new Intl.NumberFormat('vi-VN').format(numThousands);
+    rawRef.current = newRaw;
+    const numThousands = parseInt(newRaw, 10) || 0;
+    const formattedThousands = numThousands > 0 ? new Intl.NumberFormat('vi-VN').format(numThousands) : '';
     const numericVND = numThousands * 1000;
-    const formattedVND = new Intl.NumberFormat('vi-VN').format(numericVND);
+    const formattedVND = numThousands > 0 ? new Intl.NumberFormat('vi-VN').format(numericVND) : '';
 
     setParsed({
-      thousandsText: formattedThousands,
+      raw: newRaw,
       isOdd: false,
       fullText: '',
     });
-    // Đặt con trỏ chuột nằm ngay sau chữ số đã gõ (trước đuôi .000)
-    const newPos = formattedThousands.length;
-    setSelection({ start: newPos, end: newPos });
+
+    if (Platform.OS === 'web') {
+      const newPos = formattedThousands.length;
+      requestAnimationFrame(() => {
+        try {
+          const el = inputRef.current;
+          const domInput = el?.tagName === 'INPUT' ? el : (el?.querySelector?.('input') || el);
+          if (domInput && typeof domInput.setSelectionRange === 'function') {
+            domInput.setSelectionRange(newPos, newPos);
+          }
+        } catch (_) {}
+      });
+    }
 
     if (onChangeValue) onChangeValue(numericVND);
     if (onChangeText) onChangeText(formattedVND);
@@ -98,7 +131,7 @@ const MoneyInput = ({
 
   const displayValue = parsed.isOdd
     ? parsed.fullText
-    : (parsed.thousandsText ? `${parsed.thousandsText}.000` : '');
+    : (parsed.raw ? `${new Intl.NumberFormat('vi-VN').format(parseInt(parsed.raw, 10) || 0)}.000` : '');
 
   // Lấy thuộc tính kiểu dáng để tách riêng cho Container và TextInput
   const flatStyle = StyleSheet.flatten(style) || {};
@@ -147,8 +180,6 @@ const MoneyInput = ({
         placeholderTextColor={COLORS.textLight || '#94A3B8'}
         keyboardType="number-pad"
         editable={!disabled}
-        selection={Platform.OS !== 'web' ? selection : undefined}
-        onSelectionChange={Platform.OS !== 'web' ? (e) => setSelection(e.nativeEvent.selection) : undefined}
         selectTextOnFocus={true}
         onFocus={(e) => {
           if (Platform.OS === 'web' && e?.target?.select) {
