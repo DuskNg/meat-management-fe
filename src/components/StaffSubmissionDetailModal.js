@@ -361,13 +361,20 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     };
   }, [visible, currentIndex, submissions.length, handlePrev, handleNext]);
 
-  // Xử lý khi nhấn nút Nhập công nợ trong modal chi tiết: Khôi phục logic cũ, giữ nguyên đơn vừa lưu để xem
+  // Xử lý khi nhấn nút Nhập công nợ trong modal chi tiết: Tự động chuyển sang công nợ mới kế tiếp
   const handleSaveAndAutoNext = async (subId) => {
     if (!handleSaveCard) return;
-    await handleSaveCard(subId);
-    // Logic cũ: Giữ nguyên tại đơn vừa lưu để người dùng kiểm tra đối chiếu (VẪN XEM ĐƯỢC ĐƠN ĐÓ).
-    // Trạng thái đơn lập tức cập nhật thành "✓ ĐÃ LÊN NỢ" và nút đổi thành "🔄 CẬP NHẬT LẠI".
-    // Người dùng có thể bấm nút "Sau ▶" (hoặc "ĐƠN TIẾP ▶" / phím mũi tên phải) bất cứ lúc nào khi đã xem xong.
+    const success = await handleSaveCard(subId);
+    // Nếu lưu thành công và còn hóa đơn tiếp theo, tự động chuyển tiếp sang hóa đơn mới!
+    if (success) {
+      const list = submissionsRef.current || submissions;
+      const curIdx = list.findIndex((s) => s.id === subId);
+      if (curIdx >= 0 && curIdx < list.length - 1) {
+        goToIndex(curIdx + 1);
+      } else if (curIdx >= list.length - 1) {
+        showGlobalToast('Đã đến hóa đơn cuối cùng trong danh sách!', 'info');
+      }
+    }
   };
 
   // Xử lý khi nhấn nút Bỏ qua / Xóa trong modal xem to: Tự động chuyển tiếp sang hóa đơn kế tiếp
