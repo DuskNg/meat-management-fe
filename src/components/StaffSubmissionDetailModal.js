@@ -95,7 +95,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   const [activeMeatItemIdx, setActiveMeatItemIdx] = useState(null);
 
   // State điều khiển Zoom, Kéo rê (Pan) và Xoay ảnh ở cột Viewer
-  const [scale, setScale] = useState(1);
+  const [scale, setScale] = useState(1.5); // Mặc định zoom 150% theo yêu cầu
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [rotation, setRotation] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -142,7 +142,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
 
   // Đặt lại zoom & vị trí ảnh
   const resetZoom = () => {
-    setScale(1);
+    setScale(1.5);
     setPosition({ x: 0, y: 0 });
     setRotation(0);
     setIsDragging(false);
@@ -315,6 +315,36 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
   const handleMouseUp = () => {
     setIsDragging(false);
   };
+  // Xử lý kéo di chuyển ảnh trên màn hình cảm ứng điện thoại khi phóng to
+  const handleTouchStart = (e) => {
+    if (scale <= 1) return;
+    if (e.touches && e.touches.length === 1) {
+      setIsDragging(true);
+      dragStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        posX: position.x,
+        posY: position.y,
+      };
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isDragging) return;
+    if (e.touches && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - dragStartRef.current.x;
+      const dy = e.touches[0].clientY - dragStartRef.current.y;
+      setPosition({
+        x: dragStartRef.current.posX + dx,
+        y: dragStartRef.current.posY + dy,
+      });
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
+
 
   // Cuộn chuột để zoom mượt mà
   useEffect(() => {
@@ -705,6 +735,9 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                       onMouseMove: handleMouseMove,
                       onMouseUp: handleMouseUp,
                       onMouseLeave: handleMouseUp,
+                      onTouchStart: handleTouchStart,
+                      onTouchMove: handleTouchMove,
+                      onTouchEnd: handleTouchEnd,
                     }
                     : {})}
                 >
