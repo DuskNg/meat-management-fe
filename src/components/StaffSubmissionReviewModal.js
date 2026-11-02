@@ -843,6 +843,71 @@ const InvoiceReviewCard = React.memo(
 /**
  * Hàm nhận diện và so khớp khách hàng chính xác theo từ khóa AI bóc tách
  */
+
+/**
+ * Kiểm tra xem tên AI bóc tách (detectedName) có mâu thuẫn hiển nhiên với tên khách hàng (customerName) không.
+ * Ngăn chặn tuyệt đối việc AI gán nhầm hoặc học sai từ điển làm lây lan lệch khách hàng!
+ */
+const isCustomerNameContradictory = (detectedName, customerName) => {
+  if (!detectedName || !customerName) return false;
+  const dClean = removeDiacritics(String(detectedName).toLowerCase().trim());
+  const cClean = removeDiacritics(String(customerName).toLowerCase().trim());
+  const dNoSpace = dClean.replace(/\s+/g, '');
+  const cNoSpace = cClean.replace(/\s+/g, '');
+
+  // 1. Bếp 3 miền kim liên
+  const isD3Mien = dClean.includes('3 mien') || dClean.includes('ba mien') || dClean.includes('kim lien') || dNoSpace.includes('3mien') || dNoSpace.includes('kimlien');
+  const isC3Mien = cClean.includes('3 mien') || cClean.includes('ba mien') || cClean.includes('kim lien') || cNoSpace.includes('3mien') || cNoSpace.includes('kimlien');
+  if (isD3Mien && !isC3Mien) return true;
+
+  // 2. Chị hạnh sân bóng hà trì
+  const isDHanh = (dClean.includes('hanh') && (dClean.includes('san bong') || dClean.includes('ha tri') || dClean.includes('tri'))) || dClean.includes('san bong');
+  const isCHanh = cClean.includes('hanh') && (cClean.includes('san bong') || cClean.includes('ha tri'));
+  if (isDHanh && !isCHanh) return true;
+
+  // 3. Cuốn láng hạ
+  const isDCuonLangHa = (dClean.includes('cuon') && dClean.includes('lang ha')) || dNoSpace.includes('cuonlangha');
+  const isCCuonLangHa = (cClean.includes('cuon') && cClean.includes('lang ha')) || cNoSpace.includes('cuonlangha');
+  if (isDCuonLangHa && !isCCuonLangHa) return true;
+
+  // 4. 52 trần thái tông
+  const isD52 = (dClean.includes('52') && (dClean.includes('tran thai tong') || dClean.includes('thai tong'))) || (dClean.includes('tran thai tong') && !dClean.includes('47'));
+  const isC52 = cClean.includes('52') || cClean.includes('tran thai tong');
+  if (isD52 && !isC52) return true;
+
+  // 5. Văn khê / Bún huế văn khê
+  const isDVanKhe = dClean.includes('van khe') || dNoSpace.includes('vankhe') || dClean.includes('bun hue');
+  const isCVanKhe = cClean.includes('van khe') || cNoSpace.includes('vankhe') || cClean.includes('bun hue');
+  if (isDVanKhe && !isCVanKhe) return true;
+
+  // 6. Huyền đô nghĩa
+  const isDHuyen = dClean.includes('huyen do nghia') || dClean.includes('do nghia');
+  const isCHuyen = cClean.includes('huyen') || cClean.includes('do nghia');
+  if (isDHuyen && !isCHuyen) return true;
+
+  // 7. 268 Khương đình
+  const isD268 = dClean.includes('268') || dClean.includes('khuong dinh');
+  const isC268 = cClean.includes('268') || cClean.includes('khuong dinh');
+  if (isD268 && !isC268) return true;
+
+  // 8. 236 Xã đàn
+  const isD236 = dClean.includes('236') || dClean.includes('xa dan');
+  const isC236 = cClean.includes('236') || cClean.includes('xa dan');
+  if (isD236 && !isC236) return true;
+
+  // 9. 126 Nguyễn khánh toàn
+  const isD126 = dClean.includes('126') || dClean.includes('nguyen khanh toan');
+  const isC126 = cClean.includes('126') || cClean.includes('khanh toan');
+  if (isD126 && !isC126) return true;
+
+  // 10. Giảng võ
+  const isDGiangVo = dClean.includes('giang vo');
+  const isCGiangVo = cClean.includes('giang vo');
+  if (isDGiangVo && !isCGiangVo) return true;
+
+  return false;
+};
+
 const resolveCustomerForSub = (sub, custList) => {
   if (!sub) return null;
   // Khách hàng
@@ -851,20 +916,32 @@ const resolveCustomerForSub = (sub, custList) => {
     matchedCust = custList.find((c) => c.id === sub.matchedCustomerId) || null;
   }
 
+  // KIỂM TRA MÂU THUẪN DANH TÍNH: Nếu tên AI bóc tách rõ ràng nhưng matchedCust trong DB lại là khách khác
+  // (ví dụ do đơn cũ bị gán nhầm hoặc bị đầu độc alias), TUYỆT ĐỐI không được tin tưởng matchedCust sai đó!
+  const isContradictory = Boolean(
+    sub.detectedCustomerName &&
+    matchedCust &&
+    isCustomerNameContradictory(sub.detectedCustomerName, matchedCust.name)
+  );
+
   // ĐẶC BIỆT QUAN TRỌNG: Nếu hóa đơn đã được duyệt (APPROVED), khách hàng đã được lưu chính thức trong CSDL
-  // -> TUYỆT ĐỐI KHÔNG để các quy tắc regex nhận diện sơ bộ của AI ghi đè lại khách hàng khác!
-  if (sub.status === 'APPROVED') {
+  // nhưng nếu mâu thuẫn 100% với tên bóc tách AI thì phải cho phép regex chuẩn nhận diện lại đúng khách!
+  if (sub.status === 'APPROVED' && matchedCust && !isContradictory) {
     return matchedCust;
   }
 
   // ƯU TIÊN TUYỆT ĐỐI SỐ 1: Nếu khách hàng đã được khớp từ Bảng Từ Điển AI Tự Học (CustomerAiAlias)
-  // do chủ buôn đã dạy từ các đơn trước -> trả về ngay lập tức, không để regex bên dưới ghi đè!
+  // và không bị mâu thuẫn -> trả về ngay lập tức!
   const isMatchedByAiAlias = Boolean(
     sub.matchedByAiAlias ||
     (typeof sub.rawAiResponse === 'string' && sub.rawAiResponse.includes('"matched_by_ai_alias":true'))
   );
-  if (isMatchedByAiAlias && matchedCust) {
+  if (isMatchedByAiAlias && matchedCust && !isContradictory) {
     return matchedCust;
+  }
+
+  if (isContradictory) {
+    matchedCust = null;
   }
 
   // Kiểm tra và sửa lỗi nếu AI nhận diện có thông tin rõ ràng
@@ -1212,7 +1289,7 @@ const resolveCustomerForSub = (sub, custList) => {
       }) || null;
 
       if (bep3MienCust) {
-        matchedCust = bep3MienCust;
+        return bep3MienCust;
       }
     }
 
@@ -1371,8 +1448,12 @@ const resolveCustomerForSub = (sub, custList) => {
           // Nếu người nói đọc là chị Hạnh -> Khớp khách chị hạnh sân bóng hà trì
           targetCust = custList.find((c) => {
             const cClean = removeDiacritics(c.name.toLowerCase());
+            return cClean.includes('hanh') && (cClean.includes('san bong') || cClean.includes('ha tri'));
+          }) || custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
             return cClean.includes('hanh');
           }) || null;
+          if (targetCust) return targetCust;
         } else {
           // Đọc là Hà Trì -> 100% là khách Hà Trì, TUYỆT ĐỐI KHÔNG chọn nhầm sang "Chị hạnh sân bóng hà trì"
           targetCust = custList.find((c) => {
@@ -1499,12 +1580,18 @@ const resolveCustomerForSub = (sub, custList) => {
       }
     }
 
-    // 1h. ĐẶC BIỆT: Khớp ưu tiên khách "52  trần thái tông" nếu quét được số 52
-    if (
-      cleanDetected.includes('52') ||
-      cleanDetectedNoSpace.includes('52') ||
-      (cleanDetected.includes('tran thai tong') && !cleanDetected.includes('47'))
-    ) {
+    // 1h. ĐẶC BIỆT: Khớp ưu tiên khách "52  trần thái tông" nếu quét được đúng địa chỉ trần thái tông hoặc số 52 độc lập
+    const isDetected52Exact = (
+      cleanDetected.includes('tran thai tong') ||
+      cleanDetectedNoSpace.includes('tranthaitong') ||
+      cleanDetectedNoSpace === '52' ||
+      cleanDetected === '52' ||
+      cleanDetected.startsWith('52 ') ||
+      cleanDetected.endsWith(' 52') ||
+      cleanDetected.includes(' 52 ')
+    ) && !cleanDetected.includes('47') && !cleanDetected.includes('mien') && !cleanDetected.includes('kim lien') && !cleanDetected.includes('hanh') && !cleanDetected.includes('san bong');
+
+    if (isDetected52Exact && !matchedCust) {
       if (!currentCustClean.includes('52')) {
         const cust52 = custList.find((c) => {
           const cClean = removeDiacritics(c.name.toLowerCase());
