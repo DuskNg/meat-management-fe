@@ -929,27 +929,40 @@ const isCustomerNameContradictory = (detectedName, customerName, custList = []) 
   const isCHaTri = (cClean === 'ha tri' || cClean.includes('ha tri')) && !cClean.includes('san bong');
   if (isDHaTri && !isCHaTri) return true;
 
+  // 13. Phân biệt rõ "Chị Quang Tuyết" và "Chị tuyết(toan nga thái dũng)..."
+  const isDQuangTuyet = dClean.includes('quang tuyet') || (dClean.includes('quang') && dClean.includes('tuyet')) || dNoSpace.includes('quangtuyet');
+  const isCQuangTuyet = cClean.includes('quang tuyet') || (cClean.includes('quang') && cClean.includes('tuyet')) || cNoSpace.includes('quangtuyet');
+  if (isDQuangTuyet !== isCQuangTuyet) return true;
+
+  const isDToanNga = dClean.includes('toan nga') || dClean.includes('thai dung') || dNoSpace.includes('toannga') || dNoSpace.includes('thaidung');
+  const isCToanNga = cClean.includes('toan nga') || cClean.includes('thai dung') || cNoSpace.includes('toannga') || cNoSpace.includes('thaidung');
+  if (isDToanNga && !isCToanNga) return true;
+
   return false;
+};
+
+// Helper chuẩn hóa tên khách hàng phục vụ so khớp chính xác (loại bỏ ký tự ngoặc, dấu phép tính, khoảng trắng thừa)
+const normalizeCleanCustomerName = (str) => {
+  return removeDiacritics(String(str || ''))
+    .toLowerCase()
+    .replace(/\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi, ' ')
+    .replace(/[()\-–—:+*.,/\\_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 };
 
 const resolveCustomerForSub = (sub, custList) => {
   if (!sub) return null;
 
   // 0. BẮT BUỘC ƯU TIÊN SỐ 1 TUYỆT ĐỐI: KHỚP CHÍNH XÁC 100% (EXACT MATCH) TRONG DANH BẠ KHÁCH HÀNG
-  // Nếu AI bóc tách được tên trùng khớp 100% với một khách hàng có thật trong danh bạ (ví dụ "Na sườn lẩu", "52 trần thái tông", "Hồng hạnh hqv"...)
+  // Nếu AI bóc tách được tên trùng khớp 100% với một khách hàng có thật trong danh bạ (ví dụ "Na sườn lẩu", "52 trần thái tông", "Hồng hạnh hqv", "Chị tuyết(toan nga thái dũng)...")
   // thì BẮT BUỘC trả về ngay khách hàng này, TUYỆT ĐỐI không cho bất kỳ alias hay đơn gán nhầm nào đè lên!
   if (sub.detectedCustomerName && Array.isArray(custList) && custList.length > 0) {
-    const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
-    const rawClean = sub.detectedCustomerName
-      .replace(returnKeywordsRegex, '')
-      .replace(/[-–—:()]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const cleanDet = removeDiacritics((rawClean || sub.detectedCustomerName).toLowerCase().trim());
+    const cleanDet = normalizeCleanCustomerName(sub.detectedCustomerName);
     const cleanDetNoSpace = cleanDet.replace(/\s+/g, '');
 
     const exactMatch = custList.find((c) => {
-      const cClean = removeDiacritics(c.name.toLowerCase().trim());
+      const cClean = normalizeCleanCustomerName(c.name);
       const cNoSpace = cClean.replace(/\s+/g, '');
       return cClean === cleanDet || cNoSpace === cleanDetNoSpace;
     });
@@ -1000,6 +1013,42 @@ const resolveCustomerForSub = (sub, custList) => {
     const cleanDetected = removeDiacritics((rawCustNameClean || sub.detectedCustomerName).toLowerCase().trim());
     const cleanDetectedNoSpace = cleanDetected.replace(/\s+/g, '');
     const currentCustClean = matchedCust ? removeDiacritics(matchedCust.name.toLowerCase().trim()) : '';
+
+    // 00. ĐẶC BIỆT: Phân biệt tuyệt đối giữa "Chị tuyết(toan nga thái dũng)..." và "Chị Quang Tuyết"
+    const isDetectedQuangTuyet = (
+      cleanDetected.includes('quang tuyet') ||
+      cleanDetectedNoSpace.includes('quangtuyet') ||
+      (cleanDetected.includes('quang') && cleanDetected.includes('tuyet'))
+    );
+    const isDetectedToanNgaTuyet = (
+      cleanDetected.includes('toan nga') ||
+      cleanDetected.includes('thai dung') ||
+      cleanDetectedNoSpace.includes('toannga') ||
+      cleanDetectedNoSpace.includes('thaidung') ||
+      ((cleanDetected.includes('tuyet') || cleanDetectedNoSpace.includes('tuyet')) && !cleanDetected.includes('quang') && !cleanDetectedNoSpace.includes('quang'))
+    );
+
+    if (isDetectedQuangTuyet) {
+      const quangTuyetCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('quang tuyet') || (cClean.includes('quang') && cClean.includes('tuyet'));
+      });
+      if (quangTuyetCust) {
+        return quangTuyetCust;
+      }
+    } else if (isDetectedToanNgaTuyet) {
+      const toanNgaCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('toan nga') || cClean.includes('thai dung');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('tuyet') && !cClean.includes('quang');
+      }) || null;
+
+      if (toanNgaCust) {
+        return toanNgaCust;
+      }
+    }
 
     // 0a. ĐẶC BIỆT: Khớp ưu tiên khách "Bếp trung kính" nếu AI nhận diện là "Trung kính", "trung kh", "tuy kh", "trungkinh"...
     // BẮT BUỘC ưu tiên tìm khách có chứa "bep trung kinh" / "bep" + "trung" + "kinh" trước,
@@ -1941,10 +1990,21 @@ const resolveCustomerForSub = (sub, custList) => {
     // 4. Ưu tiên khớp khách Tuyết
     if (!matchedCust) {
       if (cleanDetected.includes('tuyet') || cleanDetectedNoSpace.includes('tuyet')) {
-        matchedCust = custList.find((c) => {
-          const cClean = removeDiacritics(c.name.toLowerCase());
-          return cClean.includes('tuyet');
-        }) || null;
+        const isQuang = cleanDetected.includes('quang') || cleanDetectedNoSpace.includes('quang');
+        if (isQuang) {
+          matchedCust = custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return cClean.includes('quang') && cClean.includes('tuyet');
+          }) || null;
+        } else {
+          matchedCust = custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return (cClean.includes('toan nga') || cClean.includes('thai dung')) && cClean.includes('tuyet');
+          }) || custList.find((c) => {
+            const cClean = removeDiacritics(c.name.toLowerCase());
+            return cClean.includes('tuyet') && !cClean.includes('quang');
+          }) || null;
+        }
       }
     }
 
