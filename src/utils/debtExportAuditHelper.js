@@ -522,10 +522,12 @@ export const buildGlobalAuditWarningMessage = (duplicateResults = []) => {
   // Đảm bảo dữ liệu đầu vào là mảng hợp lệ, chống lỗi t.forEach is not a function
   if (!Array.isArray(duplicateResults) || duplicateResults.length === 0) return '';
 
+  const count = duplicateResults.length;
   const sections = [];
+
   sections.push('⚠️ PHÁT HIỆN TRÙNG LẶP ĐƠN HÀNG TRONG NGÀY:');
   sections.push(
-    `Hệ thống kiểm tra ngầm và phát hiện **${duplicateResults.length} khách hàng** có các dòng thịt nghi ngờ bị nhập trùng (cùng tên thịt và số kg lệch < 0.2kg):`
+    `Hệ thống phát hiện **${count} khách hàng** có các dòng thịt cùng tên và số kg bằng nhau trong ngày:`
   );
 
   duplicateResults.forEach((res) => {
@@ -533,12 +535,14 @@ export const buildGlobalAuditWarningMessage = (duplicateResults = []) => {
     custLines.push(`📌 Khách hàng: **${res.customerName}** (Ngày ${res.displayDate})`);
     res.groups.forEach((g) => {
       const qtyListStr = g.quantities.map((q) => `${q}kg`).join(' và ');
-      custLines.push(`• Trùng ${g.items.length} dòng **${g.productName}** (${qtyListStr})`);
+      custLines.push(`• Món **${g.productName}**: Có ${g.items.length} dòng bằng nhau (${qtyListStr})`);
     });
     sections.push(custLines.join('\n'));
   });
 
-  sections.push('💡 Vui lòng kiểm tra lại để tránh bị tính thừa tiền của khách hàng!');
+  sections.push(
+    '💡 Nếu quán đặt nhiều lần bằng cân là **đúng thực tế**, bạn hãy bấm nút **"Bằng cân nhưng đúng"** bên dưới để không bị nhắc lại nữa.'
+  );
   sections.push('Bạn có muốn mở kiểm tra chi tiết các đơn hàng này không?');
 
   return sections.join('\n\n');
