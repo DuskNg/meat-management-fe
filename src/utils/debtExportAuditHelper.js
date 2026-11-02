@@ -368,6 +368,7 @@ export const auditGlobalTransactionsForDuplicates = ({
   transactions = [],
   customers = [],
   targetDateKeys = null,
+  confirmedKeys = null,
 }) => {
   if (!transactions || transactions.length === 0) return [];
 
@@ -463,16 +464,46 @@ export const auditGlobalTransactionsForDuplicates = ({
 
     const dayDups = detectDuplicateDayItems([dayMock]);
     if (dayDups && dayDups.length > 0) {
-      const custObj = customerMap.get(dayData.customerId) || {};
-      duplicateResults.push({
-        customerId: dayData.customerId,
-        customerName: custObj.name || tCustomerNameFallback(dayData.entries) || 'Khách hàng',
-        customerPhone: custObj.phone || '',
-        customer: custObj,
-        dateKey: dayData.dateKey,
-        displayDate: dayData.displayDate,
-        groups: dayDups[0].groups,
+      // Lọc bỏ các nhóm đã được người dùng xác nhận là đơn đúng (bằng cân nhưng không phải trùng)
+      const confirmedSet =
+        confirmedKeys instanceof Set
+          ? confirmedKeys
+          : Array.isArray(confirmedKeys)
+          ? new Set(confirmedKeys)
+          : getConfirmedValidDuplicateKeys();
+
+      const validGroups = (dayDups[0].groups || []).filter((g) => {
+        // Kiểm tra theo key nhóm
+        const groupKey = buildDuplicateGroupKey({
+          customerId: dayData.customerId,
+          dateKey: dayData.dateKey,
+          productName: g.productName,
+          quantities: g.quantities,
+        });
+        if (confirmedSet.has(groupKey)) return false;
+
+        // Kiểm tra theo transactionIds nếu có
+        const txIds = [...new Set((g.items || []).map((it) => it.transactionId).filter(Boolean))].sort();
+        if (txIds.length > 0) {
+          const txKey = `txs_${txIds.join('_')}_${normalizeMeatName(g.productName)}`;
+          if (confirmedSet.has(txKey)) return false;
+        }
+
+        return true;
       });
+
+      if (validGroups.length > 0) {
+        const custObj = customerMap.get(dayData.customerId) || {};
+        duplicateResults.push({
+          customerId: dayData.customerId,
+          customerName: custObj.name || tCustomerNameFallback(dayData.entries) || 'Khách hàng',
+          customerPhone: custObj.phone || '',
+          customer: custObj,
+          dateKey: dayData.dateKey,
+          displayDate: dayData.displayDate,
+          groups: validGroups,
+        });
+      }
     }
   });
 
@@ -527,4 +558,89 @@ export const computeDuplicatesSignature = (duplicateResults = []) => {
     })
     .sort()
     .join(';;');
+};
+
+
+// Khóa lưu danh sách các đơn trùng lặp đã được người dùng xác nhận là đúng (không phải trùng)
+export const CONFIRMED_VALID_DUPLICATES_STORAGE_KEY = 'meat_confirmed_valid_duplicate_keys';
+
+/**
+ * Xây dựng khóa định danh duy nhất cho một nhóm nghi trùng trong ngày:
+ */
+export const buildDuplicateGroupKey = ({ customerId, dateKey, productName, quantities }) => {
+  const cleanName = normalizeMeatName(productName);
+  const cleanQuantities = (quantities || [])
+    .map((q) => parseFloat(q).toFixed(2))
+    .sort()
+    .join('_');
+  return `dup_${customerId || 'any'}_${dateKey || 'any'}_${cleanName}_${cleanQuantities}`;
+};
+
+/**
+ * Lấy danh sách các key đã được người dùng xác nhận đúng từ localStorage:
+ */
+export const getConfirmedValidDuplicateKeys = () => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(CONFIRMED_VALID_DUPLICATES_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return new Set(parsed);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[DUPLICATE_AUDIT] Lỗi đọc confirmed duplicate keys từ localStorage:', err);
+  }
+  return new Set();
+};
+
+/**
+ * Lưu bổ sung các key đã được xác nhận đúng vào localStorage:
+ */
+export const addConfirmedValidDuplicateKeys = (keys = []) => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage && Array.isArray(keys) && keys.length > 0) {
+      const currentSet = getConfirmedValidDuplicateKeys();
+      keys.forEach((k) => {
+        if (k) currentSet.add(k);
+      });
+      window.localStorage.setItem(
+        CONFIRMED_VALID_DUPLICATES_STORAGE_KEY,
+        JSON.stringify(Array.from(currentSet))
+      );
+    }
+  } catch (err) {
+    console.warn('[DUPLICATE_AUDIT] Lỗi lưu confirmed duplicate keys vào localStorage:', err);
+  }
+};
+
+/**
+ * Trích xuất toàn bộ các key định danh từ danh sách kết quả trùng lặp:
+ */
+export const buildDuplicateKeysFromResults = (duplicateResults = []) => {
+  if (!Array.isArray(duplicateResults) || duplicateResults.length === 0) return [];
+  const keys = [];
+
+  duplicateResults.forEach((res) => {
+    (res.groups || []).forEach((g) => {
+      // 1. Key theo customer + date + productName + quantities
+      const mainKey = buildDuplicateGroupKey({
+        customerId: res.customerId,
+        dateKey: res.dateKey,
+        productName: g.productName,
+        quantities: g.quantities,
+      });
+      keys.push(mainKey);
+
+      // 2. Key theo transaction IDs nếu có
+      const txIds = [...new Set((g.items || []).map((it) => it.transactionId).filter(Boolean))].sort();
+      if (txIds.length > 0) {
+        keys.push(`txs_${txIds.join('_')}_${normalizeMeatName(g.productName)}`);
+      }
+    });
+  });
+
+  return keys;
 };

@@ -4,7 +4,11 @@ import {
   auditGlobalTransactionsForDuplicates,
   buildGlobalAuditWarningMessage,
   computeDuplicatesSignature,
+  buildDuplicateKeysFromResults,
+  addConfirmedValidDuplicateKeys,
+  getConfirmedValidDuplicateKeys,
 } from '../utils/debtExportAuditHelper';
+import { showGlobalToast } from '../store/toastStore';
 
 // Chu kỳ quét trùng lặp tự động định kỳ: 30 phút (30 * 60 * 1000 ms)
 const DUPLICATE_AUDIT_INTERVAL_MS = 30 * 60 * 1000;
@@ -14,8 +18,9 @@ const DUPLICATE_AUDIT_INTERVAL_MS = 30 * 60 * 1000;
  * - Tự động quét toàn bộ giao dịch phát sinh gần đây của các khách hàng định kỳ cứ 30 phút 1 lần.
  * - Phát hiện nếu trong cùng 1 ngày có từ 2 dòng thịt cùng tên và số kg lệch < 0.2kg.
  * - Bật Pop-up cảnh báo định kỳ 30 phút khi phát hiện đơn trùng hoặc ngay sau khi người dùng vừa lưu nợ.
+ * - Cho phép người dùng bấm "Bằng cân nhưng đúng (Không báo lại)" để lưu trữ vĩnh viễn và không cảnh báo lại nữa.
+ * - Ngăn chặn tình trạng popup hiển thị liên tục làm phiền người dùng khi họ đã bấm "Đã hiểu / Bỏ qua".
  * - Cung cấp danh sách trùng lặp để hiển thị thanh Banner cảnh báo ghim trên màn hình.
- * - Sử dụng Ref để lưu trữ tham chiếu, ngăn ngừa hoàn toàn vòng lặp vô hạn (Maximum update depth exceeded).
  */
 export const useGlobalDuplicateDebtAudit = ({
   transactions = [],
@@ -49,6 +54,8 @@ export const useGlobalDuplicateDebtAudit = ({
   const lastAlertedSignatureRef = useRef('');
   const lastAlertTimestampRef = useRef(0);
   const isAfterSubmitRef = useRef(false);
+  const dismissedSignatureRef = useRef('');
+  const dismissedTimestampRef = useRef(0);
 
   // Mở popup cảnh báo chi tiết các khách hàng bị trùng
   const showDuplicateAlertModal = useCallback((customList = null) => {
@@ -65,6 +72,36 @@ export const useGlobalDuplicateDebtAudit = ({
       message: buildGlobalAuditWarningMessage(targetList),
       confirmText: 'Kiểm tra chi tiết',
       cancelText: 'Đã hiểu / Bỏ qua',
+      neutralText: '✅ Bằng cân nhưng đúng (Không báo lại)',
+      onNeutral: () => {
+        // 1. Trích xuất các key của các đơn trùng trong targetList và lưu vào localStorage
+        const keys = buildDuplicateKeysFromResults(targetList);
+        addConfirmedValidDuplicateKeys(keys);
+
+        // 2. Lấy lại danh sách confirmed mới nhất
+        const updatedConfirmedSet = getConfirmedValidDuplicateKeys();
+
+        // 3. Quét lại dữ liệu để loại bỏ ngay lập tức các đơn vừa xác nhận hợp lệ
+        const remainingDuplicates = auditGlobalTransactionsForDuplicates({
+          transactions: transactionsRef.current || [],
+          customers: customersRef.current || [],
+          confirmedKeys: updatedConfirmedSet,
+        });
+
+        const newSig = computeDuplicatesSignature(remainingDuplicates);
+        currentDuplicatesSigRef.current = newSig;
+        lastAlertedSignatureRef.current = newSig;
+        setGlobalDuplicates(remainingDuplicates);
+        isAfterSubmitRef.current = false;
+
+        // 4. Hiển thị thông báo thành công qua toast chuẩn hệ thống
+        showGlobalToast('Đã ghi nhận đơn đúng! Hệ thống sẽ không cảnh báo lại các đơn này nữa.', 'success');
+      },
+      onCancel: () => {
+        // Người dùng chọn bỏ qua: Ghi nhận chữ ký hiện tại để không tự động bật lại popup khi vừa submit đơn khác
+        dismissedSignatureRef.current = currentDuplicatesSigRef.current;
+        dismissedTimestampRef.current = Date.now();
+      },
       onConfirm: () => {
         const firstDup = targetList[0];
         if (firstDup && onInspectCustomerRef.current) {
@@ -103,24 +140,28 @@ export const useGlobalDuplicateDebtAudit = ({
       if (duplicateResults.length > 0) {
         const now = Date.now();
         const timeSinceLastAlert = now - lastAlertTimestampRef.current;
-        const isNewSignature = newSig !== lastAlertedSignatureRef.current;
+        const isNewSignature = newSig !== lastAlertedSignatureRef.current && newSig !== dismissedSignatureRef.current;
+        const isDismissed = newSig === dismissedSignatureRef.current;
 
         // Bật pop-up nếu:
-        // 1. Người dùng vừa bấm Lưu công nợ (isAfterSubmit / forceAlert)
-        // 2. Định kỳ quét 30 phút kích hoạt (isScheduledOrForce && timeSinceLastAlert >= 30 phút)
-        // 3. Hoặc có đơn trùng mới phát sinh chưa từng cảnh báo (isNewSignature)
-        if (
-          isAfterSubmitRef.current ||
-          isNewSignature ||
-          (isScheduledOrForce && timeSinceLastAlert >= DUPLICATE_AUDIT_INTERVAL_MS)
-        ) {
+        // 1. Người dùng vừa bấm Lưu công nợ (isAfterSubmit) VÀ có đơn trùng mới chưa từng bị bỏ qua (!isDismissed)
+        // 2. Hoặc phát sinh chữ ký trùng lặp mới hoàn toàn (isNewSignature)
+        // 3. Hoặc định kỳ quét 30 phút kích hoạt VÀ chưa bị người dùng bấm Bỏ qua (!isDismissed && timeSinceLastAlert >= 30 phút)
+        const shouldShowAfterSubmit = isAfterSubmitRef.current && !isDismissed;
+        const shouldShowPeriodic = isScheduledOrForce && !isDismissed && timeSinceLastAlert >= DUPLICATE_AUDIT_INTERVAL_MS;
+
+        if (shouldShowAfterSubmit || isNewSignature || shouldShowPeriodic) {
           lastAlertedSignatureRef.current = newSig;
           lastAlertTimestampRef.current = now;
           isAfterSubmitRef.current = false;
           showDuplicateAlertModal(duplicateResults);
+        } else {
+          isAfterSubmitRef.current = false;
         }
       } else {
         lastAlertedSignatureRef.current = '';
+        dismissedSignatureRef.current = '';
+        isAfterSubmitRef.current = false;
       }
     },
     [showDuplicateAlertModal]

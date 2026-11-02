@@ -33,8 +33,12 @@ const PopupModal = forwardRef(({ zIndex: zIndexProp } = {}, ref) => {
     icon: null,
     confirmText: 'Đồng ý',
     cancelText: 'Hủy',
+    neutralText: null,
     onConfirm: null,
     onCancel: null,
+    onNeutral: null,
+    neutralButtonStyle: null,
+    neutralButtonTextStyle: null,
     showTextInput: false,
     textInputPlaceholder: 'Nhập nội dung...',
     textInputDefaultValue: '',
@@ -59,8 +63,12 @@ const PopupModal = forwardRef(({ zIndex: zIndexProp } = {}, ref) => {
         icon: config.icon || null,
         confirmText: config.confirmText || 'Đồng ý',
         cancelText: config.cancelText || 'Hủy',
+        neutralText: config.neutralText || null,
         onConfirm: config.onConfirm || null,
         onCancel: config.onCancel || null,
+        onNeutral: config.onNeutral || null,
+        neutralButtonStyle: config.neutralButtonStyle || null,
+        neutralButtonTextStyle: config.neutralButtonTextStyle || null,
         showTextInput: config.showTextInput || false,
         textInputPlaceholder: config.textInputPlaceholder || 'Nhập nội dung...',
         textInputDefaultValue: config.textInputDefaultValue || '',
@@ -113,6 +121,17 @@ const PopupModal = forwardRef(({ zIndex: zIndexProp } = {}, ref) => {
     setVisible(false);
     if (options.onCancel) {
       options.onCancel();
+    }
+  };
+
+  const handleNeutral = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setVisible(false);
+    if (options.onNeutral) {
+      options.onNeutral();
     }
   };
 
@@ -321,24 +340,38 @@ const PopupModal = forwardRef(({ zIndex: zIndexProp } = {}, ref) => {
             </View>
 
             {/* Vùng nút bấm hành động */}
-            <View style={[styles.buttonContainer, isConfirm ? styles.rowButtons : styles.singleButton]}>
-              {isConfirm && (
+            <View style={styles.actionButtonsWrapper}>
+              <View style={[styles.buttonContainer, isConfirm ? styles.rowButtons : styles.singleButton]}>
+                {isConfirm && (
+                  <AnimatedPressable
+                    style={[styles.button, styles.cancelButton]}
+                    onPress={handleCancel}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.cancelButtonText}>{options.cancelText}</Text>
+                  </AnimatedPressable>
+                )}
+
                 <AnimatedPressable
-                  style={[styles.button, styles.cancelButton]}
-                  onPress={handleCancel}
+                  style={[styles.button, { backgroundColor: primaryColor }]}
+                  onPress={handleConfirm}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.cancelButtonText}>{options.cancelText}</Text>
+                  <Text style={styles.confirmButtonText}>{options.confirmText}</Text>
+                </AnimatedPressable>
+              </View>
+
+              {Boolean(options.neutralText) && (
+                <AnimatedPressable
+                  style={[styles.button, styles.neutralButton, options.neutralButtonStyle]}
+                  onPress={handleNeutral}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.neutralButtonText, options.neutralButtonTextStyle]}>
+                    {options.neutralText}
+                  </Text>
                 </AnimatedPressable>
               )}
-
-              <AnimatedPressable
-                style={[styles.button, { backgroundColor: primaryColor }]}
-                onPress={handleConfirm}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.confirmButtonText}>{options.confirmText}</Text>
-              </AnimatedPressable>
             </View>
           </View>
         </View>
