@@ -26,6 +26,7 @@ export const useGlobalDuplicateDebtAudit = ({
   transactions = [],
   customers = [],
   popupModalRef = null,
+  duplicateResolveModalRef = null,
   onInspectCustomer = null,
   onRefetchTransactions = null,
 }) => {
@@ -40,6 +41,9 @@ export const useGlobalDuplicateDebtAudit = ({
 
   const popupModalRefRef = useRef(popupModalRef);
   popupModalRefRef.current = popupModalRef;
+
+  const duplicateResolveModalRefRef = useRef(duplicateResolveModalRef);
+  duplicateResolveModalRefRef.current = duplicateResolveModalRef;
 
   const customersRef = useRef(customers);
   customersRef.current = customers;
@@ -62,6 +66,13 @@ export const useGlobalDuplicateDebtAudit = ({
     // Chỉ chấp nhận customList nếu là mảng thực sự (tránh nhận nhầm SyntheticEvent / ClickEvent khi gọi từ onPress)
     const targetList = Array.isArray(customList) ? customList : globalDuplicatesRef.current;
     if (!Array.isArray(targetList) || targetList.length === 0) return;
+
+    // Ưu tiên mở modal chuyên dụng cho phép xóa / sửa trực tiếp
+    const resolveModal = duplicateResolveModalRefRef.current?.current || duplicateResolveModalRefRef.current;
+    if (resolveModal && typeof resolveModal.open === 'function') {
+      resolveModal.open(targetList);
+      return;
+    }
 
     const popupModal = popupModalRefRef.current?.current || popupModalRefRef.current;
     if (!popupModal) return;

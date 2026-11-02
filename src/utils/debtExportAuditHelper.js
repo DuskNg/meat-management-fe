@@ -443,6 +443,8 @@ export const auditGlobalTransactionsForDuplicates = ({
             price: isNaN(p) ? null : p,
             amount: parseFloat(item.amount) || Math.round(q * (p || 0)),
             transactionId: t.id,
+            transaction: t,
+            item: item,
           });
         }
       });

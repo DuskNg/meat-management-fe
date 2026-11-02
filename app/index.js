@@ -79,6 +79,7 @@ import { getSocket, joinWorkspaceRoom, leaveWorkspaceRoom } from '../src/utils/s
 import { matchItemSearch } from '../src/utils/searchHelper';
 import useGlobalDuplicateDebtAudit from '../src/hooks/useGlobalDuplicateDebtAudit';
 import GlobalDuplicateDebtBanner from '../src/components/GlobalDuplicateDebtBanner';
+import DuplicateDebtResolveModal from '../src/components/DuplicateDebtResolveModal';
 
 // Giữ nguyên markup/action hiện có nhưng bổ sung feedback scale cho toàn bộ nút của dashboard.
 const TouchableOpacity = AnimatedPressable;
@@ -178,6 +179,7 @@ export default function DashboardScreen() {
   const customerGroupsModalRef = useRef(null); // Modal quản lý nhóm nhà hàng & chuỗi chi nhánh
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
   const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
+  const duplicateDebtResolveModalRef = useRef(null); // Modal xem chi tiết và sửa/xóa trực tiếp các đơn nghi trùng
   const quickPriceLinkModalRef = useRef(null); // Modal link Zalo cập nhật giá bán cho Anh Chủ
   const profitManagementModalRef = useRef(null); // Modal quản lý lợi nhuận & đối soát lò
   const periodicDebtReminderModalRef = useRef(null); // Modal nhắc gửi công nợ định kỳ Ngày 1 & Ngày 15 hàng tháng qua Zalo
@@ -438,13 +440,10 @@ export default function DashboardScreen() {
     transactions: transactionsResponse?.data,
     customers: customersResponse?.data,
     popupModalRef,
+    duplicateResolveModalRef: duplicateDebtResolveModalRef,
     onRefetchTransactions: refetchTransactions,
-    onInspectCustomer: (customerId, customer) => {
-      const targetDate = globalDuplicates?.[0]?.dateKey;
-      dailyReportModalRef.current?.open({
-        date: targetDate,
-        filter: 'duplicate',
-      });
+    onInspectCustomer: () => {
+      duplicateDebtResolveModalRef.current?.open(globalDuplicates);
     },
   });
 
@@ -3404,11 +3403,7 @@ export default function DashboardScreen() {
         <GlobalDuplicateDebtBanner
           duplicates={globalDuplicates}
           onPress={() => {
-            const targetDate = globalDuplicates?.[0]?.dateKey;
-            dailyReportModalRef.current?.open({
-              date: targetDate,
-              filter: 'duplicate',
-            });
+            duplicateDebtResolveModalRef.current?.open(globalDuplicates);
           }}
         />
 
@@ -3538,6 +3533,13 @@ export default function DashboardScreen() {
           handleRefreshAll();
           dailyReportModalRef.current?.refetch();
         }}
+      />
+      <DuplicateDebtResolveModal
+        ref={duplicateDebtResolveModalRef}
+        onEditTransaction={(transaction) => {
+          editDebtModalRef.current?.open(transaction);
+        }}
+        onRefresh={handleRefreshAll}
       />
       <ReturnGoodsModal ref={returnGoodsModalRef} onRefresh={handleRefreshAll} />
       <RecurringDebtModal ref={recurringDebtModalRef} onRefresh={handleRefreshAll} />
