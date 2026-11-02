@@ -5277,28 +5277,6 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             {/* Ngày lọc & Cụm nút hành động lưu/xóa hàng loạt */}
             <View style={[styles.filterActionsContainer, isMobile && styles.filterActionsContainerMobile]}>
               <View style={[styles.dateFilterWrap, isMobile && styles.dateFilterWrapMobile]}>
-                {/* Button xem danh sách TỔNG CÁC ĐƠN PHÂN TÍCH */}
-                <TouchableOpacity
-                  style={[
-                    styles.btnAllSubmissions,
-                    !filterDate && styles.btnAllSubmissionsActive,
-                    isMobile && styles.btnAllSubmissionsMobile,
-                  ]}
-                  onPress={() => setFilterDate('')}
-                  activeOpacity={0.8}
-                  title="Xem toàn bộ danh sách tất cả các đơn phân tích từ trước đến nay"
-                >
-                  <Text
-                    style={[
-                      styles.btnAllSubmissionsText,
-                      !filterDate && styles.btnAllSubmissionsTextActive,
-                      isMobile && { fontSize: 10.5 },
-                    ]}
-                  >
-                    {!filterDate ? (isMobile ? '🌐 TẤT CẢ' : '🌐 TẤT CẢ ĐƠN') : (isMobile ? '🌐 TỔNG' : '🌐 TỔNG CÁC ĐƠN')}
-                  </Text>
-                </TouchableOpacity>
-
                 {filterDate ? (
                   <View style={styles.datePickerHolder}>
                     <View style={{ width: isMobile ? 112 : 132 }}>
