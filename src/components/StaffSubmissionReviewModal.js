@@ -848,12 +848,26 @@ const InvoiceReviewCard = React.memo(
  * Kiểm tra xem tên AI bóc tách (detectedName) có mâu thuẫn hiển nhiên với tên khách hàng (customerName) không.
  * Ngăn chặn tuyệt đối việc AI gán nhầm hoặc học sai từ điển làm lây lan lệch khách hàng!
  */
-const isCustomerNameContradictory = (detectedName, customerName) => {
+const isCustomerNameContradictory = (detectedName, customerName, custList = []) => {
   if (!detectedName || !customerName) return false;
   const dClean = removeDiacritics(String(detectedName).toLowerCase().trim());
   const cClean = removeDiacritics(String(customerName).toLowerCase().trim());
   const dNoSpace = dClean.replace(/\s+/g, '');
   const cNoSpace = cClean.replace(/\s+/g, '');
+
+  // Trùng khớp hoàn toàn thì chắc chắn không mâu thuẫn
+  if (dClean === cClean || dNoSpace === cNoSpace) return false;
+
+  // Nếu trong danh bạ có một khách hàng khác trùng khớp 100% với detectedName mà khác khách hàng đang so sánh
+  // -> Chắc chắn đang bị gán nhầm hoặc bị đầu độc alias!
+  if (Array.isArray(custList) && custList.length > 0) {
+    const exactOther = custList.find((c) => {
+      const otherClean = removeDiacritics(c.name.toLowerCase().trim());
+      const otherNoSpace = otherClean.replace(/\s+/g, '');
+      return (otherClean === dClean || otherNoSpace === dNoSpace) && otherClean !== cClean;
+    });
+    if (exactOther) return true;
+  }
 
   // 1. Bếp 3 miền kim liên
   const isD3Mien = dClean.includes('3 mien') || dClean.includes('ba mien') || dClean.includes('kim lien') || dNoSpace.includes('3mien') || dNoSpace.includes('kimlien');
@@ -905,11 +919,45 @@ const isCustomerNameContradictory = (detectedName, customerName) => {
   const isCGiangVo = cClean.includes('giang vo');
   if (isDGiangVo && !isCGiangVo) return true;
 
+  // 11. Na sườn lẩu / Na sườn
+  const isDNaSuon = dClean.includes('na suon') || dNoSpace.includes('nasuon');
+  const isCNaSuon = cClean.includes('na suon') || cNoSpace.includes('nasuon');
+  if (isDNaSuon && !isCNaSuon) return true;
+
+  // 12. Hà trì
+  const isDHaTri = (dClean === 'ha tri' || dClean.includes('ha tri')) && !dClean.includes('san bong');
+  const isCHaTri = (cClean === 'ha tri' || cClean.includes('ha tri')) && !cClean.includes('san bong');
+  if (isDHaTri && !isCHaTri) return true;
+
   return false;
 };
 
 const resolveCustomerForSub = (sub, custList) => {
   if (!sub) return null;
+
+  // 0. BẮT BUỘC ƯU TIÊN SỐ 1 TUYỆT ĐỐI: KHỚP CHÍNH XÁC 100% (EXACT MATCH) TRONG DANH BẠ KHÁCH HÀNG
+  // Nếu AI bóc tách được tên trùng khớp 100% với một khách hàng có thật trong danh bạ (ví dụ "Na sườn lẩu", "52 trần thái tông", "Hồng hạnh hqv"...)
+  // thì BẮT BUỘC trả về ngay khách hàng này, TUYỆT ĐỐI không cho bất kỳ alias hay đơn gán nhầm nào đè lên!
+  if (sub.detectedCustomerName && Array.isArray(custList) && custList.length > 0) {
+    const returnKeywordsRegex = /\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng|tra hang|gui ve|tra ve|tra lai|gui lai|hang tra|quay dau|doi tra|hoan hang|tra|trả)\b/gi;
+    const rawClean = sub.detectedCustomerName
+      .replace(returnKeywordsRegex, '')
+      .replace(/[-–—:()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const cleanDet = removeDiacritics((rawClean || sub.detectedCustomerName).toLowerCase().trim());
+    const cleanDetNoSpace = cleanDet.replace(/\s+/g, '');
+
+    const exactMatch = custList.find((c) => {
+      const cClean = removeDiacritics(c.name.toLowerCase().trim());
+      const cNoSpace = cClean.replace(/\s+/g, '');
+      return cClean === cleanDet || cNoSpace === cleanDetNoSpace;
+    });
+    if (exactMatch) {
+      return exactMatch;
+    }
+  }
+
   // Khách hàng
   let matchedCust = sub.matchedCustomer || null;
   if (!matchedCust && sub.matchedCustomerId) {
@@ -921,7 +969,7 @@ const resolveCustomerForSub = (sub, custList) => {
   const isContradictory = Boolean(
     sub.detectedCustomerName &&
     matchedCust &&
-    isCustomerNameContradictory(sub.detectedCustomerName, matchedCust.name)
+    isCustomerNameContradictory(sub.detectedCustomerName, matchedCust.name, custList)
   );
 
   // ĐẶC BIỆT QUAN TRỌNG: Nếu hóa đơn đã được duyệt (APPROVED), khách hàng đã được lưu chính thức trong CSDL
@@ -930,8 +978,8 @@ const resolveCustomerForSub = (sub, custList) => {
     return matchedCust;
   }
 
-  // ƯU TIÊN TUYỆT ĐỐI SỐ 1: Nếu khách hàng đã được khớp từ Bảng Từ Điển AI Tự Học (CustomerAiAlias)
-  // và không bị mâu thuẫn -> trả về ngay lập tức!
+  // ƯU TIÊN SỐ 2: Nếu khách hàng đã được khớp từ Bảng Từ Điển AI Tự Học (CustomerAiAlias)
+  // và không bị mâu thuẫn -> trả về!
   const isMatchedByAiAlias = Boolean(
     sub.matchedByAiAlias ||
     (typeof sub.rawAiResponse === 'string' && sub.rawAiResponse.includes('"matched_by_ai_alias":true'))
@@ -3468,8 +3516,14 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         })) || null;
 
         // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp khách hàng đã lưu, không chạy lại regex AI
-        const matchedCust = isApproved
-          ? (sub.matchedCustomer || (sub.matchedCustomerId ? custList.find((c) => c.id === sub.matchedCustomerId) : null))
+        const savedCust = isApproved ? (sub.matchedCustomer || (sub.matchedCustomerId ? custList.find((c) => c.id === sub.matchedCustomerId) : null)) : null;
+        const isSavedContradictory = Boolean(
+          savedCust &&
+          sub.detectedCustomerName &&
+          isCustomerNameContradictory(sub.detectedCustomerName, savedCust.name, custList)
+        );
+        const matchedCust = (isApproved && savedCust && !isSavedContradictory)
+          ? savedCust
           : resolveCustomerForSub(sub, custList);
 
         // NẾU CÓ TỪ KHÓA NHẬP HÀNG:
