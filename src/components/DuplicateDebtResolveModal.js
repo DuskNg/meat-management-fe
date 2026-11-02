@@ -1,21 +1,22 @@
 // meat-management-fe/src/components/DuplicateDebtResolveModal.js
-import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
   Platform,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
 import PopupModal from './PopupModal';
+import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import { api } from '../api/client';
-import { COLORS, SHADOWS } from '../theme';
+import { COLORS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
 import {
   addConfirmedValidDuplicateKeys,
-  buildDuplicateGroupKey,
   buildDuplicateKeysFromResults,
 } from '../utils/debtExportAuditHelper';
 
@@ -41,23 +42,26 @@ const formatTimeOnly = (dateInput) => {
 
 /**
  * Component Modal: Xem chi tiết & Xóa / Sửa trực tiếp các đơn nghi trùng lặp trong ngày
- * - Chuẩn Bottom-Sheet neo sát đáy màn hình theo Mobile-First.
- * - Hiển thị trực tiếp các đơn hàng bị nghi trùng lặp cùng giờ tạo, ghi chú, đơn giá và số kg.
- * - Cho phép người dùng bấm "Sửa đơn" (mở EditDebtModal) hoặc "Xóa đơn" (xóa trực tiếp khỏi DB) ngay trên modal.
- * - Cho phép bấm "Xác nhận đúng" (không phải trùng) cho từng món hoặc cho toàn bộ danh sách.
+ * - Giao diện thiết kế phẳng, trực quan, cô đọng chuẩn theo thiết kế danh sách chi tiết (Ảnh 2).
+ * - Thanh chọn hàng loạt: "Chọn tất cả", "Tự chọn đơn trùng thừa (giữ 1)", "Xóa đã chọn".
+ * - Từng dòng đơn hiển thị: Checkbox, Tên khách hàng, Badge Đơn X/Y, Nút Xem ảnh, Sửa, Xóa, Tổng tiền, Giờ tạo và Chi tiết các món thịt.
+ * - Nút "BẰNG CÂN NHƯNG ĐÚNG (XÁC NHẬN TẤT CẢ)" để lưu danh sách loại trừ không cảnh báo lại nữa.
  */
 const DuplicateDebtResolveModal = forwardRef(({ onEditTransaction, onRefresh }, ref) => {
   const [visible, setVisible] = useState(false);
   const [duplicateList, setDuplicateList] = useState([]);
+  const [selectedTxIds, setSelectedTxIds] = useState(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
 
   const popupRef = useRef(null);
+  const invoiceImageViewerModalRef = useRef(null);
 
   // Phơi bày các hàm điều khiển ra bên ngoài
   useImperativeHandle(ref, () => ({
     open: (list = []) => {
       const validList = Array.isArray(list) ? list : [];
       setDuplicateList(validList);
+      setSelectedTxIds(new Set());
       setVisible(true);
     },
     close: () => {
@@ -69,113 +73,168 @@ const DuplicateDebtResolveModal = forwardRef(({ onEditTransaction, onRefresh }, 
     setVisible(false);
   };
 
-  // Xóa trực tiếp một đơn hàng (Transaction)
-  const handleDeleteTransaction = (transaction, customerName) => {
-    if (!transaction || !transaction.id) {
-      showGlobalToast('Không tìm thấy thông tin đơn hàng để xóa.', 'error');
-      return;
-    }
+  /**
+   * Chuyển đổi dữ liệu từ duplicateList (dạng nhóm theo khách -> nhóm thịt)
+   * thành danh sách phẳng các đơn hàng (Transactions) chuẩn xác như Ảnh 2.
+   */
+  const flatTransactions = useMemo(() => {
+    const txMap = new Map();
 
-    const txAmountStr = formatCurrency(transaction.totalAmount);
-    const txTimeStr = formatTimeOnly(transaction.createdAt || transaction.date);
-    const timeLabel = txTimeStr ? ` (lúc ${txTimeStr})` : '';
+    (duplicateList || []).forEach((custRes) => {
+      (custRes.groups || []).forEach((grp) => {
+        (grp.items || []).forEach((it) => {
+          const tx = it.transaction;
+          if (!tx || !tx.id) return;
 
-    popupRef.current?.show({
-      type: 'confirm',
-      title: '🗑️ XÁC NHẬN XÓA ĐƠN HÀNG',
-      message: `Bạn có chắc chắn muốn xóa đơn bán hàng này${timeLabel} của khách **${customerName || 'khách hàng'}** không?\n\n• Tổng tiền đơn: **${txAmountStr}**\n• Ghi chú: ${transaction.note || 'Không có'}\n\n⚠️ Đơn hàng sẽ bị xóa hoàn toàn khỏi công nợ!`,
-      confirmText: 'Xác nhận xóa',
-      cancelText: 'Hủy bỏ',
-      onConfirm: async () => {
-        try {
-          setIsDeleting(true);
-          await api.delete(`/transactions/${transaction.id}`);
-          showGlobalToast('Đã xóa đơn hàng thành công!', 'success');
-
-          // Cập nhật lại danh sách trùng lặp nội bộ trên modal
-          setDuplicateList((prevList) => {
-            const updated = prevList
-              .map((res) => {
-                const newGroups = (res.groups || [])
-                  .map((grp) => {
-                    // Loại bỏ các item thuộc transaction vừa xóa
-                    const newItems = (grp.items || []).filter(
-                      (it) => it.transactionId !== transaction.id && it.transaction?.id !== transaction.id
-                    );
-                    return {
-                      ...grp,
-                      items: newItems,
-                      quantities: newItems.map((it) => parseFloat(it.quantity)),
-                    };
-                  })
-                  .filter((grp) => grp.items.length >= 2); // Chỉ giữ lại các nhóm vẫn còn từ 2 đơn trở lên
-
-                return {
-                  ...res,
-                  groups: newGroups,
-                };
-              })
-              .filter((res) => (res.groups || []).length > 0);
-
-            // Nếu sau khi xóa mà không còn đơn trùng nào, tự động đóng modal
-            if (updated.length === 0) {
-              setTimeout(() => {
-                setVisible(false);
-              }, 400);
-            }
-
-            return updated;
-          });
-
-          // Làm mới dữ liệu ngoài màn hình chính
-          if (typeof onRefresh === 'function') {
-            onRefresh();
+          if (!txMap.has(tx.id)) {
+            txMap.set(tx.id, {
+              id: tx.id,
+              customerId: custRes.customerId || tx.customerId,
+              customerName: custRes.customerName || tx.customer?.name || 'Khách hàng',
+              date: tx.date || tx.createdAt,
+              createdAt: tx.createdAt,
+              totalAmount: parseFloat(tx.totalAmount) || 0,
+              note: tx.note || '',
+              invoices: tx.invoices || [],
+              items: tx.items || [],
+              rawTx: tx,
+              matchedMeatNames: new Set([grp.productName]),
+            });
+          } else {
+            txMap.get(tx.id).matchedMeatNames.add(grp.productName);
           }
-        } catch (err) {
-          console.error('[DUPLICATE_MODAL] Lỗi xóa transaction:', err);
-          showGlobalToast(err.response?.data?.message || 'Không thể xóa đơn hàng. Vui lòng thử lại!', 'error');
-        } finally {
-          setIsDeleting(false);
+        });
+      });
+    });
+
+    // Gom theo từng khách hàng để đánh số thứ tự đơn (Đơn 1/2, Đơn 2/2...)
+    const byCustomer = new Map();
+    txMap.forEach((tx) => {
+      const cKey = tx.customerId || tx.customerName;
+      if (!byCustomer.has(cKey)) byCustomer.set(cKey, []);
+      byCustomer.get(cKey).push(tx);
+    });
+
+    const result = [];
+    byCustomer.forEach((list) => {
+      // Sắp xếp đơn theo thời gian tăng dần: đơn tạo sớm nhất ở đầu
+      list.sort((a, b) => {
+        const tA = new Date(a.createdAt || a.date || 0).getTime();
+        const tB = new Date(b.createdAt || b.date || 0).getTime();
+        if (tA !== tB) return tA - tB;
+        return String(a.id).localeCompare(String(b.id));
+      });
+
+      const totalCustOrders = list.length;
+      list.forEach((tx, idx) => {
+        const seqText = `Đơn ${idx + 1}/${totalCustOrders}`;
+
+        // Chuỗi tóm tắt món thịt giống Ảnh 2: "20kg Sườn xg" hoặc "6.75kg Tái (bò), 2.15kg Lạm..."
+        let detailsStr = '';
+        if (Array.isArray(tx.items) && tx.items.length > 0) {
+          detailsStr = tx.items
+            .map((item) => {
+              const qty = item.quantity != null ? `${parseFloat(item.quantity)}kg` : '';
+              const pName = item.product?.name || item.rawMeatName || item.productName || '';
+              return `${qty} ${pName}`.trim();
+            })
+            .filter(Boolean)
+            .join(', ');
         }
-      },
+        if (!detailsStr && tx.note) {
+          detailsStr = tx.note;
+        }
+
+        result.push({
+          ...tx,
+          seqText,
+          custOrderIndex: idx,
+          totalCustOrders,
+          detailsStr,
+        });
+      });
+    });
+
+    return result;
+  }, [duplicateList]);
+
+  // Đếm tổng số khách hàng có từ 2 đơn nợ trở lên
+  const duplicateCustomerCount = useMemo(() => {
+    const custSet = new Set();
+    flatTransactions.forEach((tx) => {
+      if (tx.totalCustOrders >= 2) {
+        custSet.add(tx.customerId || tx.customerName);
+      }
+    });
+    return custSet.size;
+  }, [flatTransactions]);
+
+  // Tính tổng tiền các đơn đã chọn
+  const selectedTotalAmount = useMemo(() => {
+    return flatTransactions
+      .filter((tx) => selectedTxIds.has(tx.id))
+      .reduce((sum, tx) => sum + (tx.totalAmount || 0), 0);
+  }, [flatTransactions, selectedTxIds]);
+
+  // Toggle chọn 1 đơn
+  const handleToggleSelectTx = (id) => {
+    setSelectedTxIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
     });
   };
 
-  // Mở modal sửa đơn hàng
-  const handleEditTransaction = (transaction) => {
-    if (!transaction) return;
-    setVisible(false);
-    if (typeof onEditTransaction === 'function') {
-      onEditTransaction(transaction);
+  // Toggle chọn tất cả / bỏ chọn tất cả
+  const handleToggleSelectAll = () => {
+    if (selectedTxIds.size > 0 && selectedTxIds.size === flatTransactions.length) {
+      setSelectedTxIds(new Set());
+    } else {
+      setSelectedTxIds(new Set(flatTransactions.map((tx) => tx.id)));
     }
   };
 
-  // Xác nhận một nhóm món thịt cụ thể là đúng (khách mua 2 lần thật)
-  const handleConfirmSingleGroup = (customerRes, group) => {
-    const key = buildDuplicateGroupKey({
-      customerId: customerRes.customerId,
-      dateKey: customerRes.dateKey,
-      productName: group.productName,
-      quantities: group.quantities,
+  // Tự động chọn thông minh các đơn trùng thừa (giữ lại 1 đơn gốc cho mỗi khách)
+  const handleSmartSelect = () => {
+    const newSelected = new Set();
+    flatTransactions.forEach((tx) => {
+      // Nếu khách có từ 2 đơn trở lên và đây là đơn thứ 2 trở đi -> chọn đơn này
+      if (tx.totalCustOrders >= 2 && tx.custOrderIndex > 0) {
+        newSelected.add(tx.id);
+      }
     });
 
-    const txIds = [...new Set((group.items || []).map((it) => it.transactionId).filter(Boolean))].sort();
-    const keysToAdd = [key];
-    if (txIds.length > 0) {
-      keysToAdd.push(`txs_${txIds.join('_')}_${group.productName.trim().toLowerCase()}`);
+    setSelectedTxIds(newSelected);
+    if (newSelected.size > 0) {
+      showGlobalToast(`Đã tự chọn ${newSelected.size} đơn trùng thừa (giữ lại 1 đơn đầu cho mỗi khách).`, 'info');
+    } else {
+      showGlobalToast('Không có đơn trùng thừa để chọn tự động.', 'info');
     }
+  };
 
-    addConfirmedValidDuplicateKeys(keysToAdd);
-    showGlobalToast(`Đã xác nhận món "${group.productName}" là đơn đúng!`, 'success');
-
-    // Loại bỏ nhóm này khỏi state
+  // Cập nhật lại duplicateList sau khi xóa đơn
+  const removeTransactionsFromList = (deletedIds) => {
+    const idSet = new Set(deletedIds);
     setDuplicateList((prevList) => {
       const updated = prevList
         .map((res) => {
-          if (res.customerId !== customerRes.customerId || res.dateKey !== customerRes.dateKey) {
-            return res;
-          }
-          const newGroups = (res.groups || []).filter((g) => g !== group && g.productName !== group.productName);
+          const newGroups = (res.groups || [])
+            .map((grp) => {
+              const newItems = (grp.items || []).filter(
+                (it) => !idSet.has(it.transactionId) && !idSet.has(it.transaction?.id)
+              );
+              return {
+                ...grp,
+                items: newItems,
+                quantities: newItems.map((it) => parseFloat(it.quantity)),
+              };
+            })
+            .filter((grp) => grp.items.length >= 2);
+
           return {
             ...res,
             groups: newGroups,
@@ -192,18 +251,114 @@ const DuplicateDebtResolveModal = forwardRef(({ onEditTransaction, onRefresh }, 
       return updated;
     });
 
+    setSelectedTxIds((prev) => {
+      const next = new Set(prev);
+      deletedIds.forEach((id) => next.delete(id));
+      return next;
+    });
+
     if (typeof onRefresh === 'function') {
       onRefresh();
     }
   };
 
-  // Xác nhận tất cả các đơn trong modal là đúng
+  // Xóa đơn đơn lẻ
+  const handleDeleteSingleTx = (tx) => {
+    if (!tx || !tx.id) return;
+
+    const timeStr = formatTimeOnly(tx.date || tx.createdAt);
+    const timeLabel = timeStr ? ` (lúc ${timeStr})` : '';
+
+    popupRef.current?.show({
+      type: 'confirm',
+      title: '🗑️ XÁC NHẬN XÓA ĐƠN HÀNG',
+      message: `Bạn có chắc chắn muốn xóa đơn bán hàng này${timeLabel} của khách **${tx.customerName}** không?\n\n• Số tiền: **${formatCurrency(tx.totalAmount)}**\n• Món thịt: ${tx.detailsStr || 'Không có'}\n\n⚠️ Đơn hàng sẽ bị xóa hoàn toàn khỏi hệ thống!`,
+      confirmText: 'Xác nhận xóa',
+      cancelText: 'Hủy bỏ',
+      onConfirm: async () => {
+        try {
+          setIsDeleting(true);
+          await api.delete(`/transactions/${tx.id}`);
+          showGlobalToast('Đã xóa đơn hàng thành công!', 'success');
+          removeTransactionsFromList([tx.id]);
+        } catch (err) {
+          console.error('[DUPLICATE_MODAL] Lỗi xóa đơn:', err);
+          showGlobalToast(err.response?.data?.message || 'Không thể xóa đơn hàng lúc này.', 'error');
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
+  // Xóa hàng loạt các đơn đã chọn
+  const handleBulkDelete = () => {
+    const selectedList = flatTransactions.filter((tx) => selectedTxIds.has(tx.id));
+    if (selectedList.length === 0) {
+      showGlobalToast('Vui lòng chọn ít nhất 1 đơn trùng để xóa.', 'warning');
+      return;
+    }
+
+    const count = selectedList.length;
+    popupRef.current?.show({
+      type: 'confirm',
+      title: `🗑️ XÁC NHẬN XÓA ${count} ĐƠN TRÙNG`,
+      message: `Bạn có chắc chắn muốn xóa cùng lúc **${count} đơn nợ** đã chọn không?\n\n• Tổng số tiền: **${formatCurrency(selectedTotalAmount)}**\n\n⚠️ Hành động này sẽ xóa vĩnh viễn và không thể hoàn tác.`,
+      confirmText: `Xóa ${count} đơn`,
+      cancelText: 'Hủy bỏ',
+      onConfirm: async () => {
+        try {
+          setIsDeleting(true);
+          const ids = selectedList.map((tx) => tx.id);
+          try {
+            await api.post('/transactions/bulk-delete', { ids });
+          } catch (bulkErr) {
+            // Fallback nếu API bulk-delete gặp sự cố thì xóa tuần tự
+            await Promise.all(ids.map((id) => api.delete(`/transactions/${id}`)));
+          }
+
+          showGlobalToast(`Đã xóa thành công ${count} đơn hàng trùng lặp!`, 'success');
+          removeTransactionsFromList(ids);
+        } catch (err) {
+          console.error('[DUPLICATE_MODAL] Lỗi xóa hàng loạt:', err);
+          showGlobalToast(err.response?.data?.message || 'Không thể xóa các đơn đã chọn.', 'error');
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    });
+  };
+
+  // Mở modal sửa đơn hàng
+  const handleEditTx = (tx) => {
+    if (!tx || !tx.rawTx) return;
+    setVisible(false);
+    if (typeof onEditTransaction === 'function') {
+      onEditTransaction(tx.rawTx);
+    }
+  };
+
+  // Mở xem ảnh hóa đơn
+  const handleViewImages = (tx) => {
+    const invoices = tx.invoices || [];
+    if (invoices.length === 0) return;
+
+    const timeStr = formatTimeOnly(tx.date || tx.createdAt);
+    invoiceImageViewerModalRef.current?.open({
+      images: invoices,
+      initialIndex: 0,
+      title: `Hóa đơn: ${tx.customerName}`,
+      subtitle: `Số tiền: ${formatCurrency(tx.totalAmount)}${timeStr ? ` • ${timeStr}` : ''}`,
+    });
+  };
+
+  // Xác nhận tất cả các đơn trong modal là đúng (Bằng cân nhưng đúng)
   const handleConfirmAll = () => {
     if (duplicateList.length === 0) return;
 
     const allKeys = buildDuplicateKeysFromResults(duplicateList);
     addConfirmedValidDuplicateKeys(allKeys);
-    showGlobalToast('Đã xác nhận tất cả các đơn là hợp lệ. Hệ thống sẽ không cảnh báo lại nữa!', 'success');
+    showGlobalToast('Đã xác nhận tất cả đơn là hợp lệ. Hệ thống sẽ không cảnh báo lại nữa!', 'success');
 
     setDuplicateList([]);
     setVisible(false);
@@ -230,177 +385,198 @@ const DuplicateDebtResolveModal = forwardRef(({ onEditTransaction, onRefresh }, 
             </TouchableOpacity>
           </View>
 
-          {/* Dải thông báo hướng dẫn ngắn gọn */}
-          <View style={styles.guideBox}>
-            <Text style={styles.guideIcon}>💡</Text>
-            <Text style={styles.guideText}>
-              Phát hiện các đơn có cùng tên thịt & số kg bằng nhau. Bạn có thể{' '}
-              <Text style={styles.guideBold}>xóa đơn thừa</Text>,{' '}
-              <Text style={styles.guideBold}>sửa đơn</Text>, hoặc bấm{' '}
-              <Text style={styles.guideBold}>xác nhận đúng</Text> nếu khách mua 2 lần thật.
+          {/* Banner thông báo vàng cam giống Ảnh 2 */}
+          <View style={styles.duplicateWarningBanner}>
+            <Text style={styles.duplicateWarningBannerTitle}>
+              ⚠️ Phát hiện {flatTransactions.length} đơn trùng ({duplicateCustomerCount} khách có từ 2 đơn nợ)
+            </Text>
+            <Text style={styles.duplicateWarningBannerSubtitle}>
+              Kiểm tra tránh trường hợp ghi nợ 2 lần cho cùng một khách hàng
             </Text>
           </View>
 
-          {/* Danh sách các khách hàng và các đơn trùng chi tiết */}
+          {/* Thanh chọn & thao tác hàng loạt giống Ảnh 2 */}
+          {flatTransactions.length > 0 && (
+            <View style={styles.duplicateBulkBar}>
+              <View style={styles.duplicateBulkBarTop}>
+                <Text style={styles.duplicateBulkCountText} numberOfLines={1}>
+                  Đã chọn:{' '}
+                  <Text style={styles.duplicateBulkCountHighlight}>{selectedTxIds.size}</Text>
+                  /{flatTransactions.length} đơn
+                  {selectedTxIds.size > 0 ? (
+                    <Text style={styles.duplicateBulkAmountText}>
+                      {' '}({formatCurrency(selectedTotalAmount)})
+                    </Text>
+                  ) : null}
+                </Text>
+
+                <TouchableOpacity
+                  style={[
+                    styles.duplicateBulkDeleteBtn,
+                    selectedTxIds.size === 0 && styles.duplicateBulkDeleteBtnDisabled,
+                  ]}
+                  onPress={handleBulkDelete}
+                  disabled={selectedTxIds.size === 0 || isDeleting}
+                  activeOpacity={0.7}
+                >
+                  {isDeleting ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.duplicateBulkDeleteBtnText}>
+                      🗑️ Xóa đã chọn ({selectedTxIds.size})
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.duplicateBulkActionsRow}>
+                <TouchableOpacity
+                  style={styles.duplicateBulkQuickBtn}
+                  onPress={handleToggleSelectAll}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.duplicateBulkQuickBtnText}>
+                    {selectedTxIds.size > 0 && selectedTxIds.size === flatTransactions.length
+                      ? '✕ Bỏ chọn tất cả'
+                      : '✓ Chọn tất cả'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.duplicateBulkQuickBtn, styles.duplicateBulkSmartBtn]}
+                  onPress={handleSmartSelect}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.duplicateBulkQuickBtnText, styles.duplicateBulkSmartBtnText]}>
+                    ⚡ Tự chọn đơn trùng thừa (giữ 1)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Danh sách các đơn chi tiết dạng card phẳng chuẩn Ảnh 2 */}
           <ScrollView
             style={styles.scrollBody}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {duplicateList.length === 0 ? (
+            {flatTransactions.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyIcon}>🎉</Text>
                 <Text style={styles.emptyText}>Tất cả các đơn hàng đã được kiểm tra và xử lý xong!</Text>
               </View>
             ) : (
-              duplicateList.map((custRes, cIdx) => (
-                <View key={`cust_${custRes.customerId}_${cIdx}`} style={styles.customerCard}>
-                  {/* Tiêu đề thông tin khách hàng */}
-                  <View style={styles.customerCardHeader}>
-                    <View style={styles.customerInfoLeft}>
-                      <Text style={styles.customerNameText}>
-                        📌 {custRes.customerName || 'Khách hàng'}
-                      </Text>
-                      <View style={styles.dateTag}>
-                        <Text style={styles.dateTagText}>Ngày {custRes.displayDate}</Text>
+              flatTransactions.map((tx) => {
+                const isSelected = selectedTxIds.has(tx.id);
+                const hasInvoices = Array.isArray(tx.invoices) && tx.invoices.length > 0;
+                const timeStr = formatTimeOnly(tx.date || tx.createdAt);
+
+                return (
+                  <View
+                    key={tx.id}
+                    style={[
+                      styles.itemCard,
+                      isSelected && styles.itemCardSelected,
+                    ]}
+                  >
+                    {/* HÀNG 1: Checkbox, Tên khách, Badge số đơn, Nút Xem ảnh, Sửa, Xóa và Tiền/Giờ */}
+                    <View style={styles.itemHeader}>
+                      <View style={styles.itemHeaderLeft}>
+                        {/* Checkbox chọn đơn */}
+                        <TouchableOpacity
+                          style={[
+                            styles.itemCheckbox,
+                            isSelected && styles.itemCheckboxSelected,
+                          ]}
+                          onPress={() => handleToggleSelectTx(tx.id)}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          {isSelected ? (
+                            <Text style={styles.itemCheckmark}>✓</Text>
+                          ) : null}
+                        </TouchableOpacity>
+
+                        {/* Tên khách hàng */}
+                        <Text style={styles.customerName}>{tx.customerName}</Text>
+
+                        {/* Tag thứ tự đơn (Đơn 1/2, Đơn 2/2...) */}
+                        <View style={[styles.seqBadge, isSelected && styles.seqBadgeSelected]}>
+                          <Text style={[styles.seqBadgeText, isSelected && styles.seqBadgeTextSelected]}>
+                            {tx.seqText}
+                          </Text>
+                        </View>
+
+                        {/* Huy hiệu Sẽ xóa khi đã tick chọn */}
+                        {isSelected && (
+                          <View style={styles.selectedToDeleteBadge}>
+                            <Text style={styles.selectedToDeleteText}>Sẽ xóa</Text>
+                          </View>
+                        )}
+
+                        {/* Nút Xem ảnh */}
+                        {hasInvoices && (
+                          <TouchableOpacity
+                            style={[styles.itemImageBtn, styles.itemImageBtnActive]}
+                            onPress={() => handleViewImages(tx)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.itemImageBtnActiveText}>
+                              Xem ảnh ({tx.invoices.length})
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {/* Nút Sửa */}
+                        <TouchableOpacity
+                          style={styles.itemEditBtn}
+                          onPress={() => handleEditTx(tx)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.itemEditBtnText}>Sửa</Text>
+                        </TouchableOpacity>
+
+                        {/* Nút Xóa */}
+                        <TouchableOpacity
+                          style={styles.itemDeleteBtn}
+                          onPress={() => handleDeleteSingleTx(tx)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.itemDeleteBtnText}>Xóa</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Khối tiền và giờ bên phải */}
+                      <View style={styles.itemAmountContainer}>
+                        <Text style={styles.itemAmount}>
+                          +{formatCurrency(tx.totalAmount)}
+                        </Text>
+                        {Boolean(timeStr) && (
+                          <Text style={styles.itemTimeText}>
+                            🕒 {timeStr}
+                          </Text>
+                        )}
                       </View>
                     </View>
-                  </View>
 
-                  {/* Danh sách các nhóm món thịt bị trùng */}
-                  {(custRes.groups || []).map((grp, gIdx) => {
-                    // Gom các items theo từng transaction để hiển thị rõ từng đơn
-                    const itemsByTx = [];
-                    const txSeen = new Map();
-
-                    (grp.items || []).forEach((it) => {
-                      const txId = it.transactionId || 'single';
-                      if (!txSeen.has(txId)) {
-                        const txObj = {
-                          transactionId: txId,
-                          transaction: it.transaction,
-                          items: [it],
-                        };
-                        txSeen.set(txId, txObj);
-                        itemsByTx.push(txObj);
-                      } else {
-                        txSeen.get(txId).items.push(it);
-                      }
-                    });
-
-                    return (
-                      <View key={`grp_${gIdx}`} style={styles.meatGroupCard}>
-                        {/* Header nhóm thịt */}
-                        <View style={styles.meatGroupHeader}>
-                          <View style={styles.meatGroupTitleRow}>
-                            <Text style={styles.meatGroupTitle}>🥩 {grp.productName}</Text>
-                            <View style={styles.dupCountBadge}>
-                              <Text style={styles.dupCountBadgeText}>
-                                {grp.items.length} dòng ({grp.quantities.map((q) => `${q}kg`).join(' & ')})
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* Nút xác nhận riêng cho nhóm này */}
-                          <TouchableOpacity
-                            style={styles.confirmGroupBtn}
-                            onPress={() => handleConfirmSingleGroup(custRes, grp)}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={styles.confirmGroupBtnText}>✅ Xác nhận đúng</Text>
-                          </TouchableOpacity>
-                        </View>
-
-                        {/* Danh sách từng đơn hàng / transaction */}
-                        <View style={styles.transactionsContainer}>
-                          {itemsByTx.map((txData, tIdx) => {
-                            const tx = txData.transaction;
-                            const timeStr = tx ? formatTimeOnly(tx.createdAt || tx.date) : '';
-                            const totalAmountStr = tx ? formatCurrency(tx.totalAmount) : '';
-                            const isMultipleInSameTx = txData.items.length > 1;
-
-                            return (
-                              <View key={`tx_${txData.transactionId}_${tIdx}`} style={styles.transactionCard}>
-                                {/* Tiêu đề đơn hàng */}
-                                <View style={styles.transactionTopRow}>
-                                  <View style={styles.txHeaderLeft}>
-                                    <View style={styles.txIndexBadge}>
-                                      <Text style={styles.txIndexText}>Đơn #{tIdx + 1}</Text>
-                                    </View>
-                                    {Boolean(timeStr) && (
-                                      <Text style={styles.txTimeText}>⏰ {timeStr}</Text>
-                                    )}
-                                  </View>
-                                  {Boolean(totalAmountStr) && (
-                                    <Text style={styles.txTotalAmountText}>
-                                      Tổng: {totalAmountStr}
-                                    </Text>
-                                  )}
-                                </View>
-
-                                {/* Ghi chú của đơn nếu có */}
-                                {Boolean(tx?.note) && (
-                                  <Text style={styles.txNoteText}>
-                                    📝 Ghi chú: <Text style={styles.txNoteHighlight}>{tx.note}</Text>
-                                  </Text>
-                                )}
-
-                                {/* Cảnh báo nếu 2 dòng thịt trùng nằm trong cùng 1 đơn */}
-                                {isMultipleInSameTx && (
-                                  <View style={styles.sameTxWarningBox}>
-                                    <Text style={styles.sameTxWarningText}>
-                                      ⚠️ Có {txData.items.length} dòng thịt này nằm trong cùng 1 hóa đơn! Bạn có thể bấm Sửa đơn để xóa bớt 1 dòng.
-                                    </Text>
-                                  </View>
-                                )}
-
-                                {/* Chi tiết dòng thịt bị trùng trong đơn */}
-                                {txData.items.map((it, itIdx) => (
-                                  <View key={`it_${itIdx}`} style={styles.itemDetailRow}>
-                                    <Text style={styles.itemQuantityBadge}>{it.quantity} kg</Text>
-                                    <Text style={styles.itemPriceText}>
-                                      × {formatCurrency(it.price || 0)} ={' '}
-                                      <Text style={styles.itemAmountBold}>
-                                        {formatCurrency(it.amount || it.quantity * (it.price || 0))}
-                                      </Text>
-                                    </Text>
-                                  </View>
-                                ))}
-
-                                {/* Thanh nút thao tác trực tiếp: SỬA ĐƠN & XÓA ĐƠN */}
-                                <View style={styles.txActionButtonsRow}>
-                                  <TouchableOpacity
-                                    style={styles.editTxBtn}
-                                    onPress={() => handleEditTransaction(tx)}
-                                    activeOpacity={0.8}
-                                  >
-                                    <Text style={styles.editTxBtnText}>✏️ Sửa đơn</Text>
-                                  </TouchableOpacity>
-
-                                  <TouchableOpacity
-                                    style={styles.deleteTxBtn}
-                                    onPress={() => handleDeleteTransaction(tx, custRes.customerName)}
-                                    activeOpacity={0.8}
-                                    disabled={isDeleting}
-                                  >
-                                    <Text style={styles.deleteTxBtnText}>🗑️ Xóa đơn này</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              </View>
-                            );
-                          })}
-                        </View>
+                    {/* HÀNG 2: Chi tiết các món thịt trong đơn */}
+                    {Boolean(tx.detailsStr) && (
+                      <View style={styles.itemDetailsRow}>
+                        <Text style={styles.itemDetailsText} numberOfLines={2}>
+                          🥩 {tx.detailsStr}
+                        </Text>
                       </View>
-                    );
-                  })}
-                </View>
-              ))
+                    )}
+                  </View>
+                );
+              })
             )}
           </ScrollView>
 
-          {/* Footer chân modal: Luôn có nút hành động to rõ, dễ bấm 1 tay trên điện thoại */}
+          {/* Footer chân modal: Nút BẰNG CÂN NHƯNG ĐÚNG và Nút ĐÓNG LẠI */}
           <View style={styles.footer}>
-            {duplicateList.length > 0 && (
+            {flatTransactions.length > 0 && (
               <TouchableOpacity
                 style={styles.confirmAllBtn}
                 onPress={handleConfirmAll}
@@ -416,6 +592,9 @@ const DuplicateDebtResolveModal = forwardRef(({ onEditTransaction, onRefresh }, 
           </View>
         </View>
       </SmoothModal>
+
+      {/* Modal xem ảnh phóng to độc lập ở tầng cao nhất */}
+      <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
 
       {/* PopupModal xác nhận xóa đặt độc lập ở tầng cao nhất theo quy chuẩn bảo mật */}
       <PopupModal ref={popupRef} />
@@ -447,24 +626,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    gap: 8,
   },
   headerBadge: {
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    marginRight: 8,
   },
   headerBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold',
     color: '#D97706',
-    fontSize: 12,
-    fontWeight: '800',
   },
   headerTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: 'bold',
     color: '#0F172A',
-    letterSpacing: -0.2,
   },
   closeBtn: {
     width: 32,
@@ -475,318 +653,323 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   closeBtnText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#64748B',
   },
-  guideBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0F9FF',
+
+  // Banner thông báo màu vàng cam chuẩn Ảnh 2
+  duplicateWarningBanner: {
+    backgroundColor: '#FFFBEB',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
-    borderRadius: 12,
-    paddingVertical: 8,
+    borderColor: '#FDE68A',
+    borderRadius: 8,
     paddingHorizontal: 12,
-    marginTop: 10,
-    marginBottom: 8,
-  },
-  guideIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  guideText: {
-    flex: 1,
-    fontSize: 12.5,
-    color: '#0369A1',
-    lineHeight: 18,
-  },
-  guideBold: {
-    fontWeight: '700',
-    color: '#0284C7',
-  },
-  scrollBody: {
-    flexGrow: 1,
-    maxHeight: 520,
-  },
-  scrollContent: {
     paddingVertical: 8,
+    marginTop: 10,
+    marginBottom: 6,
   },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
+  duplicateWarningBannerTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#92400E',
   },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 12,
+  duplicateWarningBannerSubtitle: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
   },
-  emptyText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#15803D',
-    textAlign: 'center',
-  },
-  customerCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+
+  // Thanh chọn hàng loạt chuẩn Ảnh 2
+  duplicateBulkBar: {
+    backgroundColor: '#FFFBEB',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 14,
-    overflow: 'hidden',
-    ...SHADOWS.card,
+    borderColor: '#FDE68A',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 8,
+    gap: 6,
   },
-  customerCardHeader: {
+  duplicateBulkBarTop: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  customerInfoLeft: {
-    flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
     gap: 8,
   },
-  customerNameText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
+  duplicateBulkCountText: {
+    fontSize: 12.5,
+    color: '#92400E',
+    fontWeight: '600',
+    flex: 1,
   },
-  dateTag: {
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+  duplicateBulkCountHighlight: {
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
+  duplicateBulkAmountText: {
+    fontSize: 11.5,
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
+  duplicateBulkDeleteBtn: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 6,
   },
-  dateTagText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
+  duplicateBulkDeleteBtnDisabled: {
+    backgroundColor: '#CBD5E1',
   },
-  meatGroupCard: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+  duplicateBulkDeleteBtnText: {
+    fontSize: 11.5,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
-  meatGroupHeader: {
+  duplicateBulkActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  duplicateBulkQuickBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  duplicateBulkQuickBtnText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#92400E',
+  },
+  duplicateBulkSmartBtn: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  duplicateBulkSmartBtnText: {
+    color: '#B45309',
+  },
+
+  scrollBody: {
+    maxHeight: 460,
+  },
+  scrollContent: {
+    paddingVertical: 4,
+    gap: 6,
+  },
+
+  // Thẻ item đơn hàng dạng phẳng chuẩn Ảnh 2
+  itemCard: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  itemCardSelected: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderLeftColor: '#EF4444',
+  },
+  itemHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
-    flexWrap: 'wrap',
     gap: 8,
   },
-  meatGroupTitleRow: {
+  itemHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
+    flex: 1,
   },
-  meatGroupTitle: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: '#B45309',
-  },
-  dupCountBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  dupCountBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#92400E',
-  },
-  confirmGroupBtn: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-  },
-  confirmGroupBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#15803D',
-  },
-  transactionsContainer: {
-    gap: 8,
-  },
-  transactionCard: {
-    backgroundColor: '#FAFAFA',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 10,
-  },
-  transactionTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  txHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  txIndexBadge: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  itemCheckbox: {
+    width: 18,
+    height: 18,
     borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 2,
   },
-  txIndexText: {
+  itemCheckboxSelected: {
+    backgroundColor: '#EF4444',
+    borderColor: '#DC2626',
+  },
+  itemCheckmark: {
     color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: 'bold',
+    lineHeight: 13,
   },
-  txTimeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  txTotalAmountText: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  txNoteText: {
-    fontSize: 12,
-    color: '#475569',
-    marginBottom: 6,
-  },
-  txNoteHighlight: {
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  sameTxWarningBox: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 8,
-    padding: 6,
-    marginBottom: 6,
-  },
-  sameTxWarningText: {
-    fontSize: 11.5,
-    color: '#B91C1C',
-    lineHeight: 16,
-  },
-  itemDetailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    marginBottom: 8,
-  },
-  itemQuantityBadge: {
-    backgroundColor: '#FEF3C7',
-    color: '#B45309',
+  customerName: {
     fontSize: 13,
-    fontWeight: '800',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  itemPriceText: {
-    fontSize: 12.5,
-    color: '#475569',
-  },
-  itemAmountBold: {
     fontWeight: '700',
     color: '#0F172A',
   },
-  txActionButtonsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 2,
+  seqBadge: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
   },
-  editTxBtn: {
-    flex: 1,
-    height: 36,
-    borderRadius: 8,
+  seqBadgeSelected: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  seqBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#475569',
+  },
+  seqBadgeTextSelected: {
+    color: '#DC2626',
+  },
+  selectedToDeleteBadge: {
+    backgroundColor: '#EF4444',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  selectedToDeleteText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  itemImageBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemImageBtnActive: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#86EFAC',
+  },
+  itemImageBtnActiveText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#16A34A',
+  },
+  itemEditBtn: {
     backgroundColor: '#EFF6FF',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#BFDBFE',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  editTxBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
+  itemEditBtnText: {
+    fontSize: 10,
+    fontWeight: 'bold',
     color: '#1D4ED8',
   },
-  deleteTxBtn: {
-    flex: 1,
-    height: 36,
-    borderRadius: 8,
+  itemDeleteBtn: {
     backgroundColor: '#FEF2F2',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#FECACA',
+    justifyContent: 'center',
     alignItems: 'center',
+  },
+  itemDeleteBtnText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
+  itemAmountContainer: {
+    alignItems: 'flex-end',
     justifyContent: 'center',
   },
-  deleteTxBtnText: {
-    fontSize: 13,
+  itemAmount: {
+    fontSize: 13.5,
     fontWeight: '700',
     color: '#DC2626',
   },
+  itemTimeText: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  itemDetailsRow: {
+    marginTop: 4,
+    paddingLeft: 22,
+  },
+  itemDetailsText: {
+    fontSize: 11.5,
+    color: '#475569',
+    lineHeight: 16,
+  },
+
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 36,
+  },
+  emptyIcon: {
+    fontSize: 36,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+
   footer: {
-    paddingTop: 12,
+    marginTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
     gap: 8,
   },
   confirmAllBtn: {
-    width: '100%',
-    height: 46,
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1.5,
-    borderColor: '#10B981',
-    borderRadius: 12,
+    backgroundColor: '#16A34A',
+    height: 44,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   confirmAllBtnText: {
-    color: '#047857',
-    fontSize: 14,
-    fontWeight: '800',
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: 'bold',
   },
   closeFooterBtn: {
-    width: '100%',
-    height: 44,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    height: 42,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeFooterBtnText: {
     color: '#475569',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
 });
 
 export default DuplicateDebtResolveModal;
-
