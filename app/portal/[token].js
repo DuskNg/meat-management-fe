@@ -33,6 +33,7 @@ import {
   copyTextToClipboard,
 } from '../../src/utils/imageShareHelper';
 import { COLORS } from '../../src/theme';
+import { cleanDisplayNote } from '../../src/utils/cleanNote';
 import { matchSearch } from '../../src/utils/searchHelper';
 import { getLunarDateString } from '../../src/utils/lunarCalendar';
 import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../../src/utils/debtMessageHelper';
@@ -750,6 +751,7 @@ const buildInvoiceRows = (
       paidMonthFull: pm.monthFull,
       isSameMonth: pm.monthKey === day.monthKey,
       totalPaymentAmount: pm.amount,
+      note: pm.note || '',
     });
 
     pm.allocations.push({
@@ -1026,8 +1028,36 @@ const buildInvoiceRows = (
   }
 
   // Số tiền ĐÃ THANH TOÁN hiển thị: bằng tổng tiền thực tế đã phân bổ cho các ngày trong kỳ lọc
-  const displayTotalPaid = totalPaidForPeriod;
-  const finalDebt = Math.max(0, netPeriodAmount - displayTotalPaid);
+  const displayTotalPaid = totalPaidForPeriod;
+  const finalDebt = Math.max(0, netPeriodAmount - displayTotalPaid);
+
+  // Tập hợp danh sách các khoản thanh toán cấu thành nên số tiền ĐÃ THANH TOÁN của kỳ
+  const paidDetailsMap = new Map();
+  periodDays.forEach((day) => {
+    (day.paymentsApplied || []).forEach((pa) => {
+      const pKey = pa.paymentId || `${pa.paidAt ? pa.paidAt.getTime() : ''}_${pa.totalPaymentAmount || pa.amount}`;
+      if (!paidDetailsMap.has(pKey)) {
+        paidDetailsMap.set(pKey, {
+          id: pKey,
+          paidAt: pa.paidAt,
+          displayDate: pa.paidAt
+            ? `${String(pa.paidAt.getDate()).padStart(2, '0')}/${String(pa.paidAt.getMonth() + 1).padStart(2, '0')}/${pa.paidAt.getFullYear()}`
+            : '',
+          amount: 0,
+          totalPaymentAmount: pa.totalPaymentAmount || 0,
+          note: pa.note || '',
+        });
+      }
+      const item = paidDetailsMap.get(pKey);
+      item.amount += pa.amount;
+    });
+  });
+
+  const paidDetails = Array.from(paidDetailsMap.values()).sort((a, b) => {
+    const timeA = a.paidAt ? new Date(a.paidAt).getTime() : 0;
+    const timeB = b.paidAt ? new Date(b.paidAt).getTime() : 0;
+    return timeB - timeA;
+  });
 
   return {
     sortedDays,
@@ -1037,6 +1067,7 @@ const buildInvoiceRows = (
       totalPaid: displayTotalPaid,
       finalDebt,
       paidBreakdownNote: paidBreakdownNote || null,
+      paidDetails,
       rawPaidInPeriod: totalCashPaidInPeriodRaw,
     },
   };
@@ -1086,8 +1117,10 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
   const maxRows = Math.max(leftCount, rightCount, 1);
   const tableContentHeight = maxRows * rowHeight;
 
+  const paidDetails = totals.paidDetails || [];
+  const extraPaidHeight = paidDetails.length > 0 ? (paidDetails.length * 18 + 6) : 0;
   const summaryCount = 1 + (totals.totalReturn > 0 ? 1 : 0) + ((totals.totalPaid > 0 || totals.paidBreakdownNote) ? 1 : 0) + 1;
-  const summaryHeight = summaryCount * summaryRowHeight;
+  const summaryHeight = summaryCount * summaryRowHeight + extraPaidHeight;
   const summaryStartY = startTableY + tableHeaderHeight + tableContentHeight + 16;
   const canvasHeight = summaryStartY + summaryHeight + 30;
 
@@ -1412,36 +1445,48 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
 
   // 3. Đã thanh toán
   if (totals.totalPaid > 0 || totals.paidBreakdownNote) {
+    const thisBoxHeight = summaryRowHeight + extraPaidHeight;
     ctx.fillStyle = '#F0FDF4';
-    ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+    ctx.fillRect(summaryStartX, curSummaryY, panelWidth, thisBoxHeight);
     ctx.strokeStyle = '#BBF7D0';
-    ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
+    ctx.strokeRect(summaryStartX, curSummaryY, panelWidth, thisBoxHeight);
+
+    ctx.fillStyle = '#047857';
+    ctx.font = 'bold 14px Arial, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('ĐÃ THANH TOÁN:', summaryStartX + summaryColLeft, curSummaryY + 22);
+    ctx.fillStyle = '#059669';
+    ctx.font = 'bold 17px Arial, sans-serif';
+    ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totals.totalPaid)} đ`, summaryStartX + panelWidth - 12, curSummaryY + 22);
+
+    let curDetailY = curSummaryY + 38;
+    if (paidDetails.length > 0) {
+      paidDetails.forEach((pd) => {
+        const dText = pd.displayDate || (pd.paidAt ? `${String(pd.paidAt.getDate()).padStart(2, '0')}/${String(pd.paidAt.getMonth() + 1).padStart(2, '0')}/${pd.paidAt.getFullYear()}` : '');
+        const cleanNoteText = cleanDisplayNote(pd.note || '');
+        const notePart = cleanNoteText ? ` (${cleanNoteText})` : '';
+
+        ctx.fillStyle = '#065F46';
+        ctx.font = 'normal 11.5px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`• ${dText}${notePart}`, summaryStartX + 16, curDetailY);
+
+        ctx.fillStyle = '#059669';
+        ctx.font = 'bold 12px Arial, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(pd.amount)} đ`, summaryStartX + panelWidth - 12, curDetailY);
+
+        curDetailY += 18;
+      });
+    }
 
     if (totals.paidBreakdownNote) {
-      // Dòng 1: Tiêu đề và số tiền đã thanh toán
-      ctx.fillStyle = '#047857';
-      ctx.font = 'bold 13px Arial, sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText('ĐÃ THANH TOÁN:', summaryStartX + summaryColLeft, curSummaryY + 16);
-      ctx.fillStyle = '#059669';
-      ctx.font = 'bold 16.5px Arial, sans-serif';
-      ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totals.totalPaid)} đ`, summaryStartX + panelWidth - 12, curSummaryY + 16);
-
-      // Dòng 2: Ghi chú bù trừ nợ liên tháng mở ngoặc
       ctx.fillStyle = '#047857';
       ctx.font = 'italic 10.5px Arial, sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillText(totals.paidBreakdownNote, summaryStartX + panelWidth - 12, curSummaryY + 33);
-    } else {
-      ctx.fillStyle = '#047857';
-      ctx.font = 'bold 14px Arial, sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText('ĐÃ THANH TOÁN:', summaryStartX + summaryColLeft, curSummaryY + summaryRowHeight / 2);
-      ctx.fillStyle = '#059669';
-      ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totals.totalPaid)} đ`, summaryStartX + panelWidth - 12, curSummaryY + summaryRowHeight / 2);
+      ctx.fillText(totals.paidBreakdownNote, summaryStartX + panelWidth - 12, curDetailY);
     }
-    curSummaryY += summaryRowHeight;
+    curSummaryY += thisBoxHeight;
   }
 
   // 4. Còn lại phải thu
@@ -2459,6 +2504,7 @@ export default function PortalScreen() {
         totalPaid: q ? filteredTotalPaid : invoiceData.totals.totalPaid,
         finalDebt: q ? finalDebt : invoiceData.totals.finalDebt,
         paidBreakdownNote: q ? null : invoiceData.totals.paidBreakdownNote,
+        paidDetails: q ? [] : (invoiceData.totals.paidDetails || []),
       },
     };
   }, [invoiceData, searchKeyword]);
@@ -3410,7 +3456,7 @@ export default function PortalScreen() {
                         style={{
                           maxHeight: summarySlideAnim.interpolate({
                             inputRange: [0, 1],
-                            outputRange: [0, 260],
+                            outputRange: [0, 1000],
                           }),
                           opacity: summarySlideAnim.interpolate({
                             inputRange: [0, 1],
@@ -3450,9 +3496,10 @@ export default function PortalScreen() {
                             style={[
                               styles.invSumRow,
                               styles.invSumPaidRow,
-                              displayInvoiceData.totals.paidBreakdownNote && {
+                              {
                                 flexDirection: 'column',
                                 alignItems: 'stretch',
+                                paddingVertical: 8,
                               },
                             ]}
                           >
@@ -3471,6 +3518,33 @@ export default function PortalScreen() {
                                 - {formatCurrency(displayInvoiceData.totals.totalPaid)}
                               </Text>
                             </View>
+
+                            {/* Liệt kê chi tiết từng số tiền thanh toán */}
+                            {displayInvoiceData.totals.paidDetails && displayInvoiceData.totals.paidDetails.length > 0 && (
+                              <View style={styles.invSumPaidDetailsContainer}>
+                                {displayInvoiceData.totals.paidDetails.map((pd, pIdx) => {
+                                  const cleanNoteText = cleanDisplayNote(pd.note || '');
+                                  const dateStr = pd.displayDate || (pd.paidAt ? `${String(pd.paidAt.getDate()).padStart(2, '0')}/${String(pd.paidAt.getMonth() + 1).padStart(2, '0')}/${pd.paidAt.getFullYear()}` : '');
+                                  return (
+                                    <View key={pd.id || pIdx} style={styles.invSumPaidItemRow}>
+                                      <View style={styles.invSumPaidItemLeft}>
+                                        <Text style={styles.invSumPaidItemDot}>•</Text>
+                                        <Text style={styles.invSumPaidItemDate}>{dateStr}</Text>
+                                        {cleanNoteText ? (
+                                          <Text style={styles.invSumPaidItemNote} numberOfLines={1}>
+                                            ({cleanNoteText})
+                                          </Text>
+                                        ) : null}
+                                      </View>
+                                      <Text style={styles.invSumPaidItemAmt}>
+                                        - {formatCurrency(pd.amount)}
+                                      </Text>
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            )}
+
                             {displayInvoiceData.totals.paidBreakdownNote ? (
                               <Text style={styles.invSumPaidBreakdownText}>
                                 {displayInvoiceData.totals.paidBreakdownNote}
@@ -4825,6 +4899,47 @@ const styles = StyleSheet.create({
   },
   invSumFinalValue: {
     fontSize: 16.5,
+    fontWeight: 'bold',
+  },
+  invSumPaidDetailsContainer: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#BBF7D0',
+    gap: 3,
+  },
+  invSumPaidItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  invSumPaidItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    paddingRight: 8,
+    gap: 5,
+  },
+  invSumPaidItemDot: {
+    fontSize: 10,
+    color: '#059669',
+    fontWeight: 'bold',
+  },
+  invSumPaidItemDate: {
+    fontSize: 11.5,
+    color: '#065F46',
+    fontWeight: '600',
+  },
+  invSumPaidItemNote: {
+    fontSize: 11,
+    color: '#047857',
+    fontStyle: 'italic',
+    flexShrink: 1,
+  },
+  invSumPaidItemAmt: {
+    fontSize: 12,
+    color: '#059669',
     fontWeight: 'bold',
   },
   emptyDaysNoteWrap: {
