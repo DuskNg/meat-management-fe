@@ -28,6 +28,7 @@ import {
   DUPLICATE_COLOR_PALETTES,
 } from '../utils/dailyBundleExportHelper';
 import { getLunarDateString } from '../utils/lunarCalendar';
+import { cleanDisplayNote } from '../utils/cleanNote';
 
 const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransaction, onEditPayment }, ref) => {
   const popupModalRef = useRef(null);
@@ -157,7 +158,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
   const formatPaymentNote = (note, paidAt) => {
     if (!note) return 'Thu tiền nợ';
-    const trimNote = note.trim();
+    const cleanNote = cleanDisplayNote(note);
+    if (!cleanNote) return 'Thu tiền nợ';
+    const trimNote = cleanNote.trim();
     if (trimNote === '[Trả hàng nhanh] Trừ tiền công nợ đơn trong ngày' || trimNote === 'Trả hàng' || trimNote === 'Trả lại hàng') {
       return 'Trả lại hàng';
     }
@@ -1249,7 +1252,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             // Chi tiết (mặt hàng/ghi chú)
             ctx.fillStyle = '#64748B';
             ctx.font = '12px Arial, sans-serif';
-            const detailStr = isDebt ? `🥩 ${item.details || ''}` : `💵 ${item.details || ''}`;
+            const detailStr = isDebt ? `🥩 ${cleanDisplayNote(item.details || '')}` : `💵 ${cleanDisplayNote(item.details || '')}`;
             ctx.fillText(fitText(ctx, detailStr, actualColWidth - 20), textLeftX, itemY + 45);
 
             // Số tiền (căn phải)
@@ -2267,7 +2270,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                       )
                     );
 
-                    let displayDetails = item.details;
+                    let displayDetails = item.details ? cleanDisplayNote(item.details) : '';
                     if (isReturnGoods) {
                       if (displayDetails === '[Trả hàng nhanh] Trừ tiền công nợ đơn trong ngày' || displayDetails === 'Trả hàng' || displayDetails === 'Trả lại hàng') {
                         displayDetails = 'Trả lại hàng';

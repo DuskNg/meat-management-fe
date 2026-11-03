@@ -1180,7 +1180,7 @@ export const generateDuplicateDebtsImage = ({
           return `${qty}${it.product?.unit || 'kg'} ${name}`;
         }).join(', ');
       }
-      return item.note || 'Đơn nợ';
+      return cleanDisplayNote(item.note) || 'Đơn nợ';
     };
 
     // 2. Lọc danh sách giao dịch đúng ngày được chọn

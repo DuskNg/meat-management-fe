@@ -18,6 +18,7 @@ import PinInputModal from './PinInputModal';
 import PinSetupModal from './PinSetupModal';
 import { hasPin, isSessionValid } from '../store/pinStore';
 import { showGlobalToast } from '../store/toastStore';
+import { cleanDisplayNote } from '../utils/cleanNote';
 
 const EditPaymentModal = forwardRef(({ onRefresh, editReturnGoodsModalRef }, ref) => {
   // ─── Helper: Chuyển ISO date sang DD/MM/YYYY ─────────────────────────────
@@ -105,7 +106,7 @@ const EditPaymentModal = forwardRef(({ onRefresh, editReturnGoodsModalRef }, ref
       setPaymentId(payment.id);
       setAmountVND(payment.amount || 0);
       setDateStr(formatDateToDisplay(payment.paidAt || payment.createdAt));
-      setNote(payment.note || '');
+      setNote(cleanDisplayNote(payment.note || ''));
       setError('');
       setVisible(true);
     },

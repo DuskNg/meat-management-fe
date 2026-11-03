@@ -12,6 +12,7 @@ import {
   ScrollView,
 } from 'react-native';
 import SmoothModal from './SmoothModal';
+import { cleanDisplayNote } from '../utils/cleanNote';
 import { api } from '../api/client';
 import { COLORS, FONTS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
@@ -63,7 +64,7 @@ const EditSupplierPaymentModal = forwardRef(({ onRefresh }, ref) => {
       setSupplierName(name || payment.supplierName || '');
       setAmountVND(payment.amount || 0);
       setDateStr(formatDateToDisplay(payment.date || payment.paidAt || payment.createdAt));
-      setNote(payment.note || '');
+      setNote(cleanDisplayNote(payment.note || ''));
       setError('');
       setVisible(true);
     },

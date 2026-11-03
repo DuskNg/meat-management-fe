@@ -18,6 +18,7 @@ import EditSupplierTransactionModal from './EditSupplierTransactionModal';
 import EditSupplierPaymentModal from './EditSupplierPaymentModal';
 import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import PopupModal from './PopupModal';
+import { cleanDisplayNote } from '../utils/cleanNote';
 import { showGlobalToast } from '../store/toastStore';
 import { exportSupplierHistoryImage } from '../utils/supplierHistoryExportHelper';
 
@@ -592,7 +593,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
             {/* Ghi chú giao dịch nếu có */}
             {item.note ? (
               <Text style={styles.tableCellNote} numberOfLines={1}>
-                {item.note}
+                {cleanDisplayNote(item.note)}
               </Text>
             ) : null}
 
