@@ -574,19 +574,40 @@ const DuplicateDebtResolveModal = forwardRef(({ onEditTransaction, onRefresh }, 
             )}
           </ScrollView>
 
-          {/* Footer chân modal: Nút BẰNG CÂN NHƯNG ĐÚNG và Nút ĐÓNG LẠI */}
+          {/* Footer chân modal: Nút BẰNG CÂN NHƯNG ĐÚNG (hoặc XÓA ĐÃ CHỌN khi đã tích checkbox) và Nút ĐÓNG LẠI trên cùng 1 hàng */}
           <View style={styles.footer}>
             {flatTransactions.length > 0 && (
-              <TouchableOpacity
-                style={styles.confirmAllBtn}
-                onPress={handleConfirmAll}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.confirmAllBtnText}>✅ BẰNG CÂN NHƯNG ĐÚNG (XÁC NHẬN TẤT CẢ)</Text>
-              </TouchableOpacity>
+              selectedTxIds.size > 0 ? (
+                <TouchableOpacity
+                  style={[styles.footerMainBtn, styles.deleteActionBtn]}
+                  onPress={handleBulkDelete}
+                  disabled={isDeleting}
+                  activeOpacity={0.8}
+                >
+                  {isDeleting ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.deleteActionBtnText}>
+                      🗑️ XÓA ĐÃ CHỌN ({selectedTxIds.size})
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.footerMainBtn, styles.confirmAllBtn]}
+                  onPress={handleConfirmAll}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.confirmAllBtnText}>✅ BẰNG CÂN NHƯNG ĐÚNG</Text>
+                </TouchableOpacity>
+              )
             )}
 
-            <TouchableOpacity style={styles.closeFooterBtn} onPress={handleClose} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={[styles.closeFooterBtn, flatTransactions.length === 0 && { flex: 1 }]}
+              onPress={handleClose}
+              activeOpacity={0.8}
+            >
               <Text style={styles.closeFooterBtnText}>ĐÓNG LẠI</Text>
             </TouchableOpacity>
           </View>
@@ -937,30 +958,45 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  confirmAllBtn: {
-    backgroundColor: '#16A34A',
+  footerMainBtn: {
+    flex: 1.4,
     height: 44,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#16A34A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
   },
+  confirmAllBtn: {
+    backgroundColor: '#16A34A',
+    shadowColor: '#16A34A',
+  },
   confirmAllBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  deleteActionBtn: {
+    backgroundColor: '#DC2626',
+    shadowColor: '#DC2626',
+  },
+  deleteActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: 'bold',
   },
   closeFooterBtn: {
+    flex: 1,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    height: 42,
+    height: 44,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
