@@ -68,6 +68,16 @@ const commonReactNativeComponents = [
 
 const criticalIdentifiers = [...commonReactHooks, ...commonReactNativeComponents];
 
+const standardGlobals = new Set([
+  'console', 'window', 'document', 'Math', 'Date', 'JSON', 'parseInt', 'parseFloat',
+  'isNaN', 'isFinite', 'undefined', 'NaN', 'Infinity', 'Intl', 'Object', 'Array',
+  'String', 'Number', 'Boolean', 'Set', 'Map', 'Promise', 'RegExp', 'Error',
+  'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame',
+  'cancelAnimationFrame', 'localStorage', 'sessionStorage', 'alert', 'confirm',
+  'encodeURIComponent', 'decodeURIComponent', 'encodeURI', 'decodeURI', 'navigator',
+  'FormData', 'Blob', 'File', 'URL', 'URLSearchParams', 'fetch', 'Headers', 'Request', 'Response'
+]);
+
 let errors = 0;
 allFiles.forEach((f) => {
   try {
@@ -88,6 +98,19 @@ allFiles.forEach((f) => {
             errors++;
           }
         }
+      },
+      JSXExpressionContainer(p) {
+        p.traverse({
+          Identifier(idPath) {
+            if (idPath.isReferencedIdentifier()) {
+              const name = idPath.node.name;
+              if (!standardGlobals.has(name) && !idPath.scope.hasBinding(name)) {
+                console.error(`❌ [LỖI BIẾN CHƯA KHAI BÁO TRONG JSX]: ${name} tại file ${path.relative(rootDir, f)} (Dòng ${idPath.node.loc?.start?.line})`);
+                errors++;
+              }
+            }
+          }
+        });
       },
       JSXIdentifier(p) {
         if (commonReactNativeComponents.includes(p.node.name)) {

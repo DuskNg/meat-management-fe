@@ -990,7 +990,13 @@ const PortalManagementModal = forwardRef((props, ref) => {
       <PopupModal ref={popupRef} />
 
       {/* MODAL THEO DÕI & CHỐT TIỀN NHÓM ZALO BÁO HÀNG CUỐN CHIẾU HÀNG NGÀY */}
-      <ZaloDailyTrackingModal ref={zaloDailyTrackingRef} onRefreshNeeded={fetchData} />
+      <ZaloDailyTrackingModal
+        ref={zaloDailyTrackingRef}
+        onRefreshNeeded={() => {
+          fetchLinks();
+          fetchOptions();
+        }}
+      />
     </>
   );
 });
