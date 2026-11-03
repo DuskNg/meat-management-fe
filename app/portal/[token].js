@@ -1083,17 +1083,17 @@ const buildInvoiceRows = (
   });
 
   return {
-  sortedDays,
-  totals: {
-    totalMeat: totalMeatAmount,
-    totalReturn: totalReturnAmount,
-    totalPaid: displayTotalPaid,
-    finalDebt,
-    paidBreakdownNote: paidBreakdownNote || null,
-    paidDetails,
-    rawPaidInPeriod: totalCashPaidInPeriodRaw,
-  },
-};
+    sortedDays,
+    totals: {
+      totalMeat: totalMeatAmount,
+      totalReturn: totalReturnAmount,
+      totalPaid: displayTotalPaid,
+      finalDebt,
+      paidBreakdownNote: paidBreakdownNote || null,
+      paidDetails,
+      rawPaidInPeriod: totalCashPaidInPeriodRaw,
+    },
+  };
 };
 
 // Helper vẽ ảnh Canvas độ nét cao 2x chuẩn hóa đơn kế toán

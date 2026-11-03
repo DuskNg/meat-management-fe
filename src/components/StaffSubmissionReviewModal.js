@@ -938,6 +938,21 @@ const isCustomerNameContradictory = (detectedName, customerName, custList = []) 
   const isCToanNga = cClean.includes('toan nga') || cClean.includes('thai dung') || cNoSpace.includes('toannga') || cNoSpace.includes('thaidung');
   if (isDToanNga && !isCToanNga) return true;
 
+  // 14. Phở tưởng chị luyến (Phở tưởng, Chị luyến, Luyến)
+  // Tuyệt đối không để AI nhận diện là "Phở tưởng" hoặc "chị Luyến" bị gán nhầm sang khách hàng khác (như "Minh trang")!
+  const isDPhoTuong = dClean.includes('pho tuong') || dClean.includes('luyen') || dNoSpace.includes('photuong') || dNoSpace.includes('luyen') ||
+    (dClean.includes('tuong') && !dClean.includes('tuong mo') && !dClean.includes('anh tuong') && !dClean.includes('tien'));
+  const isCPhoTuong = cClean.includes('pho tuong') || cClean.includes('luyen') || cNoSpace.includes('photuong') || cNoSpace.includes('luyen') ||
+    (cClean.includes('tuong') && !cClean.includes('tuong mo') && !cClean.includes('anh tuong') && !cClean.includes('tien'));
+  if (isDPhoTuong && !isCPhoTuong) return true;
+  if (!isDPhoTuong && isCPhoTuong) return true;
+
+  // 15. Minh trang
+  const isDMinhTrang = (dClean.includes('minh') && dClean.includes('trang')) || dNoSpace.includes('minhtrang');
+  const isCMinhTrang = (cClean.includes('minh') && cClean.includes('trang')) || cNoSpace.includes('minhtrang');
+  if (isDMinhTrang && !isCMinhTrang) return true;
+  if (!isDMinhTrang && isCMinhTrang && (isDPhoTuong || dClean.includes('tuong') || dClean.includes('luyen'))) return true;
+
   return false;
 };
 
@@ -1120,6 +1135,33 @@ const resolveCustomerForSub = (sub, custList) => {
 
       if (toanNgaCust) {
         return toanNgaCust;
+      }
+    }
+
+    // 00b. ĐẶC BIỆT: Khớp ưu tiên khách "Phở tưởng chị luyến" nếu AI nhận diện là "phở tưởng" hoặc "chị luyến" hoặc "luyến"
+    // LƯU Ý: TUYỆT ĐỐI không để "anh tường mỗ" bị nhầm vào rule này!
+    const isDetectedPhoTuongLuyen = (
+      cleanDetected.includes('pho tuong') ||
+      cleanDetectedNoSpace.includes('photuong') ||
+      cleanDetected.includes('luyen') ||
+      cleanDetectedNoSpace.includes('luyen') ||
+      (cleanDetected.includes('tuong') && !cleanDetected.includes('tuong mo') && !cleanDetected.includes('anh tuong') && !cleanDetected.includes('tien')) ||
+      (cleanDetectedNoSpace.includes('tuong') && !cleanDetectedNoSpace.includes('tuongmo') && !cleanDetectedNoSpace.includes('anhtuong'))
+    );
+    if (isDetectedPhoTuongLuyen) {
+      const phoTuongCust = custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return (cClean.includes('tuong') || cClean.includes('pho tuong')) && cClean.includes('luyen');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('luyen');
+      }) || custList.find((c) => {
+        const cClean = removeDiacritics(c.name.toLowerCase());
+        return cClean.includes('tuong') && !cClean.includes('tuong mo') && !cClean.includes('anh tuong') && !cClean.includes('tien');
+      }) || null;
+
+      if (phoTuongCust) {
+        return phoTuongCust;
       }
     }
 
@@ -1514,7 +1556,7 @@ const resolveCustomerForSub = (sub, custList) => {
       }) || null;
 
       if (phoTuongCust) {
-        matchedCust = phoTuongCust;
+        return phoTuongCust;
       }
     }
 
@@ -1777,13 +1819,14 @@ const resolveCustomerForSub = (sub, custList) => {
       }
     }
 
-    // 1i. ĐẶC BIỆT: Khớp ưu tiên khách "Minh trang" nếu đọc được chữ minh hoặc mih
+    // 1i. ĐẶC BIỆT: Khớp ưu tiên khách "Minh trang" nếu đọc được chữ minh trang
     if (
       cleanDetected.includes('minh trang') ||
       cleanDetected.includes('mih trang') ||
       cleanDetected.includes('minh tuy') ||
       cleanDetected.includes('mih tuy') ||
-      cleanDetected.includes('mih') ||
+      cleanDetected === 'minh' ||
+      cleanDetected === 'mih' ||
       cleanDetectedNoSpace === 'minh' ||
       cleanDetectedNoSpace === 'mih' ||
       cleanDetectedNoSpace.includes('minhtrang') ||
@@ -2407,7 +2450,8 @@ const resolveCustomerForSub = (sub, custList) => {
         cleanDetected.includes('mih trang') ||
         cleanDetected.includes('minh tuy') ||
         cleanDetected.includes('mih tuy') ||
-        cleanDetected.includes('mih') ||
+        cleanDetected === 'minh' ||
+        cleanDetected === 'mih' ||
         cleanDetectedNoSpace === 'minh' ||
         cleanDetectedNoSpace === 'mih' ||
         cleanDetectedNoSpace.includes('minhtrang') ||
