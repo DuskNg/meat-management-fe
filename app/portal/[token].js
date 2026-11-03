@@ -1028,7 +1028,7 @@ const buildInvoiceRows = (
   }
 
   // Số tiền ĐÃ THANH TOÁN hiển thị: bằng tổng tiền thực tế đã phân bổ cho các ngày trong kỳ lọc
-  const displayTotalPaid = totalPaidForPeriod;
+  const displayTotalPaid = totalPaidForPeriod;
   const finalDebt = Math.max(0, netPeriodAmount - displayTotalPaid);
 
   // Tập hợp danh sách các khoản thanh toán cấu thành nên số tiền ĐÃ THANH TOÁN của kỳ
@@ -1083,17 +1083,17 @@ const buildInvoiceRows = (
   });
 
   return {
-    sortedDays,
-    totals: {
-      totalMeat: totalMeatAmount,
-      totalReturn: totalReturnAmount,
-      totalPaid: displayTotalPaid,
-      finalDebt,
-      paidBreakdownNote: paidBreakdownNote || null,
-      paidDetails,
-      rawPaidInPeriod: totalCashPaidInPeriodRaw,
-    },
-  };
+  sortedDays,
+  totals: {
+    totalMeat: totalMeatAmount,
+    totalReturn: totalReturnAmount,
+    totalPaid: displayTotalPaid,
+    finalDebt,
+    paidBreakdownNote: paidBreakdownNote || null,
+    paidDetails,
+    rawPaidInPeriod: totalCashPaidInPeriodRaw,
+  },
+};
 };
 
 // Helper vẽ ảnh Canvas độ nét cao 2x chuẩn hóa đơn kế toán
@@ -3277,10 +3277,10 @@ export default function PortalScreen() {
                                     isChainViewAll
                                       ? null
                                       : day.isPaid
-                                      ? styles.tdLunarDateTextPaid
-                                      : day.isPartialPaid
-                                      ? styles.tdLunarDateTextPartial
-                                      : styles.tdLunarDateTextUnpaid,
+                                        ? styles.tdLunarDateTextPaid
+                                        : day.isPartialPaid
+                                          ? styles.tdLunarDateTextPartial
+                                          : styles.tdLunarDateTextUnpaid,
                                   ]}
                                 >
                                   {`(${day.displayLunarDate} âm)`}
@@ -3319,10 +3319,10 @@ export default function PortalScreen() {
                                 const rowBg = isPartialPaid
                                   ? '#F0FDF4'
                                   : isPartialRemaining
-                                  ? '#FEF2F2'
-                                  : isDayTotal
-                                  ? '#F8FAFC'
-                                  : (entry.customerName ? getRestaurantColor(entry.customerName, branchList) : '#FFFFFF');
+                                    ? '#FEF2F2'
+                                    : isDayTotal
+                                      ? '#F8FAFC'
+                                      : (entry.customerName ? getRestaurantColor(entry.customerName, branchList) : '#FFFFFF');
 
                                 return (
                                   <View
@@ -3349,47 +3349,47 @@ export default function PortalScreen() {
                                         </Text>
                                         {/* Hiển thị xem ảnh và gửi Zalo ở dòng TỔNG (cả dạng nhóm và từng quán) */}
                                         {isDayTotal && (
-                                            <View style={styles.invoiceBtnGroupRow}>
-                                              {day.invoices && day.invoices.length > 0 && (
-                                                <TouchableOpacity
-                                                  style={[
-                                                    styles.dayTotalInvoiceBtn,
-                                                    styles.dayTotalInvoiceBtnActive,
-                                                  ]}
-                                                  onPress={() => handleOpenInvoiceModal(day)}
-                                                  activeOpacity={0.7}
-                                                >
-                                                  <Text
-                                                    style={[
-                                                      styles.dayTotalInvoiceBtnText,
-                                                      styles.dayTotalInvoiceBtnTextActive,
-                                                    ]}
-                                                  >
-                                                    {`👁️ Xem (${day.invoices.length})`}
-                                                  </Text>
-                                                </TouchableOpacity>
-                                              )}
-
+                                          <View style={styles.invoiceBtnGroupRow}>
+                                            {day.invoices && day.invoices.length > 0 && (
                                               <TouchableOpacity
                                                 style={[
                                                   styles.dayTotalInvoiceBtn,
-                                                  styles.dayShareInvoiceBtn,
+                                                  styles.dayTotalInvoiceBtnActive,
                                                 ]}
-                                                onPress={() => handleShareDayInvoice(day)}
+                                                onPress={() => handleOpenInvoiceModal(day)}
                                                 activeOpacity={0.7}
-                                                title="Sao chép nội dung công nợ ngày này để dán vào Zalo"
                                               >
                                                 <Text
                                                   style={[
                                                     styles.dayTotalInvoiceBtnText,
-                                                    styles.dayShareInvoiceBtnText,
+                                                    styles.dayTotalInvoiceBtnTextActive,
                                                   ]}
                                                 >
-                                                  📋 Copy text
+                                                  {`👁️ Xem (${day.invoices.length})`}
                                                 </Text>
                                               </TouchableOpacity>
-                                            </View>
-                                          )}
+                                            )}
+
+                                            <TouchableOpacity
+                                              style={[
+                                                styles.dayTotalInvoiceBtn,
+                                                styles.dayShareInvoiceBtn,
+                                              ]}
+                                              onPress={() => handleShareDayInvoice(day)}
+                                              activeOpacity={0.7}
+                                              title="Sao chép nội dung công nợ ngày này để dán vào Zalo"
+                                            >
+                                              <Text
+                                                style={[
+                                                  styles.dayTotalInvoiceBtnText,
+                                                  styles.dayShareInvoiceBtnText,
+                                                ]}
+                                              >
+                                                📋 Copy text
+                                              </Text>
+                                            </TouchableOpacity>
+                                          </View>
+                                        )}
                                       </View>
                                     ) : (
                                       <View style={[styles.tdCell, styles.tdName, styles.tdTotalCellWrap, { paddingRight: 4 }]}>
@@ -3443,87 +3443,87 @@ export default function PortalScreen() {
 
                                         {/* Case 2: Nếu ngày không có dòng TỔNG nhưng có ảnh hóa đơn và đây là món đầu tiên thì hiển thị nút xem ảnh & gửi Zalo */}
                                         {!day.entries.some(isDaySummaryEntry) && idx === 0 && (
-                                            <View style={styles.invoiceBtnGroupRow}>
-                                              {day.invoices && day.invoices.length > 0 && (
-                                                <TouchableOpacity
-                                                  style={[
-                                                    styles.dayTotalInvoiceBtn,
-                                                    styles.dayTotalInvoiceBtnActive,
-                                                  ]}
-                                                  onPress={() => handleOpenInvoiceModal(day)}
-                                                  activeOpacity={0.7}
-                                                >
-                                                  <Text
-                                                    style={[
-                                                      styles.dayTotalInvoiceBtnText,
-                                                      styles.dayTotalInvoiceBtnTextActive,
-                                                    ]}
-                                                  >
-                                                    {`👁️ Xem (${day.invoices.length})`}
-                                                  </Text>
-                                                </TouchableOpacity>
-                                              )}
-
+                                          <View style={styles.invoiceBtnGroupRow}>
+                                            {day.invoices && day.invoices.length > 0 && (
                                               <TouchableOpacity
                                                 style={[
                                                   styles.dayTotalInvoiceBtn,
-                                                  styles.dayShareInvoiceBtn,
+                                                  styles.dayTotalInvoiceBtnActive,
                                                 ]}
-                                                onPress={() => handleShareDayInvoice(day)}
+                                                onPress={() => handleOpenInvoiceModal(day)}
                                                 activeOpacity={0.7}
-                                                title="Sao chép nội dung công nợ ngày này để dán vào Zalo"
                                               >
                                                 <Text
                                                   style={[
                                                     styles.dayTotalInvoiceBtnText,
-                                                    styles.dayShareInvoiceBtnText,
+                                                    styles.dayTotalInvoiceBtnTextActive,
                                                   ]}
                                                 >
-                                                  📋 Copy text
+                                                  {`👁️ Xem (${day.invoices.length})`}
                                                 </Text>
                                               </TouchableOpacity>
-                                            </View>
-                                          )}
+                                            )}
+
+                                            <TouchableOpacity
+                                              style={[
+                                                styles.dayTotalInvoiceBtn,
+                                                styles.dayShareInvoiceBtn,
+                                              ]}
+                                              onPress={() => handleShareDayInvoice(day)}
+                                              activeOpacity={0.7}
+                                              title="Sao chép nội dung công nợ ngày này để dán vào Zalo"
+                                            >
+                                              <Text
+                                                style={[
+                                                  styles.dayTotalInvoiceBtnText,
+                                                  styles.dayShareInvoiceBtnText,
+                                                ]}
+                                              >
+                                                📋 Copy text
+                                              </Text>
+                                            </TouchableOpacity>
+                                          </View>
+                                        )}
                                       </View>
                                     )}
-                                  <Text
-                                    style={[
-                                      styles.tdCell,
-                                      styles.tdQty,
-                                      isReturn && styles.textRed,
-                                    ]}
-                                  >
-                                    {(!isSummary && !entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.quantity != null) ? entry.quantity : '-'}
-                                  </Text>
-                                  <Text
-                                    style={[
-                                      styles.tdCell,
-                                      styles.tdPrice,
-                                      isReturn && styles.textRed,
-                                    ]}
-                                  >
-                                    {(!isSummary && !entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.price != null) ? formatShortPrice(entry.price) : '-'}
-                                  </Text>
-                                  <Text
-                                    style={[
-                                      styles.tdCell,
-                                      styles.tdAmount,
-                                      isReturn && styles.textRed,
-                                      isPartialPaid && { color: '#047857' },
-                                      isPartialRemaining && styles.textRed,
-                                    ]}
-                                  >
-                                    {isReturn || isPartialPaid
-                                      ? `-${formatCurrency(entry.amount)}`
-                                      : formatCurrency(entry.amount)}
-                                  </Text>
-                                </View>
-                               );
-                            })}
+                                    <Text
+                                      style={[
+                                        styles.tdCell,
+                                        styles.tdQty,
+                                        isReturn && styles.textRed,
+                                      ]}
+                                    >
+                                      {(!isSummary && !entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.quantity != null) ? entry.quantity : '-'}
+                                    </Text>
+                                    <Text
+                                      style={[
+                                        styles.tdCell,
+                                        styles.tdPrice,
+                                        isReturn && styles.textRed,
+                                      ]}
+                                    >
+                                      {(!isSummary && !entry.isQuick && entry.name !== 'TIỀN HÀNG' && !entry.name?.startsWith('TIỀN') && entry.price != null) ? formatShortPrice(entry.price) : '-'}
+                                    </Text>
+                                    <Text
+                                      style={[
+                                        styles.tdCell,
+                                        styles.tdAmount,
+                                        isReturn && styles.textRed,
+                                        isPartialPaid && { color: '#047857' },
+                                        isPartialRemaining && styles.textRed,
+                                      ]}
+                                    >
+                                      {isReturn || isPartialPaid
+                                        ? `-${formatCurrency(entry.amount)}`
+                                        : formatCurrency(entry.amount)}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </View>
                           </View>
-                        </View>
-                      );
-                    })}
+                        );
+                      })}
                     </ScrollView>
 
                     {/* Khối tổng kết ghim cố định ở đáy bảng dạng Mở ra / Đóng lại (đi từ từ xuống bottom) */}
