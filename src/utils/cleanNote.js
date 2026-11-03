@@ -10,6 +10,7 @@
 export const cleanDisplayNote = (note) => {
   if (!note || typeof note !== 'string') return '';
   return note
+    .replace(/\[offset[a-zA-Z0-9_-]*\s*:\s*[^\]]+\]/gi, '')
     .replace(/\[offsetSupplierPaymentId:[a-f0-9\-]+\]/gi, '')
     .replace(/\[offsetPaymentId:[a-f0-9\-]+\]/gi, '')
     .replace(/\[offsetPairId:[a-f0-9\-]+\]/gi, '')

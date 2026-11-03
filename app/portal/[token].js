@@ -1028,35 +1028,58 @@ const buildInvoiceRows = (
   }
 
   // Số tiền ĐÃ THANH TOÁN hiển thị: bằng tổng tiền thực tế đã phân bổ cho các ngày trong kỳ lọc
-  const displayTotalPaid = totalPaidForPeriod;
-  const finalDebt = Math.max(0, netPeriodAmount - displayTotalPaid);
+  const displayTotalPaid = totalPaidForPeriod;
+  const finalDebt = Math.max(0, netPeriodAmount - displayTotalPaid);
 
-  // Tập hợp danh sách các khoản thanh toán cấu thành nên số tiền ĐÃ THANH TOÁN của kỳ
-  const paidDetailsMap = new Map();
-  periodDays.forEach((day) => {
-    (day.paymentsApplied || []).forEach((pa) => {
-      const pKey = pa.paymentId || `${pa.paidAt ? pa.paidAt.getTime() : ''}_${pa.totalPaymentAmount || pa.amount}`;
-      if (!paidDetailsMap.has(pKey)) {
-        paidDetailsMap.set(pKey, {
-          id: pKey,
-          paidAt: pa.paidAt,
-          displayDate: pa.paidAt
-            ? `${String(pa.paidAt.getDate()).padStart(2, '0')}/${String(pa.paidAt.getMonth() + 1).padStart(2, '0')}/${pa.paidAt.getFullYear()}`
-            : '',
-          amount: 0,
-          totalPaymentAmount: pa.totalPaymentAmount || 0,
-          note: pa.note || '',
-        });
-      }
-      const item = paidDetailsMap.get(pKey);
-      item.amount += pa.amount;
-    });
-  });
+  // Tập hợp danh sách các khoản thanh toán cấu thành nên số tiền ĐÃ THANH TOÁN của kỳ
+  const paidDetailsMap = new Map();
+  periodDays.forEach((day) => {
+    (day.paymentsApplied || []).forEach((pa) => {
+      const pKey = pa.paymentId || `${pa.paidAt ? pa.paidAt.getTime() : ''}_${pa.totalPaymentAmount || pa.amount}`;
+      if (!paidDetailsMap.has(pKey)) {
+        paidDetailsMap.set(pKey, {
+          id: pKey,
+          paidAt: pa.paidAt,
+          displayDate: pa.paidAt
+            ? `${String(pa.paidAt.getDate()).padStart(2, '0')}/${String(pa.paidAt.getMonth() + 1).padStart(2, '0')}/${pa.paidAt.getFullYear()}`
+            : '',
+          amount: 0,
+          totalPaymentAmount: pa.totalPaymentAmount || 0,
+          note: pa.note || '',
+        });
+      }
+      const item = paidDetailsMap.get(pKey);
+      item.amount += pa.amount;
+    });
+  });
 
-  const paidDetails = Array.from(paidDetailsMap.values()).sort((a, b) => {
-    const timeA = a.paidAt ? new Date(a.paidAt).getTime() : 0;
-    const timeB = b.paidAt ? new Date(b.paidAt).getTime() : 0;
-    return timeB - timeA;
+  // Nếu paidDetailsMap rỗng nhưng có tổng tiền đã trả và có các giao dịch trả tiền trong kỳ lọc
+  if (paidDetailsMap.size === 0 && displayTotalPaid > 0) {
+    sortedCashPayments.forEach((pm) => {
+      const isPmInPeriod = (!fromD || pm.paidAt >= fromD) && (!toD || pm.paidAt <= toD);
+      if (isPmInPeriod && pm.amount > 0) {
+        const pKey = pm.id || (pm.paidAt.getTime() + '_' + pm.amount);
+        if (!paidDetailsMap.has(pKey)) {
+          const dd = String(pm.paidAt.getDate()).padStart(2, '0');
+          const mm = String(pm.paidAt.getMonth() + 1).padStart(2, '0');
+          const yyyy = pm.paidAt.getFullYear();
+          paidDetailsMap.set(pKey, {
+            id: pKey,
+            paidAt: pm.paidAt,
+            displayDate: dd + '/' + mm + '/' + yyyy,
+            amount: pm.amount,
+            totalPaymentAmount: pm.amount,
+            note: pm.note || '',
+          });
+        }
+      }
+    });
+  }
+
+  const paidDetails = Array.from(paidDetailsMap.values()).sort((a, b) => {
+    const timeA = a.paidAt ? new Date(a.paidAt).getTime() : 0;
+    const timeB = b.paidAt ? new Date(b.paidAt).getTime() : 0;
+    return timeB - timeA;
   });
 
   return {
@@ -2509,6 +2532,42 @@ export default function PortalScreen() {
     };
   }, [invoiceData, searchKeyword]);
 
+  // Tổng hợp trạng thái đơn hàng & thanh toán hôm nay (cho các nhóm Zalo cuốn chiếu)
+  const todaySummary = useMemo(() => {
+    const today = new Date();
+    const todayY = today.getFullYear();
+    const todayM = today.getMonth();
+    const todayD = today.getDate();
+
+    let orderAmount = 0;
+    (portalData?.transactions || []).forEach((tx) => {
+      if (!tx.date) return;
+      const d = new Date(tx.date);
+      if (d.getFullYear() === todayY && d.getMonth() === todayM && d.getDate() === todayD) {
+        orderAmount += Number(tx.totalAmount) || 0;
+      }
+    });
+
+    let paidAmount = 0;
+    (portalData?.payments || []).forEach((p) => {
+      if (!p.paidAt) return;
+      const d = new Date(p.paidAt);
+      if (d.getFullYear() === todayY && d.getMonth() === todayM && d.getDate() === todayD) {
+        paidAmount += Number(p.amount) || 0;
+      }
+    });
+
+    const remaining = Math.max(0, orderAmount - paidAmount);
+    const isPaid = orderAmount > 0 && remaining === 0;
+
+    return {
+      orderAmount,
+      paidAmount,
+      remaining,
+      isPaid,
+    };
+  }, [portalData?.transactions, portalData?.payments]);
+
   // Đếm tổng số lượng món khớp tìm kiếm
   const totalMatchedItems = useMemo(() => {
     if (!searchKeyword.trim() || !displayInvoiceData?.sortedDays) return 0;
@@ -2934,6 +2993,56 @@ export default function PortalScreen() {
               </View>
 
             </View>
+
+            {/* THẺ THEO DÕI ĐƠN HÔM NAY (ĐẶC BIỆT CHO CÁC NHÓM ZALO BÁO HÀNG CUỐN CHIẾU) */}
+            {todaySummary.orderAmount > 0 && (
+              <View
+                style={[
+                  styles.todayZaloBanner,
+                  todaySummary.isPaid ? styles.todayZaloBannerPaid : styles.todayZaloBannerUnpaid,
+                ]}
+              >
+                <View style={styles.todayZaloBannerLeft}>
+                  <View style={styles.todayZaloBannerTitleRow}>
+                    <Text style={styles.todayZaloBannerIcon}>
+                      {todaySummary.isPaid ? '🟢' : '⚡'}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.todayZaloBannerTitle,
+                        todaySummary.isPaid
+                          ? styles.todayZaloBannerTitlePaid
+                          : styles.todayZaloBannerTitleUnpaid,
+                      ]}
+                    >
+                      {todaySummary.isPaid
+                        ? 'ĐÃ THANH TOÁN ĐỦ ĐƠN HÔM NAY'
+                        : 'ĐƠN HÔM NAY CHƯA CHUYỂN TIỀN'}
+                    </Text>
+                  </View>
+                  <Text style={styles.todayZaloBannerSub}>
+                    {`Tiền hàng: ${formatCurrency(todaySummary.orderAmount)}`}
+                    {todaySummary.paidAmount > 0 ? `  •  Đã chuyển: ${formatCurrency(todaySummary.paidAmount)}` : ''}
+                    {!todaySummary.isPaid ? `  •  Còn thiếu: ${formatCurrency(todaySummary.remaining)}` : ''}
+                  </Text>
+                </View>
+
+                {!todaySummary.isPaid && (
+                  <TouchableOpacity
+                    style={styles.todayQuickPayBtn}
+                    onPress={() =>
+                      portalDebtActionModalRef.current?.open({
+                        tab: 'PAYMENT',
+                        defaultCustomerId: selectedCustomerId !== 'all' ? selectedCustomerId : undefined,
+                      })
+                    }
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.todayQuickPayBtnText}>⚡ Chốt tiền</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
 
             {/* BẢNG KÊ ĐƠN HÀNG CHI TIẾT (DẠNG BẢNG KÊ TIỀN HÀNG) */}
             <View style={[styles.sectionWrap, styles.invoiceSectionFlex]}>
@@ -3919,6 +4028,70 @@ const styles = StyleSheet.create({
   },
 
   // ─── DEBT CARD COMPACT (SIÊU GỌN) ───
+  // Banner theo dõi đơn hàng hôm nay cho nhóm Zalo cuốn chiếu
+  todayZaloBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1.5,
+  },
+  todayZaloBannerUnpaid: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+  },
+  todayZaloBannerPaid: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#10B981',
+  },
+  todayZaloBannerLeft: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  todayZaloBannerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  todayZaloBannerIcon: {
+    fontSize: 14,
+  },
+  todayZaloBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  todayZaloBannerTitleUnpaid: {
+    color: '#B45309',
+  },
+  todayZaloBannerTitlePaid: {
+    color: '#047857',
+  },
+  todayZaloBannerSub: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  todayQuickPayBtn: {
+    backgroundColor: '#F59E0B',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    shadowColor: '#F59E0B',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  todayQuickPayBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: 'bold',
+  },
   debtCardCompact: {
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
