@@ -3680,12 +3680,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           isImport = false;
         }
 
-        // Nếu là đơn nhập NCC nhưng chưa có trong danh mục NCC, tạo pseudo-supplier
-        if (initialTargetType === 'supplier' && !matchedSup && (sub.detectedCustomerName || parsedAiData?.supplier_name)) {
-          const supName = (sub.detectedCustomerName || parsedAiData?.supplier_name || '').trim();
-          if (supName) {
-            matchedSup = { id: null, name: supName };
-          }
+        // Nếu là đơn nhập NCC nhưng chưa có trong danh mục NCC, không được tạo pseudo-supplier
+        if (initialTargetType === 'supplier' && matchedSup && !matchedSup.id) {
+          matchedSup = null;
         }
 
         // BẢNG GIÁ ĐÃ NẠP SẴN: NẾU LÀ ĐƠN NHÀ CUNG CẤP THÌ LẤY BẢNG GIÁ RIÊNG CỦA NCC, NGƯỢC LẠI LẤY GIÁ RIÊNG KHÁCH HÀNG
@@ -4111,16 +4108,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           quickAmount = totalSum > 0 ? String(totalSum) : '';
         }
 
-        // Nếu không match được khách trong DB nhưng AI bóc tách được tên → tạo pseudo-customer để điền sẵn vào ô input
-        let effectiveCustomer = matchedCust;
-        if (!effectiveCustomer && sub.detectedCustomerName) {
-          const cleanedDetectedName = sub.detectedCustomerName
-            .replace(/\b(trả hàng|gửi về|trả về|trả lại|gửi lại|hàng trả|thu hồi|bắn về|quay đầu|đổi trả|hoàn hàng)\b/gi, '')
-            .replace(/[-–—:()]/g, ' ').replace(/\s+/g, ' ').trim();
-          if (cleanedDetectedName) {
-            effectiveCustomer = { name: cleanedDetectedName };
-          }
-        }
+        // Chỉ gán khách hàng nếu khớp được khách hàng có thật trong DB (có id hợp lệ)
+        // TUYỆT ĐỐI không tạo pseudo-customer không có id để điền sẵn vào ô chọn
+        const effectiveCustomer = (matchedCust && matchedCust.id) ? matchedCust : null;
 
         newMap[sub.id] = {
           targetType: initialTargetType,
@@ -4452,22 +4442,32 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     const card = cardDataMap[subId];
     if (!card) return false;
     if (card.targetType === 'supplier') {
-      if (!card.supplier?.id) {
-        showGlobalToast('Vui lòng chọn nhà cung cấp để lên đơn nhập hàng!', 'warning');
+      if (!card.supplier || !card.supplier.id) {
+        showGlobalToast('Vui lòng chọn nhà cung cấp trong danh sách để lên đơn nhập hàng!', 'warning');
+        return false;
+      }
+      const isSupInList = (suppliers || []).some((s) => s.id === card.supplier.id);
+      if (!isSupInList) {
+        showGlobalToast('Nhà cung cấp đã chọn không tồn tại trong hệ thống. Vui lòng chọn lại!', 'warning');
         return false;
       }
     } else {
-      if (!card.customer) {
-        showGlobalToast('Vui lòng chọn khách hàng để ghi nợ.', 'warning');
+      if (!card.customer || !card.customer.id) {
+        const detectedName = card.customer?.name || card.detectedCustomerName || '';
+        showGlobalToast(
+          detectedName
+            ? `Khách hàng "${detectedName}" không có trong danh sách khách hàng. Vui lòng chọn khách hàng trong danh sách trước khi lưu đơn!`
+            : 'Vui lòng chọn khách hàng trong danh sách trước khi lưu đơn!',
+          'warning'
+        );
         return false;
       }
-      // Kiểm tra khách hàng phải có id hợp lệ (tồn tại trong DB)
-      // Trường hợp AI phân tích ra tên nhưng không khớp được khách nào trong hệ thống
-      if (!card.customer.id) {
-        const detectedName = card.customer.name || card.detectedCustomerName || 'không xác định';
+      // Kiểm tra khách hàng bắt buộc phải có trong danh sách customers
+      const isCustInList = (customers || []).some((c) => c.id === card.customer.id);
+      if (!isCustInList) {
         showGlobalToast(
-          `Khách hàng "${detectedName}" không tồn tại trong hệ thống. Vui lòng chọn đúng khách hàng trước khi lưu.`,
-          'error'
+          `Khách hàng "${card.customer.name || ''}" không tồn tại trong hệ thống. Vui lòng chọn lại khách hàng!`,
+          'warning'
         );
         return false;
       }
@@ -4640,25 +4640,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         return false;
       }
 
-      // Nếu khách hàng là pseudo-customer (AI bóc tách nhưng chưa có trong DB) → tạo mới trước
-      let resolvedCustomerId = card.customer.id;
-      if (!resolvedCustomerId && card.customer.name) {
-        try {
-          const newCustRes = await api.post('/customers', { name: card.customer.name, isBadDebt: false });
-          const newCust = newCustRes.data?.data;
-          if (!newCust?.id) throw new Error(`Không thể tạo khách hàng "${card.customer.name}".`);
-          resolvedCustomerId = newCust.id;
-          // Cập nhật lại state customers và cardDataMap với khách hàng vừa tạo
-          setCustomers((prev) => [...prev, newCust]);
-          setCardDataMap((prev) => ({
-            ...prev,
-            [subId]: { ...(prev[subId] || {}), customer: newCust },
-          }));
-        } catch (err) {
-          showGlobalToast(err.message || 'Không thể tạo khách hàng mới.', 'error');
-          return false;
-        }
-      }
+      // Bắt buộc lấy ID khách hàng đã chọn từ danh sách hệ thống
+      const resolvedCustomerId = card.customer.id;
 
       const payload = {
         customerId: resolvedCustomerId,
