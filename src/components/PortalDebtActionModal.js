@@ -19,6 +19,7 @@ import DatePickerInput from './DatePickerInput';
 import MoneyInput from './MoneyInput';
 import PopupModal from './PopupModal';
 import { showGlobalToast } from '../store/toastStore';
+import { cleanDisplayNote } from '../utils/cleanNote';
 import { COLORS } from '../theme';
 
 // Định dạng tiền tệ VNĐ
@@ -99,6 +100,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
   const [customPrices, setCustomPrices] = useState([]);
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [recentPayments, setRecentPayments] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
   // Form Thu nợ
   const [collectCustomerId, setCollectCustomerId] = useState('');
@@ -108,6 +110,8 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
   const [collectSubmitting, setCollectSubmitting] = useState(false);
   const [collectMode, setCollectMode] = useState('AMOUNT'); // 'AMOUNT' | 'BY_DAY'
   const [selectedDayKeys, setSelectedDayKeys] = useState([]);
+  const [isOffsetSupplier, setIsOffsetSupplier] = useState(false);
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
 
   // Form Ghi nợ mới
   const [createCustomerId, setCreateCustomerId] = useState('');
@@ -226,6 +230,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
       setCustomPrices(data.customPrices || []);
       setRecentTransactions(data.recentTransactions || []);
       setRecentPayments(data.recentPayments || []);
+      setSuppliers(data.suppliers || []);
 
       const initialCust = defaultCustId || data.customers?.[0]?.id || '';
       if (!collectCustomerId) setCollectCustomerId(initialCust);
@@ -375,10 +380,15 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
     }
   };
 
-  // Xử lý nộp form Thu nợ (hỗ trợ cả thu theo số tiền và thu theo ngày)
+  // Xử lý nộp form Thu nợ (hỗ trợ cả thu theo số tiền và thu theo ngày, cấn trừ NCC nếu chọn)
   const handleSubmitCollect = async () => {
     if (!collectCustomerId) {
       showGlobalToast('Vui lòng chọn khách hàng cần thu nợ.', 'warning');
+      return;
+    }
+
+    if (isOffsetSupplier && !selectedSupplierId) {
+      showGlobalToast('Vui lòng chọn nhà cung cấp nhận tiền chuyển khoản.', 'warning');
       return;
     }
 
@@ -404,6 +414,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
           {
             customerId: collectCustomerId,
             payments: paymentsPayload,
+            supplierId: isOffsetSupplier ? selectedSupplierId : undefined,
           },
           {
             headers: { 'x-portal-action-token': actionToken },
@@ -413,6 +424,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
         showGlobalToast(`Đã thu nợ thành công cho ${selectedDays.length} ngày!`, 'success');
         setSelectedDayKeys([]);
         setCollectNote('');
+        setIsOffsetSupplier(false);
         fetchBootstrapData(actionToken);
         if (onRefresh) onRefresh();
       } catch (err) {
@@ -440,6 +452,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
           amount: collectAmount,
           paidAt: paidDateObj.toISOString(),
           note: collectNote ? collectNote.trim() : null,
+          supplierId: isOffsetSupplier ? selectedSupplierId : undefined,
         },
         {
           headers: { 'x-portal-action-token': actionToken },
@@ -449,6 +462,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
       showGlobalToast('Đã ghi nhận thu tiền công nợ thành công!', 'success');
       setCollectAmount(0);
       setCollectNote('');
+      setIsOffsetSupplier(false);
       fetchBootstrapData(actionToken);
       if (onRefresh) onRefresh();
     } catch (err) {
@@ -1124,6 +1138,54 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                         />
                       </View>
 
+                      {/* Tùy chọn cấn trừ nợ Nhà cung cấp (Khách chuyển khoản thẳng cho NCC) */}
+                      {suppliers.length > 0 && (
+                        <View style={[styles.offsetSupplierCard, activeSelect === 'offsetSupplier' && { zIndex: 999999 }]}>
+                          <TouchableOpacity
+                            style={styles.offsetSupplierToggleRow}
+                            onPress={() => {
+                              const nextVal = !isOffsetSupplier;
+                              setIsOffsetSupplier(nextVal);
+                              if (nextVal && !selectedSupplierId && suppliers.length > 0) {
+                                setSelectedSupplierId(suppliers[0].id);
+                              }
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <View style={[styles.checkboxBox, isOffsetSupplier && styles.checkboxBoxChecked]}>
+                              {isOffsetSupplier && <Text style={styles.checkmarkIcon}>✓</Text>}
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                              <Text style={styles.offsetSupplierTitle}>
+                                ⚡ Khách chuyển thẳng cho Nhà cung cấp
+                              </Text>
+                              <Text style={styles.offsetSupplierSubtitle}>
+                                Tự động trừ nợ đồng thời cho cả Khách hàng và Nhà cung cấp
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+
+                          {isOffsetSupplier && (
+                            <View style={[styles.offsetSupplierSelectContainer, activeSelect === 'offsetSupplier' && { zIndex: 999999 }]}>
+                              <Text style={styles.inputLabel}>Chọn Nhà cung cấp nhận tiền *:</Text>
+                              <CustomSelect
+                                value={suppliers.find((s) => s.id === selectedSupplierId)}
+                                options={suppliers}
+                                onSelect={(s) => setSelectedSupplierId(s ? s.id : '')}
+                                keyExtractor={(s) => s.id}
+                                labelExtractor={(s) => `${s.name}${s.phone ? ` (${s.phone})` : ''}`}
+                                renderSelected={(s) => s?.name || ''}
+                                placeholder="-- Chọn nhà cung cấp nhận tiền --"
+                                searchPlaceholder="Tìm kiếm nhà cung cấp..."
+                                onOpenChange={(isOpen) => setActiveSelect(isOpen ? 'offsetSupplier' : null)}
+                                containerStyle={styles.cleanSelectContainer}
+                                triggerStyle={styles.cleanSelectTrigger}
+                              />
+                            </View>
+                          )}
+                        </View>
+                      )}
+
                       {/* Nút nộp Thu nợ */}
                       <TouchableOpacity
                         style={[
@@ -1706,7 +1768,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                                 </Text>
                                 {pm.note ? (
                                   <Text style={styles.historyNote} numberOfLines={1}>
-                                    {pm.note}
+                                    {cleanDisplayNote(pm.note)}
                                   </Text>
                                 ) : null}
                               </View>
@@ -2767,6 +2829,68 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  offsetSupplierCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginTop: 4,
+  },
+  offsetSupplierToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkboxBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxBoxChecked: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  checkmarkIcon: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+    lineHeight: 14,
+  },
+  offsetSupplierTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#065F46',
+  },
+  offsetSupplierSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  offsetSupplierSelectContainer: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    gap: 4,
+  },
+  cleanSelectContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  cleanSelectTrigger: {
+    borderWidth: 0,
+    borderColor: 'transparent',
+    outlineStyle: 'none',
+    outlineWidth: 0,
+    boxShadow: 'none',
   },
 });
 

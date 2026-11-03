@@ -18,3 +18,4 @@ export const cleanDisplayNote = (note) => {
 };
 
 export default cleanDisplayNote;
+
