@@ -13,7 +13,6 @@ import {
 import SmoothModal from './SmoothModal';
 import CustomSelect from './CustomSelect';
 import PopupModal from './PopupModal';
-import ZaloDailyTrackingModal from './ZaloDailyTrackingModal';
 import { api } from '../api/client';
 import { COLORS, SHADOWS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
@@ -80,8 +79,6 @@ const PortalManagementModal = forwardRef((props, ref) => {
 
   // Ref popup thông báo / xác nhận dùng chung
   const popupRef = useRef(null);
-  // Ref modal theo dõi & chốt tiền nhóm Zalo theo ngày
-  const zaloDailyTrackingRef = useRef(null);
 
   // Form tạo / sửa link
   const [isEditing, setIsEditing] = useState(false);
@@ -450,15 +447,6 @@ const PortalManagementModal = forwardRef((props, ref) => {
                 >
                   <Text style={styles.createBtnIcon}>＋</Text>
                   <Text style={styles.createBtnText}>Tạo Link Nhóm</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.zaloDailyTrackingBtn}
-                  onPress={() => zaloDailyTrackingRef.current?.open()}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.zaloDailyTrackingBtnIcon}>⚡</Text>
-                  <Text style={styles.zaloDailyTrackingBtnText}>Nhóm Zalo Theo Ngày</Text>
                 </TouchableOpacity>
 
                 {props.onOpenDeliveryRequests && (
@@ -988,15 +976,6 @@ const PortalManagementModal = forwardRef((props, ref) => {
 
       {/* POPUP THÔNG BÁO / XÁC NHẬN CHUẨN */}
       <PopupModal ref={popupRef} />
-
-      {/* MODAL THEO DÕI & CHỐT TIỀN NHÓM ZALO BÁO HÀNG CUỐN CHIẾU HÀNG NGÀY */}
-      <ZaloDailyTrackingModal
-        ref={zaloDailyTrackingRef}
-        onRefreshNeeded={() => {
-          fetchLinks();
-          fetchOptions();
-        }}
-      />
     </>
   );
 });
@@ -1128,30 +1107,6 @@ const styles = StyleSheet.create({
   createBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
-  },
-  zaloDailyTrackingBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0284C7',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    gap: 6,
-    shadowColor: '#0284C7',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  zaloDailyTrackingBtnIcon: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  zaloDailyTrackingBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12.5,
     fontWeight: '700',
   },
   deliveryRequestsBtn: {

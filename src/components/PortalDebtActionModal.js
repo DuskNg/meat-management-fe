@@ -11,6 +11,7 @@ import {
   ScrollView,
   Platform,
   Image,
+  useWindowDimensions,
 } from 'react-native';
 import axios from 'axios';
 import SmoothModal from './SmoothModal';
@@ -81,6 +82,9 @@ const getWeekdayName = (dateVal) => {
 };
 
 const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }, ref) => {
+  const { width: windowWidth } = useWindowDimensions();
+  const isWide = windowWidth >= 768;
+
   const [visible, setVisible] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [actionToken, setActionToken] = useState(null);
@@ -102,22 +106,20 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
   const [recentPayments, setRecentPayments] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
 
-  // Form Thu nợ
+  // Form Thu nợ (Gom chung 2 khối: Khối 1 chọn ngày nợ + Khối 2 số tiền & thanh toán)
   const [collectCustomerId, setCollectCustomerId] = useState('');
   const [collectAmount, setCollectAmount] = useState(0);
   const [collectDate, setCollectDate] = useState(getTodayString());
   const [collectNote, setCollectNote] = useState('');
   const [collectSubmitting, setCollectSubmitting] = useState(false);
-  const [collectMode, setCollectMode] = useState('AMOUNT'); // 'AMOUNT' | 'BY_DAY'
   const [selectedDayKeys, setSelectedDayKeys] = useState([]);
   const [isOffsetSupplier, setIsOffsetSupplier] = useState(false);
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
 
-  // Form Ghi nợ mới
+  // Form Ghi nợ mới (Gom chung 2 khối: Khối 1 chi tiết món thịt + Khối 2 nhập nhanh tiền hàng)
   const [createCustomerId, setCreateCustomerId] = useState('');
   const [createDate, setCreateDate] = useState(getTodayString());
   const [createNote, setCreateNote] = useState('');
-  const [createMode, setCreateMode] = useState('DETAIL'); // 'DETAIL' | 'QUICK'
   const [quickProductName, setQuickProductName] = useState('Tiền hàng');
   const [quickDebtAmount, setQuickDebtAmount] = useState(0);
   const [cartItems, setCartItems] = useState([]);
@@ -364,23 +366,49 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
     return recentPayments.filter((pm) => toDateKey(pm.paidAt) === historyFilterDate);
   }, [recentPayments, historyFilterDate]);
 
-  // Chọn hoặc bỏ chọn một ngày nợ
+  // Chọn hoặc bỏ chọn một ngày nợ (tự động cập nhật số tiền và ghi chú ở Khối 2)
   const handleToggleSelectDay = (dateKey) => {
-    setSelectedDayKeys((prev) =>
-      prev.includes(dateKey) ? prev.filter((k) => k !== dateKey) : [...prev, dateKey]
-    );
+    setSelectedDayKeys((prev) => {
+      const next = prev.includes(dateKey) ? prev.filter((k) => k !== dateKey) : [...prev, dateKey];
+      const sum = unpaidDays
+        .filter((d) => next.includes(d.dateKey))
+        .reduce((acc, d) => acc + (d.remainingDebt || 0), 0);
+      setCollectAmount(sum);
+      if (next.length > 0) {
+        setCollectNote(`Thanh toán nợ ngày ${next.join(', ')}`);
+      } else {
+        setCollectNote('');
+      }
+      return next;
+    });
   };
 
-  // Chọn hoặc bỏ chọn toàn bộ ngày nợ
+  // Chọn hoặc bỏ chọn toàn bộ ngày nợ (tự động cập nhật số tiền và ghi chú ở Khối 2)
   const handleSelectAllDays = () => {
     if (selectedDayKeys.length === unpaidDays.length) {
       setSelectedDayKeys([]);
+      setCollectAmount(0);
+      setCollectNote('');
     } else {
-      setSelectedDayKeys(unpaidDays.map((d) => d.dateKey));
+      const allKeys = unpaidDays.map((d) => d.dateKey);
+      setSelectedDayKeys(allKeys);
+      const sum = unpaidDays.reduce((acc, d) => acc + (d.remainingDebt || 0), 0);
+      setCollectAmount(sum);
+      setCollectNote(`Thanh toán nợ ${allKeys.length} ngày (${allKeys.join(', ')})`);
     }
   };
 
-  // Xử lý nộp form Thu nợ (hỗ trợ cả thu theo số tiền và thu theo ngày, cấn trừ NCC nếu chọn)
+  // Nút chọn nhanh toàn bộ nợ
+  const handleSelectAllDebt = () => {
+    if (unpaidDays.length > 0) {
+      const allKeys = unpaidDays.map((d) => d.dateKey);
+      setSelectedDayKeys(allKeys);
+      setCollectNote(`Thanh toán toàn bộ nợ (${allKeys.length} ngày)`);
+    }
+    setCollectAmount(currentCollectCustomer?.debt || 0);
+  };
+
+  // Xử lý nộp form Thu nợ (hỗ trợ cả thu theo số tiền và thu theo ngày trên cùng 1 giao diện)
   const handleSubmitCollect = async () => {
     if (!collectCustomerId) {
       showGlobalToast('Vui lòng chọn khách hàng cần thu nợ.', 'warning');
@@ -392,66 +420,74 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
       return;
     }
 
-    // ─── THU NỢ THEO NGÀY ───
-    if (collectMode === 'BY_DAY') {
-      if (selectedDayKeys.length === 0) {
-        showGlobalToast('Vui lòng chọn ít nhất một ngày nợ để thanh toán.', 'warning');
-        return;
-      }
+    const finalAmount = Number(collectAmount) || 0;
 
+    // ─── TRƯỜNG HỢP 1: THU THEO CÁC NGÀY ĐÃ CHỌN ───
+    if (selectedDayKeys.length > 0) {
       const selectedDays = unpaidDays.filter((d) => selectedDayKeys.includes(d.dateKey));
       const paidDateObj = parseDDMMYYYY(collectDate);
-      const paymentsPayload = selectedDays.map((d) => ({
-        amount: d.remainingDebt,
-        paidAt: paidDateObj.toISOString(),
-        note: `Thanh toán nợ ngày ${d.dateKey}${collectNote.trim() ? ' - ' + collectNote.trim() : ''}`,
-      }));
 
-      try {
-        setCollectSubmitting(true);
-        await axios.post(
-          `${apiHost}/api/v1/portal/debt-action/collect-debt/${token}`,
-          {
-            customerId: collectCustomerId,
-            payments: paymentsPayload,
-            supplierId: isOffsetSupplier ? selectedSupplierId : undefined,
-          },
-          {
-            headers: { 'x-portal-action-token': actionToken },
-          }
-        );
+      // Nếu số tiền bằng đúng tổng nợ các ngày đã chọn hoặc để mặc định 0: nộp theo batch từng ngày
+      if (finalAmount === 0 || finalAmount === selectedDaysTotalAmount) {
+        const paymentsPayload = selectedDays.map((d) => ({
+          amount: d.remainingDebt,
+          paidAt: paidDateObj.toISOString(),
+          note: `Thanh toán nợ ngày ${d.dateKey}${collectNote.trim() ? ' - ' + collectNote.trim() : ''}`,
+        }));
 
-        showGlobalToast(`Đã thu nợ thành công cho ${selectedDays.length} ngày!`, 'success');
-        setSelectedDayKeys([]);
-        setCollectNote('');
-        setIsOffsetSupplier(false);
-        fetchBootstrapData(actionToken);
-        if (onRefresh) onRefresh();
-      } catch (err) {
-        console.error('Lỗi khi thu nợ theo ngày:', err);
-        showGlobalToast(err.response?.data?.message || 'Không thể thu tiền công nợ theo ngày.', 'error');
-      } finally {
-        setCollectSubmitting(false);
+        try {
+          setCollectSubmitting(true);
+          await axios.post(
+            `${apiHost}/api/v1/portal/debt-action/collect-debt/${token}`,
+            {
+              customerId: collectCustomerId,
+              payments: paymentsPayload,
+              supplierId: isOffsetSupplier ? selectedSupplierId : undefined,
+            },
+            {
+              headers: { 'x-portal-action-token': actionToken },
+            }
+          );
+
+          showGlobalToast(`Đã thu nợ thành công cho ${selectedDays.length} ngày (${formatCurrency(selectedDaysTotalAmount)})!`, 'success');
+          setSelectedDayKeys([]);
+          setCollectAmount(0);
+          setCollectNote('');
+          setIsOffsetSupplier(false);
+          fetchBootstrapData(actionToken);
+          if (onRefresh) onRefresh();
+        } catch (err) {
+          console.error('Lỗi khi thu nợ theo ngày:', err);
+          showGlobalToast(err.response?.data?.message || 'Không thể thu tiền công nợ theo ngày.', 'error');
+        } finally {
+          setCollectSubmitting(false);
+        }
+        return;
       }
-      return;
     }
 
-    // ─── THU NỢ THEO SỐ TIỀN CỤ THỂ ───
-    if (!collectAmount || collectAmount <= 0) {
-      showGlobalToast('Vui lòng nhập số tiền thanh toán lớn hơn 0.', 'warning');
+    // ─── TRƯỜNG HỢP 2: THU THEO SỐ TIỀN CỤ THỂ (HOẶC SỐ TIỀN ĐÃ TÙY CHỈNH) ───
+    if (!finalAmount || finalAmount <= 0) {
+      showGlobalToast('Vui lòng nhập số tiền thanh toán lớn hơn 0 hoặc chọn ngày nợ cần trả.', 'warning');
       return;
     }
 
     try {
       setCollectSubmitting(true);
       const paidDateObj = parseDDMMYYYY(collectDate);
+      const noteToSend = collectNote.trim()
+        ? collectNote.trim()
+        : selectedDayKeys.length > 0
+        ? `Thanh toán nợ ngày ${selectedDayKeys.join(', ')}`
+        : null;
+
       await axios.post(
         `${apiHost}/api/v1/portal/debt-action/collect-debt/${token}`,
         {
           customerId: collectCustomerId,
-          amount: collectAmount,
+          amount: finalAmount,
           paidAt: paidDateObj.toISOString(),
-          note: collectNote ? collectNote.trim() : null,
+          note: noteToSend,
           supplierId: isOffsetSupplier ? selectedSupplierId : undefined,
         },
         {
@@ -459,7 +495,8 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
         }
       );
 
-      showGlobalToast('Đã ghi nhận thu tiền công nợ thành công!', 'success');
+      showGlobalToast(`Đã ghi nhận thu tiền công nợ ${formatCurrency(finalAmount)} thành công!`, 'success');
+      setSelectedDayKeys([]);
       setCollectAmount(0);
       setCollectNote('');
       setIsOffsetSupplier(false);
@@ -505,64 +542,45 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
     setInvoiceImage(null);
   };
 
-  // Xử lý nộp form Ghi nợ mới
+  // Xử lý nộp form Ghi nợ mới (hỗ trợ cả ghi nợ chi tiết và ghi nợ nhanh trên cùng 1 giao diện)
   const handleSubmitCreateDebt = async () => {
     if (!createCustomerId) {
       showGlobalToast('Vui lòng chọn khách hàng.', 'warning');
       return;
     }
 
-    const txDateObj = parseDDMMYYYY(createDate);
+    const hasCart = cartItems.length > 0;
+    const hasQuick = Number(quickDebtAmount) > 0;
 
-    // ─── DẠNG 1: GHI NỢ NHANH (TIỀN HÀNG) ───
-    if (createMode === 'QUICK') {
-      if (!quickDebtAmount || quickDebtAmount <= 0) {
-        showGlobalToast('Vui lòng nhập số tiền nợ lớn hơn 0.', 'warning');
-        return;
-      }
-
-      try {
-        setCreateSubmitting(true);
-        await axios.post(
-          `${apiHost}/api/v1/portal/debt-action/create-debt/${token}`,
-          {
-            customerId: createCustomerId,
-            date: txDateObj.toISOString(),
-            note: createNote ? createNote.trim() : null,
-            invoiceImage: invoiceImage || null,
-            items: [
-              {
-                productName: quickProductName.trim() || 'Tiền hàng',
-                quantity: 1,
-                price: quickDebtAmount,
-                costPrice: 0,
-              },
-            ],
-          },
-          {
-            headers: { 'x-portal-action-token': actionToken },
-          }
-        );
-
-        showGlobalToast('Đã lưu đơn nợ nhanh thành công!', 'success');
-        setQuickDebtAmount(0);
-        setCreateNote('');
-        setInvoiceImage(null);
-        fetchBootstrapData(actionToken);
-        if (onRefresh) onRefresh();
-      } catch (err) {
-        console.error('Lỗi khi tạo đơn nợ nhanh:', err);
-        showGlobalToast(err.response?.data?.message || 'Không thể ghi nợ đơn hàng.', 'error');
-      } finally {
-        setCreateSubmitting(false);
-      }
+    if (!hasCart && !hasQuick) {
+      showGlobalToast('Vui lòng thêm ít nhất một món thịt ở Khối 1 hoặc nhập số tiền nợ ở Khối 2.', 'warning');
       return;
     }
 
-    // ─── DẠNG 2: GHI NỢ CHI TIẾT (THEO MẶT HÀNG) ───
-    if (cartItems.length === 0) {
-      showGlobalToast('Vui lòng thêm ít nhất một loại thịt vào đơn nợ.', 'warning');
-      return;
+    const txDateObj = parseDDMMYYYY(createDate);
+    const itemsPayload = [];
+
+    // Nếu có món thịt chi tiết ở Khối 1
+    if (hasCart) {
+      cartItems.forEach((it) => {
+        itemsPayload.push({
+          productId: it.productId,
+          productName: it.productName,
+          quantity: it.quantity,
+          price: it.price,
+          costPrice: it.costPrice,
+        });
+      });
+    }
+
+    // Nếu có nhập tiền nhanh ở Khối 2
+    if (hasQuick) {
+      itemsPayload.push({
+        productName: quickProductName.trim() || 'Tiền hàng',
+        quantity: 1,
+        price: Number(quickDebtAmount),
+        costPrice: 0,
+      });
     }
 
     try {
@@ -574,21 +592,17 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
           date: txDateObj.toISOString(),
           note: createNote ? createNote.trim() : null,
           invoiceImage: invoiceImage || null,
-          items: cartItems.map((it) => ({
-            productId: it.productId,
-            productName: it.productName,
-            quantity: it.quantity,
-            price: it.price,
-            costPrice: it.costPrice,
-          })),
+          items: itemsPayload,
         },
         {
           headers: { 'x-portal-action-token': actionToken },
         }
       );
 
-      showGlobalToast('Đã lưu đơn nợ thành công!', 'success');
+      const totalAmt = itemsPayload.reduce((sum, it) => sum + (it.price * it.quantity), 0);
+      showGlobalToast(`Đã lưu đơn nợ thành công (${formatCurrency(totalAmt)})!`, 'success');
       setCartItems([]);
+      setQuickDebtAmount(0);
       setCreateNote('');
       setInvoiceImage(null);
       fetchBootstrapData(actionToken);
@@ -898,12 +912,13 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                   <Text style={styles.loadingText}>Đang tải dữ liệu khách hàng...</Text>
                 </View>
               ) : (
-                <ScrollView
-                  style={styles.modalBodyScroll}
-                  contentContainerStyle={styles.modalBodyContent}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                >
+                <>
+                  <ScrollView
+                    style={styles.modalBodyScroll}
+                    contentContainerStyle={styles.modalBodyContent}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                  >
                   {/* TAB 1: THU TIỀN CÔNG NỢ */}
                   {activeTab === 'COLLECT' && (
                     <View style={styles.formContainer}>
@@ -942,87 +957,28 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                         </Text>
                       </View>
 
-                      {/* HAI SUB-TAB: TRẢ SỐ TIỀN HOẶC TRẢ THEO NGÀY */}
-                      <View style={styles.subTabBar}>
-                        <TouchableOpacity
-                          style={[styles.subTabBtn, collectMode === 'AMOUNT' && styles.subTabBtnActive]}
-                          onPress={() => setCollectMode('AMOUNT')}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.subTabBtnText, collectMode === 'AMOUNT' && styles.subTabBtnTextActive]}>
-                            💵 Trả số tiền
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.subTabBtn, collectMode === 'BY_DAY' && styles.subTabBtnActive]}
-                          onPress={() => setCollectMode('BY_DAY')}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.subTabBtnText, collectMode === 'BY_DAY' && styles.subTabBtnTextActive]}>
-                            📅 Trả theo ngày {unpaidDays.length > 0 ? `(${unpaidDays.length})` : ''}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* ─── DẠNG 1: TRẢ THEO SỐ TIỀN CỤ THỂ ─── */}
-                      {collectMode === 'AMOUNT' && (
-                        <>
-                          {/* Số tiền thanh toán */}
-                          <View style={styles.inputGroup}>
-                            <Text style={styles.inputLabel}>Số tiền khách thanh toán (VNĐ):</Text>
-                            <MoneyInput
-                              value={collectAmount}
-                              onChangeValue={setCollectAmount}
-                              placeholder="Nhập số tiền..."
-                            />
-                          </View>
-
-                          {/* Gợi ý chọn nhanh số tiền */}
-                          <View style={styles.quickAmountRow}>
-                            {currentCollectCustomer?.debt > 0 && (
-                              <TouchableOpacity
-                                style={[
-                                  styles.quickAmountChip,
-                                  collectAmount === currentCollectCustomer.debt && styles.quickAmountChipActive,
-                                ]}
-                                onPress={() => setCollectAmount(currentCollectCustomer.debt)}
-                                activeOpacity={0.7}
-                              >
-                                <Text style={styles.quickAmountChipText}>Toàn bộ nợ</Text>
-                              </TouchableOpacity>
-                            )}
-                            {[500000, 1000000, 2000000, 5000000].map((amt) => (
-                              <TouchableOpacity
-                                key={amt}
-                                style={[
-                                  styles.quickAmountChip,
-                                  collectAmount === amt && styles.quickAmountChipActive,
-                                ]}
-                                onPress={() => setCollectAmount(amt)}
-                                activeOpacity={0.7}
-                              >
-                                <Text style={styles.quickAmountChipText}>
-                                  {amt >= 1000000 ? `${amt / 1000000}tr` : `${amt / 1000}k`}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </>
-                      )}
-
-                      {/* ─── DẠNG 2: TRẢ THEO NGÀY (CHỌN NHIỀU NGÀY 1 LÚC) ─── */}
-                      {collectMode === 'BY_DAY' && (
-                        <View style={styles.byDayContainer}>
-                          {unpaidDays.length === 0 ? (
-                            <View style={styles.emptyDayWrap}>
-                              <Text style={styles.emptyDayIcon}>🎉</Text>
-                              <Text style={styles.emptyDayTitle}>Không có ngày nợ nào chưa thanh toán!</Text>
-                              <Text style={styles.emptyDayDesc}>
-                                Khách hàng đã thanh toán đầy đủ các ngày nợ trước đó. Bạn có thể chọn tab "Trả số tiền" nếu khách trả tiền trước hoặc thu bổ sung.
-                              </Text>
+                      {/* ─── CHIA NGANG 2 KHỐI THU NỢ: KHỐI 1 (CHỌN NGÀY) & KHỐI 2 (SỐ TIỀN & THÔNG TIN) ─── */}
+                      <View style={[styles.horizontalBlocksRow, !isWide && styles.blocksRowMobile, activeSelect === 'offsetSupplier' && { zIndex: 999999 }]}>
+                        {/* ─── KHỐI 1: CHỌN NGÀY CẦN THU NỢ (TRẢ THEO NGÀY) ─── */}
+                        <View style={[styles.collectBlockCard, isWide ? styles.blockColHalf : styles.blockColFullMobile]}>
+                          <View style={styles.collectBlockHeader}>
+                            <View style={styles.collectBlockHeaderLeft}>
+                              <Text style={styles.collectBlockTitle}>📅 1. CHỌN NGÀY NỢ CẦN TRẢ</Text>
+                              {unpaidDays.length > 0 && (
+                                <View style={styles.collectBlockBadge}>
+                                  <Text style={styles.collectBlockBadgeText}>{unpaidDays.length} ngày nợ</Text>
+                                </View>
+                              )}
                             </View>
-                          ) : (
+                          </View>
+
+                        {unpaidDays.length === 0 ? (
+                          <View style={styles.emptyDayCompactWrap}>
+                            <Text style={styles.emptyDayCompactText}>
+                              🎉 Khách hàng không có ngày nợ tồn trước đó. (Nhập số tiền ở Khối 2 bên dưới nếu khách trả trước)
+                            </Text>
+                          </View>
+                        ) : (
                             <>
                               {/* Thanh công cụ chọn nhanh & thống kê */}
                               <View style={styles.daySelectionHeader}>
@@ -1110,33 +1066,86 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                               </View>
                             </>
                           )}
-                        </View>
-                      )}
-
-                      {/* Ngày thanh toán & Ghi chú */}
-                      <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Ngày thanh toán:</Text>
-                        <DatePickerInput
-                          value={collectDate}
-                          onChange={setCollectDate}
-                          compact={true}
-                        />
                       </View>
 
-                      <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Ghi chú thanh toán (nếu có):</Text>
-                        <TextInput
-                          style={styles.textInput}
-                          value={collectNote}
-                          onChangeText={setCollectNote}
-                          placeholder={
-                            collectMode === 'BY_DAY'
-                              ? 'Ví dụ: Đã nhận tiền mặt, chuyển khoản VCB...'
-                              : 'Ví dụ: Chuyển khoản VCB, trả tiền mặt...'
-                          }
-                          placeholderTextColor="#94A3B8"
-                        />
-                      </View>
+                        {/* ─── KHỐI 2: SỐ TIỀN & THÔNG TIN THANH TOÁN ─── */}
+                        <View style={[styles.collectBlockCard, isWide ? styles.blockColHalf : styles.blockColFullMobile, activeSelect === 'offsetSupplier' && { zIndex: 999999 }]}>
+                          <View style={styles.collectBlockHeader}>
+                            <View style={styles.collectBlockHeaderLeft}>
+                              <Text style={styles.collectBlockTitle}>💵 2. SỐ TIỀN & THÔNG TIN THANH TOÁN</Text>
+                              {selectedDayKeys.length > 0 && (
+                                <View style={[styles.collectBlockBadge, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                                  <Text style={[styles.collectBlockBadgeText, { color: '#059669' }]}>
+                                    Khớp {selectedDayKeys.length} ngày đã chọn
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+
+                          {/* Số tiền thanh toán */}
+                          <View style={styles.inputGroup}>
+                            <Text style={styles.inputLabel}>Số tiền khách thanh toán (VNĐ) *:</Text>
+                            <MoneyInput
+                              value={collectAmount}
+                              onChangeValue={(val) => setCollectAmount(val)}
+                              placeholder="Nhập số tiền..."
+                            />
+                          </View>
+
+                          {/* Gợi ý chọn nhanh số tiền */}
+                          <View style={styles.quickAmountRow}>
+                            {currentCollectCustomer?.debt > 0 && (
+                              <TouchableOpacity
+                                style={[
+                                  styles.quickAmountChip,
+                                  collectAmount === currentCollectCustomer.debt && styles.quickAmountChipActive,
+                                ]}
+                                onPress={handleSelectAllDebt}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={styles.quickAmountChipText}>Toàn bộ nợ</Text>
+                              </TouchableOpacity>
+                            )}
+                            {[500000, 1000000, 2000000, 5000000].map((amt) => (
+                              <TouchableOpacity
+                                key={amt}
+                                style={[
+                                  styles.quickAmountChip,
+                                  collectAmount === amt && styles.quickAmountChipActive,
+                                ]}
+                                onPress={() => setCollectAmount(amt)}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={styles.quickAmountChipText}>
+                                  {amt >= 1000000 ? `${amt / 1000000}tr` : `${amt / 1000}k`}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+
+                          {/* Ngày thanh toán & Ghi chú thanh toán gom chung 1 hàng */}
+                          <View style={styles.rowTwoCols}>
+                            <View style={[styles.colHalf, { flex: 1 }]}>
+                              <Text style={styles.inputLabelSmall}>Ngày thanh toán:</Text>
+                              <DatePickerInput
+                                value={collectDate}
+                                onChange={setCollectDate}
+                                compact={true}
+                              />
+                            </View>
+
+                            <View style={[styles.colHalf, { flex: 1.2 }]}>
+                              <Text style={styles.inputLabelSmall}>Ghi chú (nếu có):</Text>
+                              <TextInput
+                                style={styles.textInputCompact}
+                                value={collectNote}
+                                onChangeText={setCollectNote}
+                                placeholder="Ví dụ: Chuyển khoản..."
+                                placeholderTextColor="#94A3B8"
+                              />
+                            </View>
+                          </View>
 
                       {/* Tùy chọn cấn trừ nợ Nhà cung cấp (Khách chuyển khoản thẳng cho NCC) */}
                       {suppliers.length > 0 && (
@@ -1185,28 +1194,9 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                           )}
                         </View>
                       )}
-
-                      {/* Nút nộp Thu nợ */}
-                      <TouchableOpacity
-                        style={[
-                          styles.primaryActionBtn,
-                          (collectSubmitting || (collectMode === 'BY_DAY' && selectedDayKeys.length === 0)) && styles.btnDisabled,
-                        ]}
-                        onPress={handleSubmitCollect}
-                        disabled={collectSubmitting || (collectMode === 'BY_DAY' && selectedDayKeys.length === 0)}
-                        activeOpacity={0.8}
-                      >
-                        {collectSubmitting ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <Text style={styles.primaryActionBtnText}>
-                            {collectMode === 'BY_DAY'
-                              ? `💵 XÁC NHẬN THU NỢ (${selectedDayKeys.length} NGÀY - ${formatCurrency(selectedDaysTotalAmount)})`
-                              : `💵 XÁC NHẬN THU NỢ (${formatCurrency(collectAmount)})`}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
+                      </View>
                     </View>
+                  </View>
                   )}
 
                   {/* TAB 2: GHI NỢ ĐƠN HÀNG MỚI */}
@@ -1231,101 +1221,87 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                         </View>
                       )}
 
-                      {/* 2 SUB-TABS: CHI TIẾT HOẶC NHẬP NHANH */}
-                      <View style={styles.subTabBar}>
-                        <TouchableOpacity
-                          style={[styles.subTabBtn, createMode === 'DETAIL' && styles.subTabBtnActive]}
-                          onPress={() => setCreateMode('DETAIL')}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.subTabBtnText, createMode === 'DETAIL' && styles.subTabBtnTextActive]}>
-                            📝 Chi tiết
-                          </Text>
-                        </TouchableOpacity>
+                      {/* ─── CHIA NGANG 2 KHỐI GHI NỢ MỚI: KHỐI 1 (CHI TIẾT MÓN THỊT) & KHỐI 2 (NHẬP NHANH TIỀN HÀNG) ─── */}
+                      <View style={[styles.horizontalBlocksRow, !isWide && styles.blocksRowMobile, activeSelect === 'productSelect' && { zIndex: 999999 }]}>
+                        {/* ─── KHỐI 1: GHI NỢ CHI TIẾT (THEO TỪNG MÓN THỊT) ─── */}
+                        <View style={[styles.collectBlockCard, isWide ? styles.blockColHalf : styles.blockColFullMobile, activeSelect === 'productSelect' && { zIndex: 999999 }]}>
+                          <View style={styles.collectBlockHeader}>
+                            <View style={styles.collectBlockHeaderLeft}>
+                              <Text style={styles.collectBlockTitle}>📝 1. KÊ CHI TIẾT MÓN THỊT</Text>
+                              {cartItems.length > 0 && (
+                                <View style={[styles.collectBlockBadge, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                                  <Text style={[styles.collectBlockBadgeText, { color: '#059669' }]}>
+                                    {cartItems.length} món ({formatCurrency(totalCartAmount)})
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
 
-                        <TouchableOpacity
-                          style={[styles.subTabBtn, createMode === 'QUICK' && styles.subTabBtnActive]}
-                          onPress={() => setCreateMode('QUICK')}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.subTabBtnText, createMode === 'QUICK' && styles.subTabBtnTextActive]}>
-                            ⚡ Nhập nhanh
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
+                          {/* Chọn loại thịt */}
+                          <View style={[styles.inputSubGroup, activeSelect === 'productSelect' && { zIndex: 999999 }]}>
+                            <Text style={styles.inputLabelSmall}>Loại thịt:</Text>
+                            <CustomSelect
+                              value={selectedProduct}
+                              options={productOptions}
+                              onSelect={handleSelectProduct}
+                              renderSelected={(p) => p?.name || ''}
+                              getOptionLabel={(p) => p.name}
+                              placeholder="Chọn loại thịt..."
+                              zIndex={999999}
+                              compact={true}
+                              onOpenChange={(open) => setActiveSelect(open ? 'productSelect' : null)}
+                            />
+                          </View>
 
-                      {/* ─── DẠNG 1: GHI NỢ CHI TIẾT (THEO TỪNG MÓN THỊT) ─── */}
-                      {createMode === 'DETAIL' && (
-                        <>
-                          {/* Khung thêm mặt hàng */}
-                          <View style={[styles.cardBox, activeSelect === 'productSelect' && { zIndex: 999999 }]}>
-                            <Text style={styles.cardBoxTitle}>Thêm mặt hàng thịt:</Text>
-
-                            {/* Chọn loại thịt */}
-                            <View style={styles.inputSubGroup}>
-                              <Text style={styles.inputLabelSmall}>Loại thịt:</Text>
-                              <CustomSelect
-                                value={selectedProduct}
-                                options={productOptions}
-                                onSelect={handleSelectProduct}
-                                renderSelected={(p) => p?.name || ''}
-                                getOptionLabel={(p) => p.name}
-                                placeholder="Chọn loại thịt..."
-                                zIndex={999999}
-                                compact={true}
-                                onOpenChange={(open) => setActiveSelect(open ? 'productSelect' : null)}
+                          {/* Số cân (kg) và Đơn giá (VNĐ) trên cùng 1 hàng */}
+                          <View style={styles.rowTwoCols}>
+                            <View style={styles.colHalf}>
+                              <Text style={styles.inputLabelSmall}>Số cân (kg):</Text>
+                              <TextInput
+                                style={styles.textInputCompact}
+                                value={productQty}
+                                onChangeText={setProductQty}
+                                placeholder="VD: 5.4"
+                                placeholderTextColor="#94A3B8"
+                                keyboardType="decimal-pad"
                               />
                             </View>
 
-                            {/* Số cân (kg) và Đơn giá (VNĐ) trên cùng 1 hàng */}
-                            <View style={styles.rowTwoCols}>
-                              <View style={styles.colHalf}>
-                                <Text style={styles.inputLabelSmall}>Số cân (kg):</Text>
-                                <TextInput
-                                  style={styles.textInputCompact}
-                                  value={productQty}
-                                  onChangeText={setProductQty}
-                                  placeholder="VD: 5.4"
-                                  placeholderTextColor="#94A3B8"
-                                  keyboardType="decimal-pad"
-                                />
-                              </View>
-
-                              <View style={styles.colHalf}>
-                                <Text style={styles.inputLabelSmall}>Đơn giá (đ/kg):</Text>
-                                <TextInput
-                                  style={styles.textInputCompact}
-                                  value={productPrice ? formatNumber(productPrice) : ''}
-                                  onChangeText={(t) => setProductPrice(t.replace(/[^0-9]/g, ''))}
-                                  placeholder="Đơn giá..."
-                                  placeholderTextColor="#94A3B8"
-                                  keyboardType="number-pad"
-                                />
-                              </View>
+                            <View style={styles.colHalf}>
+                              <Text style={styles.inputLabelSmall}>Đơn giá (đ/kg):</Text>
+                              <TextInput
+                                style={styles.textInputCompact}
+                                value={productPrice ? formatNumber(productPrice) : ''}
+                                onChangeText={(t) => setProductPrice(t.replace(/[^0-9]/g, ''))}
+                                placeholder="Đơn giá..."
+                                placeholderTextColor="#94A3B8"
+                                keyboardType="number-pad"
+                              />
                             </View>
+                          </View>
 
-                            {/* Thành tiền xem trước & Nút thêm món */}
-                            <View style={styles.previewSubtotalRow}>
-                              <Text style={styles.previewSubtotalText}>
-                                Thành tiền:{' '}
-                                <Text style={styles.previewSubtotalHighlight}>
-                                  {formatCurrency(
-                                    Math.round(
-                                      (parseFloat(productQty.replace(',', '.')) || 0) *
-                                      (parseFloat(productPrice) || 0)
-                                    )
-                                  )}
-                                </Text>
+                          {/* Thành tiền xem trước & Nút thêm món */}
+                          <View style={styles.previewSubtotalRow}>
+                            <Text style={styles.previewSubtotalText}>
+                              Thành tiền:{' '}
+                              <Text style={styles.previewSubtotalHighlight}>
+                                {formatCurrency(
+                                  Math.round(
+                                    (parseFloat(productQty.replace(',', '.')) || 0) *
+                                    (parseFloat(productPrice) || 0)
+                                  )
+                                )}
                               </Text>
+                            </Text>
 
-                              <TouchableOpacity
-                                style={styles.addCartBtn}
-                                onPress={handleAddToCart}
-                                activeOpacity={0.7}
-                              >
-                                <Text style={styles.addCartBtnText}>➕ Thêm vào đơn</Text>
-                              </TouchableOpacity>
-                            </View>
+                            <TouchableOpacity
+                              style={styles.addCartBtn}
+                              onPress={handleAddToCart}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.addCartBtnText}>➕ Thêm vào đơn</Text>
+                            </TouchableOpacity>
                           </View>
 
                           {/* Bảng danh sách mặt hàng đã thêm */}
@@ -1364,39 +1340,52 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                               ))}
 
                               <View style={styles.cartTotalRow}>
-                                <Text style={styles.cartTotalLabel}>TỔNG CỘNG ĐƠN NỢ:</Text>
+                                <Text style={styles.cartTotalLabel}>TỔNG TIỀN MÓN THỊT:</Text>
                                 <Text style={styles.cartTotalValue}>
                                   {formatCurrency(totalCartAmount)}
                                 </Text>
                               </View>
                             </View>
                           )}
-                        </>
-                      )}
+                        </View>
 
-                      {/* ─── DẠNG 2: GHI NỢ NHANH (TIỀN HÀNG) ─── */}
-                      {createMode === 'QUICK' && (
-                        <>
-                          {/* Tên khoản nợ / loại hàng */}
-                          <View style={styles.inputGroup}>
-                            <Text style={styles.inputLabel}>Tên khoản nợ / Loại hàng:</Text>
-                            <TextInput
-                              style={styles.textInput}
-                              value={quickProductName}
-                              onChangeText={setQuickProductName}
-                              placeholder="Ví dụ: Tiền hàng, Tiền phụ phí..."
-                              placeholderTextColor="#94A3B8"
-                            />
+                        {/* ─── KHỐI 2: GHI NỢ NHANH (TIỀN HÀNG / PHỤ PHÍ) ─── */}
+                        <View style={[styles.collectBlockCard, isWide ? styles.blockColHalf : styles.blockColFullMobile]}>
+                          <View style={styles.collectBlockHeader}>
+                            <View style={styles.collectBlockHeaderLeft}>
+                              <Text style={styles.collectBlockTitle}>⚡ 2. NHẬP NHANH TIỀN HÀNG</Text>
+                              {quickDebtAmount > 0 && (
+                                <View style={[styles.collectBlockBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                                  <Text style={[styles.collectBlockBadgeText, { color: '#D97706' }]}>
+                                    {formatCurrency(quickDebtAmount)}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
 
-                          {/* Số tiền nợ */}
-                          <View style={styles.inputGroup}>
-                            <Text style={styles.inputLabel}>Số tiền nợ (VNĐ):</Text>
-                            <MoneyInput
-                              value={quickDebtAmount}
-                              onChangeValue={setQuickDebtAmount}
-                              placeholder="Nhập số tiền nợ..."
-                            />
+                          <View style={styles.rowTwoCols}>
+                            {/* Tên khoản nợ / loại hàng */}
+                            <View style={[styles.colHalf, { flex: 1 }]}>
+                              <Text style={styles.inputLabelSmall}>Tên khoản:</Text>
+                              <TextInput
+                                style={styles.textInputCompact}
+                                value={quickProductName}
+                                onChangeText={setQuickProductName}
+                                placeholder="Tiền hàng..."
+                                placeholderTextColor="#94A3B8"
+                              />
+                            </View>
+
+                            {/* Số tiền nợ */}
+                            <View style={[styles.colHalf, { flex: 1.3 }]}>
+                              <Text style={styles.inputLabelSmall}>Số tiền nợ (đ):</Text>
+                              <MoneyInput
+                                value={quickDebtAmount}
+                                onChangeValue={setQuickDebtAmount}
+                                placeholder="Nhập số tiền..."
+                              />
+                            </View>
                           </View>
 
                           {/* Gợi ý chọn nhanh số tiền */}
@@ -1417,97 +1406,72 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                               </TouchableOpacity>
                             ))}
                           </View>
-                        </>
-                      )}
-
-                      {/* Ngày giao hàng */}
-                      <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Ngày giao hàng:</Text>
-                        <DatePickerInput
-                          value={createDate}
-                          onChange={setCreateDate}
-                          compact={true}
-                        />
+                        </View>
                       </View>
 
-                      {/* Ghi chú đơn nợ */}
-                      <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Ghi chú đơn nợ:</Text>
-                        <TextInput
-                          style={styles.textInput}
-                          value={createNote}
-                          onChangeText={setCreateNote}
-                          placeholder={
-                            createMode === 'QUICK'
-                              ? 'Ví dụ: Giao bổ sung, nợ tiền hàng...'
-                              : 'Ghi chú giao hàng...'
-                          }
-                          placeholderTextColor="#94A3B8"
-                        />
-                      </View>
-
-                      {/* Đính kèm ảnh hóa đơn / Tích kê giao hàng */}
-                      <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>📸 Ảnh hóa đơn / Tích kê:</Text>
-                        {invoiceImage ? (
-                          <View style={styles.invoicePreviewContainer}>
-                            <Image
-                              source={{ uri: invoiceImage }}
-                              style={styles.invoicePreviewImg}
-                              resizeMode="contain"
+                      {/* ─── THÔNG TIN CHUNG ĐƠN NỢ (NGÀY, GHI CHÚ, ẢNH) ─── */}
+                      <View style={styles.collectBlockCard}>
+                        {/* Ngày giao hàng & Ghi chú đơn nợ gom chung 1 hàng */}
+                        <View style={styles.rowTwoCols}>
+                          <View style={[styles.colHalf, { flex: 1 }]}>
+                            <Text style={styles.inputLabelSmall}>Ngày giao hàng:</Text>
+                            <DatePickerInput
+                              value={createDate}
+                              onChange={setCreateDate}
+                              compact={true}
                             />
-                            <View style={styles.invoicePreviewActions}>
+                          </View>
+
+                          <View style={[styles.colHalf, { flex: 1.2 }]}>
+                            <Text style={styles.inputLabelSmall}>Ghi chú đơn (tùy chọn):</Text>
+                            <TextInput
+                              style={styles.textInputCompact}
+                              value={createNote}
+                              onChangeText={setCreateNote}
+                              placeholder="Ghi chú giao..."
+                              placeholderTextColor="#94A3B8"
+                            />
+                          </View>
+                        </View>
+
+                        {/* Đính kèm ảnh hóa đơn / Tích kê giao hàng */}
+                        <View style={{ marginTop: 2 }}>
+                          {invoiceImage ? (
+                            <View style={styles.invoicePreviewRow}>
+                              <Image
+                                source={{ uri: invoiceImage }}
+                                style={styles.invoiceThumbMini}
+                                resizeMode="cover"
+                              />
+                              <View style={{ flex: 1, marginLeft: 10 }}>
+                                <Text style={styles.invoiceSuccessText}>✓ Đã đính kèm ảnh hóa đơn</Text>
+                              </View>
                               <TouchableOpacity
-                                style={styles.invoiceChangeBtn}
+                                style={styles.invoiceChangeBtnMini}
                                 onPress={handlePickInvoiceImage}
                                 activeOpacity={0.7}
                               >
-                                <Text style={styles.invoiceChangeBtnText}>🔄 Đổi ảnh</Text>
+                                <Text style={styles.invoiceChangeBtnMiniText}>Đổi ảnh</Text>
                               </TouchableOpacity>
                               <TouchableOpacity
-                                style={styles.invoiceDeleteBtn}
+                                style={styles.invoiceDeleteBtnMini}
                                 onPress={handleRemoveInvoiceImage}
                                 activeOpacity={0.7}
                               >
-                                <Text style={styles.invoiceDeleteBtnText}>✕ Xóa</Text>
+                                <Text style={styles.invoiceDeleteBtnMiniText}>✕ Xóa</Text>
                               </TouchableOpacity>
                             </View>
-                          </View>
-                        ) : (
-                          <TouchableOpacity
-                            style={styles.attachInvoiceBtn}
-                            onPress={handlePickInvoiceImage}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.attachInvoiceIcon}>📷</Text>
-                            <View style={styles.attachInvoiceTextWrap}>
-                              <Text style={styles.attachInvoiceMainText}>Chụp / Chọn ảnh hóa đơn</Text>
-                              <Text style={styles.attachInvoiceSubText}>Đính kèm ảnh tích kê giao hàng cho đơn nợ này</Text>
-                            </View>
-                          </TouchableOpacity>
-                        )}
+                          ) : (
+                            <TouchableOpacity
+                              style={styles.attachInvoiceBtnCompact}
+                              onPress={handlePickInvoiceImage}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.attachInvoiceBtnCompactText}>📷 Chụp / Đính kèm ảnh hóa đơn (tùy chọn)</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
-
-                      {/* Nút lưu đơn nợ */}
-                      <TouchableOpacity
-                        style={[
-                          styles.primaryActionBtn,
-                          (createSubmitting || (createMode === 'DETAIL' ? cartItems.length === 0 : quickDebtAmount <= 0)) && styles.btnDisabled,
-                        ]}
-                        onPress={handleSubmitCreateDebt}
-                        disabled={createSubmitting || (createMode === 'DETAIL' ? cartItems.length === 0 : quickDebtAmount <= 0)}
-                        activeOpacity={0.8}
-                      >
-                        {createSubmitting ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <Text style={styles.primaryActionBtnText}>
-                            {createMode === 'QUICK'
-                              ? `⚡ LƯU ĐƠN NỢ NHANH (${formatCurrency(quickDebtAmount)})`
-                              : `📝 LƯU ĐƠN NỢ (${formatCurrency(totalCartAmount)})`}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
                     </View>
                   )}
 
@@ -1792,6 +1756,68 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                     </View>
                   )}
                 </ScrollView>
+
+                {/* ─── STICKY FOOTER AUTO HIỆN Ở ĐÁY MODAL (LUÔN CỐ ĐỊNH, KHÔNG BỊ CUỘN CHE) ─── */}
+                <View style={styles.modalStickyFooter}>
+                  {activeTab === 'CREATE' && (
+                    <TouchableOpacity
+                      style={[
+                        styles.primaryActionBtn,
+                        (createSubmitting || (cartItems.length === 0 && (!quickDebtAmount || quickDebtAmount <= 0))) && styles.btnDisabled,
+                      ]}
+                      onPress={handleSubmitCreateDebt}
+                      disabled={createSubmitting || (cartItems.length === 0 && (!quickDebtAmount || quickDebtAmount <= 0))}
+                      activeOpacity={0.8}
+                    >
+                      {createSubmitting ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.primaryActionBtnText}>
+                          {cartItems.length > 0 && quickDebtAmount > 0
+                            ? `💾 LƯU ĐƠN NỢ (${cartItems.length} MÓN + TIỀN NHANH - ${formatCurrency(totalCartAmount + quickDebtAmount)})`
+                            : cartItems.length > 0
+                            ? `📝 LƯU ĐƠN NỢ (${cartItems.length} MÓN - ${formatCurrency(totalCartAmount)})`
+                            : quickDebtAmount > 0
+                            ? `⚡ LƯU ĐƠN NỢ NHANH (${formatCurrency(quickDebtAmount)})`
+                            : `💾 LƯU ĐƠN NỢ (0 đ)`}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  {activeTab === 'COLLECT' && (
+                    <TouchableOpacity
+                      style={[
+                        styles.primaryActionBtn,
+                        (collectSubmitting || (!collectAmount && selectedDayKeys.length === 0)) && styles.btnDisabled,
+                      ]}
+                      onPress={handleSubmitCollect}
+                      disabled={collectSubmitting || (!collectAmount && selectedDayKeys.length === 0)}
+                      activeOpacity={0.8}
+                    >
+                      {collectSubmitting ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.primaryActionBtnText}>
+                          {selectedDayKeys.length > 0
+                            ? `💵 XÁC NHẬN THU NỢ (${selectedDayKeys.length} NGÀY - ${formatCurrency(collectAmount || selectedDaysTotalAmount)})`
+                            : `💵 XÁC NHẬN THU NỢ (${formatCurrency(collectAmount)})`}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  {activeTab === 'HISTORY' && (
+                    <TouchableOpacity
+                      style={styles.closeFooterBtn}
+                      onPress={handleClose}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.closeFooterBtnText}>ĐÓNG LẠI</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                </>
               )}
             </>
           )}
@@ -1824,9 +1850,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     maxHeight: '92%',
     height: '92%',
-    paddingTop: 16,
-    paddingBottom: 20,
-    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
+    paddingHorizontal: 14,
     display: 'flex',
     flexDirection: 'column',
   },
@@ -1957,15 +1983,15 @@ const styles = StyleSheet.create({
   // Tabs
   tabBar: {
     flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 10,
+    gap: 6,
+    paddingVertical: 6,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
   tabBtn: {
     flex: 1,
-    paddingVertical: 9,
-    borderRadius: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1974,7 +2000,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#059669',
   },
   tabBtnText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '600',
     color: '#475569',
   },
@@ -1988,8 +2014,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   modalBodyContent: {
-    paddingVertical: 12,
-    paddingBottom: 24,
+    paddingVertical: 4,
+    paddingBottom: 8,
   },
   loadingWrap: {
     flex: 1,
@@ -2005,44 +2031,46 @@ const styles = StyleSheet.create({
 
   // Form Elements
   formContainer: {
-    gap: 12,
+    gap: 6,
+    width: '100%',
   },
   inputGroup: {
-    gap: 4,
+    gap: 2,
   },
   inputSubGroup: {
-    gap: 4,
-    marginBottom: 8,
+    gap: 2,
+    marginBottom: 4,
   },
   inputLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#334155',
   },
   inputLabelSmall: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#475569',
+    marginBottom: 2,
   },
   textInput: {
-    height: 42,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 14,
-    color: '#0F172A',
-    backgroundColor: '#FFFFFF',
-    outlineStyle: 'none',
-    outlineWidth: 0,
-  },
-  textInputCompact: {
     height: 38,
     borderWidth: 1,
     borderColor: '#CBD5E1',
     borderRadius: 8,
     paddingHorizontal: 10,
     fontSize: 13,
+    color: '#0F172A',
+    backgroundColor: '#FFFFFF',
+    outlineStyle: 'none',
+    outlineWidth: 0,
+  },
+  textInputCompact: {
+    height: 34,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    fontSize: 12.5,
     color: '#0F172A',
     backgroundColor: '#FFFFFF',
     outlineStyle: 'none',
@@ -2057,8 +2085,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: '#FECACA',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
   },
   debtBannerLabel: {
     fontSize: 11,
@@ -2066,12 +2095,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   debtBannerCustomer: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#7F1D1D',
   },
   debtBannerAmount: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#DC2626',
   },
@@ -2080,12 +2109,12 @@ const styles = StyleSheet.create({
   quickAmountRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 4,
   },
   quickAmountChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -2095,28 +2124,124 @@ const styles = StyleSheet.create({
     borderColor: '#059669',
   },
   quickAmountChipText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#334155',
     fontWeight: '600',
   },
 
-  // Primary Action Button (Fixed Bottom Style)
+  // Primary Action Button & Sticky Bottom Footer
+  modalStickyFooter: {
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 14 : 2,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    width: '100%',
+  },
   primaryActionBtn: {
     height: 46,
     borderRadius: 12,
     backgroundColor: '#059669',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
+    width: '100%',
+    ...Platform.select({
+      web: {
+        cursor: 'pointer',
+        boxShadow: '0 2px 4px rgba(5, 150, 105, 0.25)',
+      },
+      default: {
+        elevation: 2,
+      },
+    }),
   },
   primaryActionBtnText: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: 'bold',
     color: '#FFFFFF',
     letterSpacing: 0.3,
   },
+  closeFooterBtn: {
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  closeFooterBtnText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#475569',
+  },
   btnDisabled: {
     opacity: 0.6,
+  },
+
+  // Attach Invoice Compact
+  attachInvoiceBtnCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderStyle: 'dashed',
+    backgroundColor: '#F8FAFC',
+    width: '100%',
+  },
+  attachInvoiceBtnCompactText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  invoicePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 6,
+    width: '100%',
+  },
+  invoiceThumbMini: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+    backgroundColor: '#E2E8F0',
+  },
+  invoiceSuccessText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#059669',
+  },
+  invoiceChangeBtnMini: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+    marginRight: 6,
+  },
+  invoiceChangeBtnMiniText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  invoiceDeleteBtnMini: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: '#FEE2E2',
+  },
+  invoiceDeleteBtnMiniText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#DC2626',
   },
 
   // Card Box (Ghi nợ)
@@ -2126,6 +2251,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 14,
     padding: 12,
+    width: '100%',
+    maxWidth: '100%',
   },
   cardBoxTitle: {
     fontSize: 13,
@@ -2135,38 +2262,46 @@ const styles = StyleSheet.create({
   },
   rowTwoCols: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 8,
+    gap: 8,
+    marginBottom: 4,
+    width: '100%',
   },
   colHalf: {
     flex: 1,
-    gap: 4,
+    minWidth: 0,
+    gap: 2,
   },
   previewSubtotalRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
-    paddingTop: 8,
+    marginTop: 2,
+    paddingTop: 4,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: '#F1F5F9',
+    flexWrap: 'wrap',
+    gap: 6,
+    width: '100%',
   },
   previewSubtotalText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#475569',
+    flexShrink: 1,
   },
   previewSubtotalHighlight: {
     fontWeight: 'bold',
     color: '#059669',
+    fontSize: 13,
   },
   addCartBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
     backgroundColor: '#0F172A',
+    flexShrink: 0,
   },
   addCartBtnText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
@@ -2178,6 +2313,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 12,
     overflow: 'hidden',
+    width: '100%',
+    maxWidth: '100%',
   },
   cartTableHeader: {
     flexDirection: 'row',
@@ -2427,70 +2564,92 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
-  // Sub-tabs Thu nợ (Trả số tiền / Trả theo ngày)
-  subTabBar: {
+  // 2 Khối Thu Nợ & Ghi Nợ (Chia ngang 2 cột trên màn hình rộng / PC)
+  horizontalBlocksRow: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    padding: 3,
-    gap: 4,
-  },
-  subTabBtn: {
-    flex: 1,
-    height: 36,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  subTabBtnActive: {
-    backgroundColor: '#FFFFFF',
-    ...Platform.select({
-      web: {
-        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
-      },
-      default: {
-        elevation: 1,
-      },
-    }),
-  },
-  subTabBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  subTabBtnTextActive: {
-    color: '#059669',
-    fontWeight: 'bold',
-  },
-  // Thu nợ theo ngày
-  byDayContainer: {
     gap: 8,
+    alignItems: 'flex-start',
+    width: '100%',
+    marginBottom: 6,
   },
-  emptyDayWrap: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
+  blocksRowMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 6,
+    width: '100%',
+  },
+  blockColHalf: {
+    flex: 1,
+    minWidth: 0,
+    marginBottom: 0,
+  },
+  blockColFullMobile: {
+    width: '100%',
+    maxWidth: '100%',
+    alignSelf: 'stretch',
+    marginBottom: 0,
+  },
+  collectBlockCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 8,
     gap: 6,
+    marginBottom: 6,
+    width: '100%',
+    maxWidth: '100%',
   },
-  emptyDayIcon: {
-    fontSize: 28,
+  collectBlockHeader: {
+    gap: 2,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  emptyDayTitle: {
-    fontSize: 14,
+  collectBlockHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  collectBlockTitle: {
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#0F172A',
-    textAlign: 'center',
+    textTransform: 'uppercase',
   },
-  emptyDayDesc: {
-    fontSize: 12,
+  collectBlockSubTitle: {
+    fontSize: 11,
+    color: '#64748B',
+    fontStyle: 'italic',
+  },
+  collectBlockBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  collectBlockBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  emptyDayCompactWrap: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  emptyDayCompactText: {
+    fontSize: 11.5,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 18,
   },
+
   daySelectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',

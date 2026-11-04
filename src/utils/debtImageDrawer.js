@@ -724,12 +724,12 @@ export const drawDebtImageCanvas = async ({
     curSummaryY += summaryRowHeight;
   }
 
-  // 3. Đã thu (Liệt kê chi tiết ngày nào thanh toán bao nhiêu)
+  // 3. Đã thu (Liệt kê chi tiết từng đợt thanh toán bao nhiêu)
   if (totalPaymentAmount > 0) {
     if (!paymentBreakdown || paymentBreakdown.length <= 1) {
       const pItem = paymentBreakdown && paymentBreakdown[0];
       const paidLabel = pItem
-        ? `ĐÃ THU (Khoản thu ngày ${pItem.displayDate}):`
+        ? `ĐÃ THU (${pItem.displayDate}):`
         : (paymentSummaryText ? `ĐÃ THU (${paymentSummaryText}):` : 'ĐÃ THU:');
 
       ctx.fillStyle = '#F0FDF4';
@@ -751,7 +751,7 @@ export const drawDebtImageCanvas = async ({
       ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(totalPaymentAmount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
       curSummaryY += summaryRowHeight;
     } else {
-      // Khi có nhiều ngày thanh toán: Liệt kê chi tiết từng ngày thanh toán bao nhiêu vào bảng
+      // Khi có nhiều đợt thanh toán: Liệt kê chi tiết từng đợt thanh toán vào bảng
       paymentBreakdown.forEach((pItem) => {
         ctx.fillStyle = '#F0FDF4';
         ctx.fillRect(summaryStartX, curSummaryY, panelWidth, summaryRowHeight);
@@ -766,7 +766,7 @@ export const drawDebtImageCanvas = async ({
         ctx.fillStyle = '#047857';
         ctx.font = 'bold 13.5px Arial, sans-serif';
         ctx.textAlign = 'right';
-        ctx.fillText(`ĐÃ THU (Ngày ${pItem.displayDate}):`, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
+        ctx.fillText(`ĐÃ THU (${pItem.displayDate}):`, summaryStartX + summaryColLeftWidth - 10, curSummaryY + summaryRowHeight / 2);
         ctx.fillStyle = '#059669';
         ctx.font = 'bold 16.5px Arial, sans-serif';
         ctx.fillText(`- ${new Intl.NumberFormat('vi-VN').format(pItem.amount)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);

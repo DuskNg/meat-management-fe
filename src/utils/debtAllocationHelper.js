@@ -549,14 +549,18 @@ export const buildExportDayGroupsWithFIFO = ({
         const payDateKey = toDateKey(pAlloc.date);
         if (payDateKey) {
           paymentDatesSet.add(payDateKey);
-          if (!paymentBreakdownMap.has(payDateKey)) {
-            paymentBreakdownMap.set(payDateKey, {
+          // Gom theo từng đợt thanh toán (paymentId) để không bị cộng dồn các đợt tiền trong cùng ngày
+          const payKey = pAlloc.paymentId ? `pay_${pAlloc.paymentId}` : `pay_${payDateKey}_${amt}`;
+          if (!paymentBreakdownMap.has(payKey)) {
+            paymentBreakdownMap.set(payKey, {
+              id: payKey,
+              paymentId: pAlloc.paymentId,
               date: new Date(pAlloc.date),
               dateKey: payDateKey,
               amount: 0,
             });
           }
-          paymentBreakdownMap.get(payDateKey).amount += amt;
+          paymentBreakdownMap.get(payKey).amount += amt;
         }
 
         // Chỉ chèn dòng ĐÃ THU dưới từng ngày nếu includePaymentInDailyRows = true
@@ -615,14 +619,18 @@ export const buildExportDayGroupsWithFIFO = ({
           const payDateKey = toDateKey(p.paidAt);
           if (payDateKey) {
             paymentDatesSet.add(payDateKey);
-            if (!paymentBreakdownMap.has(payDateKey)) {
-              paymentBreakdownMap.set(payDateKey, {
+            // Gom theo từng đợt thanh toán (p.id) để không bị cộng dồn các đợt tiền trong cùng ngày
+            const payKey = p.id ? `pay_${p.id}` : `pay_${payDateKey}_${surplus}`;
+            if (!paymentBreakdownMap.has(payKey)) {
+              paymentBreakdownMap.set(payKey, {
+                id: payKey,
+                paymentId: p.id,
                 date: pDate,
                 dateKey: payDateKey,
                 amount: 0,
               });
             }
-            paymentBreakdownMap.get(payDateKey).amount += surplus;
+            paymentBreakdownMap.get(payKey).amount += surplus;
           }
 
           if (includePaymentInDailyRows) {
@@ -751,20 +759,21 @@ export const buildExportDayGroupsWithFIFO = ({
 
   let paymentSummaryText = '';
   if (sortedPayDates.length === 1) {
-    paymentSummaryText = `Khoản thu ngày ${formatPayDateForDisplay(sortedPayDates[0])}`;
+    paymentSummaryText = formatPayDateForDisplay(sortedPayDates[0]);
   } else if (sortedPayDates.length > 1 && sortedPayDates.length <= 3) {
-    paymentSummaryText = `Khoản thu ngày ${sortedPayDates.map(formatPayDateForDisplay).join(', ')}`;
+    paymentSummaryText = sortedPayDates.map(formatPayDateForDisplay).join(', ');
   } else if (sortedPayDates.length > 3) {
-    paymentSummaryText = `Khoản thu ngày ${sortedPayDates.slice(0, 3).map(formatPayDateForDisplay).join(', ')}...`;
+    paymentSummaryText = `${sortedPayDates.slice(0, 3).map(formatPayDateForDisplay).join(', ')}...`;
   }
 
-  // Danh sách chi tiết các khoản thanh toán gom theo ngày để hiển thị minh bạch từng ngày thanh toán bao nhiêu
+  // Danh sách chi tiết các đợt thanh toán (không cộng dồn theo ngày để minh bạch từng đợt tiền)
   const paymentBreakdown = Array.from(paymentBreakdownMap.values())
     .filter((item) => item.amount > 0)
     .sort((a, b) => {
-      const [d1, m1, y1] = a.dateKey.split('/').map(Number);
-      const [d2, m2, y2] = b.dateKey.split('/').map(Number);
-      return new Date(y1, m1 - 1, d1) - new Date(y2, m2 - 1, d2);
+      const timeA = a.date ? new Date(a.date).getTime() : 0;
+      const timeB = b.date ? new Date(b.date).getTime() : 0;
+      if (timeA !== timeB) return timeA - timeB;
+      return String(a.id || '').localeCompare(String(b.id || ''));
     })
     .map((item) => ({
       ...item,

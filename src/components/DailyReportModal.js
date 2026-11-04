@@ -48,6 +48,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   // Bộ lọc loại giao dịch đang chọn: 'all' (tất cả), 'debt' (nợ phát sinh), 'payment' (tiền đã thu)
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
+  const [showMeatSummary, setShowMeatSummary] = useState(false);
   const [bundleExporting, setBundleExporting] = useState(false);
   // Danh sách các ID đơn nợ trùng được chọn để xóa hàng loạt
   const [selectedDuplicateDebtIds, setSelectedDuplicateDebtIds] = useState(new Set());
@@ -116,6 +117,20 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       style: 'currency',
       currency: 'VND'
     }).format(amount).replace('₫', 'đ');
+  };
+
+  const formatShortAmount = (val) => {
+    const num = parseFloat(val) || 0;
+    if (Math.abs(num) >= 1000000000) {
+      return `${(num / 1000000000).toFixed(1).replace('.0', '')}Tỷ`;
+    }
+    if (Math.abs(num) >= 1000000) {
+      return `${(num / 1000000).toFixed(1).replace('.0', '')}Tr`;
+    }
+    if (Math.abs(num) >= 1000) {
+      return `${(num / 1000).toFixed(0)}k`;
+    }
+    return `${num}`;
   };
 
   // Helper chuyển đổi chuỗi ngày ISO sang dạng khóa "DD/MM/YYYY" để so sánh
@@ -269,7 +284,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       const [transRes, payRes, custRes] = await Promise.all([
         api.get('/transactions', { params }),
         api.get('/payments', { params }),
-        api.get('/customers'),
+        api.get('/customers', { params: targetMonth ? { month: targetMonth } : undefined }),
       ]);
 
       setRawTransactions(transRes.data?.data || []);
@@ -850,180 +865,200 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     }
   };
 
-  // Nhóm nợ theo khách hàng và lọc khách còn nợ trong tháng được chọn
-  const customerMonthlyDebts = useMemo(() => {
-    if (activeReportTab !== 'month') return [];
+  // Tổng hợp số liệu toàn tháng & danh sách đối soát khách hàng phát sinh trong tháng được chọn
+  const monthlyData = useMemo(() => {
+    if (activeReportTab !== 'month') {
+      return {
+        totalPurchase: 0,
+        totalReturn: 0,
+        totalPaid: 0,
+        totalPaidForThisMonth: 0,
+        totalPaidForPriorMonth: 0,
+        remainingDebt: 0,
+        cashFlowDiff: 0,
+        totalMeatKg: 0,
+        meatSummaryList: [],
+        customerList: [],
+      };
+    }
 
-    // 1. Phân loại transactions và payments theo từng khách hàng
-    const customerTransactionsMap = {};
-    const customerPaymentsList = {};
-
-    rawTransactions.forEach(t => {
-      const cId = t.customerId;
-      if (!cId) return;
-      if (!customerTransactionsMap[cId]) {
-        customerTransactionsMap[cId] = [];
-      }
-      customerTransactionsMap[cId].push({
-        id: t.id,
-        customerId: cId,
-        date: t.date,
-        totalAmount: parseFloat(t.totalAmount || 0),
-        paidAmount: 0,
-      });
-    });
-
-    rawPayments.forEach(p => {
-      const cId = p.customerId;
-      if (!cId) return;
-      if (!customerPaymentsList[cId]) {
-        customerPaymentsList[cId] = [];
-      }
-      customerPaymentsList[cId].push({
-        id: p.id,
-        customerId: cId,
-        paidAt: p.paidAt,
-        amount: parseFloat(p.amount || 0),
-        note: p.note,
-        targetMonth: getPaymentTargetMonth(p),
-      });
-    });
-
-    // 2. Chạy thuật toán cấn trừ nợ cho từng khách hàng
-    const allCustomerIds = new Set([
-      ...Object.keys(customerTransactionsMap),
-      ...Object.keys(customerPaymentsList)
-    ]);
-
-    const allocatedTransactions = {};
-
-    allCustomerIds.forEach(cId => {
-      const txs = customerTransactionsMap[cId] || [];
-      const payments = customerPaymentsList[cId] || [];
-
-      // Sắp xếp transactions theo ngày tăng dần để cấn trừ FIFO cho các đơn cũ trước
-      txs.sort((a, b) => new Date(a.date) - new Date(b.date));
-      // Sắp xếp payments theo ngày tăng dần
-      payments.sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt));
-
-      // Bước 0: Cấn trừ các payments Trả hàng vào trực tiếp các đơn nợ của chính ngày phát sinh trả hàng
-      payments.forEach(p => {
-        if (!isReturnPayment(p)) return;
-        const pDateKey = toDateKey(p.paidAt);
-        let remainingPayment = p.remainingAmount !== undefined ? p.remainingAmount : p.amount;
-
-        txs.forEach(t => {
-          if (remainingPayment <= 0) return;
-          if (toDateKey(t.date) === pDateKey) {
-            const needed = t.totalAmount - t.paidAmount;
-            if (needed > 0) {
-              const allocated = Math.min(needed, remainingPayment);
-              t.paidAmount += allocated;
-              remainingPayment -= allocated;
-            }
-          }
-        });
-
-        p.remainingAmount = remainingPayment;
-      });
-
-      // Bước A: Cấn trừ các payments có ghi chú chỉ định cụ thể tháng
-      payments.forEach(p => {
-        if (!p.targetMonth) return;
-
-        let remainingPayment = p.amount;
-
-        txs.forEach(t => {
-          if (remainingPayment <= 0) return;
-
-          const tDate = new Date(t.date);
-          const tMonth = (tDate.getMonth() + 1).toString().padStart(2, '0');
-          const tYear = tDate.getFullYear();
-          const tMonthYearStr = `${tMonth}/${tYear}`;
-
-          if (tMonthYearStr === p.targetMonth) {
-            const needed = t.totalAmount - t.paidAmount;
-            if (needed > 0) {
-              const allocated = Math.min(needed, remainingPayment);
-              t.paidAmount += allocated;
-              remainingPayment -= allocated;
-            }
-          }
-        });
-
-        p.remainingAmount = remainingPayment;
-      });
-
-      // Bước B: Cấn trừ FIFO cho các payments tự do HOẶC phần dư thừa từ bước A
-      payments.forEach(p => {
-        let remainingPayment = p.targetMonth ? (p.remainingAmount || 0) : p.amount;
-        if (remainingPayment <= 0) return;
-
-        txs.forEach(t => {
-          if (remainingPayment <= 0) return;
-
-          const needed = t.totalAmount - t.paidAmount;
-          if (needed > 0) {
-            const allocated = Math.min(needed, remainingPayment);
-            t.paidAmount += allocated;
-            remainingPayment -= allocated;
-          }
-        });
-      });
-
-      allocatedTransactions[cId] = txs;
-    });
-
-    // 3. Gom nhóm theo tháng được chọn
-    const [selM, selY] = selectedMonth.split('/').map(Number);
-    const targetMonthStr = `${String(selM).padStart(2, '0')}/${selY}`;
-
+    const [targetMonth, targetYear] = (selectedMonth || '').split('/').map(Number);
     const customerMap = {};
-
-    Object.keys(allocatedTransactions).forEach(cId => {
-      const txs = allocatedTransactions[cId];
-
-      txs.forEach(t => {
-        const tDate = new Date(t.date);
-        const tMonth = (tDate.getMonth() + 1).toString().padStart(2, '0');
-        const tYear = tDate.getFullYear();
-        const tMonthYearStr = `${tMonth}/${tYear}`;
-
-        if (tMonthYearStr === targetMonthStr) {
-          if (!customerMap[cId]) {
-            const firstTx = rawTransactions.find(rt => rt.customerId === cId);
-            const customerName = firstTx?.customer?.name || 'Khách ẩn danh';
-
-            customerMap[cId] = {
-              customerId: cId,
-              customerName,
-              totalDebt: 0,
-              totalPaid: 0,
-            };
-          }
-
-          customerMap[cId].totalDebt += t.totalAmount;
-          customerMap[cId].totalPaid += t.paidAmount;
-        }
-      });
+    (rawCustomers || []).forEach(c => {
+      if (c && c.id) {
+        customerMap[String(c.id)] = c;
+      }
     });
 
-    // 4. Chuyển sang mảng kết quả, lọc và sắp xếp theo số nợ còn lại trong tháng
-    return Object.values(customerMap)
-      .map(c => {
-        const txs = allocatedTransactions[c.customerId] || [];
-        const currentGlobalRemaining = txs.reduce((sum, t) => sum + (t.totalAmount - t.paidAmount), 0);
+    const custMap = {};
 
+    const getOrInitCust = (customerId, fallbackName, phone) => {
+      const key = customerId ? String(customerId) : `unreg_${(fallbackName || 'khach').trim().toLowerCase()}`;
+      if (!custMap[key]) {
+        const found = customerMap[String(customerId)] || (rawCustomers || []).find(c => String(c.id) === String(customerId));
+        custMap[key] = {
+          customerId: customerId || key,
+          customerName: (found?.name || fallbackName || 'Khách vãng lai').trim(),
+          phone: found?.phone || phone || '',
+          totalPurchase: 0,
+          totalReturn: 0,
+          totalPaid: 0,
+          paidForThisMonth: 0,
+          paidForPriorMonth: 0,
+          meatKg: 0,
+          itemsCount: 0,
+        };
+      }
+      return custMap[key];
+    };
+
+    let totalMeatKg = 0;
+    const meatProdMap = {}; // productName -> { name, quantity, amount }
+
+    // 1. Xử lý các giao dịch mua hàng trong tháng
+    (currentTransactions || []).forEach(t => {
+      const cust = getOrInitCust(t.customerId, t.customer?.name, t.customer?.phone);
+      const amt = parseFloat(t.totalAmount || 0);
+      cust.totalPurchase += amt;
+      cust.itemsCount += (t.items?.length || 1);
+
+      if (t.items && Array.isArray(t.items)) {
+        t.items.forEach(it => {
+          const q = parseFloat(it.quantity || 0);
+          const p = parseFloat(it.price || 0);
+          const itAmt = (it.amount !== null && it.amount !== undefined) ? parseFloat(it.amount) : Math.round(q * p);
+          const rawName = (it.product?.name || it.productName || 'Thịt').trim();
+          const isQuick = rawName === 'Tiền hàng' || rawName.toLowerCase().startsWith('tiền') || t.note === 'Ghi nợ nhanh';
+
+          if (!isQuick && q > 0) {
+            totalMeatKg += q;
+            cust.meatKg += q;
+            const normName = rawName.toUpperCase();
+            if (!meatProdMap[normName]) {
+              meatProdMap[normName] = { name: normName, quantity: 0, amount: 0 };
+            }
+            meatProdMap[normName].quantity += q;
+            meatProdMap[normName].amount += itAmt;
+          }
+        });
+      }
+    });
+
+    // 2. Xử lý các khoản thanh toán / trả hàng phát sinh trong tháng
+    let totalPaidForThisMonth = 0;
+    let totalPaidForPriorMonth = 0;
+
+    (currentPayments || []).forEach(p => {
+      const cust = getOrInitCust(p.customerId, p.customer?.name, p.customer?.phone);
+      const amt = parseFloat(p.amount || 0);
+      if (isReturnPayment(p)) {
+        cust.totalReturn += amt;
+      } else {
+        cust.totalPaid += amt;
+
+        // Phân loại khoản thu: trả cho tháng này vs trả nợ cũ tháng trước (theo ghi chú)
+        const note = (p.note || '').trim();
+        const monthMatch = note.match(/Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{1,2})\/(\d{4})/i) ||
+                           note.match(/Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{1,2})/i);
+        let isForOtherMonth = false;
+        if (monthMatch && targetMonth && targetYear) {
+          const pM = parseInt(monthMatch[1], 10);
+          const pY = monthMatch[2] ? parseInt(monthMatch[2], 10) : targetYear;
+          if (pM !== targetMonth || pY !== targetYear) {
+            isForOtherMonth = true;
+          }
+        }
+
+        if (isForOtherMonth) {
+          cust.paidForPriorMonth = (cust.paidForPriorMonth || 0) + amt;
+          totalPaidForPriorMonth += amt;
+        } else {
+          cust.paidForThisMonth = (cust.paidForThisMonth || 0) + amt;
+          totalPaidForThisMonth += amt;
+        }
+      }
+    });
+
+    // 3. Chuyển sang mảng khách hàng và tính công nợ còn lại trong tháng
+    const customerList = Object.values(custMap)
+      .map(c => {
+        const netPurchase = Math.max(0, c.totalPurchase - c.totalReturn);
+        const effectivePaid = c.paidForThisMonth !== undefined ? c.paidForThisMonth : c.totalPaid;
+        const rawRemaining = Math.max(0, netPurchase - effectivePaid);
+        const foundCustomer = customerMap[String(c.customerId)];
+
+        let remainingInMonth = rawRemaining;
+        if (foundCustomer) {
+          if (foundCustomer.monthDebt !== undefined) {
+            remainingInMonth = parseFloat(foundCustomer.monthDebt);
+          } else {
+            const cDebt = Math.max(0, parseFloat(foundCustomer.debt || 0));
+            remainingInMonth = Math.min(rawRemaining, cDebt);
+          }
+        }
+
+        const isFullyPaid = remainingInMonth === 0 && (c.totalPurchase > 0 || c.totalPaid > 0);
         return {
           ...c,
-          remainingDebt: currentGlobalRemaining, // Tổng nợ tích lũy toàn thời gian thực tế hiện tại
-          remainingInMonth: c.totalDebt - c.totalPaid, // Số nợ chưa trả của riêng tháng được chọn
+          netPurchase,
+          remainingInMonth: Math.round(remainingInMonth),
+          isFullyPaid,
         };
       })
-      // Lọc: Chỉ hiển thị khách hàng có số nợ chưa trả của tháng được chọn > 0
-      .filter(c => c.remainingInMonth > 0)
-      .sort((a, b) => b.remainingInMonth - a.remainingInMonth); // Sắp xếp nợ tháng này nhiều nhất lên đầu
-  }, [rawTransactions, rawPayments, activeReportTab, selectedMonth]);
+      .filter(c => c.totalPurchase > 0 || c.totalPaid > 0 || c.totalReturn > 0)
+      .sort((a, b) => {
+        // Ưu tiên khách còn nợ tháng này nhiều nhất lên đầu
+        if (b.remainingInMonth !== a.remainingInMonth) {
+          return b.remainingInMonth - a.remainingInMonth;
+        }
+        return b.totalPurchase - a.totalPurchase;
+      });
+
+    const totalPurchase = customerList.reduce((sum, c) => sum + c.totalPurchase, 0);
+    const totalReturn = customerList.reduce((sum, c) => sum + c.totalReturn, 0);
+    const totalPaid = customerList.reduce((sum, c) => sum + c.totalPaid, 0);
+
+    // Chuẩn nợ tồn thực tế của tháng (đồng bộ 100% với Dashboard trang chủ)
+    const remainingDebt = customerList.reduce((sum, c) => sum + (c.remainingInMonth || 0), 0);
+    // Chênh lệch dòng tiền Thu - Bán trong tháng
+    const cashFlowDiff = Math.max(0, totalPurchase - totalReturn - totalPaid);
+
+    const meatSummaryList = Object.values(meatProdMap).sort((a, b) => b.quantity - a.quantity);
+
+    return {
+      totalPurchase,
+      totalReturn,
+      totalPaid,
+      totalPaidForThisMonth,
+      totalPaidForPriorMonth,
+      remainingDebt,
+      cashFlowDiff,
+      totalMeatKg: Math.round(totalMeatKg * 100) / 100,
+      meatSummaryList,
+      customerList,
+    };
+  }, [rawCustomers, currentTransactions, currentPayments, activeReportTab, selectedMonth]);
+
+  // Lọc danh sách đối soát khách hàng theo bộ lọc trạng thái và từ khóa tìm kiếm
+  const filteredMonthlyCustomers = useMemo(() => {
+    if (activeReportTab !== 'month') return [];
+    return monthlyData.customerList.filter((c) => {
+      // 1. Lọc theo trạng thái
+      if (activeFilter === 'debt' && c.remainingInMonth <= 0) return false;
+      if (activeFilter === 'payment' && !c.isFullyPaid) return false;
+
+      // 2. Lọc theo từ khóa tìm kiếm (tên khách hàng, SĐT hoặc số tiền)
+      if (searchText && searchText.trim()) {
+        const nameMatch = matchSearch(c.customerName || '', searchText);
+        const phoneMatch = (c.phone || '').includes(searchText.trim());
+        const amountMatch = (c.remainingInMonth || 0).toString().includes(searchText.trim()) ||
+                            (c.totalPurchase || 0).toString().includes(searchText.trim()) ||
+                            (c.totalPaid || 0).toString().includes(searchText.trim());
+        return nameMatch || phoneMatch || amountMatch;
+      }
+      return true;
+    });
+  }, [monthlyData, activeReportTab, activeFilter, searchText]);
 
   // Lọc và sắp xếp danh sách giao dịch hiển thị dựa trên bộ lọc đang chọn và từ khóa tìm kiếm
   const displayItems = useMemo(() => {
@@ -1052,17 +1087,10 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       // Sắp xếp danh sách: các công nợ trùng nhau của cùng một khách hàng luôn nằm liền kề nhau
       return sortDailyTimelineItems(filtered);
     } else {
-      // Tab Theo tháng: Lọc danh sách khách còn nợ theo từ khóa tìm kiếm
-      return customerMonthlyDebts.filter(item => {
-        if (searchText && searchText.trim()) {
-          const nameMatch = matchSearch(item.customerName || '', searchText);
-          const amountMatch = item.remainingInMonth.toString().includes(searchText.trim());
-          return nameMatch || amountMatch;
-        }
-        return true;
-      });
+      // Tab Theo tháng: Trả về danh sách đối soát khách hàng đã lọc
+      return filteredMonthlyCustomers;
     }
-  }, [timelineItems, customerMonthlyDebts, activeReportTab, activeFilter, searchText, customerDebtCountMap]);
+  }, [activeReportTab, timelineItems, activeFilter, searchText, filteredMonthlyCustomers, customerDebtCountMap]);
 
   // Xử lý xuất công nợ dạng ảnh bằng Canvas HTML5 (Cứ 15 giao dịch chia làm 1 cột, tự động tăng chiều rộng)
   const handleExportImage = () => {
@@ -1148,7 +1176,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       const boxWidth = (width - boxPadding * 3) / 2;
       const boxHeight = 70;
 
-      // Hộp Nợ phát sinh (bên trái)
+      // Hộp Nợ phát sinh / Tiền hàng (bên trái)
+      const debtBoxLabel = activeReportTab === 'day' ? '🔴 Nợ phát sinh trong ngày' : '🔴 Tiền hàng trong tháng';
+      const debtBoxAmount = activeReportTab === 'day' ? totalDebtCreated : monthlyData.totalPurchase;
       ctx.fillStyle = '#FEF2F2';
       ctx.fillRect(boxPadding, boxY, boxWidth, boxHeight);
       ctx.strokeStyle = '#FECACA';
@@ -1158,11 +1188,13 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       ctx.fillStyle = '#991B1B';
       ctx.font = 'bold 12px Arial, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(activeReportTab === 'day' ? '🔴 Nợ phát sinh trong ngày' : '🔴 Nợ phát sinh trong tháng', boxPadding + 15, boxY + 25);
+      ctx.fillText(debtBoxLabel, boxPadding + 15, boxY + 25);
       ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalDebtCreated), boxPadding + 15, boxY + 52);
+      ctx.fillText(formatCurrency(debtBoxAmount), boxPadding + 15, boxY + 52);
 
       // Hộp Tiền đã thu (bên phải)
+      const payBoxLabel = activeReportTab === 'day' ? '🟢 Tiền đã thu trong ngày' : '🟢 Tiền đã thu trong tháng';
+      const payBoxAmount = activeReportTab === 'day' ? totalPaymentReceived : monthlyData.totalPaid;
       const rightBoxX = boxPadding * 2 + boxWidth;
       ctx.fillStyle = '#F0FDF4';
       ctx.fillRect(rightBoxX, boxY, boxWidth, boxHeight);
@@ -1172,9 +1204,9 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
       ctx.fillStyle = '#166534';
       ctx.font = 'bold 12px Arial, sans-serif';
-      ctx.fillText(activeReportTab === 'day' ? '🟢 Tiền đã thu trong ngày' : '🟢 Tiền đã thu trong tháng', rightBoxX + 15, boxY + 25);
+      ctx.fillText(payBoxLabel, rightBoxX + 15, boxY + 25);
       ctx.font = 'bold 18px Arial, sans-serif';
-      ctx.fillText(formatCurrency(totalPaymentReceived), rightBoxX + 15, boxY + 52);
+      ctx.fillText(formatCurrency(payBoxAmount), rightBoxX + 15, boxY + 52);
 
       // 4. Vẽ danh sách chi tiết (Chia nhiều cột động)
       let currentY = boxY + boxHeight + 45;
@@ -1261,10 +1293,10 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             ctx.textAlign = 'right';
             ctx.fillText(amtStr, textRightX, itemY + 34);
           } else {
-            // Chi tiết tổng nợ / đã trả theo tháng
+            // Chi tiết tiền hàng / đã trả theo tháng
             ctx.fillStyle = '#64748B';
             ctx.font = '12px Arial, sans-serif';
-            const detailStr = `Tổng nợ: ${formatCurrency(item.totalDebt)}  |  Đã trả: ${formatCurrency(item.totalPaid)}`;
+            const detailStr = `Tiền hàng: ${formatCurrency(item.totalPurchase || 0)}  |  Đã trả: ${formatCurrency(item.totalPaid || 0)}`;
             ctx.fillText(fitText(ctx, detailStr, actualColWidth - 20), textLeftX, itemY + 45);
 
             // Số tiền nợ còn lại (căn phải, hiển thị màu đỏ)
@@ -1354,12 +1386,12 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           csvContent += `${timeFormatted},${customerNameEscaped},${typeStr},${detailsEscaped},${amountVal}\r\n`;
         });
       } else {
-        // Tiêu đề cột cho tháng (thống kê khách còn nợ)
-        csvContent += 'Khách hàng,Tổng nợ phát sinh trong tháng (đ),Đã trả trong tháng (đ),Số nợ còn lại (đ)\r\n';
+        // Tiêu đề cột cho tháng (đối soát khách hàng trong tháng)
+        csvContent += 'Khách hàng,Tiền hàng trong tháng (đ),Đã trả trong tháng (đ),Còn nợ tháng này (đ)\r\n';
 
         displayItems.forEach(item => {
           const customerNameEscaped = `"${(item.customerName || '').replace(/"/g, '""')}"`;
-          csvContent += `${customerNameEscaped},${item.totalDebt},${item.totalPaid},${item.remainingInMonth}\r\n`;
+          csvContent += `${customerNameEscaped},${item.totalPurchase || 0},${item.totalPaid || 0},${item.remainingInMonth || 0}\r\n`;
         });
       }
 
@@ -2042,43 +2074,182 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           </View>
         ) : (
           <View style={styles.mainContent}>
-            {/* 3 Hộp tổng kết nhanh (Nợ phát sinh, Tiền đã thu, Lợi nhuận) */}
-            <View style={styles.summaryContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.summaryBox,
-                  styles.debtBox,
-                  activeReportTab === 'day' && activeFilter === 'debt' && styles.activeDebtBox,
-                  activeReportTab === 'day' && activeFilter !== 'all' && activeFilter !== 'debt' && styles.inactiveBox
-                ]}
-                onPress={() => {
-                  if (activeReportTab === 'day') {
-                    handleFilterToggle('debt');
-                  }
-                }}
-                activeOpacity={activeReportTab === 'day' ? 0.7 : 1}
-              >
-                <Text style={styles.summaryBoxLabel}>{activeReportTab === 'day' ? '🔴 Nợ phát sinh' : '🔴 Tổng nợ'}</Text>
-                <Text style={styles.summaryBoxValue}>{formatCurrency(totalDebtCreated)}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.summaryBox,
-                  styles.paymentBox,
-                  activeReportTab === 'day' && activeFilter === 'payment' && styles.activePaymentBox,
-                  activeReportTab === 'day' && activeFilter !== 'all' && activeFilter !== 'payment' && styles.inactiveBox
-                ]}
-                onPress={() => {
-                  if (activeReportTab === 'day') {
-                    handleFilterToggle('payment');
-                  }
-                }}
-                activeOpacity={activeReportTab === 'day' ? 0.7 : 1}
-              >
-                <Text style={styles.summaryBoxLabel}>{activeReportTab === 'day' ? '🟢 Tiền đã thu' : '🟢 Đã thu'}</Text>
-                <Text style={styles.summaryBoxValue}>{formatCurrency(totalPaymentReceived)}</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Hộp tổng kết: Tab ngày hiển thị 2 ô nhanh, Tab tháng hiển thị lưới 4 chỉ số tài chính & sản lượng thịt */}
+            {activeReportTab === 'month' ? (
+              <View style={styles.monthlySummaryGrid}>
+                {/* Hàng 1: Tiền hàng & Tiền đã thu */}
+                <View style={styles.monthlySummaryRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.monthlyStatCard,
+                      styles.debtBox,
+                      activeFilter === 'all' && styles.activeStatCardAll,
+                    ]}
+                    onPress={() => setActiveFilter('all')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.monthlyStatLabel}>🔴 TIỀN HÀNG THÁNG</Text>
+                    <Text style={[styles.monthlyStatValue, { color: '#DC2626' }]}>
+                      {formatCurrency(monthlyData.totalPurchase)}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.monthlyStatCard,
+                      styles.paymentBox,
+                      activeFilter === 'payment' && styles.activePaymentBox,
+                    ]}
+                    onPress={() => handleFilterToggle('payment')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.monthlyStatLabel}>🟢 TIỀN ĐÃ THU</Text>
+                    <Text style={[styles.monthlyStatValue, { color: '#16A34A' }]}>
+                      {formatCurrency(monthlyData.totalPaid)}
+                    </Text>
+                    {monthlyData.totalPaidForPriorMonth > 0 && (
+                      <Text style={styles.monthlyStatSubValue} numberOfLines={1}>
+                        T{selectedMonth ? parseInt(selectedMonth.split('/')[0], 10) : ''}: {formatShortAmount(monthlyData.totalPaidForThisMonth)} • Tồn cũ: {formatShortAmount(monthlyData.totalPaidForPriorMonth)}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                {/* Hàng 2: Trả hàng & Còn nợ tháng này */}
+                <View style={styles.monthlySummaryRow}>
+                  <View style={[styles.monthlyStatCard, styles.returnBox]}>
+                    <Text style={styles.monthlyStatLabel}>🟠 TIỀN TRẢ HÀNG</Text>
+                    <Text style={[styles.monthlyStatValue, { color: '#EA580C' }]}>
+                      {formatCurrency(monthlyData.totalReturn)}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.monthlyStatCard,
+                      monthlyData.remainingDebt > 0 ? styles.remainingBoxDebt : styles.remainingBoxZero,
+                      activeFilter === 'debt' && styles.activeDebtBox,
+                    ]}
+                    onPress={() => handleFilterToggle('debt')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.monthlyStatLabel}>
+                      {monthlyData.remainingDebt > 0 ? '🔵 CÒN NỢ THÁNG NÀY' : '✅ ĐÃ THU ĐỦ THÁNG'}
+                    </Text>
+                    <Text style={[
+                      styles.monthlyStatValue,
+                      { color: monthlyData.remainingDebt > 0 ? '#2563EB' : '#16A34A' }
+                    ]}>
+                      {formatCurrency(monthlyData.remainingDebt)}
+                    </Text>
+                    {monthlyData.cashFlowDiff !== monthlyData.remainingDebt && (
+                      <Text style={styles.monthlyStatSubValue} numberOfLines={1}>
+                        Chênh lệch Bán - Thu: {formatCurrency(monthlyData.cashFlowDiff)}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                {/* Thanh tóm tắt sản lượng thịt bán ra trong tháng */}
+                <TouchableOpacity
+                  style={styles.meatBarContainer}
+                  onPress={() => setShowMeatSummary(prev => !prev)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.meatBarLeft}>
+                    <Text style={styles.meatBarIcon}>🥩</Text>
+                    <Text style={styles.meatBarText}>
+                      Sản lượng thịt:{' '}
+                      <Text style={styles.meatBarHighlight}>
+                        {monthlyData.totalMeatKg.toLocaleString('vi-VN')} kg
+                      </Text>
+                      {monthlyData.meatSummaryList.length > 0 ? ` (${monthlyData.meatSummaryList.length} món thịt)` : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.meatBarToggleText}>
+                    {showMeatSummary ? '▲ Thu gọn' : '▼ Xem món thịt'}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Bảng chi tiết sản lượng từng loại thịt (Lưới 2 cột Mobile-First) */}
+                {showMeatSummary && monthlyData.meatSummaryList.length > 0 && (
+                  <View style={styles.meatDetailGrid}>
+                    {monthlyData.meatSummaryList.map((mItem, mIdx) => (
+                      <View key={mItem.name || mIdx} style={styles.meatDetailItem}>
+                        <Text style={styles.meatDetailName} numberOfLines={1}>
+                          {mItem.name}
+                        </Text>
+                        <Text style={styles.meatDetailStats}>
+                          <Text style={styles.meatDetailKg}>
+                            {mItem.quantity.toLocaleString('vi-VN')} kg
+                          </Text>
+                          {mItem.amount > 0 ? ` • ${formatCurrency(mItem.amount)}` : ''}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Bộ lọc trạng thái đối soát khách hàng trong tháng */}
+                <View style={styles.monthlyFilterPillsRow}>
+                  <TouchableOpacity
+                    style={[styles.filterPill, activeFilter === 'all' && styles.filterPillActive]}
+                    onPress={() => setActiveFilter('all')}
+                  >
+                    <Text style={[styles.filterPillText, activeFilter === 'all' && styles.filterPillTextActive]}>
+                      Tất cả ({monthlyData.customerList.length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.filterPill, activeFilter === 'debt' && styles.filterPillActiveDebt]}
+                    onPress={() => handleFilterToggle('debt')}
+                  >
+                    <Text style={[styles.filterPillText, activeFilter === 'debt' && styles.filterPillTextActiveDebt]}>
+                      🔴 Còn nợ ({monthlyData.customerList.filter(c => c.remainingInMonth > 0).length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.filterPill, activeFilter === 'payment' && styles.filterPillActivePaid]}
+                    onPress={() => handleFilterToggle('payment')}
+                  >
+                    <Text style={[styles.filterPillText, activeFilter === 'payment' && styles.filterPillTextActivePaid]}>
+                      🟢 Đã xong ({monthlyData.customerList.filter(c => c.isFullyPaid).length})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.summaryContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.summaryBox,
+                    styles.debtBox,
+                    activeFilter === 'debt' && styles.activeDebtBox,
+                    activeFilter !== 'all' && activeFilter !== 'debt' && styles.inactiveBox
+                  ]}
+                  onPress={() => handleFilterToggle('debt')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.summaryBoxLabel}>🔴 Nợ phát sinh</Text>
+                  <Text style={styles.summaryBoxValue}>{formatCurrency(totalDebtCreated)}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.summaryBox,
+                    styles.paymentBox,
+                    activeFilter === 'payment' && styles.activePaymentBox,
+                    activeFilter !== 'all' && activeFilter !== 'payment' && styles.inactiveBox
+                  ]}
+                  onPress={() => handleFilterToggle('payment')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.summaryBoxLabel}>🟢 Tiền đã thu</Text>
+                  <Text style={styles.summaryBoxValue}>{formatCurrency(totalPaymentReceived)}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Banner cảnh báo phát hiện trùng đơn trong ngày */}
             {activeReportTab === 'day' && duplicateDebtItems.length > 0 && (
@@ -2232,244 +2403,307 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               </View>
             )}
 
-            {/* Tiêu đề danh sách chi tiết */}
-            <Text style={styles.listTitle}>📝 Danh sách chi tiết ({displayItems.length}):</Text>
+            {/* Tiêu đề danh sách chi tiết / bảng đối soát */}
+            <Text style={styles.listTitle}>
+              {activeReportTab === 'month'
+                ? `📝 Bảng đối soát khách hàng trong tháng (${displayItems.length} khách):`
+                : `📝 Danh sách chi tiết (${displayItems.length}):`}
+            </Text>
 
             {displayItems.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>
                   {activeReportTab === 'day'
                     ? 'Không có giao dịch công nợ phát sinh trong ngày này.'
-                    : 'Không có giao dịch công nợ phát sinh trong tháng này.'}
+                    : 'Không có dữ liệu công nợ phát sinh trong tháng này.'}
                 </Text>
               </View>
+            ) : activeReportTab === 'month' ? (
+              // BẢNG ĐỐI SOÁT KHÁCH HÀNG TRONG THÁNG (TABLE VIEW CHUẨN MẬT ĐỘ CAO)
+              <View style={styles.tableWrapper}>
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.tableHeaderCell, { width: 34, textAlign: 'center' }]}>STT</Text>
+                  <Text style={[styles.tableHeaderCell, { flex: 1.8 }]}>KHÁCH HÀNG</Text>
+                  <Text style={[styles.tableHeaderCell, { flex: 1.4, textAlign: 'right' }]}>TIỀN HÀNG</Text>
+                  <Text style={[styles.tableHeaderCell, { flex: 1.3, textAlign: 'right' }]}>ĐÃ THU</Text>
+                  <Text style={[styles.tableHeaderCell, { flex: 1.5, textAlign: 'right' }]}>CÒN NỢ</Text>
+                  <Text style={[styles.tableHeaderCell, { width: 44, textAlign: 'center' }]}>ẢNH</Text>
+                </View>
+
+                <ScrollView
+                  style={styles.scrollList}
+                  contentContainerStyle={styles.scrollListContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {displayItems.map((cItem, cIdx) => {
+                    const isZebra = cIdx % 2 === 1;
+                    const hasDebt = cItem.remainingInMonth > 0;
+                    return (
+                      <View
+                        key={cItem.customerId || cIdx}
+                        style={[
+                          styles.tableRow,
+                          isZebra && styles.tableRowZebra,
+                          hasDebt && styles.tableRowHasDebt,
+                        ]}
+                      >
+                        {/* Cột 1: STT */}
+                        <Text style={[styles.tableCellText, { width: 34, textAlign: 'center', color: '#94A3B8' }]}>
+                          {cIdx + 1}
+                        </Text>
+
+                        {/* Cột 2: Tên khách hàng & SĐT */}
+                        <View style={{ flex: 1.8, paddingRight: 4 }}>
+                          <Text style={styles.tableCustomerName} numberOfLines={1}>
+                            {cItem.customerName}
+                          </Text>
+                          {cItem.phone ? (
+                            <Text style={styles.tableCustomerPhone} numberOfLines={1}>
+                              {cItem.phone}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Cột 3: Tiền hàng & tiền trả hàng nếu có */}
+                        <View style={{ flex: 1.4, alignItems: 'flex-end', paddingRight: 4 }}>
+                          <Text style={styles.tablePurchaseText} numberOfLines={1}>
+                            {formatCurrency(cItem.totalPurchase)}
+                          </Text>
+                          {cItem.totalReturn > 0 ? (
+                            <Text style={styles.tableReturnSubText} numberOfLines={1}>
+                              ↩ -{formatCurrency(cItem.totalReturn)}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Cột 4: Đã thu */}
+                        <View style={{ flex: 1.3, alignItems: 'flex-end', paddingRight: 4 }}>
+                          <Text style={styles.tablePaidText} numberOfLines={1}>
+                            {cItem.totalPaid > 0 ? formatCurrency(cItem.totalPaid) : '0 đ'}
+                          </Text>
+                        </View>
+
+                        {/* Cột 5: Còn nợ */}
+                        <View style={{ flex: 1.5, alignItems: 'flex-end', paddingRight: 4 }}>
+                          {hasDebt ? (
+                            <Text style={styles.tableDebtText} numberOfLines={1}>
+                              {formatCurrency(cItem.remainingInMonth)}
+                            </Text>
+                          ) : (
+                            <View style={styles.paidBadgePill}>
+                              <Text style={styles.paidBadgeText}>✓ ĐÃ XONG</Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Cột 6: Nút Xuất ảnh công nợ khách */}
+                        <View style={{ width: 44, alignItems: 'center', justifyContent: 'center' }}>
+                          <TouchableOpacity
+                            style={styles.tableActionIconBtn}
+                            onPress={() => onExportDebt?.(cItem.customerId, selectedMonth)}
+                            activeOpacity={0.7}
+                            title="Xuất ảnh công nợ"
+                          >
+                            <Text style={styles.tableActionIconText}>📸</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </View>
             ) : (
-              // Hiển thị danh sách chi tiết 1 phần tử 1 hàng (full-width)
+              // Hiển thị danh sách chi tiết ngày 1 phần tử 1 hàng (full-width)
               <ScrollView
                 style={styles.scrollList}
                 contentContainerStyle={styles.scrollListContent}
                 showsVerticalScrollIndicator={false}
               >
                 {displayItems.map((item) => {
-                  if (activeReportTab === 'day') {
-                    const status = getItemStatus(item);
-                    const isDebt = item.type === 'debt';
-                    const isEdited = status === 'edited';
-                    const isReturnGoods = status === 'return';
-                    const isDuplicate = isItemDuplicateDebt(item);
-                    const palette = isDuplicate ? getDuplicatePalette(item) : null;
-                    const seqText = isDuplicate ? getItemDebtSequence(item) : '';
-                    const isSelected = selectedDuplicateDebtIds.has(item.id);
-                    const isRecurring = Boolean(
-                      isDebt && (
-                        item.isRecurring ||
-                        item.rawObj?.isRecurring ||
-                        item.rawObj?.recurringDebtId ||
-                        (typeof item.note === 'string' && /cố định/i.test(item.note)) ||
-                        (typeof item.rawObj?.note === 'string' && /cố định/i.test(item.rawObj.note))
-                      )
-                    );
+                  const status = getItemStatus(item);
+                  const isDebt = item.type === 'debt';
+                  const isEdited = status === 'edited';
+                  const isReturnGoods = status === 'return';
+                  const isDuplicate = isItemDuplicateDebt(item);
+                  const palette = isDuplicate ? getDuplicatePalette(item) : null;
+                  const seqText = isDuplicate ? getItemDebtSequence(item) : '';
+                  const isSelected = selectedDuplicateDebtIds.has(item.id);
+                  const isRecurring = Boolean(
+                    isDebt && (
+                      item.isRecurring ||
+                      item.rawObj?.isRecurring ||
+                      item.rawObj?.recurringDebtId ||
+                      (typeof item.note === 'string' && /cố định/i.test(item.note)) ||
+                      (typeof item.rawObj?.note === 'string' && /cố định/i.test(item.rawObj.note))
+                    )
+                  );
 
-                    let displayDetails = item.details ? cleanDisplayNote(item.details) : '';
-                    if (isReturnGoods) {
-                      if (displayDetails === '[Trả hàng nhanh] Trừ tiền công nợ đơn trong ngày' || displayDetails === 'Trả hàng' || displayDetails === 'Trả lại hàng') {
-                        displayDetails = 'Trả lại hàng';
-                      } else if (displayDetails?.startsWith('[Trả hàng nhanh]')) {
-                        displayDetails = displayDetails.replace('[Trả hàng nhanh]', '[Trả lại hàng]');
-                      }
+                  let displayDetails = item.details ? cleanDisplayNote(item.details) : '';
+                  if (isReturnGoods) {
+                    if (displayDetails === '[Trả hàng nhanh] Trừ tiền công nợ đơn trong ngày' || displayDetails === 'Trả hàng' || displayDetails === 'Trả lại hàng') {
+                      displayDetails = 'Trả lại hàng';
+                    } else if (displayDetails?.startsWith('[Trả hàng nhanh]')) {
+                      displayDetails = displayDetails.replace('[Trả hàng nhanh]', '[Trả lại hàng]');
                     }
+                  }
 
-                    return (
-                      <View
-                        key={item.id}
-                        style={[
-                          styles.itemCard,
-                          isEdited
-                            ? styles.itemCardEdited
-                            : isReturnGoods 
-                              ? styles.itemCardReturnGoods 
-                              : isDebt 
-                                ? (isDuplicate && activeFilter === 'duplicate'
-                                    ? [
-                                        styles.itemCardDuplicate,
-                                        {
-                                          backgroundColor: palette.cardBg,
-                                          borderColor: palette.borderColor,
-                                          borderLeftColor: palette.borderLeftColor,
-                                        },
-                                        isSelected && styles.duplicateCardSelected,
-                                      ]
-                                    : styles.itemCardDebt)
-                                : styles.itemCardPayment
-                        ]}
-                      >
-                        <View style={styles.itemHeader}>
-                          <View style={styles.customerNameRow}>
-                            {/* Ô checkbox chọn đơn nợ trùng khi ở chế độ xem trùng */}
-                            {activeFilter === 'duplicate' && isDebt && (
+                  return (
+                    <View
+                      key={item.id}
+                      style={[
+                        styles.itemCard,
+                        isEdited
+                          ? styles.itemCardEdited
+                          : isReturnGoods 
+                            ? styles.itemCardReturnGoods 
+                            : isDebt 
+                              ? (isDuplicate && activeFilter === 'duplicate'
+                                  ? [
+                                      styles.itemCardDuplicate,
+                                      {
+                                        backgroundColor: palette.cardBg,
+                                        borderColor: palette.borderColor,
+                                        borderLeftColor: palette.borderLeftColor,
+                                      },
+                                      isSelected && styles.duplicateCardSelected,
+                                    ]
+                                  : styles.itemCardDebt)
+                              : styles.itemCardPayment
+                      ]}
+                    >
+                      <View style={styles.itemHeader}>
+                        <View style={styles.customerNameRow}>
+                          {/* Ô checkbox chọn đơn nợ trùng khi ở chế độ xem trùng */}
+                          {activeFilter === 'duplicate' && isDebt && (
+                            <TouchableOpacity
+                              style={[
+                                styles.duplicateItemCheckbox,
+                                isSelected && styles.duplicateItemCheckboxSelected,
+                              ]}
+                              onPress={() => toggleSelectDuplicateItem(item.id)}
+                              activeOpacity={0.7}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              {isSelected ? (
+                                <Text style={styles.duplicateItemCheckmark}>✓</Text>
+                              ) : null}
+                            </TouchableOpacity>
+                          )}
+
+                          <Text style={styles.customerName}>{item.customerName}</Text>
+
+                          {/* Tag hiển thị thứ tự đơn trùng của khách hàng */}
+                          {isDuplicate && activeFilter === 'duplicate' && seqText ? (
+                            <View style={[styles.seqBadge, isSelected && styles.seqBadgeSelected]}>
+                              <Text style={[styles.seqBadgeText, isSelected && styles.seqBadgeTextSelected]}>
+                                {seqText}
+                              </Text>
+                            </View>
+                          ) : null}
+
+                          {/* Huy hiệu đánh dấu đơn đã chọn sẽ xóa */}
+                          {isSelected && (
+                            <View style={styles.selectedToDeleteBadge}>
+                              <Text style={styles.selectedToDeleteText}>Sẽ xóa</Text>
+                            </View>
+                          )}
+
+                          {isRecurring && (
+                            <View style={styles.recurringTag}>
+                              <Text style={styles.recurringTagText}>📌 Đơn cố định</Text>
+                            </View>
+                          )}
+                          {/* Nút Xem ảnh/video hóa đơn hoặc đơn trả hàng bên cạnh nút Sửa */}
+                          {(isDebt || isReturnGoods || (item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)) && (() => {
+                            const invList = item.invoices || item.rawObj?.invoices || [];
+                            const invCount = invList.length;
+                            const hasVideo = invList.some(
+                              (inv) => inv.fileType === 'video' || (inv.imageUrl && /\.(mp4|mov|webm|avi|m4v)(\?.*)?$/i.test(inv.imageUrl))
+                            );
+                            const btnLabel = hasVideo ? 'Xem ảnh/video' : 'Xem ảnh';
+
+                            return (
                               <TouchableOpacity
                                 style={[
-                                  styles.duplicateItemCheckbox,
-                                  isSelected && styles.duplicateItemCheckboxSelected,
+                                  styles.itemImageBtn,
+                                  invCount > 0
+                                    ? styles.itemImageBtnActive
+                                    : styles.itemImageBtnEmpty,
                                 ]}
-                                onPress={() => toggleSelectDuplicateItem(item.id)}
+                                onPress={() => handleViewItemImages(item)}
                                 activeOpacity={0.7}
-                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                title={invCount > 0
+                                  ? `Xem ${invCount} ${hasVideo ? 'ảnh/video' : 'ảnh'}`
+                                  : (isReturnGoods ? 'Chưa có ảnh/video trả hàng' : 'Chưa có ảnh hóa đơn')}
                               >
-                                {isSelected ? (
-                                  <Text style={styles.duplicateItemCheckmark}>✓</Text>
-                                ) : null}
-                              </TouchableOpacity>
-                            )}
-
-                            <Text style={styles.customerName}>{item.customerName}</Text>
-
-                            {/* Tag hiển thị thứ tự đơn trùng của khách hàng */}
-                            {isDuplicate && activeFilter === 'duplicate' && seqText ? (
-                              <View style={[styles.seqBadge, isSelected && styles.seqBadgeSelected]}>
-                                <Text style={[styles.seqBadgeText, isSelected && styles.seqBadgeTextSelected]}>
-                                  {seqText}
-                                </Text>
-                              </View>
-                            ) : null}
-
-                            {/* Huy hiệu đánh dấu đơn đã chọn sẽ xóa */}
-                            {isSelected && (
-                              <View style={styles.selectedToDeleteBadge}>
-                                <Text style={styles.selectedToDeleteText}>Sẽ xóa</Text>
-                              </View>
-                            )}
-
-                            {isRecurring && (
-                              <View style={styles.recurringTag}>
-                                <Text style={styles.recurringTagText}>📌 Đơn cố định</Text>
-                              </View>
-                            )}
-                            {/* Nút Xem ảnh/video hóa đơn hoặc đơn trả hàng bên cạnh nút Sửa */}
-                            {(isDebt || isReturnGoods || (item.invoices?.length > 0 || item.rawObj?.invoices?.length > 0)) && (() => {
-                              const invList = item.invoices || item.rawObj?.invoices || [];
-                              const invCount = invList.length;
-                              const hasVideo = invList.some(
-                                (inv) => inv.fileType === 'video' || (inv.imageUrl && /\.(mp4|mov|webm|avi|m4v)(\?.*)?$/i.test(inv.imageUrl))
-                              );
-                              const btnLabel = hasVideo ? 'Xem ảnh/video' : 'Xem ảnh';
-
-                              return (
-                                <TouchableOpacity
+                                <Text
                                   style={[
-                                    styles.itemImageBtn,
+                                    styles.itemImageBtnText,
                                     invCount > 0
-                                      ? styles.itemImageBtnActive
-                                      : styles.itemImageBtnEmpty,
+                                      ? styles.itemImageBtnActiveText
+                                      : styles.itemImageBtnEmptyText,
                                   ]}
-                                  onPress={() => handleViewItemImages(item)}
-                                  activeOpacity={0.7}
-                                  title={invCount > 0
-                                    ? `Xem ${invCount} ${hasVideo ? 'ảnh/video' : 'ảnh'}`
-                                    : (isReturnGoods ? 'Chưa có ảnh/video trả hàng' : 'Chưa có ảnh hóa đơn')}
                                 >
-                                  <Text
-                                    style={[
-                                      styles.itemImageBtnText,
-                                      invCount > 0
-                                        ? styles.itemImageBtnActiveText
-                                        : styles.itemImageBtnEmptyText,
-                                    ]}
-                                  >
-                                    {btnLabel}{invCount > 0 ? ` (${invCount})` : ''}
-                                  </Text>
-                                </TouchableOpacity>
-                              );
-                            })()}
+                                  {btnLabel}{invCount > 0 ? ` (${invCount})` : ''}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })()}
 
-                            <TouchableOpacity
-                              style={styles.itemEditBtn}
-                              onPress={() => {
-                                if (isDebt && onEditTransaction) {
-                                  onEditTransaction(item.rawObj || item);
-                                } else if (!isDebt && onEditPayment) {
-                                  onEditPayment(item.rawObj || item);
-                                }
-                              }}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={styles.itemEditBtnText}>Sửa</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                              style={styles.itemDeleteBtn}
-                              onPress={() => handleDeleteItem(item)}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={styles.itemDeleteBtnText}>Xóa</Text>
-                            </TouchableOpacity>
-                          </View>
-
-                          <View style={styles.itemAmountContainer}>
-                            <Text style={[
-                              styles.itemAmount, 
-                              isEdited
-                                ? styles.amountEdited
-                                : isReturnGoods 
-                                  ? styles.amountReturnGoods 
-                                  : isDebt 
-                                    ? styles.amountDebt 
-                                    : styles.amountPayment
-                            ]}>
-                              {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
-                            </Text>
-                            <Text style={[
-                              styles.itemTimeText,
-                              isEdited && styles.itemTimeTextEdited
-                            ]}>
-                              🕒 {formatItemTime(item)}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {displayDetails ? (
-                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Text style={[styles.itemDetails, { flex: 1 }]} numberOfLines={2}>
-                              {isDebt ? `🥩 ${displayDetails}` : isReturnGoods ? `↩️ ${displayDetails}` : `💵 ${displayDetails}`}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    );
-                  } else {
-                    // Render danh sách khách hàng còn nợ trong tab Theo tháng
-                    return (
-                      <View
-                        key={item.customerId}
-                        style={[
-                          styles.itemCard,
-                          styles.itemCardDebt // Mặc định dùng viền nợ màu đỏ
-                        ]}
-                      >
-                        <View style={styles.itemHeader}>
-                          <Text style={styles.customerName}>{item.customerName}</Text>
-                          <Text style={[styles.itemAmount, styles.amountDebt]}>
-                            Còn nợ: {formatCurrency(item.remainingInMonth)}
-                          </Text>
-                        </View>
-
-                        <Text style={styles.itemDetails}>
-                          {`Tổng nợ: ${formatCurrency(item.totalDebt)}   |   Đã trả: ${formatCurrency(item.totalPaid)}`}
-                        </Text>
-
-                        {/* Nút hành động xuất nợ cho từng khách hàng */}
-                        <View style={styles.cardActionsContainer}>
                           <TouchableOpacity
-                            style={styles.zaloButton}
-                            onPress={() => onExportDebt?.(item.customerId, selectedMonth)}
+                            style={styles.itemEditBtn}
+                            onPress={() => {
+                              if (isDebt && onEditTransaction) {
+                                onEditTransaction(item.rawObj || item);
+                              } else if (!isDebt && onEditPayment) {
+                                onEditPayment(item.rawObj || item);
+                              }
+                            }}
                             activeOpacity={0.7}
                           >
-                            <Text style={styles.zaloButtonText}>📸 Xuất ảnh công nợ</Text>
+                            <Text style={styles.itemEditBtnText}>Sửa</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.itemDeleteBtn}
+                            onPress={() => handleDeleteItem(item)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.itemDeleteBtnText}>Xóa</Text>
                           </TouchableOpacity>
                         </View>
+
+                        <View style={styles.itemAmountContainer}>
+                          <Text style={[
+                            styles.itemAmount, 
+                            isEdited
+                              ? styles.amountEdited
+                              : isReturnGoods 
+                                ? styles.amountReturnGoods 
+                                : isDebt 
+                                  ? styles.amountDebt 
+                                  : styles.amountPayment
+                          ]}>
+                            {isDebt ? '+' : '-'}{formatCurrency(item.amount)}
+                          </Text>
+                          <Text style={[
+                            styles.itemTimeText,
+                            isEdited && styles.itemTimeTextEdited
+                          ]}>
+                            🕒 {formatItemTime(item)}
+                          </Text>
+                        </View>
                       </View>
-                    );
-                  }
+
+                      {displayDetails ? (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text style={[styles.itemDetails, { flex: 1 }]} numberOfLines={2}>
+                            {isDebt ? `🥩 ${displayDetails}` : isReturnGoods ? `↩️ ${displayDetails}` : `💵 ${displayDetails}`}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
                 })}
               </ScrollView>
             )}
@@ -2530,6 +2764,19 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
             </TouchableOpacity>
           </>
         )}
+
+          {activeReportTab === 'month' && (
+            <TouchableOpacity
+              style={styles.exportReportBtn}
+              onPress={handleExportImage}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.exportReportBtnText} numberOfLines={1}>
+                📸 XUẤT ẢNH BÁO CÁO THÁNG
+              </Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={styles.closeButtonNew}
             onPress={() => setVisible(false)}
@@ -2652,6 +2899,264 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 6,
   },
+  // --- BẮT ĐẦU STYLES MỚI CHO THỐNG KÊ THEO THÁNG ---
+  monthlySummaryGrid: {
+    marginBottom: 6,
+  },
+  monthlySummaryRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 5,
+  },
+  monthlyStatCard: {
+    flex: 1,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'flex-start',
+    ...SHADOWS.card,
+  },
+  monthlyStatLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  monthlyStatValue: {
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  monthlyStatSubValue: {
+    fontSize: 9.5,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  returnBox: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  remainingBoxDebt: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  remainingBoxZero: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  activeStatCardAll: {
+    borderColor: '#3B82F6',
+    borderWidth: 2,
+  },
+  meatBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+    borderWidth: 1,
+    borderRadius: 7,
+    paddingVertical: 4.5,
+    paddingHorizontal: 8,
+    marginBottom: 5,
+  },
+  meatBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flex: 1,
+  },
+  meatBarIcon: {
+    fontSize: 12,
+  },
+  meatBarText: {
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
+  },
+  meatBarHighlight: {
+    fontWeight: 'bold',
+    color: '#B45309',
+  },
+  meatBarToggleText: {
+    fontSize: 10.5,
+    fontWeight: 'bold',
+    color: '#B45309',
+  },
+  meatDetailGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FEF3C7',
+    borderWidth: 1,
+    borderRadius: 7,
+    padding: 5,
+    marginBottom: 5,
+  },
+  meatDetailItem: {
+    width: '49%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  meatDetailName: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#78350F',
+  },
+  meatDetailStats: {
+    fontSize: 9.5,
+    color: '#92400E',
+  },
+  meatDetailKg: {
+    fontWeight: 'bold',
+    color: '#B45309',
+  },
+  monthlyFilterPillsRow: {
+    flexDirection: 'row',
+    gap: 5,
+    marginBottom: 4,
+  },
+  filterPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  filterPillActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#2563EB',
+  },
+  filterPillActiveDebt: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#F87171',
+  },
+  filterPillActivePaid: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#4ADE80',
+  },
+  filterPillText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  filterPillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  filterPillTextActiveDebt: {
+    color: '#DC2626',
+    fontWeight: 'bold',
+  },
+  filterPillTextActivePaid: {
+    color: '#16A34A',
+    fontWeight: 'bold',
+  },
+  tableWrapper: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 7,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  tableHeaderCell: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#475569',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  tableRowZebra: {
+    backgroundColor: '#F8FAFC',
+  },
+  tableRowHasDebt: {
+    borderLeftWidth: 2.5,
+    borderLeftColor: '#F87171',
+  },
+  tableCellText: {
+    fontSize: 10.5,
+    color: '#334155',
+  },
+  tableCustomerName: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#1E293B',
+  },
+  tableCustomerPhone: {
+    fontSize: 9,
+    color: '#94A3B8',
+  },
+  tablePurchaseText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  tableReturnSubText: {
+    fontSize: 9,
+    color: '#EA580C',
+    fontWeight: '600',
+  },
+  tablePaidText: {
+    fontSize: 10.5,
+    fontWeight: 'bold',
+    color: '#16A34A',
+  },
+  tableDebtText: {
+    fontSize: 10.5,
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
+  paidBadgePill: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  paidBadgeText: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#166534',
+  },
+  tableActionIconBtn: {
+    width: 26,
+    height: 24,
+    borderRadius: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tableActionIconText: {
+    fontSize: 11,
+  },
+  // --- KẾT THÚC STYLES MỚI CHO THỐNG KÊ THEO THÁNG ---
   summaryBox: {
     flex: 1,
     paddingVertical: 5,

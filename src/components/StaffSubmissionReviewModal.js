@@ -889,6 +889,18 @@ const isCustomerNameContradictory = (detectedName, customerName, custList = []) 
   const isC52 = cClean.includes('52') || cClean.includes('tran thai tong');
   if (isD52 && !isC52) return true;
 
+  // 4b. 47 trần thái tông
+  const isD47 = (dClean.includes('47') && (dClean.includes('tran thai tong') || dClean.includes('thai tong'))) || dClean.includes('47tran') || dClean === '47';
+  const isC47 = cClean.includes('47') && (cClean.includes('tran thai tong') || cClean.includes('thai tong'));
+  if (isD47 && !isC47) return true;
+  if (!isD47 && isC47 && (dClean.includes('thao') || !dClean.includes('47'))) return true;
+
+  // 4c. Phân biệt rõ "Cô Thảo" / "Cô thảo(thầy)" với các khách hàng khác (như "47Trần thái tông")
+  const isDThao = dClean.includes('thao') || dNoSpace.includes('cothao') || dNoSpace === 'thao' || dClean.includes('thay') || dNoSpace === 'thay';
+  const isCThao = cClean.includes('thao');
+  if (isDThao && !isCThao) return true;
+  if (!isDThao && isCThao) return true;
+
   // 5. Văn khê / Bún huế văn khê
   const isDVanKhe = dClean.includes('van khe') || dNoSpace.includes('vankhe') || dClean.includes('bun hue');
   const isCVanKhe = cClean.includes('van khe') || cNoSpace.includes('vankhe') || cClean.includes('bun hue');
@@ -1056,6 +1068,26 @@ const resolveCustomerForSub = (sub, custList) => {
     });
     if (exactMatch) {
       return exactMatch;
+    }
+
+    // 0a. ƯU TIÊN SỐ 1 ĐẶC BIỆT: Khớp khách "Cô thảo(thầy)" nếu AI bóc tách là "Cô Thảo", "Thảo", "Cô thảo", "Thầy"...
+    if (
+      cleanDetNoSpace === 'thay' ||
+      cleanDetNoSpace === 'cothao' ||
+      cleanDetNoSpace === 'thao' ||
+      cleanDet.includes('thay') ||
+      cleanDet.includes('thao')
+    ) {
+      const coThaoCust = custList.find((c) => {
+        const cClean = normalizeCleanCustomerName(c.name);
+        return cClean.includes('thao') && cClean.includes('thay');
+      }) || custList.find((c) => {
+        const cClean = normalizeCleanCustomerName(c.name);
+        return cClean.includes('thao');
+      });
+      if (coThaoCust) {
+        return coThaoCust;
+      }
     }
   }
 
