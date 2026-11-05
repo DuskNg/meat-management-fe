@@ -500,6 +500,7 @@ const InvoiceReviewCard = React.memo(
                   onChange={(d) => onUpdateField(sub.id, 'date', d)}
                   placeholder="DD/MM/YYYY"
                   compact={true}
+                  allowFuture={true}
                   disabled={card.isLoadingPrice}
                 />
               </View>
@@ -1061,7 +1062,35 @@ const resolveCustomerForSub = (sub, custList) => {
     const cleanDet = normalizeCleanCustomerName(sub.detectedCustomerName);
     const cleanDetNoSpace = cleanDet.replace(/\s+/g, '');
 
+    // 0a. ƯU TIÊN SỐ 1 ĐẶC BIỆT: Khách "Chị hạnh sân bóng hà trì" nếu AI bóc tách là "Hạnh", "hanh", "chị hạnh", "sân bóng hà trì", "hà trì"...
+    // BẮT BUỘC ưu tiên trả về "Chị hạnh sân bóng hà trì", trừ khi có chữ "hồng" hoặc "hqv" (dành cho "Hồng hạnh hqv")
+    const isDetectedChiHanh = (
+      cleanDet === 'hanh' ||
+      cleanDetNoSpace === 'hanh' ||
+      cleanDet === 'chi hanh' ||
+      cleanDetNoSpace === 'chihanh' ||
+      cleanDet.includes('san bong') ||
+      cleanDet.includes('ha tri') ||
+      cleanDetNoSpace.includes('sanbonghatri') ||
+      cleanDet === 'hch' ||
+      cleanDetNoSpace === 'hch'
+    ) && !cleanDet.includes('hong') && !cleanDet.includes('hqv') && !cleanDetNoSpace.includes('hong') && !cleanDetNoSpace.includes('hqv');
+
+    if (isDetectedChiHanh) {
+      const chiHanhCust = custList.find((c) => {
+        const cClean = normalizeCleanCustomerName(c.name);
+        return cClean.includes('hanh') && (cClean.includes('san bong') || cClean.includes('ha tri'));
+      }) || custList.find((c) => {
+        const cClean = normalizeCleanCustomerName(c.name);
+        return cClean.includes('hanh') && !cClean.includes('hong') && !cClean.includes('hqv');
+      });
+      if (chiHanhCust) {
+        return chiHanhCust;
+      }
+    }
+
     const exactMatch = custList.find((c) => {
+      if (c.isActive === false || (typeof c.name === 'string' && c.name.startsWith('[Đã gộp]'))) return false;
       const cClean = normalizeCleanCustomerName(c.name);
       const cNoSpace = cClean.replace(/\s+/g, '');
       return cClean === cleanDet || cNoSpace === cleanDetNoSpace;

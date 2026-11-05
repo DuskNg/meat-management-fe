@@ -1014,6 +1014,7 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                               onChange={(d) => updateCardField(currentSub.id, 'date', d)}
                               placeholder="DD/MM/YYYY"
                               compact={true}
+                              allowFuture={true}
                               disabled={currentCard.isLoadingPrice}
                             />
                           </View>

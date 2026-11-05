@@ -1132,6 +1132,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                                 value={collectDate}
                                 onChange={setCollectDate}
                                 compact={true}
+                                allowFuture={true}
                               />
                             </View>
 
@@ -1419,6 +1420,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                               value={createDate}
                               onChange={setCreateDate}
                               compact={true}
+                              allowFuture={true}
                             />
                           </View>
 
@@ -1496,6 +1498,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                               value={editDate}
                               onChange={setEditDate}
                               compact={true}
+                              allowFuture={true}
                             />
                           </View>
 

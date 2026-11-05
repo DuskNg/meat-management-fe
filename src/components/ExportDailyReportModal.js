@@ -27,6 +27,62 @@ const toDateKey = (dateStr) => {
   return `${dd}/${mm}/${yyyy}`;
 };
 
+// Helper trích xuất ngày cụ thể của khoản tiền thanh toán để hiển thị: "ĐÃ THU (DD/MM/YYYY)"
+const extractPaymentTargetDate = (p, fallbackDateStr) => {
+  if (!p) return fallbackDateStr || '';
+  const note = (p.note || '').trim();
+
+  // 1. Khớp cụm "Thanh toán nợ ngày DD/MM/YYYY" hoặc "ngày DD/MM/YYYY"
+  const dateWithYearMatch = note.match(/(?:thanh toán|trả nợ|thu nợ|nợ)?\s*(?:từ ngày|ngày)\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+  if (dateWithYearMatch) {
+    const parts = dateWithYearMatch[1].split('/');
+    const dd = parts[0].padStart(2, '0');
+    const mm = parts[1].padStart(2, '0');
+    const yyyy = parts[2];
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  // 2. Khớp cụm "Thanh toán nợ Tháng MM/YYYY" hoặc "Tháng MM/YYYY"
+  const monthMatch = note.match(/(?:thanh toán|trả nợ|thu nợ|nợ)?\s*tháng\s*(\d{1,2}\/\d{4})/i);
+  if (monthMatch) {
+    return `Tháng ${monthMatch[1]}`;
+  }
+
+  // 3. Khớp cụm "ngày DD/MM" (không có năm)
+  const dateNoYearMatch = note.match(/(?:thanh toán|trả nợ|thu nợ|nợ)?\s*(?:từ ngày|ngày)\s*(\d{1,2}\/\d{1,2})/i);
+  if (dateNoYearMatch) {
+    const parts = dateNoYearMatch[1].split('/');
+    const dd = parts[0].padStart(2, '0');
+    const mm = parts[1].padStart(2, '0');
+    const defaultYear = fallbackDateStr ? fallbackDateStr.split('/')[2] : new Date().getFullYear();
+    return `${dd}/${mm}/${defaultYear}`;
+  }
+
+  // 4. Khớp bất kỳ chuỗi DD/MM/YYYY nào trong ghi chú
+  const anyDateMatch = note.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+  if (anyDateMatch) {
+    const parts = anyDateMatch[1].split('/');
+    const dd = parts[0].padStart(2, '0');
+    const mm = parts[1].padStart(2, '0');
+    const yyyy = parts[2];
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  // 5. Fallback về ngày thực tế của khoản thanh toán (paidAt hoặc createdAt hoặc date)
+  const pDate = p.paidAt || p.createdAt || p.date;
+  if (pDate) {
+    const d = new Date(pDate);
+    if (!isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+  }
+
+  return fallbackDateStr || '';
+};
+
 // Helper kiểm tra xem một giao dịch/khoản thanh toán có phải là "Trả hàng" hay không
 const isReturnPayment = (p) => {
   if (!p) return false;
@@ -407,9 +463,11 @@ const ExportDailyReportModal = forwardRef((props, ref) => {
           });
         } else {
           totalPaymentAmount += amt;
+          const targetDate = extractPaymentTargetDate(p, date);
+          const paymentName = targetDate ? `ĐÃ THU (${targetDate})` : 'ĐÃ THU';
           customerMap[cId].entries.push({
             type: 'PAYMENT',
-            name: 'ĐÃ THU',
+            name: paymentName,
             quantity: null,
             price: null,
             amount: amt,
