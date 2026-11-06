@@ -1062,15 +1062,16 @@ const resolveCustomerForSub = (sub, custList) => {
     const cleanDet = normalizeCleanCustomerName(sub.detectedCustomerName);
     const cleanDetNoSpace = cleanDet.replace(/\s+/g, '');
 
-    // 0a. ƯU TIÊN SỐ 1 ĐẶC BIỆT: Khách "Chị hạnh sân bóng hà trì" nếu AI bóc tách là "Hạnh", "hanh", "chị hạnh", "sân bóng hà trì", "hà trì"...
+    // 0a. ƯU TIÊN SỐ 1 ĐẶC BIỆT: Khách "Chị hạnh sân bóng hà trì" nếu AI bóc tách là "Hạnh", "hanh", "chị hạnh", "sân bóng hà trì", "hạnh hà trì"...
     // BẮT BUỘC ưu tiên trả về "Chị hạnh sân bóng hà trì", trừ khi có chữ "hồng" hoặc "hqv" (dành cho "Hồng hạnh hqv")
+    // LƯU Ý: Chỉ "Hà trì" đơn thuần (không có "hạnh" / "sân bóng") là khách "Hà trì" riêng, KHÔNG được gán sang chị Hạnh
     const isDetectedChiHanh = (
       cleanDet === 'hanh' ||
       cleanDetNoSpace === 'hanh' ||
       cleanDet === 'chi hanh' ||
       cleanDetNoSpace === 'chihanh' ||
       cleanDet.includes('san bong') ||
-      cleanDet.includes('ha tri') ||
+      (cleanDet.includes('ha tri') && cleanDet.includes('hanh')) ||
       cleanDetNoSpace.includes('sanbonghatri') ||
       cleanDet === 'hch' ||
       cleanDetNoSpace === 'hch'

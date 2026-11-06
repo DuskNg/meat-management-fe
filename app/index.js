@@ -1305,9 +1305,48 @@ export default function DashboardScreen() {
               ) : null}
             </View>
 
-            <View style={styles.cardDebtStatusSection}>
+            {/* Nút 3 chấm dọc (Sửa & Xóa) đặt góc phải header để không chiếm chỗ hàng nút thao tác */}
+            <View style={{ position: 'relative', zIndex: 1000, alignSelf: 'flex-start' }}>
+              <AnimatedPressable
+                style={[styles.viewDebtBtn, { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1', minWidth: 32, paddingHorizontal: 8 }]}
+                onPress={() => {
+                  setActiveOptionsEmpId(activeOptionsEmpId === item.id ? null : item.id);
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={[styles.viewDebtBtnText, { color: '#64748B', fontSize: 16 }]}>⋮</Text>
+              </AnimatedPressable>
+
+              {showOptions && (
+                <View style={styles.employeeOptionsDropdown}>
+                  <TouchableOpacity
+                    style={styles.employeeOptionsDropdownItem}
+                    onPress={() => {
+                      setActiveOptionsEmpId(null);
+                      editEmployeeModalRef.current?.open(item);
+                    }}
+                  >
+                    <Text style={styles.employeeOptionsDropdownText}>✏️ Sửa thông tin</Text>
+                  </TouchableOpacity>
+                  <View style={styles.employeeOptionsDropdownDivider} />
+                  <TouchableOpacity
+                    style={styles.employeeOptionsDropdownItem}
+                    onPress={() => {
+                      setActiveOptionsEmpId(null);
+                      confirmDeleteEmployee(item.id, item.name);
+                    }}
+                  >
+                    <Text style={[styles.employeeOptionsDropdownText, { color: '#EF4444' }]}>🗑️ Xóa nhân viên</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Khối lương: tràn hết chiều ngang dưới tên nhân viên (mobile-first, không ép tên bị cắt) */}
+          <View style={styles.empSalaryBlock}>
               <View style={styles.debtValueContainer}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4, width: '100%' }}>
                   <Text style={[styles.debtValueLabel, { marginBottom: 0 }]}>
                     {item.isPartiallyPaid
                       ? 'Lương còn lại cần trả:'
@@ -1381,95 +1420,59 @@ export default function DashboardScreen() {
                   </View>
                 )}
               </View>
-            </View>
           </View>
 
           <View style={styles.cardDivider} />
 
           <View style={styles.cardDebtContainer}>
-            <View style={styles.actionsRightGroup}>
+            <View style={styles.empActionsGrid}>
+              {/* Lưới 2 cột cho 4 nút thao tác: không bao giờ tràn mép màn hình trên mobile */}
               {/* Nút xem lịch sử xin nghỉ, ứng, lương */}
               <AnimatedPressable
-                style={styles.viewDebtBtn}
+                style={[styles.viewDebtBtn, styles.empActionBtn]}
                 onPress={() => {
                   setSelectedEmployee(item);
                   employeeHistoryModalRef.current?.open(item);
                 }}
                 activeOpacity={0.6}
               >
-                <Text style={styles.viewDebtBtnText}>👁️ Lịch sử</Text>
+                <Text style={[styles.viewDebtBtnText, styles.empActionBtnText]} numberOfLines={1}>👁️ Lịch sử</Text>
               </AnimatedPressable>
 
               {/* Nút xin nghỉ (Tự động trừ buổi lương) */}
               <AnimatedPressable
-                style={[styles.viewDebtBtn, { backgroundColor: '#FEF2F2', borderColor: '#FECDD3' }]}
+                style={[styles.viewDebtBtn, styles.empActionBtn, { backgroundColor: '#FEF2F2', borderColor: '#FECDD3' }]}
                 onPress={() => {
                   setSelectedEmployee(item);
                   employeeLeaveModalRef.current?.open(item);
                 }}
                 activeOpacity={0.6}
               >
-                <Text style={[styles.viewDebtBtnText, { color: '#DC2626', fontWeight: 'bold' }]}>📝 Xin nghỉ</Text>
+                <Text style={[styles.viewDebtBtnText, styles.empActionBtnText, { color: '#DC2626', fontWeight: 'bold' }]} numberOfLines={1}>📝 Xin nghỉ</Text>
               </AnimatedPressable>
 
               {/* Nút ứng lương */}
               <AnimatedPressable
-                style={styles.addDebtBtn}
+                style={[styles.addDebtBtn, styles.empActionBtn]}
                 onPress={() => {
                   setSelectedEmployee(item);
                   salaryAdvanceModalRef.current?.open();
                 }}
                 activeOpacity={0.6}
               >
-                <Text style={styles.addDebtBtnText}>💸 Ứng lương</Text>
+                <Text style={[styles.addDebtBtnText, styles.empActionBtnText]} numberOfLines={1}>💸 Ứng lương</Text>
               </AnimatedPressable>
 
               {/* Nút trả lương cho phép chọn khoảng ngày */}
               <AnimatedPressable
-                style={[styles.addDebtBtn, { backgroundColor: '#10B981', borderColor: '#10B981' }]}
+                style={[styles.addDebtBtn, styles.empActionBtn, { backgroundColor: '#10B981', borderColor: '#10B981' }]}
                 onPress={() => {
                   paySalaryModalRef.current?.open(item, salaryMonth);
                 }}
                 activeOpacity={0.6}
               >
-                <Text style={[styles.addDebtBtnText, { color: '#FFFFFF' }]}>💵 Trả lương</Text>
+                <Text style={[styles.addDebtBtnText, styles.empActionBtnText, { color: '#FFFFFF' }]} numberOfLines={1}>💵 Trả lương</Text>
               </AnimatedPressable>
-              {/* Nút 3 chấm dọc (Chứa tính năng Sửa & Xóa) */}
-              <View style={{ position: 'relative', zIndex: 1000 }}>
-                <AnimatedPressable
-                  style={[styles.viewDebtBtn, { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1', minWidth: 32, paddingHorizontal: 8 }]}
-                  onPress={() => {
-                    setActiveOptionsEmpId(activeOptionsEmpId === item.id ? null : item.id);
-                  }}
-                  activeOpacity={0.6}
-                >
-                  <Text style={[styles.viewDebtBtnText, { color: '#64748B', fontSize: 16 }]}>⋮</Text>
-                </AnimatedPressable>
-
-                {showOptions && (
-                  <View style={styles.employeeOptionsDropdown}>
-                    <TouchableOpacity
-                      style={styles.employeeOptionsDropdownItem}
-                      onPress={() => {
-                        setActiveOptionsEmpId(null);
-                        editEmployeeModalRef.current?.open(item);
-                      }}
-                    >
-                      <Text style={styles.employeeOptionsDropdownText}>✏️ Sửa thông tin</Text>
-                    </TouchableOpacity>
-                    <View style={styles.employeeOptionsDropdownDivider} />
-                    <TouchableOpacity
-                      style={styles.employeeOptionsDropdownItem}
-                      onPress={() => {
-                        setActiveOptionsEmpId(null);
-                        confirmDeleteEmployee(item.id, item.name);
-                      }}
-                    >
-                      <Text style={[styles.employeeOptionsDropdownText, { color: '#EF4444' }]}>🗑️ Xóa nhân viên</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
             </View>
           </View>
         </View>
@@ -4374,6 +4377,35 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
     gap: 6,
+  },
+  // Khối lương nhân viên: tràn hết chiều ngang dưới tên (mobile-first)
+  empSalaryBlock: {
+    width: '100%',
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  // Lưới 2 cột cho nút thao tác nhân viên
+  empActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    width: '100%',
+    gap: 6,
+  },
+  empActionBtn: {
+    flexGrow: 1,
+    flexBasis: '45%',
+    minWidth: 0,
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+  },
+  empActionBtnText: {
+    fontSize: 12.5,
+    textAlign: 'center',
   },
   // Nút xem chi tiết nợ của khách hàng
   viewDebtBtn: {
