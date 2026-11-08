@@ -80,6 +80,33 @@ const buildReturnNoteFromItems = (items) => {
     .join(', ');
 };
 
+// Danh sách các mẫu nhận diện 15 cơ sở thuộc Nhóm Trường Hoàng
+export const TRUONG_HOANG_PATTERNS = [
+  /373\s*kim\s*ma/i,
+  /cuon\s*an\s*khanh/i,
+  /52\s*tran\s*thai\s*tong/i,
+  /126\s*nguyen\s*khanh\s*toan/i,
+  /cuon\s*lang\s*ha/i,
+  /268\s*khuong\s*dinh/i,
+  /47\s*tran\s*thai\s*tong/i,
+  /giang\s*vo/i,
+  /236\s*xa\s*dan/i,
+  /ham\s*nghi/i,
+  /truong\s*hoang/i,
+  /chua\s*lang/i,
+  /lk01\s*phung\s*khoang/i,
+  /huynh\s*thuc\s*khang/i,
+  /bep\s*tong/i,
+];
+
+// Helper kiểm tra một khách hàng có thuộc Nhóm Trường Hoàng hay không
+export const isTruongHoangBranch = (customer, dynamicSet = null) => {
+  if (!customer) return false;
+  if (dynamicSet && customer.id && dynamicSet.has(customer.id)) return true;
+  const nameClean = removeDiacritics(customer.name || '').toLowerCase().trim();
+  if (!nameClean) return false;
+  return TRUONG_HOANG_PATTERNS.some((pattern) => pattern.test(nameClean));
+};
 
 /**
  * Component nút chuyển nhanh hóa đơn ở thanh điều hướng trên cùng.
@@ -162,6 +189,8 @@ const InvoiceReviewCard = React.memo(
     onRemoveQuickSubAmount,
     onSave,
     onReject,
+    isTruongHoang,
+    onToggleSigned,
   }) => {
     // Trạng thái theo dõi lỗi tải video để hiện khung fallback thay vì màn hình đen 0:00
     const [videoError, setVideoError] = useState(false);
@@ -485,6 +514,30 @@ const InvoiceReviewCard = React.memo(
                       </View>
                     )}
                   />
+
+                  {/* DẤU TÍCH KÝ NHẬN CHO CÁC CƠ SỞ NHÓM TRƯỜNG HOÀNG */}
+                  {card.targetType !== 'supplier' && isTruongHoang && (
+                    <TouchableOpacity
+                      style={[
+                        styles.truongHoangSignBox,
+                        card.isSigned ? styles.truongHoangSignBoxChecked : styles.truongHoangSignBoxUnchecked,
+                      ]}
+                      onPress={() => onToggleSigned?.(sub.id)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={[styles.truongHoangCheckbox, card.isSigned && styles.truongHoangCheckboxChecked]}>
+                        {card.isSigned ? <Text style={styles.truongHoangCheckIcon}>✓</Text> : null}
+                      </View>
+                      <Text style={[styles.truongHoangSignText, card.isSigned && styles.truongHoangSignTextChecked]}>
+                        {card.isSigned ? '✓ Đã có ký nhận' : '⚠️ Chưa có ký nhận (chạm để tích)'}
+                      </Text>
+                      <View style={[styles.truongHoangTag, card.isSigned && styles.truongHoangTagChecked]}>
+                        <Text style={[styles.truongHoangTagText, card.isSigned && styles.truongHoangTagTextChecked]}>
+                          Trường Hoàng
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
                 </>
               )}
             </View>
@@ -813,8 +866,8 @@ const InvoiceReviewCard = React.memo(
                   {isApproved
                     ? '🔄 CẬP NHẬT LẠI'
                     : card.targetType === 'supplier'
-                    ? '📦 NHẬP HÀNG NCC'
-                    : (card.isReturn ? '↩️ TRỪ NỢ TRẢ HÀNG' : '💾 NHẬP CÔNG NỢ')}
+                      ? '📦 NHẬP HÀNG NCC'
+                      : (card.isReturn ? '↩️ TRỪ NỢ TRẢ HÀNG' : '💾 NHẬP CÔNG NỢ')}
                 </Text>
               )}
             </TouchableOpacity>
@@ -2803,6 +2856,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
+  // Danh sách ID các cơ sở thuộc Nhóm Trường Hoàng (từ Portal Link hoặc fallback regex)
+  const [truongHoangCustIds, setTruongHoangCustIds] = useState(new Set());
 
   // Quản lý dữ liệu form cho TỪNG hóa đơn (Key: sub.id)
   const [cardDataMap, setCardDataMap] = useState({});
@@ -2827,10 +2882,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   // Tải danh sách khách hàng, sản phẩm và nhà cung cấp
   const fetchMasterData = async () => {
     try {
-      const [custRes, prodRes, supRes] = await Promise.all([
+      const [custRes, prodRes, supRes, linksRes] = await Promise.all([
         api.get('/customers?isBadDebt=false'),
         api.get('/products'),
         api.get('/suppliers'),
+        api.get('/portal/manage/links').catch(() => ({ data: { success: false } })),
       ]);
       const custList = custRes.data.success ? (custRes.data.data || []) : [];
       const prodList = prodRes.data.success
@@ -2842,6 +2898,19 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       if (custRes.data.success) setCustomers(custList);
       if (prodRes.data.success) setProducts(prodList);
       if (supRes?.data?.success) setSuppliers(supList);
+
+      // Nhận diện các cơ sở thuộc link "Nhóm Trường Hoàng"
+      if (linksRes?.data?.success && Array.isArray(linksRes.data?.data)) {
+        const thLink = linksRes.data.data.find((l) => {
+          const lName = removeDiacritics(l.name || '').toLowerCase();
+          return lName.includes('truong hoang');
+        });
+        if (thLink && Array.isArray(thLink.portalLinkCustomers)) {
+          const thIds = new Set(thLink.portalLinkCustomers.map((plc) => plc.customerId).filter(Boolean));
+          setTruongHoangCustIds(thIds);
+        }
+      }
+
       return { custList, prodList, supList };
     } catch (err) {
       console.warn('Lỗi khi tải danh bạ:', err);
@@ -2927,7 +2996,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   const detectedClean = removeDiacritics((s.detectedCustomerName || '').toLowerCase().trim());
                   const noteClean = removeDiacritics((s.note || '').toLowerCase().trim());
                   return (detectedClean && (detectedClean === sClean || detectedClean.includes(sClean) || sClean.includes(detectedClean))) ||
-                         (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
+                    (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
                 });
                 return matchedSup?.id;
               })
@@ -3753,7 +3822,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           const detectedClean = removeDiacritics((sub.detectedCustomerName || parsedAiData?.supplier_name || '').toLowerCase().trim());
           const noteClean = removeDiacritics((sub.note || '').toLowerCase().trim());
           return (detectedClean && (detectedClean === sClean || detectedClean.includes(sClean) || sClean.includes(detectedClean))) ||
-                 (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
+            (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
         })) || null;
 
         // Khách hàng: Đối với đơn ĐÃ DUYỆT, lấy trực tiếp 100% khách hàng đã lưu, không chạy lại regex AI và không dùng isSavedContradictory
@@ -4218,6 +4287,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         // TUYỆT ĐỐI không tạo pseudo-customer không có id để điền sẵn vào ô chọn
         const effectiveCustomer = (matchedCust && matchedCust.id) ? matchedCust : null;
 
+        const isAlreadySigned = Boolean(
+          (sub.note && /\[Đã ký nhận\]/i.test(sub.note)) ||
+          (cardNote && /\[Đã ký nhận\]/i.test(cardNote))
+        );
+
         newMap[sub.id] = {
           targetType: initialTargetType,
           supplier: matchedSup,
@@ -4232,11 +4306,27 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           items: rawItems,
           isSaving: false,
           isLoadingPrice: false,
+          isSigned: isAlreadySigned,
         };
       });
       return newMap;
     });
   };
+
+  // Toggle trạng thái Đã ký nhận cho hóa đơn (Dành riêng cho các cơ sở Nhóm Trường Hoàng)
+  const handleToggleSigned = useCallback((subId) => {
+    setCardDataMap((prev) => {
+      const card = prev[subId];
+      if (!card) return prev;
+      return {
+        ...prev,
+        [subId]: {
+          ...card,
+          isSigned: !card.isSigned,
+        },
+      };
+    });
+  }, []);
 
   // Cập nhật thông tin trên 1 thẻ hóa đơn
   const updateCardField = (subId, field, value) => {
@@ -4260,7 +4350,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             supToUse = suppliers.find((s) => {
               const sClean = removeDiacritics(s.name.toLowerCase().trim());
               return (detectedClean && (detectedClean === sClean || detectedClean.includes(sClean) || sClean.includes(detectedClean))) ||
-                     (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
+                (noteClean && (noteClean.includes(sClean) || sClean.includes(noteClean)));
             }) || null;
           }
         }
@@ -4749,6 +4839,14 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       // Bắt buộc lấy ID khách hàng đã chọn từ danh sách hệ thống
       const resolvedCustomerId = card.customer.id;
 
+      // Lưu vết trạng thái Ký nhận dành riêng cho các cơ sở thuộc Nhóm Trường Hoàng
+      const isTH = card.targetType !== 'supplier' && isTruongHoangBranch(card.customer, truongHoangCustIds);
+      if (isTH) {
+        let cleanNote = finalNote.replace(/\[(?:Đã|Chưa) ký nhận\]/gi, '').trim();
+        const signTag = card.isSigned ? '[Đã ký nhận]' : '[Chưa ký nhận]';
+        finalNote = cleanNote ? `${signTag} ${cleanNote}` : signTag;
+      }
+
       const payload = {
         customerId: resolvedCustomerId,
         date: isoDate,
@@ -4764,8 +4862,10 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       if (res.data.success) {
         if (card.isReturn) {
           showGlobalToast(`🎉 Đã trừ nợ trả hàng cho ${card.customer.name} thành công!`, 'success');
+        } else if (isTH && !card.isSigned) {
+          showGlobalToast(`⚠️ Đã lưu đơn nhưng cơ sở "${card.customer.name}" CHƯA CÓ KÝ NHẬN!`, 'warning');
         } else {
-          showGlobalToast(`🎉 Đã nhập nợ cho ${card.customer.name} thành công!`, 'success');
+          showGlobalToast(`🎉 Đã nhập nợ cho ${card.customer.name}${isTH ? ' (Đã có ký nhận)' : ''} thành công!`, 'success');
         }
         const updatedSub = res.data?.data?.submission;
         const learnedAliasInfo = res.data?.data?.learnedAlias;
@@ -5012,6 +5112,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
       onConfirm: async () => {
         setSubmittingBatch(true);
         let successCount = 0;
+        const unsignedTHBranches = [];
         for (const sub of validSubs) {
           try {
             const card = cardDataMap[sub.id];
@@ -5096,6 +5197,17 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
               }
             }
 
+            // Lưu vết trạng thái Ký nhận dành riêng cho các cơ sở thuộc Nhóm Trường Hoàng
+            const isTH = card.targetType !== 'supplier' && isTruongHoangBranch(card.customer, truongHoangCustIds);
+            if (isTH) {
+              let cleanNote = finalNote.replace(/\[(?:Đã|Chưa) ký nhận\]/gi, '').trim();
+              const signTag = card.isSigned ? '[Đã ký nhận]' : '[Chưa ký nhận]';
+              finalNote = cleanNote ? `${signTag} ${cleanNote}` : signTag;
+              if (!card.isSigned) {
+                unsignedTHBranches.push(card.customer?.name || 'Cơ sở Trường Hoàng');
+              }
+            }
+
             let payload = null;
             if (card.targetType === 'supplier') {
               if (!card.supplier?.id) return;
@@ -5147,10 +5259,21 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           }
         }
         setSubmittingBatch(false);
-        showGlobalToast(`🎉 Đã nhập nợ thành công ${successCount}/${validSubs.length} hóa đơn!`, 'success');
         const savedCustomerIds = [...new Set(validSubs.map((s) => cardDataMap[s.id]?.customer?.id).filter(Boolean))];
         savedCustomerIds.forEach((cId) => fetchProductsForCustomer(cId, true));
         if (onRefresh) onRefresh();
+
+        // Cảnh báo nếu có cơ sở thuộc Nhóm Trường Hoàng chưa có ký nhận
+        if (unsignedTHBranches.length > 0) {
+          const uniqueUnsigned = [...new Set(unsignedTHBranches)];
+          popupModalRef.current?.show({
+            type: 'warning',
+            title: '⚠️ CẢNH BÁO: CƠ SỞ CHƯA CÓ KÝ NHẬN',
+            message: `Đã nhập nợ thành công ${successCount}/${validSubs.length} hóa đơn.\n\nPhát hiện ${uniqueUnsigned.length} cơ sở thuộc Nhóm Trường Hoàng CHƯA CÓ KÝ NHẬN:\n\n${uniqueUnsigned.map((name, i) => `${i + 1}. ${name}`).join('\n')}\n\nVui lòng đối soát và kiểm tra lại giấy ký nhận của các cơ sở trên!`,
+          });
+        } else {
+          showGlobalToast(`🎉 Đã nhập nợ thành công ${successCount}/${validSubs.length} hóa đơn!`, 'success');
+        }
       },
     });
   };
@@ -5621,6 +5744,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                       onRemoveQuickSubAmount={removeQuickSubAmount}
                       onSave={handleSaveCard}
                       onReject={handleRejectCard}
+                      isTruongHoang={isTruongHoangBranch(card.customer, truongHoangCustIds)}
+                      onToggleSigned={handleToggleSigned}
                     />
                   );
                 })}
@@ -5677,6 +5802,8 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
         removeQuickSubAmount={removeQuickSubAmount}
         handleSaveCard={handleSaveCard}
         handleRejectCard={handleRejectCard}
+        truongHoangCustIds={truongHoangCustIds}
+        onToggleSigned={handleToggleSigned}
       />
 
       {/* Popup Modal xác nhận - zIndex 9999999 để đè lên StaffSubmissionDetailModal (999999) */}
@@ -7232,5 +7359,71 @@ const styles = StyleSheet.create({
   partnerTypeTabBtnTextActive: {
     color: '#FFFFFF',
     fontWeight: 'bold',
+  },
+  // Style cho tính năng Dấu tích Ký nhận (Nhóm Trường Hoàng)
+  truongHoangSignBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginTop: 6,
+    borderWidth: 1,
+    gap: 8,
+  },
+  truongHoangSignBoxChecked: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  truongHoangSignBoxUnchecked: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+  },
+  truongHoangCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#D97706',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  truongHoangCheckboxChecked: {
+    borderColor: '#10B981',
+    backgroundColor: '#10B981',
+  },
+  truongHoangCheckIcon: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+    lineHeight: 15,
+  },
+  truongHoangSignText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#B45309',
+    flex: 1,
+  },
+  truongHoangSignTextChecked: {
+    color: '#047857',
+    fontWeight: '700',
+  },
+  truongHoangTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: '#FEF3C7',
+  },
+  truongHoangTagChecked: {
+    backgroundColor: '#D1FAE5',
+  },
+  truongHoangTagText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  truongHoangTagTextChecked: {
+    color: '#047857',
   },
 });

@@ -39,6 +39,9 @@ const formatShortDate = (dateStr) => {
 export default function EmployeeSalaryPortalScreen() {
   const { token } = useLocalSearchParams();
 
+  // Tab chính của cổng: 'SALARY' (Bảng lương) hoặc 'RULES' (Quy định cửa hàng)
+  const [activeTab, setActiveTab] = useState('SALARY');
+
   // State thông tin ban đầu
   const [initLoading, setInitLoading] = useState(true);
   const [portalInfo, setPortalInfo] = useState(null);
@@ -83,7 +86,7 @@ export default function EmployeeSalaryPortalScreen() {
         } else {
           window.localStorage.removeItem(`salary_portal_code_${token}`);
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   };
 
@@ -132,7 +135,7 @@ export default function EmployeeSalaryPortalScreen() {
           setPortalInfo({ ...fallbackRes.data.data, isGeneral: false });
           return;
         }
-      } catch (_) {}
+      } catch (_) { }
       setInitError(err.response?.data?.message || 'Đường dẫn tra cứu không hợp lệ hoặc đã hết hạn.');
     } finally {
       setInitLoading(false);
@@ -157,7 +160,7 @@ export default function EmployeeSalaryPortalScreen() {
     } catch (err) {
       setPinError(
         err.response?.data?.message ||
-          'Mã xác thực không chính xác. Vui lòng kiểm tra lại mã được cấp.'
+        'Mã xác thực không chính xác. Vui lòng kiểm tra lại mã được cấp.'
       );
     } finally {
       setVerifying(false);
@@ -204,7 +207,7 @@ export default function EmployeeSalaryPortalScreen() {
     const date = new Date(y, m - 1 + delta, 1);
     const newMonthKey = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
     setMonthKey(newMonthKey);
-    fetchSalaryData(newMonthKey, (pinInput || '').trim()).catch(() => {});
+    fetchSalaryData(newMonthKey, (pinInput || '').trim()).catch(() => { });
   };
 
   // Khóa lại để nhập mã khác (xóa cache trên máy cá nhân)
@@ -656,106 +659,233 @@ export default function EmployeeSalaryPortalScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
-      {/* HEADER CỔNG KIỂM TRA BẢNG LƯƠNG (TINH GỌN, KHÔNG DÙNG TAB THỪA) */}
+      {/* HEADER CỔNG KIỂM TRA BẢNG LƯƠNG & QUY ĐỊNH */}
       <View style={styles.topBar}>
         <View style={styles.topBarLeft}>
           <Text style={styles.merchantTitle} numberOfLines={1}>🏪 {merchantName}</Text>
-          <Text style={styles.portalSubTitle}>BẢNG LƯƠNG & CHẤM CÔNG THÁNG NÀY</Text>
+          <Text style={styles.portalSubTitle}>CỔNG THÔNG TIN NHÂN SỰ & QUY ĐỊNH</Text>
         </View>
         <View style={styles.secureBadge}>
           <Text style={styles.secureBadgeText}>🛡️ Bảo mật</Text>
         </View>
       </View>
 
-      {/* NỘI DUNG TAB BẢNG LƯƠNG */}
-      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {!isUnlocked ? (
-          /* KHỐI NHẬP MÃ XÁC THỰC MỞ KHÓA */
-          <View style={styles.authCard}>
-            <View style={styles.authIconWrap}>
-              <Text style={styles.authIcon}>🔐</Text>
-            </View>
-            <Text style={styles.authTitle}>NHẬP MÃ XÁC THỰC KIỂM TRA LƯƠNG</Text>
-            <Text style={styles.authSub}>
-              Mỗi nhân viên được cấp 1 mã xác thực riêng biệt. Vui lòng nhập mã của bạn để xem thông tin lương tháng này:
-            </Text>
+      {/* THANH CHUYỂN TAB CHÍNH: BẢNG LƯƠNG & QUY ĐỊNH CỬA HÀNG */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'SALARY' && styles.tabItemActive]}
+          onPress={() => setActiveTab('SALARY')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.tabItemText, activeTab === 'SALARY' && styles.tabItemTextActive]}>
+            💰 BẢNG LƯƠNG
+          </Text>
+        </TouchableOpacity>
 
-            {/* Ô nhập Mã xác thực */}
-            <View style={styles.pinSection}>
-              <Text style={styles.fieldLabel}>🔑 Mã xác thực của bạn:</Text>
-              <View style={styles.pinInputWrap}>
-                <TextInput
-                  style={styles.pinInput}
-                  placeholder="Nhập mã xác thực..."
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  value={pinInput}
-                  onChangeText={(text) => {
-                    setPinInput(text);
-                    setPinError('');
-                  }}
-                  onSubmitEditing={handleUnlockWithCode}
-                />
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'RULES' && styles.tabItemActive]}
+          onPress={() => setActiveTab('RULES')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.tabItemText, activeTab === 'RULES' && styles.tabItemTextActive]}>
+            📜 QUY ĐỊNH CỬA HÀNG
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* NỘI DUNG THEO TAB ĐƯỢC CHỌN */}
+      {activeTab === 'SALARY' ? (
+        <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {!isUnlocked ? (
+            /* KHỐI NHẬP MÃ XÁC THỰC MỞ KHÓA */
+            <View style={styles.authCard}>
+              <View style={styles.authIconWrap}>
+                <Text style={styles.authIcon}>🔐</Text>
+              </View>
+              <Text style={styles.authTitle}>NHẬP MÃ XÁC THỰC KIỂM TRA LƯƠNG</Text>
+              <Text style={styles.authSub}>
+                Mỗi nhân viên được cấp 1 mã xác thực riêng biệt. Vui lòng nhập mã của bạn để xem thông tin lương tháng này:
+              </Text>
+
+              {/* Ô nhập Mã xác thực */}
+              <View style={styles.pinSection}>
+                <Text style={styles.fieldLabel}>🔑 Mã xác thực của bạn:</Text>
+                <View style={styles.pinInputWrap}>
+                  <TextInput
+                    style={styles.pinInput}
+                    placeholder="Nhập mã xác thực..."
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="number-pad"
+                    maxLength={10}
+                    value={pinInput}
+                    onChangeText={(text) => {
+                      setPinInput(text);
+                      setPinError('');
+                    }}
+                    onSubmitEditing={handleUnlockWithCode}
+                  />
+                </View>
+              </View>
+
+              {pinError ? <Text style={styles.pinErrorText}>⚠️ {pinError}</Text> : null}
+
+              <TouchableOpacity
+                style={[styles.unlockBtn, verifying && { opacity: 0.7 }]}
+                onPress={handleUnlockWithCode}
+                disabled={verifying}
+                activeOpacity={0.8}
+              >
+                {verifying ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.unlockBtnText}>XÁC THỰC & XEM BẢNG LƯƠNG 🔓</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.roleGuideBox}>
+                <Text style={styles.roleGuideItem}>
+                  👤 <Text style={styles.bold}>Nhân viên:</Text> Nhập mã cá nhân được cấp để xem bảng lương, ngày công và tạm ứng của riêng mình.
+                </Text>
+                <Text style={styles.roleGuideItem}>
+                  👑 <Text style={styles.bold}>Chủ cơ sở:</Text> Nhập mã quản lý của chủ để quan sát toàn bộ thông tin & trạng thái lương của tất cả nhân viên.
+                </Text>
+                <Text style={[styles.roleGuideItem, { color: '#0369A1', marginTop: 4, fontWeight: '500' }]}>
+                  💾 <Text style={styles.bold}>Ghi nhớ tự động:</Text> Sau khi nhập đúng mã lần đầu, hệ thống sẽ tự động lưu trên máy này. Những lần sau vào link sẽ mở xem ngay mà không cần nhập lại mã.
+                </Text>
               </View>
             </View>
+          ) : (
+            /* KHỐI HIỂN THỊ DỮ LIỆU SAU KHI NHẬP MÃ THÀNH CÔNG */
+            <View style={styles.salarySection}>
+              {/* Điều khiển chọn tháng */}
+              <View style={styles.monthSelector}>
+                <TouchableOpacity style={styles.monthArrowBtn} onPress={() => adjustMonth(-1)}>
+                  <Text style={styles.monthArrowText}>◀️ Tháng trước</Text>
+                </TouchableOpacity>
+                <View style={styles.monthCenter}>
+                  <Text style={styles.monthCenterLabel}>Kỳ lương tra cứu</Text>
+                  <Text style={styles.monthCenterValue}>Tháng {monthKey}</Text>
+                </View>
+                <TouchableOpacity style={styles.monthArrowBtn} onPress={() => adjustMonth(1)}>
+                  <Text style={styles.monthArrowText}>Tháng sau ▶️</Text>
+                </TouchableOpacity>
+              </View>
 
-            {pinError ? <Text style={styles.pinErrorText}>⚠️ {pinError}</Text> : null}
-
-            <TouchableOpacity
-              style={[styles.unlockBtn, verifying && { opacity: 0.7 }]}
-              onPress={handleUnlockWithCode}
-              disabled={verifying}
-              activeOpacity={0.8}
-            >
-              {verifying ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+              {dataLoading ? (
+                <ActivityIndicator size="large" color="#0284C7" style={{ marginVertical: 30 }} />
+              ) : dataError ? (
+                <Text style={styles.dataErrorText}>⚠️ {dataError}</Text>
+              ) : salaryData?.isOwnerView ? (
+                renderOwnerOverview()
               ) : (
-                <Text style={styles.unlockBtnText}>XÁC THỰC & XEM BẢNG LƯƠNG 🔓</Text>
+                renderSingleEmployeeSalaryDetail(salaryData, false)
               )}
-            </TouchableOpacity>
-
-            <View style={styles.roleGuideBox}>
-              <Text style={styles.roleGuideItem}>
-                👤 <Text style={styles.bold}>Nhân viên:</Text> Nhập mã cá nhân được cấp để xem bảng lương, ngày công và tạm ứng của riêng mình.
-              </Text>
-              <Text style={styles.roleGuideItem}>
-                👑 <Text style={styles.bold}>Chủ cơ sở:</Text> Nhập mã quản lý của chủ để quan sát toàn bộ thông tin & trạng thái lương của tất cả nhân viên.
-              </Text>
-              <Text style={[styles.roleGuideItem, { color: '#0369A1', marginTop: 4, fontWeight: '500' }]}>
-                💾 <Text style={styles.bold}>Ghi nhớ tự động:</Text> Sau khi nhập đúng mã lần đầu, hệ thống sẽ tự động lưu trên máy này. Những lần sau vào link sẽ mở xem ngay mà không cần nhập lại mã.
+            </View>
+          )}
+        </ScrollView>
+      ) : (
+        /* TAB 2: NỘI QUY & QUY ĐỊNH CỦA CỬA HÀNG */
+        <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.rulesContainer}>
+            {/* BANNER ĐẦU TRANG QUY ĐỊNH */}
+            <View style={styles.rulesBanner}>
+              <Text style={styles.rulesBannerTitle}>📜 NỘI QUY & QUY ĐỊNH LÀM VIỆC</Text>
+              <Text style={styles.rulesBannerSub}>
+                Áp dụng cho toàn bộ nhân sự giao hàng, sơ chế và làm việc tại {merchantName}
               </Text>
             </View>
-          </View>
-        ) : (
-          /* KHỐI HIỂN THỊ DỮ LIỆU SAU KHI NHẬP MÃ THÀNH CÔNG */
-          <View style={styles.salarySection}>
-            {/* Điều khiển chọn tháng */}
-            <View style={styles.monthSelector}>
-              <TouchableOpacity style={styles.monthArrowBtn} onPress={() => adjustMonth(-1)}>
-                <Text style={styles.monthArrowText}>◀️ Tháng trước</Text>
-              </TouchableOpacity>
-              <View style={styles.monthCenter}>
-                <Text style={styles.monthCenterLabel}>Kỳ lương tra cứu</Text>
-                <Text style={styles.monthCenterValue}>Tháng {monthKey}</Text>
+
+            {/* MỤC 1: GIỜ GIẤC & TRÁCH NHIỆM LÀM VIỆC */}
+            <View style={styles.ruleCard}>
+              <View style={styles.ruleCardHeader}>
+                <Text style={styles.ruleCardTitle}>⏰ 1. GIỜ GIẤC & TRÁCH NHIỆM LÀM VIỆC</Text>
               </View>
-              <TouchableOpacity style={styles.monthArrowBtn} onPress={() => adjustMonth(1)}>
-                <Text style={styles.monthArrowText}>Tháng sau ▶️</Text>
-              </TouchableOpacity>
+              <View style={styles.ruleBody}>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Vào ca lúc 03h sáng:</Text> Đi làm đúng giờ, không tự ý bỏ ca (việc đột xuất phải báo trước cho quản lý).
+                </Text>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Soạn & đối soát hàng trước khi lên xe:</Text> Đúng loại thịt, đúng cân, đủ túi. Nhân viên trước khi nổ máy đi giao phải đối chiếu nhanh số túi và tên hàng trên tích kê, nếu phát hiện sai sót phải báo chỉnh sửa ngay tại kho (tránh giao nhầm/thiếu hàng).
+                </Text>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Vệ sinh & an toàn:</Text> Rửa sạch dao/thớt/máy và dọn khu vực sau ca; tuân thủ an toàn dao, máy, xe.
+                </Text>
+              </View>
             </View>
 
-            {dataLoading ? (
-              <ActivityIndicator size="large" color="#0284C7" style={{ marginVertical: 30 }} />
-            ) : dataError ? (
-              <Text style={styles.dataErrorText}>⚠️ {dataError}</Text>
-            ) : salaryData?.isOwnerView ? (
-              renderOwnerOverview()
-            ) : (
-              renderSingleEmployeeSalaryDetail(salaryData, false)
-            )}
+            {/* MỤC 2: QUY ĐỊNH CHỮ KÝ GIAO HÀNG & CHẾ TÀI PHẠT (BẮT BUỘC) */}
+            <View style={[styles.ruleCard, styles.ruleCardWarning]}>
+              <View style={[styles.ruleCardHeader, styles.ruleCardHeaderWarning]}>
+                <Text style={[styles.ruleCardTitle, styles.ruleCardTitleWarning]}>
+                  ✍️ 2. QUY ĐỊNH CHỮ KÝ GIAO HÀNG & CHẾ TÀI XỬ LÝ
+                </Text>
+              </View>
+              <View style={styles.ruleBody}>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Bắt buộc lấy chữ ký xác nhận:</Text> Khi đi giao hàng cho bất kỳ nhà hàng, cơ sở hay khách hàng nào, nhân viên giao hàng <Text style={styles.boldRed}>BẮT BUỘC phải lấy đầy đủ chữ ký nhận</Text> của người nhận hàng trên hóa đơn/tích kê giao hàng.
+                </Text>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Xử lý khi khách từ chối ký hoặc chưa có người ký:</Text> Trường hợp khách hàng/bếp từ chối ký hoặc chưa có người ký nhận, nhân viên giao hàng <Text style={styles.bold}>phải gọi điện báo ngay cho Quản lý/Chủ hàng tại thời điểm giao</Text> hoặc <Text style={styles.bold}>chụp ảnh/quay video túi hàng đặt tại quán làm bằng chứng</Text>. <Text style={styles.boldRed}>Tuyệt đối không tự ý để hàng lại rồi đi về mà không thông báo.</Text>
+                </Text>
+
+                <View style={styles.ruleAlertBox}>
+                  <Text style={styles.ruleAlertTitle}>⚠️ CHẾ TÀI PHẠT KHI ĐƠN KHÔNG CÓ CHỮ KÝ:</Text>
+                  <Text style={styles.ruleAlertText}>
+                    1. <Text style={styles.bold}>Bồi thường thiệt hại đơn hàng:</Text> Nếu đơn giao <Text style={styles.boldRed}>KHÔNG CÓ CHỮ KÝ</Text> mà phía nhà hàng không chấp nhận hóa đơn hoặc từ chối thanh toán gây thiệt hại cho cửa hàng, <Text style={styles.boldRed}>người đi giao sẽ phải chịu phạt và bồi thường toàn bộ giá trị thiệt hại của đơn hàng đó</Text>.
+                  </Text>
+                  <Text style={[styles.ruleAlertText, { marginTop: 6 }]}>
+                    2. <Text style={styles.bold}>Cắt toàn bộ thưởng tháng:</Text> Người vi phạm <Text style={styles.boldRed}>sẽ không được nhận tiền thưởng của tháng đó</Text> (bao gồm thưởng trách nhiệm và xét duyệt các khoản thưởng liên quan).
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* MỤC 3: CHẾ ĐỘ THƯỞNG & TĂNG LƯƠNG */}
+            <View style={styles.ruleCard}>
+              <View style={styles.ruleCardHeader}>
+                <Text style={styles.ruleCardTitle}>🎁 3. CHẾ ĐỘ THƯỞNG & TĂNG LƯƠNG</Text>
+              </View>
+              <View style={styles.ruleBody}>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Thưởng trách nhiệm (200.000đ/tháng):</Text> Đi làm đúng giờ, đủ công, không vi phạm quy định (bao gồm quy định chữ ký giao hàng).
+                </Text>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Thưởng thâm niên (xét mỗi kỳ 06 tháng):</Text>
+                </Text>
+                <View style={styles.subBulletList}>
+                  <Text style={styles.subBulletText}>- Mất thưởng trách nhiệm ≤ 1 tháng: thưởng <Text style={styles.bold}>1.500.000đ</Text></Text>
+                  <Text style={styles.subBulletText}>- Mất thưởng trách nhiệm 2 tháng: thưởng <Text style={styles.bold}>1.000.000đ</Text></Text>
+                  <Text style={styles.subBulletText}>- Từ 3 tháng không đạt: không thưởng kỳ đó</Text>
+                </View>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Thưởng lễ tết (200.000đ/dịp):</Text> Tết Dương lịch 1/1, Giỗ Tổ 10/3 ÂL, 30/4 - 1/5, Quốc khánh 2/9.
+                </Text>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Xét tăng lương:</Text> Định kỳ 12 tháng/lần theo tay nghề và chất lượng công việc (hai bên thống nhất).
+                </Text>
+              </View>
+            </View>
+
+            {/* MỤC 4: NGHỈ VIỆC & BÀN GIAO */}
+            <View style={styles.ruleCard}>
+              <View style={styles.ruleCardHeader}>
+                <Text style={styles.ruleCardTitle}>🚪 4. NGHỈ VIỆC & BÀN GIAO</Text>
+              </View>
+              <View style={styles.ruleBody}>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Thông báo trước 15 ngày:</Text> Nhân viên có nguyện vọng nghỉ việc cần báo trước 15 ngày để cửa hàng thu xếp nhân sự.
+                </Text>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Bàn giao đầy đủ:</Text> Bàn giao công việc, thịt hàng, tiền bạc và dụng cụ làm việc trước khi nghỉ.
+                </Text>
+                <Text style={styles.ruleBullet}>
+                  • <Text style={styles.bold}>Quyết toán quyền lợi:</Text> Cửa hàng đối chiếu và thanh toán đầy đủ lương cùng toàn bộ quyền lợi theo quy định.
+                </Text>
+              </View>
+            </View>
           </View>
-        )}
-      </ScrollView>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -1437,5 +1567,126 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 13,
+  },
+  // ── CSS CHO THANH CHUYỂN TAB & NỘI QUY QUY ĐỊNH CỬA HÀNG ──
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  tabItem: {
+    flex: 1,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottomWidth: 2.5,
+    borderBottomColor: 'transparent',
+  },
+  tabItemActive: {
+    borderBottomColor: '#0284C7',
+    backgroundColor: '#F0F9FF20',
+  },
+  tabItemText: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+    color: '#64748B',
+  },
+  tabItemTextActive: {
+    color: '#0284C7',
+  },
+  rulesContainer: {
+    padding: 14,
+    gap: 12,
+  },
+  rulesBanner: {
+    backgroundColor: '#F0F9FF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  rulesBannerTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0369A1',
+    marginBottom: 4,
+  },
+  rulesBannerSub: {
+    fontSize: 12,
+    color: '#0284C7',
+    lineHeight: 17,
+  },
+  ruleCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  ruleCardHeader: {
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  ruleCardTitle: {
+    fontSize: 13.5,
+    fontWeight: 'bold',
+    color: '#0F172A',
+  },
+  ruleBody: {
+    gap: 8,
+  },
+  ruleBullet: {
+    fontSize: 12.5,
+    color: '#334155',
+    lineHeight: 19,
+  },
+  subBulletList: {
+    paddingLeft: 12,
+    gap: 4,
+    marginVertical: 2,
+  },
+  subBulletText: {
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 18,
+  },
+  bold: {
+    fontWeight: 'bold',
+  },
+  boldRed: {
+    fontWeight: 'bold',
+    color: '#DC2626',
+  },
+  ruleCardWarning: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FFF8F8',
+  },
+  ruleCardHeaderWarning: {
+    borderColor: '#FECDD3',
+  },
+  ruleCardTitleWarning: {
+    color: '#B91C1C',
+  },
+  ruleAlertBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 6,
+  },
+  ruleAlertTitle: {
+    fontSize: 12.5,
+    fontWeight: 'bold',
+    color: '#991B1B',
+    marginBottom: 4,
+  },
+  ruleAlertText: {
+    fontSize: 12,
+    color: '#7F1D1D',
+    lineHeight: 18,
   },
 });

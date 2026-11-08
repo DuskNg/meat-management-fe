@@ -21,6 +21,7 @@ import { COLORS, FONTS, SHADOWS } from '../theme';
 import { API_HOST, resolveMediaUrl } from '../api/client';
 import { showGlobalToast } from '../store/toastStore';
 import { isMobileDevice } from '../utils/imageShareHelper';
+import { isTruongHoangBranch } from './StaffSubmissionReviewModal';
 
 // Helper định dạng tiền VNĐ
 const formatCurrency = (amount) =>
@@ -83,6 +84,8 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
     removeQuickSubAmount,
     handleSaveCard,
     handleRejectCard,
+    truongHoangCustIds,
+    onToggleSigned,
   } = props;
 
   const { width, height } = useWindowDimensions();
@@ -1003,6 +1006,30 @@ const StaffSubmissionDetailModal = forwardRef((props, ref) => {
                             </View>
                           )}
                         />
+
+                        {/* DẤU TÍCH KÝ NHẬN CHO CÁC CƠ SỞ NHÓM TRƯỜNG HOÀNG */}
+                        {currentCard.targetType !== 'supplier' && isTruongHoangBranch(currentCard.customer, truongHoangCustIds) && (
+                          <TouchableOpacity
+                            style={[
+                              styles.truongHoangSignBox,
+                              currentCard.isSigned ? styles.truongHoangSignBoxChecked : styles.truongHoangSignBoxUnchecked,
+                            ]}
+                            onPress={() => onToggleSigned?.(currentSub.id)}
+                            activeOpacity={0.75}
+                          >
+                            <View style={[styles.truongHoangCheckbox, currentCard.isSigned && styles.truongHoangCheckboxChecked]}>
+                              {currentCard.isSigned ? <Text style={styles.truongHoangCheckIcon}>✓</Text> : null}
+                            </View>
+                            <Text style={[styles.truongHoangSignText, currentCard.isSigned && styles.truongHoangSignTextChecked]}>
+                              {currentCard.isSigned ? '✓ Đã có ký nhận' : '⚠️ Chưa có ký nhận (chạm để tích)'}
+                            </Text>
+                            <View style={[styles.truongHoangTag, currentCard.isSigned && styles.truongHoangTagChecked]}>
+                              <Text style={[styles.truongHoangTagText, currentCard.isSigned && styles.truongHoangTagTextChecked]}>
+                                Trường Hoàng
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        )}
 
                         <View style={styles.dateAndNoteRow}>
                           <View style={{ flex: 1.2 }}>
@@ -2190,6 +2217,72 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontStyle: 'italic',
     paddingVertical: 4,
+  },
+  // Style cho tính năng Dấu tích Ký nhận (Nhóm Trường Hoàng)
+  truongHoangSignBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginTop: 6,
+    borderWidth: 1,
+    gap: 8,
+  },
+  truongHoangSignBoxChecked: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  truongHoangSignBoxUnchecked: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+  },
+  truongHoangCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#D97706',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  truongHoangCheckboxChecked: {
+    borderColor: '#10B981',
+    backgroundColor: '#10B981',
+  },
+  truongHoangCheckIcon: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+    lineHeight: 15,
+  },
+  truongHoangSignText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#B45309',
+    flex: 1,
+  },
+  truongHoangSignTextChecked: {
+    color: '#047857',
+    fontWeight: '700',
+  },
+  truongHoangTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: '#FEF3C7',
+  },
+  truongHoangTagChecked: {
+    backgroundColor: '#D1FAE5',
+  },
+  truongHoangTagText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  truongHoangTagTextChecked: {
+    color: '#047857',
   },
 });
 

@@ -1276,205 +1276,213 @@ export default function DashboardScreen() {
     };
 
     const currentInfo = computeCurrentSalaryInfo();
+    const daysInMonth = getDaysInMonthFromStr(salaryMonth);
+    const dailyRate = Math.round(item.baseSalary / daysInMonth);
 
     return (
-      <View style={[styles.customerCard, showOptions && { zIndex: 100, elevation: 100 }]}>
-        <View style={styles.customerCardClickable}>
-          <View style={styles.cardHeaderSection}>
-            <View style={[styles.customerAvatar, { backgroundColor: avatarBg }]}>
-              <Text style={[styles.customerAvatarText, { color: avatarText }]}>{firstLetter}</Text>
+      <View style={[styles.empCardCompact, showOptions && { zIndex: 999999, elevation: 999999 }]}>
+        {/* HÀNG 1: THÔNG TIN NHÂN VIÊN & LƯƠNG TỔNG QUAN */}
+        <View style={[styles.empHeaderRowCompact, showOptions && { zIndex: 999999, elevation: 999999, position: 'relative' }]}>
+          {/* CỘT TRÁI: AVATAR + TÊN + MÃ LƯƠNG / CHỨC VỤ */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1.1, minWidth: 0 }}>
+            <View style={[styles.empAvatarSmall, { backgroundColor: avatarBg }]}>
+              <Text style={[styles.empAvatarTextSmall, { color: avatarText }]}>{firstLetter}</Text>
             </View>
 
-            <View style={styles.cardInfo}>
-              <Text style={styles.customerName} numberOfLines={1}>
-                {item.name}
-              </Text>
-              <Text style={styles.customerPhone} numberOfLines={1}>
-                {item.role ? `💼 ${item.role}` : '💼 Nhân viên'} {item.phone ? `• 📞 ${item.phone}` : ''} {item.accessCode ? `• 🔑 Mã lương: ${item.accessCode}` : ''}
-              </Text>
-              {item.startDate ? (
-                <Text style={{ fontSize: 11, color: '#0284C7', marginTop: 2 }} numberOfLines={1}>
-                  📅 Vào làm: {formatEmployeeStartDate(item.startDate)}
-                  {item.joinedMidMonth ? ` • Hưởng ${item.eligibleDays}/${item.totalDaysInMonth} công` : ''}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                <Text style={styles.empNameTextCompact} numberOfLines={1}>
+                  {item.name}
                 </Text>
-              ) : null}
-              {item.isBeforeJoined ? (
-                <View style={{ marginTop: 3, alignSelf: 'flex-start', backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
-                  <Text style={{ fontSize: 10, color: '#D97706', fontWeight: 'bold' }}>⏳ Chưa vào làm trong tháng này</Text>
-                </View>
-              ) : null}
-            </View>
+                {item.accessCode ? (
+                  <View style={styles.empCodeBadgeSmall}>
+                    <Text style={styles.empCodeBadgeTextSmall}>#{item.accessCode}</Text>
+                  </View>
+                ) : null}
+              </View>
 
-            {/* Nút 3 chấm dọc (Sửa & Xóa) đặt góc phải header để không chiếm chỗ hàng nút thao tác */}
-            <View style={{ position: 'relative', zIndex: 1000, alignSelf: 'flex-start' }}>
-              <AnimatedPressable
-                style={[styles.viewDebtBtn, { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1', minWidth: 32, paddingHorizontal: 8 }]}
-                onPress={() => {
-                  setActiveOptionsEmpId(activeOptionsEmpId === item.id ? null : item.id);
-                }}
-                activeOpacity={0.6}
-              >
-                <Text style={[styles.viewDebtBtnText, { color: '#64748B', fontSize: 16 }]}>⋮</Text>
-              </AnimatedPressable>
-
-              {showOptions && (
-                <View style={styles.employeeOptionsDropdown}>
-                  <TouchableOpacity
-                    style={styles.employeeOptionsDropdownItem}
-                    onPress={() => {
-                      setActiveOptionsEmpId(null);
-                      editEmployeeModalRef.current?.open(item);
-                    }}
-                  >
-                    <Text style={styles.employeeOptionsDropdownText}>✏️ Sửa thông tin</Text>
-                  </TouchableOpacity>
-                  <View style={styles.employeeOptionsDropdownDivider} />
-                  <TouchableOpacity
-                    style={styles.employeeOptionsDropdownItem}
-                    onPress={() => {
-                      setActiveOptionsEmpId(null);
-                      confirmDeleteEmployee(item.id, item.name);
-                    }}
-                  >
-                    <Text style={[styles.employeeOptionsDropdownText, { color: '#EF4444' }]}>🗑️ Xóa nhân viên</Text>
-                  </TouchableOpacity>
-                </View>
+              <Text style={styles.empSubTextCompact} numberOfLines={1}>
+                {item.role || 'Nhân viên'} {item.phone ? `• ${item.phone}` : ''}
+                {item.startDate ? ` • Vào: ${formatEmployeeStartDate(item.startDate)}` : ''}
+              </Text>
+              {item.isBeforeJoined && (
+                <Text style={{ fontSize: 9.5, color: '#D97706', fontWeight: 'bold' }}>⏳ Chưa vào làm tháng này</Text>
               )}
             </View>
           </View>
 
-          {/* Khối lương: tràn hết chiều ngang dưới tên nhân viên (mobile-first, không ép tên bị cắt) */}
-          <View style={styles.empSalaryBlock}>
-              <View style={styles.debtValueContainer}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4, width: '100%' }}>
-                  <Text style={[styles.debtValueLabel, { marginBottom: 0 }]}>
-                    {item.isPartiallyPaid
-                      ? 'Lương còn lại cần trả:'
-                      : (item.isPaid ? 'Lương tháng (Đã trả đủ):' : 'Lương tháng thực lĩnh:')}
-                  </Text>
-                  <Text style={[
-                    styles.debtValueAmount,
-                    {
-                      color: item.isPaid ? '#10B981' : (remainingSalary < 0 ? '#EF4444' : (item.isPartiallyPaid ? '#D97706' : '#0369A1')),
-                      fontSize: remainingSalary < 0 ? 11 : 15
-                    }
-                  ]}>
-                    {item.isPaid
-                      ? formatCurrency(item.monthNetSalary || item.calculatedSalary)
-                      : formatCurrency(remainingSalary)}{remainingSalary < 0 ? ' (chuyển sang tháng sau)' : ''}
-                  </Text>
-                </View>
+          {/* CỘT PHẢI: LƯƠNG THỰC LĨNH + LƯƠNG TÍNH ĐẾN NAY + NÚT MENU */}
+          <View style={[{ alignItems: 'flex-end', flex: 0.9 }, showOptions && { zIndex: 999999, elevation: 999999, position: 'relative' }]}>
+            <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 4 }, showOptions && { zIndex: 999999, elevation: 999999, position: 'relative' }]}>
+              <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '500' }}>
+                {item.isPartiallyPaid ? 'Còn lại:' : (item.isPaid ? 'Đã trả đủ:' : 'Thực lĩnh:')}
+              </Text>
+              <Text style={[
+                styles.empSalaryAmountCompact,
+                {
+                  color: item.isPaid ? '#059669' : (remainingSalary < 0 ? '#EF4444' : (item.isPartiallyPaid ? '#D97706' : '#0369A1')),
+                }
+              ]}>
+                {item.isPaid
+                  ? formatCurrency(item.monthNetSalary || item.calculatedSalary)
+                  : formatCurrency(remainingSalary)}
+              </Text>
 
-                {/* Ghi chú khi đã trả lương một phần */}
-                {item.isPartiallyPaid && (
-                  <Text style={{ fontSize: 10, color: '#D97706', marginTop: 2, textAlign: 'right', fontWeight: '500' }}>
-                    (Tổng lương: {formatCurrency(item.monthNetSalary || item.calculatedSalary)} • Đã trả: -{formatCurrency(item.totalPaidSalary)})
-                  </Text>
-                )}
+              {/* Nút 3 chấm menu nhỏ gọn góc phải */}
+              <View style={{ position: 'relative', zIndex: 999999, elevation: 999999, marginLeft: 2 }}>
+                <AnimatedPressable
+                  style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}
+                  onPress={() => setActiveOptionsEmpId(activeOptionsEmpId === item.id ? null : item.id)}
+                  activeOpacity={0.6}
+                >
+                  <Text style={{ color: '#64748B', fontSize: 13, fontWeight: 'bold', lineHeight: 14 }}>⋮</Text>
+                </AnimatedPressable>
 
-                {/* Dòng hiển thị lương tính đến ngày hiện tại */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
-                  <Text style={{ fontSize: 11, color: '#0369A1', fontWeight: '600' }}>
-                    Lương tính đến ngày hiện tại{currentInfo.isCurrentMonth && currentInfo.currentDayCutoff ? ` (${currentInfo.currentDayCutoff}/${salaryMonth.split('/')[0]})` : ''}:
-                  </Text>
-                  <Text style={{ fontSize: 12, fontWeight: 'bold', color: item.totalPaidSalary > 0 && currentInfo.currentSalary === 0 ? '#10B981' : '#0284C7' }}>
-                    {formatCurrency(currentInfo.currentSalary)}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: '#64748B' }}>
-                    ({currentInfo.currentWorkingDays} công)
-                  </Text>
-                </View>
-                {item.totalPaidSalary > 0 && (
-                  <Text style={{ fontSize: 10, color: '#059669', marginTop: 1, textAlign: 'right' }}>
-                    (Đã trừ tiền lương đã chi trả: -{formatCurrency(item.totalPaidSalary)})
-                  </Text>
-                )}
-                {item.joinedMidMonth && (
-                  <Text style={{ fontSize: 10, color: '#0284C7', marginTop: 2, textAlign: 'right' }}>
-                    (Vào làm giữa tháng: {item.workingDays} công = {formatCurrency(item.calculatedSalary)})
-                  </Text>
-                )}
-                {(item.totalAdvances > 0 || item.leaveDays > 0) && (
-                  <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 2, textAlign: 'right' }}>
-                    (Gốc: {formatCurrency(item.baseSalary)}{item.leaveDays > 0 ? ` - Nghỉ ${item.leaveDays} buổi${formatEmpLeaveDates(item.leaves)}: -${formatCurrency(item.leaveDeduction)}` : ''}{item.totalAdvances > 0 ? ` - Ứng: -${formatCurrency(item.totalAdvances)}` : ''})
-                  </Text>
-                )}
-                {item.carryOver < 0 && (
-                  <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 2, textAlign: 'right' }}>
-                    (Nợ tháng trước chuyển sang: {formatCurrency(item.carryOver)})
-                  </Text>
-                )}
-                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2, textAlign: 'right' }}>
-                  (~{formatCurrency(Math.round(item.baseSalary / getDaysInMonthFromStr(salaryMonth)))}/ngày - chia {getDaysInMonthFromStr(salaryMonth)} công)
-                </Text>
-                {item.isPaid && (
-                  <View style={{ marginTop: 4, backgroundColor: '#10B98120', borderColor: '#10B981', borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                    <Text style={{ fontSize: 10, color: '#10B981', fontWeight: 'bold', textAlign: 'center' }}>✅ Đã trả đủ lương</Text>
-                  </View>
-                )}
-                {item.isPartiallyPaid && (
-                  <View style={{ marginTop: 4, backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                    <Text style={{ fontSize: 10, color: '#D97706', fontWeight: 'bold', textAlign: 'center' }}>
-                      ⏳ Đã trả 1 phần: {formatCurrency(item.totalPaidSalary)}
-                    </Text>
+                {showOptions && (
+                  <View style={[styles.employeeOptionsDropdown, { right: 0, top: 26, zIndex: 999999, elevation: 999999 }]}>
+                    <TouchableOpacity
+                      style={styles.employeeOptionsDropdownItem}
+                      onPress={() => {
+                        setActiveOptionsEmpId(null);
+                        editEmployeeModalRef.current?.open(item);
+                      }}
+                    >
+                      <Text style={styles.employeeOptionsDropdownText}>✏️ Sửa thông tin</Text>
+                    </TouchableOpacity>
+                    <View style={styles.employeeOptionsDropdownDivider} />
+                    <TouchableOpacity
+                      style={styles.employeeOptionsDropdownItem}
+                      onPress={() => {
+                        setActiveOptionsEmpId(null);
+                        confirmDeleteEmployee(item.id, item.name);
+                      }}
+                    >
+                      <Text style={[styles.employeeOptionsDropdownText, { color: '#EF4444' }]}>🗑️ Xóa nhân viên</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
-          </View>
+            </View>
 
-          <View style={styles.cardDivider} />
-
-          <View style={styles.cardDebtContainer}>
-            <View style={styles.empActionsGrid}>
-              {/* Lưới 2 cột cho 4 nút thao tác: không bao giờ tràn mép màn hình trên mobile */}
-              {/* Nút xem lịch sử xin nghỉ, ứng, lương */}
-              <AnimatedPressable
-                style={[styles.viewDebtBtn, styles.empActionBtn]}
-                onPress={() => {
-                  setSelectedEmployee(item);
-                  employeeHistoryModalRef.current?.open(item);
-                }}
-                activeOpacity={0.6}
-              >
-                <Text style={[styles.viewDebtBtnText, styles.empActionBtnText]} numberOfLines={1}>👁️ Lịch sử</Text>
-              </AnimatedPressable>
-
-              {/* Nút xin nghỉ (Tự động trừ buổi lương) */}
-              <AnimatedPressable
-                style={[styles.viewDebtBtn, styles.empActionBtn, { backgroundColor: '#FEF2F2', borderColor: '#FECDD3' }]}
-                onPress={() => {
-                  setSelectedEmployee(item);
-                  employeeLeaveModalRef.current?.open(item);
-                }}
-                activeOpacity={0.6}
-              >
-                <Text style={[styles.viewDebtBtnText, styles.empActionBtnText, { color: '#DC2626', fontWeight: 'bold' }]} numberOfLines={1}>📝 Xin nghỉ</Text>
-              </AnimatedPressable>
-
-              {/* Nút ứng lương */}
-              <AnimatedPressable
-                style={[styles.addDebtBtn, styles.empActionBtn]}
-                onPress={() => {
-                  setSelectedEmployee(item);
-                  salaryAdvanceModalRef.current?.open();
-                }}
-                activeOpacity={0.6}
-              >
-                <Text style={[styles.addDebtBtnText, styles.empActionBtnText]} numberOfLines={1}>💸 Ứng lương</Text>
-              </AnimatedPressable>
-
-              {/* Nút trả lương cho phép chọn khoảng ngày */}
-              <AnimatedPressable
-                style={[styles.addDebtBtn, styles.empActionBtn, { backgroundColor: '#10B981', borderColor: '#10B981' }]}
-                onPress={() => {
-                  paySalaryModalRef.current?.open(item, salaryMonth);
-                }}
-                activeOpacity={0.6}
-              >
-                <Text style={[styles.addDebtBtnText, styles.empActionBtnText, { color: '#FFFFFF' }]} numberOfLines={1}>💵 Trả lương</Text>
-              </AnimatedPressable>
+            {/* Dòng Lương tính đến hiện tại */}
+            <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }, showOptions && { zIndex: 1 }]}>
+              <Text style={{ fontSize: 10, color: '#64748B' }}>
+                Đến {currentInfo.isCurrentMonth && currentInfo.currentDayCutoff ? `${currentInfo.currentDayCutoff}/${salaryMonth.split('/')[0]}` : 'nay'}:
+              </Text>
+              <Text style={{ fontSize: 11, fontWeight: 'bold', color: item.totalPaidSalary > 0 && currentInfo.currentSalary === 0 ? '#059669' : '#0284C7' }}>
+                {formatCurrency(currentInfo.currentSalary)}
+              </Text>
+              <Text style={{ fontSize: 9.5, color: '#94A3B8' }}>
+                ({currentInfo.currentWorkingDays}c)
+              </Text>
             </View>
           </View>
+        </View>
+
+        {/* HÀNG 2: BẢNG CHỈ SỐ ĐỐI SOÁT 4 Ô TINH GỌN (LƯƠNG GỐC | ĐÃ ỨNG | NGHỈ | ĐỊNH MỨC) */}
+        <View style={styles.empMetricsStripCompact}>
+          <View style={styles.empMetricColCompact}>
+            <Text style={styles.empMetricLabelCompact}>Lương gốc</Text>
+            <Text style={styles.empMetricValueCompact} numberOfLines={1}>
+              {formatCurrency(item.baseSalary)}
+            </Text>
+          </View>
+
+          <View style={styles.empMetricDividerCompact} />
+
+          <View style={styles.empMetricColCompact}>
+            <Text style={styles.empMetricLabelCompact}>Đã ứng</Text>
+            <Text style={[styles.empMetricValueCompact, item.totalAdvances > 0 && { color: '#D97706', fontWeight: 'bold' }]} numberOfLines={1}>
+              {item.totalAdvances > 0 ? `-${formatCurrency(item.totalAdvances)}` : '0 đ'}
+            </Text>
+          </View>
+
+          <View style={styles.empMetricDividerCompact} />
+
+          <View style={styles.empMetricColCompact}>
+            <Text style={styles.empMetricLabelCompact}>Nghỉ</Text>
+            <Text style={[styles.empMetricValueCompact, item.leaveDays > 0 && { color: '#DC2626', fontWeight: 'bold' }]} numberOfLines={1}>
+              {item.leaveDays > 0 ? `${item.leaveDays} buổi${formatEmpLeaveDates(item.leaves)}` : '0'}
+            </Text>
+          </View>
+
+          <View style={styles.empMetricDividerCompact} />
+
+          <View style={styles.empMetricColCompact}>
+            <Text style={styles.empMetricLabelCompact}>Định mức</Text>
+            <Text style={[styles.empMetricValueCompact, { color: '#64748B' }]} numberOfLines={1}>
+              ~{formatCurrency(dailyRate)}/c
+            </Text>
+          </View>
+        </View>
+
+        {/* CÁC THÔNG TIN ĐẶC BIỆT NẾU CÓ (ĐÃ TRẢ 1 PHẦN / NỢ THÁNG TRƯỚC / VÀO GIỮA THÁNG) */}
+        {item.isPartiallyPaid && (
+          <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginBottom: 5 }}>
+            <Text style={{ fontSize: 10, color: '#D97706', fontWeight: '600', textAlign: 'center' }}>
+              ⏳ Đã trả: {formatCurrency(item.totalPaidSalary)} • Còn cần thanh toán: {formatCurrency(remainingSalary)}
+            </Text>
+          </View>
+        )}
+        {item.carryOver < 0 && (
+          <View style={{ backgroundColor: '#FEF2F2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginBottom: 5 }}>
+            <Text style={{ fontSize: 10, color: '#EF4444', fontWeight: '600', textAlign: 'center' }}>
+              ⚠️ Nợ tháng trước chuyển sang: {formatCurrency(item.carryOver)}
+            </Text>
+          </View>
+        )}
+        {item.joinedMidMonth && (
+          <View style={{ backgroundColor: '#F0F9FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginBottom: 5 }}>
+            <Text style={{ fontSize: 10, color: '#0284C7', fontWeight: '600', textAlign: 'center' }}>
+              📅 Vào làm giữa tháng: {item.workingDays} công = {formatCurrency(item.calculatedSalary)}
+            </Text>
+          </View>
+        )}
+
+        {/* HÀNG 3: BỘ 4 NÚT THAO TÁC TRÊN 1 DÒNG DUY NHẤT */}
+        <View style={styles.empActionsRowSingle}>
+          <AnimatedPressable
+            style={[styles.empActionBtnSingle, { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' }]}
+            onPress={() => {
+              setSelectedEmployee(item);
+              employeeHistoryModalRef.current?.open(item);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.empActionBtnTextSingle, { color: '#334155' }]}>👁️ Lịch sử</Text>
+          </AnimatedPressable>
+
+          <AnimatedPressable
+            style={[styles.empActionBtnSingle, { backgroundColor: '#FEF2F2', borderColor: '#FECDD3' }]}
+            onPress={() => {
+              setSelectedEmployee(item);
+              employeeLeaveModalRef.current?.open(item);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.empActionBtnTextSingle, { color: '#DC2626' }]}>📝 Xin nghỉ</Text>
+          </AnimatedPressable>
+
+          <AnimatedPressable
+            style={[styles.empActionBtnSingle, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}
+            onPress={() => {
+              setSelectedEmployee(item);
+              salaryAdvanceModalRef.current?.open();
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.empActionBtnTextSingle, { color: '#D97706' }]}>💸 Ứng lương</Text>
+          </AnimatedPressable>
+
+          <AnimatedPressable
+            style={[styles.empActionBtnSingle, { backgroundColor: '#059669', borderColor: '#059669', flex: 1.15 }]}
+            onPress={() => {
+              paySalaryModalRef.current?.open(item, salaryMonth);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.empActionBtnTextSingle, { color: '#FFFFFF', fontWeight: 'bold' }]}>💵 Trả lương</Text>
+          </AnimatedPressable>
         </View>
       </View>
     );
@@ -1758,7 +1766,7 @@ export default function DashboardScreen() {
         {...cellProps}
         style={[
           cellProps.style,
-          { zIndex: isMenuOpen ? 9999 : 1, elevation: isMenuOpen ? 9999 : 1 }
+          { zIndex: isMenuOpen ? 999999 : 1, elevation: isMenuOpen ? 999999 : 1 }
         ]}
       />
     );
@@ -2424,39 +2432,39 @@ export default function DashboardScreen() {
           </View>
 
           {/* MẸO CHUYỂN ĐỔI LỊCH ÂM SANG DƯƠNG */}
-          <View style={{ marginHorizontal: 16, marginTop: 6, marginBottom: 2, padding: 8, backgroundColor: '#F0F9FF', borderRadius: 8, borderWidth: 1, borderColor: '#BAE6FD' }}>
-            <Text style={{ fontSize: 11, color: '#0369A1', lineHeight: 16 }}>
-              💡 <Text style={{ fontWeight: 'bold' }}>Chu kỳ lương Dương lịch:</Text> Với nhân viên chuyển từ lương Âm sang hoặc vào làm giữa tháng, hệ thống tự động tính ngày công thực tế từ ngày bắt đầu vào làm.
+          <View style={{ marginHorizontal: 16, marginTop: 4, marginBottom: 2, paddingVertical: 5, paddingHorizontal: 8, backgroundColor: '#F0F9FF', borderRadius: 6, borderWidth: 1, borderColor: '#BAE6FD' }}>
+            <Text style={{ fontSize: 10.5, color: '#0369A1', lineHeight: 15 }}>
+              💡 <Text style={{ fontWeight: 'bold' }}>Chu kỳ lương Dương:</Text> Tính công thực tế theo ngày vào làm hoặc ngày chuyển đổi âm/dương.
             </Text>
           </View>
 
-          {/* CỤM NÚT THAO TÁC NHÂN SỰ */}
-          <View style={{ flexDirection: 'row', marginHorizontal: 16, marginTop: 8, marginBottom: 4, gap: 8, flexWrap: 'wrap' }}>
+          {/* CỤM NÚT THAO TÁC NHÂN SỰ (1 HÀNG 3 NÚT ĐỀU NHAU, KHÔNG VỠ DÒNG) */}
+          <View style={{ flexDirection: 'row', marginHorizontal: 16, marginTop: 6, marginBottom: 4, gap: 6 }}>
             <TouchableOpacity
-              style={[styles.addEmployeeButtonFull, { flex: 1.2, minWidth: 150, backgroundColor: '#0284C7' }]}
+              style={[styles.addEmployeeButtonFull, { flex: 1, minWidth: 0, paddingVertical: 7, backgroundColor: '#0284C7' }]}
               onPress={() => employeeSalaryShareModalRef.current?.openGeneral(salaryMonth)}
               activeOpacity={0.8}
             >
-              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 12 }]}>🔗 LINK CHUNG</Text>
+              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 11 }]}>🔗 LINK CHUNG</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.addEmployeeButtonFull, { flex: 1.2, minWidth: 150, backgroundColor: '#059669' }]}
+              style={[styles.addEmployeeButtonFull, { flex: 1.15, minWidth: 0, paddingVertical: 7, backgroundColor: '#059669' }]}
               onPress={() => {
                 refetchEmployees();
                 monthlySalaryNotificationModalRef.current?.open(salaryMonth, employees);
               }}
               activeOpacity={0.8}
             >
-              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 12 }]}>📸 BẢNG LƯƠNG THÁNG</Text>
+              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 11 }]}>📸 BẢNG LƯƠNG</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.addEmployeeButtonFull, { flex: 1, minWidth: 140, backgroundColor: '#0369A1' }]}
+              style={[styles.addEmployeeButtonFull, { flex: 1, minWidth: 0, paddingVertical: 7, backgroundColor: '#0369A1' }]}
               onPress={() => addEmployeeModalRef.current?.open()}
               activeOpacity={0.8}
             >
-              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 12 }]}>➕ THÊM NHÂN VIÊN</Text>
+              <Text style={[styles.addEmployeeButtonFullText, { fontSize: 11 }]}>➕ THÊM NV</Text>
             </TouchableOpacity>
           </View>
 
@@ -4378,6 +4386,120 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 6,
   },
+  // ── CSS MỚI CHO THẺ NHÂN VIÊN GỌN GÀNG, CHUẨN MOBILE-FIRST ─────────────
+  empCardCompact: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    ...SHADOWS.card,
+  },
+  empHeaderRowCompact: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  empAvatarSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  empAvatarTextSmall: {
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  empNameTextCompact: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    lineHeight: 18,
+  },
+  empCodeBadgeSmall: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  empCodeBadgeTextSmall: {
+    fontSize: 9.5,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  empSubTextCompact: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  empSalaryAmountCompact: {
+    fontSize: 14.5,
+    fontWeight: 'bold',
+    lineHeight: 18,
+  },
+  // Bảng chỉ số đối soát mini 4 cột tinh tế
+  empMetricsStripCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  empMetricColCompact: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  empMetricDividerCompact: {
+    width: 1,
+    height: 18,
+    backgroundColor: '#E2E8F0',
+  },
+  empMetricLabelCompact: {
+    fontSize: 9.5,
+    color: '#64748B',
+    fontWeight: '500',
+    marginBottom: 1,
+  },
+  empMetricValueCompact: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  // Hàng 4 nút thao tác tinh gọn trên 1 dòng duy nhất
+  empActionsRowSingle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    width: '100%',
+  },
+  empActionBtnSingle: {
+    flex: 1,
+    height: 30,
+    borderRadius: 6,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 2,
+  },
+  empActionBtnTextSingle: {
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
   // Khối lương nhân viên: tràn hết chiều ngang dưới tên (mobile-first)
   empSalaryBlock: {
     width: '100%',
@@ -5611,19 +5733,19 @@ const styles = StyleSheet.create({
   },
   employeeOptionsDropdown: {
     position: 'absolute',
-    top: 36, // Sổ xuống dưới để tránh bị đè/cắt bởi mép trên danh sách
+    top: 26, // Sổ xuống dưới để tránh bị đè/cắt bởi mép trên danh sách
     right: 0,
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     width: 150,
-    zIndex: 9999,
+    zIndex: 999999,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 10,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 999999,
   },
   employeeOptionsDropdownItem: {
     paddingVertical: 10,
