@@ -37,6 +37,7 @@ import { cleanDisplayNote } from '../../src/utils/cleanNote';
 import { matchSearch } from '../../src/utils/searchHelper';
 import { getLunarDateString } from '../../src/utils/lunarCalendar';
 import { isChiTuyetToanNgaCustomer, buildChiTuyetDailyMessage } from '../../src/utils/debtMessageHelper';
+import { generateAutoFitXlsxBlob } from '../../src/utils/xlsxGenerator';
 
 import { API_HOST, resolveMediaUrl } from '../../src/api/client';
 
@@ -2756,22 +2757,586 @@ export default function PortalScreen() {
     }
   };
 
-  // Xử lý khi nhấn nút "Xuất công nợ": nếu là chuỗi thì mở modal lựa chọn (tất cả quán hoặc từng quán)
-  const handleExportDebtPress = () => {
-    if (isChain) {
-      exportChainDebtModalRef.current?.open({
-        branches: portalData?.branches || portalInfo?.customers || [],
-        currentCustomerId: selectedCustomerId,
-        onExportAll: () => {
-          handleExportAllBranches();
-        },
-        onExportBranch: (branch) => {
-          handleExportSingleBranch(branch);
-        },
-      });
-    } else {
-      handleExportCanvasImage();
+  // Tạo và tải tệp Excel (.xlsx chuẩn OpenXML tự động căn chỉnh độ rộng cột) cho bảng kê công nợ trên Portal
+  const exportPortalDataToExcel = (targetData, custName, custPhone = '', isMultiBranch = false) => {
+    if (Platform.OS !== 'web') {
+      showGlobalToast('Chức năng xuất Excel hiện hỗ trợ trên giao diện Web.', 'warning');
+      return;
     }
+
+    if (!targetData?.sortedDays || targetData.sortedDays.length === 0) {
+      showGlobalToast(`Không có dữ liệu giao dịch của [${custName || 'nhà hàng'}] trong khoảng thời gian này để xuất Excel.`, 'warning');
+      return;
+    }
+
+    try {
+      // Hàm định dạng số tiền đầy đủ các chữ số 0 có dấu chấm ngăn cách hàng nghìn (ví dụ: 551.250)
+      const fmtDotMoney = (val) => {
+        if (val == null || val === '' || isNaN(val)) return '';
+        const rounded = Math.round(Number(val));
+        const sign = rounded < 0 ? '-' : '';
+        return `${sign}${new Intl.NumberFormat('vi-VN').format(Math.abs(rounded))}`;
+      };
+
+      const rangeText = (fromDate && toDate)
+        ? `(TỪ ${fromDate} ĐẾN ${toDate})`
+        : 'TOÀN BỘ';
+
+      const sheetRows = [];
+      const totals = targetData.totals || {};
+      const hasReturnSummary = (totals.totalReturn || 0) > 0;
+      const hasPaidSummary = (totals.totalPaid || 0) > 0 || Boolean(totals.paidBreakdownNote);
+      const paidDetailsList = totals.paidDetails || [];
+
+      // Tính số dòng của khối Tổng kết đặt ở đầu trang (Cột K & Cột L, nằm phía trên dòng Header bảng để khi lọc Cửa hàng không bị ẩn mất)
+      let preliminarySummaryCount = 2; // TỔNG TIỀN HÀNG + CÒN LẠI PHẢI THANH TOÁN
+      if (hasReturnSummary) preliminarySummaryCount += 1;
+      if (hasPaidSummary) {
+        preliminarySummaryCount += 1 + paidDetailsList.length + (totals.paidBreakdownNote ? 1 : 0);
+      }
+      const topSectionRowCount = Math.max(3, 1 + preliminarySummaryCount);
+      const headerExcelRow = topSectionRowCount + 1; // Dòng Excel chứa tiêu đề bảng (AutoFilter)
+      const firstDataExcelRow = headerExcelRow + 1;
+
+      // Ký hiệu cột Excel cho Số lượng, Đơn giá, Thành tiền để thiết lập công thức tự động nhảy số & lọc theo cửa hàng
+      const qtyColLetter = isMultiBranch ? 'D' : 'C';
+      const priceColLetter = isMultiBranch ? 'E' : 'D';
+      const amtColLetter = isMultiBranch ? 'F' : 'E';
+
+      const allDayItemRangeRefs = [];
+      const allReturnItemRefs = [];
+      let hasAnyPartialPaidDay = false;
+
+      // Gom toàn bộ các dòng dữ liệu bảng kê, chèn dòng Cộng đơn cho từng cơ sở và gắn công thức SUBTOTAL/ROUND động
+      const leftDataRows = [];
+      targetData.sortedDays.forEach((day) => {
+        const rawEntries = day.entries || [];
+        const itemEntries = rawEntries.filter(
+          (e) =>
+            e.type !== 'DAY_TOTAL' &&
+            e.type !== 'DAY_PARTIAL_PAID' &&
+            e.type !== 'DAY_PARTIAL_REMAINING'
+        );
+        const summaryEntries = rawEntries.filter(
+          (e) =>
+            e.type === 'DAY_TOTAL' ||
+            e.type === 'DAY_PARTIAL_PAID' ||
+            e.type === 'DAY_PARTIAL_REMAINING'
+        );
+
+        const entries = [];
+        if (isMultiBranch && itemEntries.length > 0) {
+          // Nhóm các mặt hàng liên tiếp theo từng cơ sở trong ngày và chèn dòng "Cộng đơn" ngay bên dưới mỗi cơ sở
+          let currentBranch = itemEntries[0].customerName || '';
+          let currentBranchItems = [];
+
+          const flushBranchGroup = (branchName, groupItems) => {
+            if (groupItems.length === 0) return;
+            groupItems.forEach((it, bIdx) =>
+              entries.push({
+                ...it,
+                _branchRowIdx: bIdx,
+              })
+            );
+            const branchSubtotal = groupItems.reduce((sum, it) => {
+              const val = Math.round(Number(it.amount) || 0);
+              return it.type === 'RETURN' ? sum - Math.abs(val) : sum + val;
+            }, 0);
+            entries.push({
+              type: 'BRANCH_TOTAL',
+              customerName: branchName,
+              name: 'Cộng đơn',
+              quantity: null,
+              price: null,
+              amount: branchSubtotal,
+              branchItemCount: groupItems.length,
+              _branchRowIdx: groupItems.length,
+            });
+          };
+
+          itemEntries.forEach((item) => {
+            const bName = item.customerName || '';
+            if (bName !== currentBranch && currentBranchItems.length > 0) {
+              flushBranchGroup(currentBranch, currentBranchItems);
+              currentBranch = bName;
+              currentBranchItems = [item];
+            } else {
+              currentBranchItems.push(item);
+            }
+          });
+          flushBranchGroup(currentBranch, currentBranchItems);
+
+          if (summaryEntries.length > 0) {
+            summaryEntries.forEach((s) => entries.push(s));
+          } else {
+            const dayNet = itemEntries.reduce((sum, it) => {
+              const val = Math.round(Number(it.amount) || 0);
+              return it.type === 'RETURN' ? sum - Math.abs(val) : sum + val;
+            }, 0);
+            entries.push({
+              type: 'DAY_TOTAL',
+              customerName: '',
+              name: 'TỔNG',
+              quantity: null,
+              price: null,
+              amount: dayNet,
+            });
+          }
+        } else {
+          // Chế độ 1 cơ sở: đảm bảo mỗi đơn trong ngày luôn có dòng TỔNG ở cuối đơn
+          itemEntries.forEach((it) => entries.push(it));
+          if (summaryEntries.length > 0) {
+            summaryEntries.forEach((s) => entries.push(s));
+          } else if (itemEntries.length > 0) {
+            const dayNet = itemEntries.reduce((sum, it) => {
+              const val = Math.round(Number(it.amount) || 0);
+              return it.type === 'RETURN' ? sum - Math.abs(val) : sum + val;
+            }, 0);
+            entries.push({
+              type: 'DAY_TOTAL',
+              customerName: '',
+              name: 'TỔNG',
+              quantity: null,
+              price: null,
+              amount: dayNet,
+            });
+          }
+        }
+
+        const dayStartExcelRow = firstDataExcelRow + leftDataRows.length;
+        let dayLastItemExcelRow = dayStartExcelRow;
+        let dayTotalCellRef = null;
+        let dayPaidCellRef = null;
+
+        entries.forEach((entry, idx) => {
+          const excelRow = firstDataExcelRow + leftDataRows.length;
+          const isDayTotal = entry.type === 'DAY_TOTAL';
+          const isPartialPaid = entry.type === 'DAY_PARTIAL_PAID';
+          const isPartialRemaining = entry.type === 'DAY_PARTIAL_REMAINING';
+          const isBranchTotal = entry.type === 'BRANCH_TOTAL';
+          const isSummary = isDayTotal || isPartialPaid || isPartialRemaining;
+          const isLastOfDay = idx === entries.length - 1;
+
+          if (isPartialPaid || isPartialRemaining) {
+            hasAnyPartialPaidDay = true;
+          }
+
+          // Mã style cho các ô trong dòng (nếu là dòng Cộng đơn cơ sở thì dùng style 22/23; nếu là dòng cuối ngày thì kẻ đường line đậm ở đáy)
+          const textStyle = isBranchTotal
+            ? isLastOfDay ? 6 : 22
+            : isSummary
+              ? isLastOfDay ? 6 : 20
+              : isLastOfDay ? 14 : 3;
+          const qtyStyle = isBranchTotal
+            ? isLastOfDay ? 6 : 22
+            : isSummary
+              ? isLastOfDay ? 6 : 20
+              : isLastOfDay ? 15 : 4;
+          const priceStyle = isBranchTotal
+            ? isLastOfDay ? 6 : 22
+            : isSummary
+              ? isLastOfDay ? 6 : 20
+              : isLastOfDay ? 16 : 5;
+          const amtStyle = isBranchTotal
+            ? isLastOfDay ? 7 : 23
+            : isSummary
+              ? isLastOfDay ? 7 : 21
+              : isLastOfDay ? 16 : 5;
+
+          // Cột Ngày: Dòng 1 của ngày hiện ngày dương, dòng 2 hiện ngày âm ngay bên dưới (giữ nguyên giá trị gốc là ngày dương để bộ lọc Ngày chỉ lọc theo lịch dương)
+          const solarDate = day.displayDate || day.dateKey || '';
+          let dateCell;
+          if (idx === 0) {
+            dateCell = { v: solarDate, s: isLastOfDay ? 17 : 11 };
+          } else {
+            const subDateStyle = isLastOfDay
+              ? 18
+              : isBranchTotal
+                ? 24
+                : 12;
+            if (idx === 1 && day.displayLunarDate) {
+              dateCell = {
+                v: solarDate,
+                displayAs: `(${day.displayLunarDate} âm)`,
+                s: subDateStyle,
+              };
+            } else {
+              dateCell = { v: solarDate, s: subDateStyle };
+            }
+          }
+
+          const branchCell = { v: entry.customerName || '', s: textStyle };
+          const nameCell = { v: entry.name || '', s: textStyle };
+
+          const isQuickEntry = entry.isQuick || entry.name === 'TIỀN HÀNG' || entry.name?.startsWith('TIỀN');
+          const hasQty = !isSummary && !isBranchTotal && !isQuickEntry && entry.quantity != null;
+          const qtyCell = hasQty
+            ? { v: Number(entry.quantity), t: 'n', s: qtyStyle }
+            : { v: '', s: qtyStyle };
+
+          const hasPrice = !isSummary && !isBranchTotal && !isQuickEntry && entry.price != null;
+          const priceCell = hasPrice
+            ? { v: Math.round(Number(entry.price) || 0), t: 'n', s: priceStyle }
+            : { v: '', s: priceStyle };
+
+          let amtVal = Math.round(Number(entry.amount) || 0);
+          if (entry.type === 'RETURN' || isPartialPaid) {
+            amtVal = -Math.abs(amtVal);
+          }
+
+          // Thiết lập công thức tự động tính toán Thành tiền (ROUND), Cộng đơn (SUBTOTAL), TỔNG ngày (SUBTOTAL) hỗ trợ lọc AutoFilter
+          let amtFormula = null;
+          if (!isSummary && !isBranchTotal) {
+            dayLastItemExcelRow = excelRow;
+            if (entry.type === 'RETURN') {
+              allReturnItemRefs.push(`${amtColLetter}${excelRow}`);
+            }
+            if (hasQty && hasPrice) {
+              const mulExpr = `ROUND(${qtyColLetter}${excelRow}*${priceColLetter}${excelRow},0)`;
+              amtFormula = entry.type === 'RETURN' ? `-${mulExpr}` : mulExpr;
+            }
+          } else if (isBranchTotal) {
+            const itemCount = entry.branchItemCount || 1;
+            const branchStartRow = Math.max(dayStartExcelRow, excelRow - itemCount);
+            const branchEndRow = excelRow - 1;
+            amtFormula = `SUBTOTAL(9,${amtColLetter}${branchStartRow}:${amtColLetter}${branchEndRow})`;
+            dayLastItemExcelRow = excelRow;
+          } else if (isDayTotal) {
+            if (dayLastItemExcelRow >= dayStartExcelRow) {
+              const rangeRef = `${amtColLetter}${dayStartExcelRow}:${amtColLetter}${dayLastItemExcelRow}`;
+              amtFormula = `SUBTOTAL(9,${rangeRef})`;
+              allDayItemRangeRefs.push(rangeRef);
+            }
+            dayTotalCellRef = `${amtColLetter}${excelRow}`;
+          } else if (isPartialPaid) {
+            dayPaidCellRef = `${amtColLetter}${excelRow}`;
+          } else if (isPartialRemaining) {
+            if (dayTotalCellRef && dayPaidCellRef) {
+              amtFormula = `${dayTotalCellRef}+${dayPaidCellRef}`;
+            }
+          }
+
+          const amtCell = {
+            v: amtVal,
+            t: 'n',
+            ...(amtFormula ? { f: amtFormula } : {}),
+            s: amtStyle,
+          };
+
+          if (isMultiBranch) {
+            leftDataRows.push([dateCell, branchCell, nameCell, qtyCell, priceCell, amtCell]);
+          } else {
+            leftDataRows.push([dateCell, nameCell, qtyCell, priceCell, amtCell]);
+          }
+        });
+      });
+
+      const lastDataExcelRow = firstDataExcelRow + Math.max(0, leftDataRows.length - 1);
+
+      // Xây dựng khối Tổng kết ở Cột K (index 10) và Cột L (index 11) ngay từ dòng 1 (phía trên bảng lọc để luôn cố định khi lọc cửa hàng)
+      const summaryRows = [];
+      // Dòng 2 Excel (L2): TỔNG TIỀN HÀNG (dùng SUBTOTAL(9,...) để tự động tính tổng theo cửa hàng đang lọc & khi sửa số lượng/đơn giá)
+      const totalMeatExcelRow = 2 + summaryRows.length;
+      const returnSummaryExcelRow = hasReturnSummary ? totalMeatExcelRow + 1 : null;
+      let totalMeatFormula = null;
+      if (leftDataRows.length > 0) {
+        const subtotalExpr = !hasAnyPartialPaidDay
+          ? `SUBTOTAL(9,${amtColLetter}${firstDataExcelRow}:${amtColLetter}${lastDataExcelRow})`
+          : `SUBTOTAL(9,${allDayItemRangeRefs.join(',')})`;
+        totalMeatFormula = returnSummaryExcelRow
+          ? `${subtotalExpr}-L${returnSummaryExcelRow}`
+          : subtotalExpr;
+      }
+      summaryRows.push({
+        label: 'TỔNG TIỀN HÀNG:',
+        value: Math.round(Number(totals.totalMeat) || 0),
+        isNumber: true,
+        formula: totalMeatFormula,
+        isFinal: false,
+      });
+
+      const finalSumComponentRefs = [`L${totalMeatExcelRow}`];
+
+      // Dòng TIỀN HÀNG TRẢ VỀ (nếu có)
+      if (hasReturnSummary) {
+        const curRow = 2 + summaryRows.length;
+        const retFormula = allReturnItemRefs.length > 0 ? `SUM(${allReturnItemRefs.join(',')})` : null;
+        summaryRows.push({
+          label: 'TIỀN HÀNG TRẢ VỀ:',
+          value: -Math.abs(Math.round(Number(totals.totalReturn) || 0)),
+          isNumber: true,
+          formula: retFormula,
+          isFinal: false,
+        });
+        finalSumComponentRefs.push(`L${curRow}`);
+      }
+
+      // Dòng ĐÃ THANH TOÁN (nếu có)
+      if (hasPaidSummary) {
+        const paidHeaderExcelRow = 2 + summaryRows.length;
+        let paidHeaderFormula = null;
+        if (paidDetailsList.length > 0) {
+          const detailStartRow = paidHeaderExcelRow + 1;
+          const detailEndRow = paidHeaderExcelRow + paidDetailsList.length;
+          paidHeaderFormula = `SUM(L${detailStartRow}:L${detailEndRow})`;
+        }
+        summaryRows.push({
+          label: 'ĐÃ THANH TOÁN:',
+          value: -Math.abs(Math.round(Number(totals.totalPaid) || 0)),
+          isNumber: true,
+          formula: paidHeaderFormula,
+          isFinal: false,
+        });
+        finalSumComponentRefs.push(`L${paidHeaderExcelRow}`);
+
+        if (paidDetailsList.length > 0) {
+          paidDetailsList.forEach((pd) => {
+            const dText = pd.displayDate || '';
+            const cleanNoteText = cleanDisplayNote(pd.note || '');
+            const detailLabel = `  • Ngày ${dText}${cleanNoteText ? ` (${cleanNoteText})` : ''}`;
+            summaryRows.push({
+              label: detailLabel,
+              value: -Math.abs(Math.round(Number(pd.amount) || 0)),
+              isNumber: true,
+              formula: null,
+              isFinal: false,
+            });
+          });
+        }
+        if (totals.paidBreakdownNote) {
+          summaryRows.push({
+            label: totals.paidBreakdownNote,
+            value: '',
+            isNumber: false,
+            formula: null,
+            isFinal: false,
+          });
+        }
+      }
+
+      // Dòng cuối của Tổng kết: CÒN LẠI PHẢI THANH TOÁN (tự động tính bằng tổng các mục trên)
+      summaryRows.push({
+        label: 'CÒN LẠI PHẢI THANH TOÁN:',
+        value: Math.round(Number(totals.finalDebt) || 0),
+        isNumber: true,
+        formula: finalSumComponentRefs.join('+'),
+        isFinal: true,
+      });
+
+      // Đưa phần tiêu đề báo cáo (Cột A) và khối Tổng kết (Cột K, L) vào các dòng đầu tiên (phía trên bảng AutoFilter)
+      for (let r = 0; r < topSectionRowCount; r++) {
+        const topRow = new Array(12).fill(null);
+        if (r === 0) {
+          topRow[0] = { v: `BẢNG KÊ TIỀN HÀNG & CÔNG NỢ ${rangeText}`, s: 1 };
+          topRow[10] = { v: 'TỔNG KẾT CÔNG NỢ KỲ', s: 2 };
+          topRow[11] = { v: 'SỐ TIỀN (đ)', s: 2 };
+        } else if (r === 1) {
+          topRow[0] = {
+            v: `Khách hàng / Nhóm: ${custName || 'Khách hàng'}${custPhone ? ` - SĐT: ${custPhone}` : ''}`,
+            s: 0,
+          };
+        }
+
+        if (r >= 1 && r - 1 < summaryRows.length) {
+          const sRow = summaryRows[r - 1];
+          topRow[10] = { v: sRow.label, s: sRow.isFinal ? 13 : 8 };
+          topRow[11] = {
+            v: sRow.value,
+            ...(sRow.isNumber ? { t: 'n' } : {}),
+            ...(sRow.formula ? { f: sRow.formula } : {}),
+            s: sRow.isFinal ? 10 : 9,
+          };
+        }
+        sheetRows.push(topRow);
+      }
+
+      // Dòng tiêu đề cột bảng kê (có gắn bộ lọc AutoFilter để lọc theo Cơ sở / Nhà hàng, Ngày, Tên hàng)
+      const headerRow = new Array(12).fill(null);
+      if (isMultiBranch) {
+        headerRow[0] = { v: 'Ngày', s: 2 };
+        headerRow[1] = { v: 'Cơ sở / Nhà hàng', s: 2 };
+        headerRow[2] = { v: 'Tên hàng', s: 2 };
+        headerRow[3] = { v: 'Số lượng (kg)', s: 2 };
+        headerRow[4] = { v: 'Đơn giá (đ)', s: 2 };
+        headerRow[5] = { v: 'Thành tiền (đ)', s: 2 };
+      } else {
+        headerRow[0] = { v: 'Ngày', s: 2 };
+        headerRow[1] = { v: 'Tên hàng', s: 2 };
+        headerRow[2] = { v: 'Số lượng (kg)', s: 2 };
+        headerRow[3] = { v: 'Đơn giá (đ)', s: 2 };
+        headerRow[4] = { v: 'Thành tiền (đ)', s: 2 };
+      }
+      sheetRows.push(headerRow);
+
+      // Đưa toàn bộ các dòng dữ liệu vào dưới dòng Header bảng
+      leftDataRows.forEach((leftRow) => {
+        const rowArr = new Array(12).fill(null);
+        leftRow.forEach((c, cIdx) => {
+          rowArr[cIdx] = c;
+        });
+        sheetRows.push(rowArr);
+      });
+
+      // Tự động tính toán độ rộng từng cột (Auto-fit Column Width) vừa khít nội dung, gọn gàng trên 1 màn hình
+      const colWidths = new Array(12).fill(4);
+      for (let r = 0; r < sheetRows.length; r++) {
+        const row = sheetRows[r] || [];
+        for (let c = 0; c < 12; c++) {
+          // Bỏ qua cột A ở 2 dòng tiêu đề báo cáo đầu tiên để không làm cột Ngày bị rộng quá mức
+          if (r < 2 && c === 0) continue;
+          const cell = row[c];
+          if (!cell || cell.v == null || cell.v === '') continue;
+          const displayStr =
+            cell.t === 'n' && typeof cell.v === 'number' && Math.abs(cell.v) >= 1000
+              ? fmtDotMoney(cell.v)
+              : String(cell.v);
+          const lines = displayStr.split('\n');
+          lines.forEach((line) => {
+            const estimatedWidth = Math.ceil(line.length * 1.08) + 3;
+            if (estimatedWidth > colWidths[c]) {
+              colWidths[c] = Math.min(42, estimatedWidth);
+            }
+          });
+        }
+      }
+      // Đảm bảo độ rộng tối thiểu vừa vặn, thoáng đẹp cho từng cột dữ liệu (cộng thêm khoảng trống cho nút mũi tên lọc AutoFilter)
+      colWidths[0] = Math.max(colWidths[0], 12); // Cột Ngày
+      if (isMultiBranch) {
+        colWidths[1] = Math.max(colWidths[1], 26); // Cột Cơ sở / Nhà hàng (có nút mũi tên lọc)
+        colWidths[2] = Math.max(colWidths[2], 15); // Cột Tên hàng
+        colWidths[3] = Math.max(colWidths[3], 15); // Cột Số lượng (kg)
+        colWidths[4] = Math.max(colWidths[4], 14); // Cột Đơn giá (đ)
+        colWidths[5] = Math.max(colWidths[5], 16); // Cột Thành tiền (đ)
+      } else {
+        colWidths[1] = Math.max(colWidths[1], 18); // Cột Tên hàng
+        colWidths[2] = Math.max(colWidths[2], 15); // Cột Số lượng (kg)
+        colWidths[3] = Math.max(colWidths[3], 14); // Cột Đơn giá (đ)
+        colWidths[4] = Math.max(colWidths[4], 16); // Cột Thành tiền (đ)
+      }
+      colWidths[10] = Math.max(colWidths[10], 26); // Cột K: Nhãn tổng kết
+      colWidths[11] = Math.max(colWidths[11], 16); // Cột L: Số tiền tổng kết
+
+      // Tạo file .xlsx chuẩn có cấu hình độ rộng cột và bộ lọc AutoFilter
+      const dateRef = fromDate || toDate || targetData.sortedDays?.[0]?.dateKey || '';
+      const dateParts = dateRef.split('/');
+      const monthNum = dateParts.length >= 2 ? parseInt(dateParts[1], 10) : (new Date().getMonth() + 1);
+      const validMonth = !isNaN(monthNum) ? monthNum : (new Date().getMonth() + 1);
+
+      const autoFilterRef = `A${headerExcelRow}:${amtColLetter}${lastDataExcelRow}`;
+
+      const blob = generateAutoFitXlsxBlob({
+        sheetName: `CongNo_Thang${validMonth}`,
+        rows: sheetRows,
+        colWidths,
+        autoFilterRef,
+      });
+
+      // Tải tệp về máy với định dạng tên file: CongNo_[Tên khách]_Thang[A].xlsx
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const cleanName = (custName || 'KhachHang').trim().replace(/\s+/g, '_').replace(/[/\\?%*:|"<>]/g, '_');
+      link.download = `CongNo_${cleanName}_Thang${validMonth}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 200);
+
+      showGlobalToast(`Đã xuất file Excel công nợ cho [${custName || 'Khách hàng'}]!`, 'success');
+    } catch (err) {
+      console.error('Lỗi khi xuất file Excel trên Portal:', err);
+      showGlobalToast('Đã xảy ra lỗi khi xuất file Excel công nợ.', 'error');
+    }
+  };
+
+  // Xuất Excel cho dữ liệu đang hiển thị (1 khách hàng hoặc toàn chuỗi đang xem)
+  const handleExportCurrentExcel = () => {
+    const customerName = portalData?.currentCustomer?.name || portalInfo?.name || 'KhachHang';
+    const resolvedPhone =
+      portalData?.currentCustomer?.phone ||
+      portalInfo?.customers?.[0]?.phone ||
+      portalInfo?.phone ||
+      '';
+    exportPortalDataToExcel(displayInvoiceData, customerName, resolvedPhone, isChainViewAll);
+  };
+
+  // Xuất Excel cho riêng một nhà hàng cụ thể trong chuỗi
+  const handleExportSingleBranchExcel = (branch) => {
+    if (!branch) return;
+    const branchName = branch.name;
+    const branchId = branch.id;
+
+    const branchTxs = (portalData?.transactions || []).filter(
+      (tx) => tx.customerId === branchId || tx.customerName === branchName
+    );
+    const branchPayments = (portalData?.payments || []).filter(
+      (p) => p.customerId === branchId || p.customerName === branchName
+    );
+    const branchDebt = branch.debt ?? null;
+
+    const branchInvoiceData = buildInvoiceRows(
+      branchTxs,
+      branchPayments,
+      fromDate,
+      toDate,
+      sortOrder,
+      [branch],
+      branchDebt
+    );
+
+    exportPortalDataToExcel(branchInvoiceData, branchName, branch.phone || '', false);
+  };
+
+  // Xuất Excel tổng hợp cho toàn bộ các nhà hàng trong chuỗi
+  const handleExportAllBranchesExcel = () => {
+    const allBranches = portalData?.branches || portalInfo?.customers || [];
+    const chainInvoiceData = buildInvoiceRows(
+      portalData?.transactions || [],
+      portalData?.payments || [],
+      fromDate,
+      toDate,
+      sortOrder,
+      allBranches,
+      portalData?.summary?.totalDebt ?? portalData?.summary?.debt ?? null
+    );
+    const chainName = portalInfo?.name || 'ChuoiNhaHang';
+    exportPortalDataToExcel(chainInvoiceData, chainName, portalInfo?.phone || '', true);
+  };
+
+  // Xử lý khi nhấn nút "Xuất công nợ": Mở modal chọn hình thức xuất (Xuất Ảnh / Xuất Excel, Toàn chuỗi / Từng quán)
+  const handleExportDebtPress = () => {
+    const rangeLabel = fromDate && toDate ? `${fromDate} - ${toDate}` : '';
+    const customerName = portalData?.currentCustomer?.name || portalInfo?.name || 'Khách hàng';
+
+    exportChainDebtModalRef.current?.open({
+      isChain,
+      customerName,
+      rangeLabel,
+      branches: portalData?.branches || portalInfo?.customers || [],
+      currentCustomerId: selectedCustomerId,
+      onExportAll: () => {
+        handleExportAllBranches();
+      },
+      onExportBranch: (branch) => {
+        handleExportSingleBranch(branch);
+      },
+      onExportExcelAll: () => {
+        if (isChainViewAll) {
+          handleExportCurrentExcel();
+        } else {
+          handleExportAllBranchesExcel();
+        }
+      },
+      onExportExcelBranch: (branch) => {
+        handleExportSingleBranchExcel(branch);
+      },
+      onExportSingleImage: () => {
+        handleExportCanvasImage();
+      },
+      onExportSingleExcel: () => {
+        handleExportCurrentExcel();
+      },
+    });
   };
 
   // ─── MÀN HÌNH CHỜ & LỖI ───

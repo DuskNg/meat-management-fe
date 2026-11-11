@@ -440,7 +440,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         updatedAt: t.updatedAt,
         customerId: t.customerId,
         rawObj: t,
-        invoices: t.invoices || [],
+        invoices: (t.invoices || []).filter(inv => !inv.note || !inv.note.includes('[paymentId:')),
         customerName: t.customer?.name || 'Khách ẩn danh',
         amount: parseFloat(t.totalAmount || 0),
         profit: getTransactionProfit(t),

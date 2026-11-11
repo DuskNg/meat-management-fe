@@ -19,27 +19,43 @@ const formatCurrency = (amount) => {
 };
 
 /**
- * Modal Xuất Công Nợ Dạng Chuỗi Cửa Hàng:
- * Cung cấp 2 lựa chọn xuất bảng kê:
- * 1. Xuất tất cả nhà hàng (Toàn bộ chuỗi gộp chung)
- * 2. Xuất từng nhà hàng (Chọn cơ sở cụ thể để xuất riêng)
+ * Modal Xuất Công Nợ Bảng Kê (Dùng chung cho cả Chuỗi cửa hàng & Nhà hàng đơn lẻ trên Portal):
+ * Cung cấp các lựa chọn xuất bảng kê:
+ * - Xuất Ảnh (PNG) hoặc Xuất File Excel (.csv chuẩn UTF-8 BOM)
+ * - Với chuỗi cửa hàng: Xuất tất cả nhà hàng hoặc Chọn riêng từng nhà hàng để xuất Ảnh / Excel
  */
 const ExportChainDebtModal = forwardRef((props, ref) => {
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState('options'); // 'options' | 'select_branch'
+  const [isChain, setIsChain] = useState(true);
+  const [customerName, setCustomerName] = useState('');
+  const [rangeLabel, setRangeLabel] = useState('');
   const [branches, setBranches] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [onExportAllCallback, setOnExportAllCallback] = useState(null);
   const [onExportBranchCallback, setOnExportBranchCallback] = useState(null);
+  const [onExportExcelAllCallback, setOnExportExcelAllCallback] = useState(null);
+  const [onExportExcelBranchCallback, setOnExportExcelBranchCallback] = useState(null);
+  const [onExportSingleImageCallback, setOnExportSingleImageCallback] = useState(null);
+  const [onExportSingleExcelCallback, setOnExportSingleExcelCallback] = useState(null);
   const [currentBranchId, setCurrentBranchId] = useState(null);
 
-  // Mở modal và nhận dữ liệu các cơ sở cùng hàm callback xuất
+  // Mở modal và nhận dữ liệu các cơ sở cùng hàm callback xuất Ảnh / Excel
   useImperativeHandle(ref, () => ({
     open: (opts = {}) => {
-      setBranches(opts.branches || []);
+      const branchList = opts.branches || [];
+      const chainMode = opts.isChain !== undefined ? Boolean(opts.isChain) : branchList.length > 1;
+      setIsChain(chainMode);
+      setCustomerName(opts.customerName || '');
+      setRangeLabel(opts.rangeLabel || '');
+      setBranches(branchList);
       setCurrentBranchId(opts.currentCustomerId || null);
       setOnExportAllCallback(() => opts.onExportAll);
       setOnExportBranchCallback(() => opts.onExportBranch);
+      setOnExportExcelAllCallback(() => opts.onExportExcelAll);
+      setOnExportExcelBranchCallback(() => opts.onExportExcelBranch);
+      setOnExportSingleImageCallback(() => opts.onExportSingleImage);
+      setOnExportSingleExcelCallback(() => opts.onExportSingleExcel);
       setStep('options');
       setSearchQuery('');
       setVisible(true);
@@ -53,7 +69,7 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
     setVisible(false);
   };
 
-  // Xử lý chọn xuất tất cả các quán
+  // Xử lý chọn xuất ảnh tất cả các quán
   const handleSelectExportAll = () => {
     setVisible(false);
     if (onExportAllCallback) {
@@ -63,12 +79,52 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
     }
   };
 
-  // Xử lý khi người dùng chọn một quán cụ thể để xuất
+  // Xử lý chọn xuất Excel tất cả các quán
+  const handleSelectExportExcelAll = () => {
+    setVisible(false);
+    if (onExportExcelAllCallback) {
+      setTimeout(() => {
+        onExportExcelAllCallback();
+      }, 100);
+    }
+  };
+
+  // Xử lý khi người dùng chọn một quán cụ thể để xuất ảnh
   const handleSelectBranch = (branch) => {
     setVisible(false);
     if (onExportBranchCallback) {
       setTimeout(() => {
         onExportBranchCallback(branch);
+      }, 100);
+    }
+  };
+
+  // Xử lý khi người dùng chọn một quán cụ thể để xuất Excel
+  const handleSelectBranchExcel = (branch) => {
+    setVisible(false);
+    if (onExportExcelBranchCallback) {
+      setTimeout(() => {
+        onExportExcelBranchCallback(branch);
+      }, 100);
+    }
+  };
+
+  // Xử lý xuất ảnh cho nhà hàng đơn lẻ (hoặc cơ sở đang lọc)
+  const handleSelectSingleImage = () => {
+    setVisible(false);
+    if (onExportSingleImageCallback) {
+      setTimeout(() => {
+        onExportSingleImageCallback();
+      }, 100);
+    }
+  };
+
+  // Xử lý xuất Excel cho nhà hàng đơn lẻ (hoặc cơ sở đang lọc)
+  const handleSelectSingleExcel = () => {
+    setVisible(false);
+    if (onExportSingleExcelCallback) {
+      setTimeout(() => {
+        onExportSingleExcelCallback();
       }, 100);
     }
   };
@@ -91,7 +147,9 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
             </Text>
             <Text style={styles.modalSubtitle}>
               {step === 'options'
-                ? 'Chọn hình thức xuất ảnh bảng kê công nợ phù hợp'
+                ? (isChain
+                    ? 'Chọn hình thức xuất Ảnh hoặc File Excel công nợ phù hợp'
+                    : `${customerName ? `${customerName} ` : ''}${rangeLabel ? `(${rangeLabel})` : ''}`)
                 : `Có ${branches.length} cơ sở trong chuỗi cửa hàng`}
             </Text>
           </View>
@@ -104,15 +162,72 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
           </TouchableOpacity>
         </View>
 
-        {step === 'options' ? (
-          /* Bước 1: 2 Lựa chọn chính (Tất cả nhà hàng vs Từng nhà hàng) */
+        {!isChain ? (
+          /* Chế độ Nhà hàng đơn lẻ (hoặc cơ sở đang chọn): Chọn Xuất Ảnh hoặc Xuất Excel */
           <ScrollView
             style={styles.bodyScrollView}
             contentContainerStyle={styles.bodyContent}
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.optionsContainer}>
-              {/* Option 1: Xuất tất cả nhà hàng */}
+              {/* Option 1: Xuất Ảnh Bảng Kê */}
+              <TouchableOpacity
+                style={[styles.optionCard, styles.optionCardBranch]}
+                onPress={handleSelectSingleImage}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.optionIconCircle, styles.optionIconCircleBranch]}>
+                  <Text style={styles.optionIconText}>📸</Text>
+                </View>
+                <View style={styles.optionTextCol}>
+                  <View style={styles.optionTitleRow}>
+                    <Text style={[styles.optionTitle, styles.optionTitleBranch]}>
+                      Xuất ảnh bảng kê công nợ
+                    </Text>
+                  </View>
+                  <Text style={styles.optionDesc}>
+                    Tạo hình ảnh bảng kê sắc nét để xem trực tiếp, tải về máy hoặc chuyển tiếp Zalo.
+                  </Text>
+                </View>
+                <View style={styles.optionActionWrap}>
+                  <Text style={styles.optionActionArrow}>➔</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Option 2: Xuất File Excel (.xlsx) */}
+              <TouchableOpacity
+                style={[styles.optionCard, styles.optionCardAll]}
+                onPress={handleSelectSingleExcel}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.optionIconCircle, styles.optionIconCircleAll]}>
+                  <Text style={styles.optionIconText}>📥</Text>
+                </View>
+                <View style={styles.optionTextCol}>
+                  <View style={styles.optionTitleRow}>
+                    <Text style={[styles.optionTitle, styles.optionTitleAll]}>
+                      Xuất file Excel công nợ (.xlsx)
+                    </Text>
+                  </View>
+                  <Text style={styles.optionDesc}>
+                    Tải xuống tệp bảng tính Excel chuẩn tiếng Việt có đầy đủ chi tiết từng ngày và tổng kết.
+                  </Text>
+                </View>
+                <View style={styles.optionActionWrap}>
+                  <Text style={styles.optionActionArrow}>➔</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        ) : step === 'options' ? (
+          /* Bước 1 (Chuỗi): 3 Lựa chọn chính (Ảnh tất cả | Excel tất cả | Từng nhà hàng) */
+          <ScrollView
+            style={styles.bodyScrollView}
+            contentContainerStyle={styles.bodyContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.optionsContainer}>
+              {/* Option 1: Xuất ảnh tất cả nhà hàng */}
               <TouchableOpacity
                 style={[styles.optionCard, styles.optionCardAll]}
                 onPress={handleSelectExportAll}
@@ -124,7 +239,7 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
                 <View style={styles.optionTextCol}>
                   <View style={styles.optionTitleRow}>
                     <Text style={[styles.optionTitle, styles.optionTitleAll]}>
-                      Xuất tất cả nhà hàng
+                      Xuất ảnh tất cả nhà hàng
                     </Text>
                     <View style={styles.countBadgeAll}>
                       <Text style={styles.countBadgeTextAll}>{branches.length} quán</Text>
@@ -139,7 +254,34 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
                 </View>
               </TouchableOpacity>
 
-              {/* Option 2: Xuất từng nhà hàng */}
+              {/* Option 2: Xuất File Excel tất cả nhà hàng */}
+              <TouchableOpacity
+                style={[styles.optionCard, styles.optionCardExcel]}
+                onPress={handleSelectExportExcelAll}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.optionIconCircle, styles.optionIconCircleExcel]}>
+                  <Text style={styles.optionIconText}>📥</Text>
+                </View>
+                <View style={styles.optionTextCol}>
+                  <View style={styles.optionTitleRow}>
+                    <Text style={[styles.optionTitle, styles.optionTitleExcel]}>
+                      Xuất file Excel công nợ (.xlsx)
+                    </Text>
+                    <View style={styles.countBadgeExcel}>
+                      <Text style={styles.countBadgeTextAll}>Excel</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.optionDesc}>
+                    Tải tệp bảng tính Excel tổng hợp đầy đủ công nợ của toàn bộ chuỗi (hoặc cơ sở đang lọc).
+                  </Text>
+                </View>
+                <View style={styles.optionActionWrap}>
+                  <Text style={styles.optionActionArrow}>➔</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Option 3: Xuất từng nhà hàng (Ảnh hoặc Excel) */}
               <TouchableOpacity
                 style={[styles.optionCard, styles.optionCardBranch]}
                 onPress={() => setStep('select_branch')}
@@ -155,7 +297,7 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
                     </Text>
                   </View>
                   <Text style={styles.optionDesc}>
-                    Chọn một cơ sở cụ thể để xuất ảnh bảng kê chi tiết riêng biệt cho cơ sở đó.
+                    Chọn một cơ sở cụ thể để xuất Ảnh hoặc File Excel chi tiết riêng cho cơ sở đó.
                   </Text>
                 </View>
                 <View style={styles.optionActionWrap}>
@@ -165,7 +307,7 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
             </View>
           </ScrollView>
         ) : (
-          /* Bước 2: Danh sách chọn nhà hàng cụ thể */
+          /* Bước 2: Danh sách chọn nhà hàng cụ thể (Có nút Xuất ảnh & Xuất Excel trên từng dòng) */
           <View style={styles.branchSelectContainer}>
             {/* PHẦN CỐ ĐỊNH TRÊN ĐỈNH: Nút quay lại & Ô tìm kiếm không bị cuộn */}
             <View style={styles.fixedBranchHeader}>
@@ -219,16 +361,18 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
                 filteredBranches.map((branch, index) => {
                   const isSelected = branch.id === currentBranchId;
                   return (
-                    <TouchableOpacity
+                    <View
                       key={branch.id || index}
                       style={[
                         styles.branchItemCard,
                         isSelected && styles.branchItemCardActive,
                       ]}
-                      onPress={() => handleSelectBranch(branch)}
-                      activeOpacity={0.75}
                     >
-                      <View style={styles.branchItemLeft}>
+                      <TouchableOpacity
+                        style={styles.branchItemLeft}
+                        onPress={() => handleSelectBranch(branch)}
+                        activeOpacity={0.75}
+                      >
                         <View style={styles.branchIconWrap}>
                           <Text style={styles.branchIconText}>📍</Text>
                         </View>
@@ -249,11 +393,26 @@ const ExportChainDebtModal = forwardRef((props, ref) => {
                             </Text>
                           ) : null}
                         </View>
+                      </TouchableOpacity>
+
+                      <View style={styles.branchActionGroup}>
+                        <TouchableOpacity
+                          style={styles.exportActionBtn}
+                          onPress={() => handleSelectBranch(branch)}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={styles.exportActionBtnText}>📸 Ảnh</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.exportExcelActionBtn}
+                          onPress={() => handleSelectBranchExcel(branch)}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={styles.exportExcelActionBtnText}>📥 Excel</Text>
+                        </TouchableOpacity>
                       </View>
-                      <View style={styles.exportActionBtn}>
-                        <Text style={styles.exportActionBtnText}>Xuất ảnh ➔</Text>
-                      </View>
-                    </TouchableOpacity>
+                    </View>
                   );
                 })
               )}
@@ -363,6 +522,10 @@ const styles = StyleSheet.create({
     borderColor: '#A7F3D0',
     backgroundColor: '#F0FDF4',
   },
+  optionCardExcel: {
+    borderColor: '#6EE7B7',
+    backgroundColor: '#ECFDF5',
+  },
   optionCardBranch: {
     borderColor: '#BFDBFE',
     backgroundColor: '#F8FAFC',
@@ -377,6 +540,9 @@ const styles = StyleSheet.create({
   },
   optionIconCircleAll: {
     backgroundColor: '#DCFCE7',
+  },
+  optionIconCircleExcel: {
+    backgroundColor: '#D1FAE5',
   },
   optionIconCircleBranch: {
     backgroundColor: '#EFF6FF',
@@ -402,11 +568,20 @@ const styles = StyleSheet.create({
   optionTitleAll: {
     color: '#065F46',
   },
+  optionTitleExcel: {
+    color: '#047857',
+  },
   optionTitleBranch: {
     color: '#1E40AF',
   },
   countBadgeAll: {
     backgroundColor: '#059669',
+    paddingHorizontal: 7,
+    paddingVertical: 1.5,
+    borderRadius: 10,
+  },
+  countBadgeExcel: {
+    backgroundColor: '#047857',
     paddingHorizontal: 7,
     paddingVertical: 1.5,
     borderRadius: 10,
@@ -565,18 +740,36 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#DC2626',
   },
+  branchActionGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   exportActionBtn: {
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
     borderColor: '#BFDBFE',
     borderRadius: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 6,
   },
   exportActionBtnText: {
     fontSize: 11.5,
     fontWeight: '700',
     color: '#1D4ED8',
+  },
+  exportExcelActionBtn: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#6EE7B7',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  exportExcelActionBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#047857',
   },
   emptyBranchWrap: {
     paddingVertical: 24,
