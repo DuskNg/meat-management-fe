@@ -176,13 +176,51 @@ export const generateAutoFitXlsxBlob = ({
   colWidths = [],
   autoFilterRef = null,
 }) => {
+  // Quét các ô trên Sheet 1 xem có chứa ảnh nhúng tại chỗ (commentImage) hoặc liên kết (hyperlink) hay không
+  const cellHyperlinks = [];
+  const cellCommentImages = [];
+
+  rows.forEach((rowCells, rIdx) => {
+    const rowNum = rIdx + 1;
+    (rowCells || []).forEach((cell, cIdx) => {
+      if (!cell || typeof cell !== 'object') return;
+      const colRef = `${getExcelColLetter(cIdx)}${rowNum}`;
+      if (cell.hyperlink) {
+        cellHyperlinks.push({
+          ref: colRef,
+          url: String(cell.hyperlink),
+          tooltip: cell.tooltip || 'Bấm để mở xem ảnh hóa đơn gốc',
+        });
+      }
+      if (cell.commentImage && cell.commentImage.bytes) {
+        cellCommentImages.push({
+          ref: colRef,
+          rIdx,
+          cIdx,
+          bytes: cell.commentImage.bytes,
+          ext: cell.commentImage.ext === 'png' ? 'png' : 'jpeg',
+        });
+      }
+    });
+  });
+
+  const hasHyperlinks = cellHyperlinks.length > 0;
+  const hasCommentImages = cellCommentImages.length > 0;
+
+  const vmlDefaultXml = hasCommentImages
+    ? `\n  <Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>\n  <Default Extension="jpeg" ContentType="image/jpeg"/>\n  <Default Extension="jpg" ContentType="image/jpeg"/>\n  <Default Extension="png" ContentType="image/png"/>`
+    : '';
+  const commentsOverrideXml = hasCommentImages
+    ? `\n  <Override PartName="/xl/comments1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>`
+    : '';
+
   const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>${vmlDefaultXml}
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${commentsOverrideXml}
 </Types>`;
 
   const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -191,6 +229,7 @@ export const generateAutoFitXlsxBlob = ({
 </Relationships>`;
 
   const safeSheetName = escapeXml(sheetName.substring(0, 31));
+
   const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>
@@ -213,7 +252,7 @@ export const generateAutoFitXlsxBlob = ({
   const extraCellXfs = [];
   const displayAsStyleMap = new Map();
   let nextNumFmtId = 166;
-  const baseXfCount = 25;
+  const baseXfCount = 29;
 
   rows.forEach((rowCells) => {
     (rowCells || []).forEach((cell) => {
@@ -252,7 +291,7 @@ export const generateAutoFitXlsxBlob = ({
   <numFmts count="${customNumFmts.length}">
 ${numFmtsXml}
   </numFmts>
-  <fonts count="8">
+  <fonts count="9">
     <font><sz val="11"/><color rgb="FF000000"/><name val="Calibri"/></font>
     <font><b/><sz val="12"/><color rgb="FF000000"/><name val="Calibri"/></font>
     <font><b/><sz val="11"/><color rgb="FF000000"/><name val="Calibri"/></font>
@@ -261,6 +300,7 @@ ${numFmtsXml}
     <font><b/><sz val="11"/><color rgb="FF047857"/><name val="Calibri"/></font>
     <font><b/><sz val="11"/><color rgb="FF1E3A8A"/><name val="Calibri"/></font>
     <font><sz val="10.5"/><color rgb="FF475569"/><name val="Calibri"/></font>
+    <font><b/><u/><sz val="11"/><color rgb="FF2563EB"/><name val="Calibri"/></font>
   </fonts>
   <fills count="2">
     <fill><patternFill patternType="none"/></fill>
@@ -355,77 +395,226 @@ ${numFmtsXml}
       <alignment horizontal="right"/>
     </xf>
     <!-- 24: Hidden Solar Date Cell on Branch Subtotal Row (;;;, Subtle Dotted Bottom Line) -->
-    <xf numFmtId="165" fontId="4" fillId="0" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>${extraXfsXml}
+    <xf numFmtId="165" fontId="4" fillId="0" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>
+    <!-- 25: Hyperlink Cell - Normal Row (Blue Bold Underlined, Centered) -->
+    <xf numFmtId="0" fontId="8" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
+      <alignment horizontal="center"/>
+    </xf>
+    <!-- 26: Hyperlink Cell - End of Day (Blue Bold Underlined, Centered, Bottom Line) -->
+    <xf numFmtId="0" fontId="8" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="center"/>
+    </xf>
+    <!-- 27: Hyperlink Cell - Branch Subtotal Row (Blue Bold Underlined, Centered, Subtle Dotted Bottom Line) -->
+    <xf numFmtId="0" fontId="8" fillId="0" borderId="3" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="center"/>
+    </xf>
+    <!-- 28: Hyperlink Cell - Back Link on Sheet 2 (Blue Bold Underlined, Left Align, Bottom Line) -->
+    <xf numFmtId="0" fontId="8" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1"/>${extraXfsXml}
   </cellXfs>
 </styleSheet>`;
 
-  // Xây dựng thẻ <cols> để thiết lập chính xác độ rộng từng cột (Auto-fit Column Width)
-  let colsXml = '';
-  if (colWidths && colWidths.length > 0) {
-    const colItems = colWidths
-      .map((w, idx) => {
-        const widthVal = w && w > 0 ? w : 10;
-        return `<col min="${idx + 1}" max="${idx + 1}" width="${widthVal}" customWidth="1"/>`;
-      })
-      .join('');
-    colsXml = `<cols>${colItems}</cols>`;
-  }
+  // Hàm dựng XML cho Sheet 1 (tích hợp AutoFilter, Hyperlink mở ảnh gốc và VML Comment hiện ảnh hóa đơn nổi ngay tại Sheet 1)
+  const buildSheet1Xml = (wsRows, wsColWidths, wsAutoFilterRef) => {
+    let colsXml = '';
+    if (wsColWidths && wsColWidths.length > 0) {
+      const colItems = wsColWidths
+        .map((w, idx) => {
+          const widthVal = w && w > 0 ? w : 10;
+          return `<col min="${idx + 1}" max="${idx + 1}" width="${widthVal}" customWidth="1"/>`;
+        })
+        .join('');
+      colsXml = `<cols>${colItems}</cols>`;
+    }
 
-  // Xây dựng thẻ <sheetData> chứa các dòng và ô (không ép cứng chiều cao dòng để Excel tự căn thoáng đẹp)
-  let sheetDataXml = '<sheetData>';
-  rows.forEach((rowCells, rIdx) => {
-    const rowNum = rIdx + 1;
-    let rowXml = `<row r="${rowNum}">`;
-    (rowCells || []).forEach((cell, cIdx) => {
-      if (cell == null) return;
-      const isObj = typeof cell === 'object';
-      const val = isObj ? cell.v : cell;
-      let styleIdx = isObj && cell.s != null ? cell.s : 0;
-      if (isObj && cell.displayAs) {
-        const mapKey = `${styleIdx}__${cell.displayAs}`;
-        if (displayAsStyleMap.has(mapKey)) {
-          styleIdx = displayAsStyleMap.get(mapKey);
+    let sheetDataXml = '<sheetData>';
+    (wsRows || []).forEach((rowCells, rIdx) => {
+      const rowNum = rIdx + 1;
+      let rowXml = `<row r="${rowNum}">`;
+      (rowCells || []).forEach((cell, cIdx) => {
+        if (cell == null) return;
+        const isObj = typeof cell === 'object';
+        const val = isObj ? cell.v : cell;
+        let styleIdx = isObj && cell.s != null ? cell.s : 0;
+        if (isObj && cell.displayAs) {
+          const mapKey = `${styleIdx}__${cell.displayAs}`;
+          if (displayAsStyleMap.has(mapKey)) {
+            styleIdx = displayAsStyleMap.get(mapKey);
+          }
         }
-      }
-      const cellType = isObj && cell.t ? cell.t : 'str';
-      const formula = isObj && cell.f ? cell.f : null;
+        const cellType = isObj && cell.t ? cell.t : 'str';
+        const formula = isObj && cell.f ? cell.f : null;
 
-      if (val === '' && !formula && styleIdx === 0) return;
+        if (val === '' && !formula && styleIdx === 0) return;
 
-      const colRef = `${getExcelColLetter(cIdx)}${rowNum}`;
-      if (formula) {
-        const numVal = val !== '' && val != null && !isNaN(val) ? `<v>${Number(val)}</v>` : '';
-        rowXml += `<c r="${colRef}" s="${styleIdx}"><f>${escapeXml(formula)}</f>${numVal}</c>`;
-      } else if (cellType === 'n' && val !== '' && val != null && !isNaN(val)) {
-        rowXml += `<c r="${colRef}" s="${styleIdx}"><v>${Number(val)}</v></c>`;
-      } else {
-        rowXml += `<c r="${colRef}" t="inlineStr" s="${styleIdx}"><is><t xml:space="preserve">${escapeXml(val)}</t></is></c>`;
-      }
+        const colRef = `${getExcelColLetter(cIdx)}${rowNum}`;
+        if (formula) {
+          const isNumericVal =
+            cellType === 'n' || (val !== '' && val != null && typeof val === 'number' && !isNaN(val));
+          if (isNumericVal) {
+            const numVal = val !== '' && val != null && !isNaN(val) ? `<v>${Number(val)}</v>` : '';
+            rowXml += `<c r="${colRef}" s="${styleIdx}"><f>${escapeXml(formula)}</f>${numVal}</c>`;
+          } else {
+            const strVal = val != null && val !== '' ? `<v>${escapeXml(val)}</v>` : '';
+            rowXml += `<c r="${colRef}" t="str" s="${styleIdx}"><f>${escapeXml(formula)}</f>${strVal}</c>`;
+          }
+        } else if (cellType === 'n' && val !== '' && val != null && !isNaN(val)) {
+          rowXml += `<c r="${colRef}" s="${styleIdx}"><v>${Number(val)}</v></c>`;
+        } else {
+          rowXml += `<c r="${colRef}" t="inlineStr" s="${styleIdx}"><is><t xml:space="preserve">${escapeXml(val)}</t></is></c>`;
+        }
+      });
+      rowXml += '</row>';
+      sheetDataXml += rowXml;
     });
-    rowXml += '</row>';
-    sheetDataXml += rowXml;
-  });
-  sheetDataXml += '</sheetData>';
+    sheetDataXml += '</sheetData>';
 
-  const autoFilterXml = autoFilterRef
-    ? `<autoFilter ref="${escapeXml(autoFilterRef)}"/>`
-    : '';
+    const autoFilterXml = wsAutoFilterRef
+      ? `<autoFilter ref="${escapeXml(wsAutoFilterRef)}"/>`
+      : '';
 
-  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+    const hyperlinksXml = hasHyperlinks
+      ? `<hyperlinks>${cellHyperlinks
+          .map(
+            (h, idx) =>
+              `<hyperlink ref="${h.ref}" r:id="rId_hl${idx + 1}" tooltip="${escapeXml(h.tooltip)}"/>`
+          )
+          .join('')}</hyperlinks>`
+      : '';
+
+    const legacyDrawingXml = hasCommentImages ? '<legacyDrawing r:id="rId_vml1"/>' : '';
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   ${colsXml}
   ${sheetDataXml}
   ${autoFilterXml}
+  ${hyperlinksXml}
+  ${legacyDrawingXml}
 </worksheet>`;
+  };
 
-  const zipBytes = buildZipArchive([
+  const sheet1Xml = buildSheet1Xml(rows, colWidths, autoFilterRef);
+
+  const zipFiles = [
     { name: '[Content_Types].xml', content: contentTypesXml },
     { name: '_rels/.rels', content: rootRelsXml },
     { name: 'xl/workbook.xml', content: workbookXml },
     { name: 'xl/_rels/workbook.xml.rels', content: workbookRelsXml },
     { name: 'xl/styles.xml', content: stylesXml },
-    { name: 'xl/worksheets/sheet1.xml', content: sheetXml },
-  ]);
+    { name: 'xl/worksheets/sheet1.xml', content: sheet1Xml },
+  ];
+
+  // Tạo file liên kết cho Sheet 1 (chứa các hyperlink mở ảnh và liên kết tới VML Comment nhúng ảnh trên Sheet 1)
+  if (hasHyperlinks || hasCommentImages) {
+    const sheet1RelEntries = [];
+    cellHyperlinks.forEach((h, idx) => {
+      sheet1RelEntries.push(
+        `  <Relationship Id="rId_hl${idx + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escapeXml(h.url)}" TargetMode="External"/>`
+      );
+    });
+    if (hasCommentImages) {
+      sheet1RelEntries.push(
+        `  <Relationship Id="rId_vml1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/>`
+      );
+      sheet1RelEntries.push(
+        `  <Relationship Id="rId_comments1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/>`
+      );
+    }
+    const sheet1RelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${sheet1RelEntries.join('\n')}
+</Relationships>`;
+    zipFiles.push({ name: 'xl/worksheets/_rels/sheet1.xml.rels', content: sheet1RelsXml });
+  }
+
+  // Tạo VML Comment (Ghi chú kèm nền ảnh hóa đơn) hiển thị trực tiếp ngay trên Sheet 1
+  if (hasCommentImages) {
+    const commentItemsXml = cellCommentImages
+      .map(
+        (c) => `    <comment ref="${c.ref}" authorId="0">
+      <text>
+        <r>
+          <rPr><sz val="9"/><color rgb="FF000000"/><rFont val="Calibri"/></rPr>
+          <t xml:space="preserve"> </t>
+        </r>
+      </text>
+    </comment>`
+      )
+      .join('\n');
+
+    const comments1Xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <authors>
+    <author>HoaDon</author>
+  </authors>
+  <commentList>
+${commentItemsXml}
+  </commentList>
+</comments>`;
+    zipFiles.push({ name: 'xl/comments1.xml', content: comments1Xml });
+
+    const vmlShapesXml = [];
+    const vmlRelsEntries = [];
+
+    cellCommentImages.forEach((c, idx) => {
+      const imgNum = idx + 1;
+      const shapeId = `_x0000_s${1025 + idx}`;
+      const relId = `rId_img${imgNum}`;
+      const mediaFileName = `image${imgNum}.${c.ext}`;
+
+      // Đặt khung ảnh hóa đơn bật ra ngay bên cạnh ô "📷 Xem ảnh" trên Sheet 1 (rộng 260pt ~ 346px, cao 350pt ~ 466px)
+      const marginLeftPt = (c.cIdx + 1) * 68;
+      const marginTopPt = Math.max(4, c.rIdx * 15);
+
+      vmlShapesXml.push(`  <v:shape id="${shapeId}" type="#_x0000_t202" style="position:absolute;margin-left:${marginLeftPt}pt;margin-top:${marginTopPt}pt;width:260pt;height:350pt;z-index:${idx + 1};visibility:hidden" fillcolor="#ffffe1" o:insetmode="auto">
+    <v:fill o:relid="${relId}" o:title="HoaDon_${imgNum}" type="frame" recolor="t"/>
+    <v:shadow on="t" color="black" obscured="t"/>
+    <v:path o:connecttype="none"/>
+    <v:textbox style="mso-direction-alt:auto">
+      <div style="text-align:left"></div>
+    </v:textbox>
+    <x:ClientData ObjectType="Note">
+      <x:MoveWithCells/>
+      <x:SizeWithCells/>
+      <x:AutoFill>False</x:AutoFill>
+      <x:Row>${c.rIdx}</x:Row>
+      <x:Column>${c.cIdx}</x:Column>
+    </x:ClientData>
+  </v:shape>`);
+
+      vmlRelsEntries.push(
+        `  <Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${mediaFileName}"/>`
+      );
+
+      zipFiles.push({
+        name: `xl/media/${mediaFileName}`,
+        content: c.bytes,
+      });
+    });
+
+    const vmlDrawing1Xml = `<xml xmlns:v="urn:schemas-microsoft-com:vml"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel">
+  <o:shapelayout v:ext="edit">
+    <o:idmap v:ext="edit" data="1"/>
+  </o:shapelayout>
+  <v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe">
+    <v:stroke joinstyle="miter"/>
+    <v:path gradientshapeok="t" o:connecttype="rect"/>
+  </v:shapetype>
+${vmlShapesXml.join('\n')}
+</xml>`;
+
+    const vmlDrawing1RelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${vmlRelsEntries.join('\n')}
+</Relationships>`;
+
+    zipFiles.push({ name: 'xl/drawings/vmlDrawing1.vml', content: vmlDrawing1Xml });
+    zipFiles.push({ name: 'xl/drawings/_rels/vmlDrawing1.vml.rels', content: vmlDrawing1RelsXml });
+  }
+
+  const zipBytes = buildZipArchive(zipFiles);
 
   return new Blob([zipBytes], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

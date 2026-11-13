@@ -723,9 +723,11 @@ const TransactionDetailModal = forwardRef(({
                         const key = it.productId;
                         const qty = parseFloat(it.quantity);
                         const priceVal = parseFloat(it.price);
+                        const itemAmt = it.amount != null ? parseFloat(it.amount) : Math.round(qty * priceVal);
                         if (displayItemsMap[key]) {
-                          // Cộng dồn khối lượng
+                          // Cộng dồn khối lượng và thành tiền
                           displayItemsMap[key].quantity += qty;
+                          displayItemsMap[key].amount += itemAmt;
                           // Cập nhật đơn giá mới nhất
                           displayItemsMap[key].price = priceVal;
                         } else {
@@ -734,6 +736,7 @@ const TransactionDetailModal = forwardRef(({
                             ...it,
                             quantity: qty,
                             price: priceVal,
+                            amount: itemAmt,
                           };
                         }
                       });
@@ -743,7 +746,7 @@ const TransactionDetailModal = forwardRef(({
                           <View style={styles.itemRowHeader}>
                             <Text style={styles.itemName}>{it.product?.name}</Text>
                             <Text style={styles.itemSubtotal}>
-                              {formatCurrency(it.quantity * it.price)}
+                              {formatCurrency(it.amount)}
                             </Text>
                           </View>
                           {/* Khối lượng × đơn giá */}

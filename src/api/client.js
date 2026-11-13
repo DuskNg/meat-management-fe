@@ -11,9 +11,9 @@ export const getApiHost = () => {
   if (typeof window !== 'undefined' && window.location) {
     const protocol = window.location.protocol || 'http:';
     const hostname = window.location.hostname || 'localhost';
-    return `${protocol}//${hostname}:3000`;
+    return `${protocol}//${hostname}:3010`;
   }
-  return 'http://127.0.0.1:3000';
+  return 'http://127.0.0.1:3010';
 };
 
 export const API_HOST = getApiHost();

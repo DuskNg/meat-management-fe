@@ -590,8 +590,27 @@ const buildInvoiceRows = (
     }
 
     if (tx.items && tx.items.length > 0) {
-      tx.items.forEach((item) => {
-        const amt = Number(item.total) || (Number(item.quantity) * Number(item.price)) || 0;
+      const txTotalNum = tx.totalAmount != null ? Number(tx.totalAmount) : null;
+      const rawItems = tx.items.map((item) => {
+        const rawAmt =
+          item.amount != null
+            ? Number(item.amount)
+            : item.total != null
+              ? Number(item.total)
+              : Math.round(Number(item.quantity) * Number(item.price)) || 0;
+        return { item, amt: rawAmt };
+      });
+      const itemsSum = rawItems.reduce((s, x) => s + x.amt, 0);
+      // Nếu tổng các món lệch so với tx.totalAmount đã lưu trong DB, ưu tiên khớp tuyệt đối theo tx.totalAmount
+      if (txTotalNum != null && !isNaN(txTotalNum) && Math.abs(itemsSum - txTotalNum) >= 1) {
+        if (rawItems.length === 1) {
+          rawItems[0].amt = txTotalNum;
+        } else if (rawItems.length > 0) {
+          rawItems[rawItems.length - 1].amt += txTotalNum - itemsSum;
+        }
+      }
+
+      rawItems.forEach(({ item, amt }) => {
         allDayMap[dateKey].meatSum += amt;
         const rawName = item.productName || 'THỊT';
         const isQuick = rawName === 'Tiền hàng' || rawName.toLowerCase().startsWith('tiền') || tx.note === 'Ghi nợ nhanh' || (Number(item.quantity) === 1 && Number(item.price) === amt && rawName.toLowerCase().includes('tiền'));
@@ -1808,7 +1827,10 @@ export default function PortalScreen() {
       const isRet = e.type === 'RETURN';
       const amt = parseFloat(e.amount) || 0;
       const q = parseFloat(e.quantity) || 0;
-      const p = parseFloat(e.price) || 0;
+      let p = parseFloat(e.price) || 0;
+      if (p <= 0 && q > 0 && amt > 0) {
+        p = Math.round(Math.abs(amt) / q);
+      }
 
       const currentCust = (!targetCustomerName && e.customerName) ? e.customerName.trim() : null;
 
@@ -1867,122 +1889,6 @@ export default function PortalScreen() {
     return isVideoUrl(rawUrl);
   };
 
-  // Tạo nội dung văn bản hóa đơn ngắn gọn cho hóa đơn dạng Video: tên thịt số cân, thành tiền, chia gạch ngang từng cơ sở
-  const buildVideoInvoiceText = (targetDay, targetCustomerName = null) => {
-    if (!targetDay) return '';
-
-    // Lấy chuỗi ngày âm lịch tương ứng (ví dụ: 15/9)
-    const lunarStr = targetDay.displayLunarDate || (targetDay.dateObj ? getLunarDateString(targetDay.dateObj) : (targetDay.date ? getLunarDateString(targetDay.date) : (targetDay.dateKey ? getLunarDateString(targetDay.dateKey) : '')));
-    const lunarTag = lunarStr ? ` (${lunarStr} âm)` : '';
-
-    // Kiểm tra nếu là khách hàng Chị Tuyết (Toàn Nga Thái Dũng)
-    const isTuyetCustomer = (
-      isChiTuyetToanNgaCustomer(targetCustomerName) ||
-      isChiTuyetToanNgaCustomer(portalInfo?.name) ||
-      isChiTuyetToanNgaCustomer(portalData?.currentCustomer) ||
-      isChiTuyetToanNgaCustomer(portalData?.currentCustomer?.name) ||
-      isChiTuyetToanNgaCustomer(portalData?.currentCustomer?.id) ||
-      (portalInfo?.customers && portalInfo.customers.some((c) => isChiTuyetToanNgaCustomer(c?.name || c?.id || c))) ||
-      (portalData?.branches && portalData.branches.some((c) => isChiTuyetToanNgaCustomer(c?.name || c?.id || c)))
-    );
-
-    if (isTuyetCustomer) {
-      let dayEntries = targetDay.entries || [];
-      if (targetCustomerName) {
-        const filteredByCust = dayEntries.filter((e) => !e.customerName || e.customerName === targetCustomerName);
-        if (filteredByCust.length > 0) {
-          dayEntries = filteredByCust;
-        }
-      }
-      const rawTuyetMsg = buildChiTuyetDailyMessage(targetDay.dateKey || targetDay.displayDate, dayEntries);
-      if (rawTuyetMsg && lunarTag) {
-        const msgLines = rawTuyetMsg.split('\n');
-        if (msgLines.length > 0 && !msgLines[0].includes('âm')) {
-          msgLines[0] = `${msgLines[0]}${lunarTag}`;
-          return msgLines.join('\n');
-        }
-      }
-      return rawTuyetMsg;
-    }
-
-    const lines = [];
-
-    // Lấy ngày ngắn gọn dạng DD/MM (ví dụ: 07/10 hoặc 24/10) đưa lên dòng đầu tiên
-    const rawDate = targetDay.displayDate || targetDay.dateKey || '';
-    let shortDate = rawDate;
-    if (rawDate.includes('-')) {
-      const parts = rawDate.split('-');
-      if (parts.length === 3) shortDate = `${parts[2]}/${parts[1]}`;
-    } else if (rawDate.includes('/')) {
-      const parts = rawDate.split('/');
-      if (parts.length >= 2) shortDate = `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
-    }
-    if (shortDate) {
-      lines.push(`${shortDate}${lunarTag}`);
-    }
-
-    let dayEntries = targetDay.entries || [];
-    if (targetCustomerName) {
-      const filteredByCust = dayEntries.filter((e) => !e.customerName || e.customerName === targetCustomerName);
-      if (filteredByCust.length > 0) {
-        dayEntries = filteredByCust;
-      }
-    }
-
-    const hasMultipleBranches = !targetCustomerName && dayEntries.some((e) => e.customerName);
-    let lastCustName = null;
-    let totalMeat = 0;
-    let totalReturn = 0;
-
-    dayEntries.forEach((e) => {
-      if (e.type === 'DAY_TOTAL' || e.type === 'DAY_PARTIAL_PAID' || e.type === 'DAY_PARTIAL_REMAINING') return;
-      const isRet = e.type === 'RETURN';
-      const amt = parseFloat(e.amount) || 0;
-      const q = parseFloat(e.quantity) || 0;
-      let p = parseFloat(e.price) || 0;
-      if (p <= 0 && q > 0 && amt > 0) {
-        p = Math.round(Math.abs(amt) / q);
-      }
-
-      const currentCust = (!targetCustomerName && e.customerName) ? e.customerName.trim() : null;
-
-      // Phân tách gạch ngang giữa các cơ sở khác nhau
-      if (hasMultipleBranches && currentCust && lastCustName !== null && currentCust !== lastCustName) {
-        lines.push('--------------------------------');
-      }
-      if (currentCust) {
-        lastCustName = currentCust;
-      }
-
-      let line = '';
-      if (!targetCustomerName && e.customerName) {
-        line += `[${e.customerName}] `;
-      }
-      line += isRet ? `[-] ${e.name}` : e.name;
-      if (q > 0) {
-        line += `: ${q}kg`;
-      }
-      if (p > 0) {
-        line += ` x ${formatUnitPriceShort(p)}`;
-      }
-      line += ` = ${isRet ? '-' : ''}${formatAmountNoUnit(Math.abs(amt))}`;
-      lines.push(line);
-
-      if (isRet) {
-        totalReturn += Math.abs(amt);
-      } else {
-        totalMeat += Math.abs(amt);
-      }
-    });
-
-    if (!hasMultipleBranches) {
-      const netAmount = totalMeat - totalReturn;
-      lines.push(`Tổng tiền: ${formatAmountNoUnit(netAmount)}`);
-    }
-
-    return lines.join('\n');
-  };
-
   // Helper lấy nhãn ngày hiển thị kèm âm lịch cho tiêu đề gửi Zalo (ví dụ: 24/10 (15/9 âm))
   const getShareDateLabel = (targetDay) => {
     if (!targetDay) return '';
@@ -2003,10 +1909,7 @@ export default function PortalScreen() {
   // Sao chép nội dung text công nợ ngày đó vào Clipboard để dán vào Zalo
   const handleShareDayInvoice = async (targetDay, targetCustomerName = null) => {
     if (!targetDay) return;
-    const isVideoInvoice = (targetDay.invoices && targetDay.invoices.some(isVideoInvoiceItem)) || Boolean(targetDay.isVideo);
-    const invoiceText = isVideoInvoice
-      ? buildVideoInvoiceText(targetDay, targetCustomerName)
-      : buildPortalDayInvoiceText(targetDay, targetCustomerName);
+    const invoiceText = buildPortalDayInvoiceText(targetDay, targetCustomerName);
 
     if (!invoiceText) {
       showGlobalToast('Không có nội dung công nợ để sao chép.', 'warning');
@@ -2757,8 +2660,101 @@ export default function PortalScreen() {
     }
   };
 
-  // Tạo và tải tệp Excel (.xlsx chuẩn OpenXML tự động căn chỉnh độ rộng cột) cho bảng kê công nợ trên Portal
-  const exportPortalDataToExcel = (targetData, custName, custPhone = '', isMultiBranch = false) => {
+  // Tải ảnh hóa đơn sang mảng byte JPEG/PNG (Uint8Array) để nhúng trực tiếp vào Ghi chú ảnh ngay trên Sheet 1 của tệp Excel (.xlsx)
+  const fetchInvoiceImageForExcel = async (rawUrl, cacheMap) => {
+    if (!rawUrl || typeof window === 'undefined') return null;
+    const fullUrl = resolveMediaUrl(rawUrl);
+    if (!fullUrl) return null;
+    if (cacheMap.has(fullUrl)) {
+      return cacheMap.get(fullUrl);
+    }
+
+    const loadTask = (async () => {
+      try {
+        let res;
+        try {
+          res = await fetch(fullUrl);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        } catch (_err) {
+          if (fullUrl.startsWith('http') && !fullUrl.includes('/api/v1/media/stream')) {
+            const proxyUrl = `${API_HOST}/api/v1/media/stream?url=${encodeURIComponent(fullUrl)}`;
+            res = await fetch(proxyUrl);
+          } else {
+            throw _err;
+          }
+        }
+        if (!res || !res.ok) return null;
+        const arrayBuf = await res.arrayBuffer();
+        if (!arrayBuf || arrayBuf.byteLength === 0) return null;
+        const rawBytes = new Uint8Array(arrayBuf);
+
+        // Kiểm tra magic bytes: nếu đã là ảnh JPEG (FF D8) hoặc PNG (89 50) chuẩn thì dùng trực tiếp không cần vẽ lại qua Canvas
+        const isJpeg = rawBytes.length > 3 && rawBytes[0] === 0xff && rawBytes[1] === 0xd8;
+        const isPng =
+          rawBytes.length > 4 &&
+          rawBytes[0] === 0x89 &&
+          rawBytes[1] === 0x50 &&
+          rawBytes[2] === 0x4e &&
+          rawBytes[3] === 0x47;
+        if (isJpeg || isPng) {
+          return {
+            bytes: rawBytes,
+            ext: isPng ? 'png' : 'jpeg',
+          };
+        }
+
+        // Trường hợp ảnh WebP hoặc định dạng khác thì chuyển đổi sang JPEG qua Canvas
+        const blob = new Blob([rawBytes]);
+        const objUrl = URL.createObjectURL(blob);
+        try {
+          const imgDim = await new Promise((resolve, reject) => {
+            const img = new window.Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => resolve(img);
+            img.onerror = (e) => reject(e);
+            img.src = objUrl;
+          });
+
+          const natW = imgDim.naturalWidth || imgDim.width || 800;
+          const natH = imgDim.naturalHeight || imgDim.height || 1100;
+          const maxDim = 1280;
+          const scale = Math.max(natW, natH) > maxDim ? maxDim / Math.max(natW, natH) : 1;
+          const targetW = Math.max(1, Math.round(natW * scale));
+          const targetH = Math.max(1, Math.round(natW > 0 ? natH * scale : 1100));
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, targetW, targetH);
+          ctx.drawImage(imgDim, 0, 0, targetW, targetH);
+
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const base64Data = dataUrl.split(',')[1] || '';
+          const binaryStr = window.atob(base64Data);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          return {
+            bytes,
+            ext: 'jpeg',
+          };
+        } finally {
+          URL.revokeObjectURL(objUrl);
+        }
+      } catch (_e) {
+        return null;
+      }
+    })();
+
+    cacheMap.set(fullUrl, loadTask);
+    return loadTask;
+  };
+
+  // Tạo và tải tệp Excel (.xlsx chuẩn OpenXML tự động căn chỉnh độ rộng cột, tích hợp xem ảnh hóa đơn ngay trên Sheet 1) cho bảng kê công nợ trên Portal
+  const exportPortalDataToExcel = async (targetData, custName, custPhone = '', isMultiBranch = false) => {
     if (Platform.OS !== 'web') {
       showGlobalToast('Chức năng xuất Excel hiện hỗ trợ trên giao diện Web.', 'warning');
       return;
@@ -2782,6 +2778,70 @@ export default function PortalScreen() {
         ? `(TỪ ${fromDate} ĐẾN ${toDate})`
         : 'TOÀN BỘ';
 
+      const dateRef = fromDate || toDate || targetData.sortedDays?.[0]?.dateKey || '';
+      const dateParts = dateRef.split('/');
+      const monthNum = dateParts.length >= 2 ? parseInt(dateParts[1], 10) : (new Date().getMonth() + 1);
+      const validMonth = !isNaN(monthNum) ? monthNum : (new Date().getMonth() + 1);
+      const sheet1Name = `CongNo_Thang${validMonth}`;
+
+      // Hàm lấy đường dẫn gốc của hóa đơn (hỗ trợ cả ảnh và video)
+      const getRawMediaUrl = (inv) => {
+        if (!inv) return '';
+        if (typeof inv === 'string') return inv.trim();
+        return (inv.imageUrl || inv.url || inv.fileUrl || '').trim();
+      };
+
+      // Hàm chuyển đường dẫn hóa đơn thành URL trực tiếp để mở xem ngay từ Sheet 1 trên mọi máy tính
+      const getDirectOpenUrl = (rawUrl) => {
+        if (!rawUrl) return '';
+        if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+          return rawUrl;
+        }
+        return `${API_HOST}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+      };
+
+      // Thu thập danh sách ảnh hóa đơn (bỏ qua video khi tải byte ảnh nhúng) và tải với giới hạn luồng đồng thời
+      const uniqueRawImgUrls = [];
+      const seenRawUrls = new Set();
+      targetData.sortedDays.forEach((day) => {
+        (day.invoices || []).forEach((inv) => {
+          if (isVideoInvoiceItem(inv)) return;
+          const u = getRawMediaUrl(inv);
+          if (u && !seenRawUrls.has(u)) {
+            seenRawUrls.add(u);
+            uniqueRawImgUrls.push(u);
+          }
+        });
+        if (day.customerInvoicesMap) {
+          Object.values(day.customerInvoicesMap).forEach((list) => {
+            (list || []).forEach((inv) => {
+              if (isVideoInvoiceItem(inv)) return;
+              const u = getRawMediaUrl(inv);
+              if (u && !seenRawUrls.has(u)) {
+                seenRawUrls.add(u);
+                uniqueRawImgUrls.push(u);
+              }
+            });
+          });
+        }
+      });
+
+      const imageCacheMap = new Map();
+      if (uniqueRawImgUrls.length > 0) {
+        showGlobalToast('Đang tải và đính kèm ảnh hóa đơn vào Sheet 1 của file Excel...', 'info');
+        const concurrency = 10;
+        let cursor = 0;
+        const workers = Array.from({ length: Math.min(concurrency, uniqueRawImgUrls.length) }, async () => {
+          while (cursor < uniqueRawImgUrls.length) {
+            const idx = cursor++;
+            await fetchInvoiceImageForExcel(uniqueRawImgUrls[idx], imageCacheMap);
+          }
+        });
+        await Promise.all(workers);
+      }
+
+      let embeddedInvoiceCount = 0;
+
       const sheetRows = [];
       const totals = targetData.totals || {};
       const hasReturnSummary = (totals.totalReturn || 0) > 0;
@@ -2798,10 +2858,11 @@ export default function PortalScreen() {
       const headerExcelRow = topSectionRowCount + 1; // Dòng Excel chứa tiêu đề bảng (AutoFilter)
       const firstDataExcelRow = headerExcelRow + 1;
 
-      // Ký hiệu cột Excel cho Số lượng, Đơn giá, Thành tiền để thiết lập công thức tự động nhảy số & lọc theo cửa hàng
+      // Ký hiệu cột Excel cho Số lượng, Đơn giá, Thành tiền, Hóa đơn để thiết lập công thức tự động nhảy số & lọc theo cửa hàng
       const qtyColLetter = isMultiBranch ? 'D' : 'C';
       const priceColLetter = isMultiBranch ? 'E' : 'D';
       const amtColLetter = isMultiBranch ? 'F' : 'E';
+      const invoiceColLetter = isMultiBranch ? 'G' : 'F';
 
       const allDayItemRangeRefs = [];
       const allReturnItemRefs = [];
@@ -2809,7 +2870,7 @@ export default function PortalScreen() {
 
       // Gom toàn bộ các dòng dữ liệu bảng kê, chèn dòng Cộng đơn cho từng cơ sở và gắn công thức SUBTOTAL/ROUND động
       const leftDataRows = [];
-      targetData.sortedDays.forEach((day) => {
+      for (const day of targetData.sortedDays) {
         const rawEntries = day.entries || [];
         const itemEntries = rawEntries.filter(
           (e) =>
@@ -2907,8 +2968,10 @@ export default function PortalScreen() {
         let dayLastItemExcelRow = dayStartExcelRow;
         let dayTotalCellRef = null;
         let dayPaidCellRef = null;
+        const matchedDayMediaUrls = new Set();
 
-        entries.forEach((entry, idx) => {
+        for (let idx = 0; idx < entries.length; idx++) {
+          const entry = entries[idx];
           const excelRow = firstDataExcelRow + leftDataRows.length;
           const isDayTotal = entry.type === 'DAY_TOTAL';
           const isPartialPaid = entry.type === 'DAY_PARTIAL_PAID';
@@ -2992,8 +3055,11 @@ export default function PortalScreen() {
               allReturnItemRefs.push(`${amtColLetter}${excelRow}`);
             }
             if (hasQty && hasPrice) {
-              const mulExpr = `ROUND(${qtyColLetter}${excelRow}*${priceColLetter}${excelRow},0)`;
-              amtFormula = entry.type === 'RETURN' ? `-${mulExpr}` : mulExpr;
+              const expectedMul = Math.round((Number(entry.quantity) || 0) * Math.round(Number(entry.price) || 0));
+              if (Math.abs(Math.abs(amtVal) - expectedMul) <= 1) {
+                const mulExpr = `ROUND(${qtyColLetter}${excelRow}*${priceColLetter}${excelRow},0)`;
+                amtFormula = entry.type === 'RETURN' ? `-${mulExpr}` : mulExpr;
+              }
             }
           } else if (isBranchTotal) {
             const itemCount = entry.branchItemCount || 1;
@@ -3023,13 +3089,74 @@ export default function PortalScreen() {
             s: amtStyle,
           };
 
-          if (isMultiBranch) {
-            leftDataRows.push([dateCell, branchCell, nameCell, qtyCell, priceCell, amtCell]);
-          } else {
-            leftDataRows.push([dateCell, nameCell, qtyCell, priceCell, amtCell]);
+          // Gắn nút "📷 Xem ảnh" ngay trên Sheet 1: vừa nhúng ảnh hóa đơn hiển thị tại chỗ trên Sheet 1, vừa gắn liên kết mở ảnh gốc phóng to
+          let invoiceCell = { v: '', s: textStyle };
+          let orderInvoices = [];
+          if (isMultiBranch && isBranchTotal && entry.customerName) {
+            orderInvoices = getInvoicesForCustomer(day, entry.customerName) || [];
+            orderInvoices.forEach((inv) => {
+              const u = getRawMediaUrl(inv);
+              if (u) matchedDayMediaUrls.add(u);
+            });
+          } else if (!isMultiBranch && isDayTotal) {
+            orderInvoices = day.invoices || [];
+          } else if (isMultiBranch && isDayTotal) {
+            orderInvoices = (day.invoices || []).filter((inv) => {
+              const u = getRawMediaUrl(inv);
+              return u && !matchedDayMediaUrls.has(u);
+            });
           }
-        });
-      });
+
+          if (orderInvoices.length > 0) {
+            const imageItems = orderInvoices.filter((inv) => !isVideoInvoiceItem(inv) && getRawMediaUrl(inv));
+            const videoItems = orderInvoices.filter((inv) => isVideoInvoiceItem(inv) && getRawMediaUrl(inv));
+
+            let embeddedCommentImg = null;
+            for (const inv of imageItems) {
+              const u = getRawMediaUrl(inv);
+              const imgObj = await fetchInvoiceImageForExcel(u, imageCacheMap);
+              if (imgObj && imgObj.bytes) {
+                embeddedCommentImg = imgObj;
+                break;
+              }
+            }
+
+            const primaryItem = imageItems[0] || videoItems[0];
+            const primaryRawUrl = getRawMediaUrl(primaryItem);
+            const directOpenUrl = getDirectOpenUrl(primaryRawUrl);
+            const isVideoOnly = imageItems.length === 0 && videoItems.length > 0;
+            const totalMediaCount = imageItems.length + videoItems.length;
+            const linkLabel = isVideoOnly
+              ? '🎥 Xem video'
+              : totalMediaCount > 1
+                ? `📷 Xem ảnh (${totalMediaCount})`
+                : '📷 Xem ảnh';
+            const linkStyle = isLastOfDay ? 26 : isBranchTotal ? 27 : 25;
+
+            if (embeddedCommentImg || directOpenUrl) {
+              if (embeddedCommentImg) embeddedInvoiceCount += 1;
+              invoiceCell = {
+                v: linkLabel,
+                s: linkStyle,
+                ...(directOpenUrl
+                  ? {
+                      hyperlink: directOpenUrl,
+                      tooltip:
+                        'Di chuột vào ô để xem ảnh hóa đơn ngay trên Sheet 1, hoặc bấm chuột trái để mở ảnh gốc phóng to',
+                    }
+                  : {}),
+                ...(embeddedCommentImg ? { commentImage: embeddedCommentImg } : {}),
+              };
+            }
+          }
+
+          if (isMultiBranch) {
+            leftDataRows.push([dateCell, branchCell, nameCell, qtyCell, priceCell, amtCell, invoiceCell]);
+          } else {
+            leftDataRows.push([dateCell, nameCell, qtyCell, priceCell, amtCell, invoiceCell]);
+          }
+        }
+      }
 
       const lastDataExcelRow = firstDataExcelRow + Math.max(0, leftDataRows.length - 1);
 
@@ -3150,7 +3277,7 @@ export default function PortalScreen() {
         sheetRows.push(topRow);
       }
 
-      // Dòng tiêu đề cột bảng kê (có gắn bộ lọc AutoFilter để lọc theo Cơ sở / Nhà hàng, Ngày, Tên hàng)
+      // Dòng tiêu đề cột bảng kê (có gắn bộ lọc AutoFilter để lọc theo Cơ sở / Nhà hàng, Ngày, Tên hàng, Hóa đơn)
       const headerRow = new Array(12).fill(null);
       if (isMultiBranch) {
         headerRow[0] = { v: 'Ngày', s: 2 };
@@ -3159,12 +3286,14 @@ export default function PortalScreen() {
         headerRow[3] = { v: 'Số lượng (kg)', s: 2 };
         headerRow[4] = { v: 'Đơn giá (đ)', s: 2 };
         headerRow[5] = { v: 'Thành tiền (đ)', s: 2 };
+        headerRow[6] = { v: 'Hóa đơn', s: 2 };
       } else {
         headerRow[0] = { v: 'Ngày', s: 2 };
         headerRow[1] = { v: 'Tên hàng', s: 2 };
         headerRow[2] = { v: 'Số lượng (kg)', s: 2 };
         headerRow[3] = { v: 'Đơn giá (đ)', s: 2 };
         headerRow[4] = { v: 'Thành tiền (đ)', s: 2 };
+        headerRow[5] = { v: 'Hóa đơn', s: 2 };
       }
       sheetRows.push(headerRow);
 
@@ -3207,25 +3336,21 @@ export default function PortalScreen() {
         colWidths[3] = Math.max(colWidths[3], 15); // Cột Số lượng (kg)
         colWidths[4] = Math.max(colWidths[4], 14); // Cột Đơn giá (đ)
         colWidths[5] = Math.max(colWidths[5], 16); // Cột Thành tiền (đ)
+        colWidths[6] = Math.max(colWidths[6], 16); // Cột Hóa đơn (📷 Xem ảnh)
       } else {
         colWidths[1] = Math.max(colWidths[1], 18); // Cột Tên hàng
         colWidths[2] = Math.max(colWidths[2], 15); // Cột Số lượng (kg)
         colWidths[3] = Math.max(colWidths[3], 14); // Cột Đơn giá (đ)
         colWidths[4] = Math.max(colWidths[4], 16); // Cột Thành tiền (đ)
+        colWidths[5] = Math.max(colWidths[5], 16); // Cột Hóa đơn (📷 Xem ảnh)
       }
       colWidths[10] = Math.max(colWidths[10], 26); // Cột K: Nhãn tổng kết
       colWidths[11] = Math.max(colWidths[11], 16); // Cột L: Số tiền tổng kết
 
-      // Tạo file .xlsx chuẩn có cấu hình độ rộng cột và bộ lọc AutoFilter
-      const dateRef = fromDate || toDate || targetData.sortedDays?.[0]?.dateKey || '';
-      const dateParts = dateRef.split('/');
-      const monthNum = dateParts.length >= 2 ? parseInt(dateParts[1], 10) : (new Date().getMonth() + 1);
-      const validMonth = !isNaN(monthNum) ? monthNum : (new Date().getMonth() + 1);
-
-      const autoFilterRef = `A${headerExcelRow}:${amtColLetter}${lastDataExcelRow}`;
+      const autoFilterRef = `A${headerExcelRow}:${invoiceColLetter}${lastDataExcelRow}`;
 
       const blob = generateAutoFitXlsxBlob({
-        sheetName: `CongNo_Thang${validMonth}`,
+        sheetName: sheet1Name,
         rows: sheetRows,
         colWidths,
         autoFilterRef,
@@ -3242,7 +3367,12 @@ export default function PortalScreen() {
       document.body.removeChild(link);
       setTimeout(() => URL.revokeObjectURL(url), 200);
 
-      showGlobalToast(`Đã xuất file Excel công nợ cho [${custName || 'Khách hàng'}]!`, 'success');
+      showGlobalToast(
+        embeddedInvoiceCount > 0
+          ? `Đã xuất file Excel công nợ kèm ${embeddedInvoiceCount} ảnh hóa đơn ngay trên Sheet 1 cho [${custName || 'Khách hàng'}]!`
+          : `Đã xuất file Excel công nợ cho [${custName || 'Khách hàng'}]!`,
+        'success'
+      );
     } catch (err) {
       console.error('Lỗi khi xuất file Excel trên Portal:', err);
       showGlobalToast('Đã xảy ra lỗi khi xuất file Excel công nợ.', 'error');

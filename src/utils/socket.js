@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import { useAuthStore } from '../store/authStore';
 import { Alert } from 'react-native';
 
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3000';
+const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3010';
 
 // Phân biệt môi trường local và production để chọn transport phù hợp
 const isLocal = API_HOST.includes('localhost') || API_HOST.includes('127.0.0.1');
