@@ -130,7 +130,7 @@ const getFileCategory = (file) => {
   return { isVideo, isImage };
 };
 
-// Helper nén ảnh siêu tốc bằng HTML5 Canvas (Bảo toàn 100% toàn bộ ảnh gốc, không cắt viền để giữ trọn chữ ký ở chân trang)
+// Helper nén ảnh siêu tốc bằng HTML5 Canvas (tối ưu giải mã thu nhỏ trực tiếp trên Mobile để không tràn RAM)
 const compressImageClient = async (file, maxWidth = 1200, quality = 0.65) => {
   if (!file) return null;
   const { isImage } = getFileCategory(file);
@@ -138,12 +138,53 @@ const compressImageClient = async (file, maxWidth = 1200, quality = 0.65) => {
 
   // Cắt nhẹ 5% viền ngoài mỗi cạnh để ảnh tự động zoom to hơn, dễ nhìn hơn mà không mất chữ ký ở đáy
   const CROP_RATIO = 0.05;
+  const decodeTargetWidth = Math.round(maxWidth / (1 - CROP_RATIO * 2));
+
+  // Helper xuất Canvas sang DataURL không chặn luồng giao diện chính trên điện thoại (ưu tiên toBlob bất đồng bộ)
+  const canvasToJpegDataUrl = (canvas) => {
+    return new Promise((resolve) => {
+      if (typeof canvas.toBlob === 'function') {
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              try {
+                resolve(canvas.toDataURL('image/jpeg', quality));
+              } catch {
+                resolve(null);
+              }
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve(ev.target?.result || null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          },
+          'image/jpeg',
+          quality
+        );
+      } else {
+        try {
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch {
+          resolve(null);
+        }
+      }
+    });
+  };
 
   try {
-    // 1. Ưu tiên giải mã phần cứng bằng createImageBitmap (cực nhanh, đa luồng off-thread, không tốn RAM)
+    // 1. Ưu tiên giải mã phần cứng kèm resizeWidth để giảm 10x RAM cho ảnh camera 12MP-48MP trên Mobile
     if (typeof window !== 'undefined' && 'createImageBitmap' in window) {
       try {
-        const bitmap = await createImageBitmap(file);
+        let bitmap;
+        try {
+          bitmap = await createImageBitmap(file, {
+            resizeWidth: decodeTargetWidth,
+            resizeQuality: 'medium',
+          });
+        } catch {
+          bitmap = await createImageBitmap(file);
+        }
         const origW = bitmap.width;
         const origH = bitmap.height;
 
@@ -165,16 +206,17 @@ const compressImageClient = async (file, maxWidth = 1200, quality = 0.65) => {
         canvas.height = height;
         const ctx = canvas.getContext('2d', { alpha: false }); // Tắt alpha channel để tăng tốc render 2x
         if (ctx) {
-          ctx.imageSmoothingQuality = 'high'; // Đảm bảo chữ ký và nét chữ rõ nét nhất
+          ctx.imageSmoothingQuality = 'medium'; // Cân bằng tốc độ phần cứng trên Mobile và độ nét chữ ký
           ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
           if (typeof bitmap.close === 'function') bitmap.close();
+          const compressedDataUrl = await canvasToJpegDataUrl(canvas);
           // Giải phóng ngay bộ nhớ đồ họa Canvas trên iOS
           canvas.width = 1;
           canvas.height = 1;
           ctx.clearRect(0, 0, 1, 1);
           return compressedDataUrl;
         }
+        if (typeof bitmap.close === 'function') bitmap.close();
       } catch (bitmapErr) {
         console.warn('createImageBitmap lỗi (đặc biệt trên Safari/HEIC), chuyển sang fallback Image Blob:', bitmapErr);
       }
@@ -203,7 +245,7 @@ const compressImageClient = async (file, maxWidth = 1200, quality = 0.65) => {
       }
 
       const img = new window.Image();
-      img.onload = () => {
+      img.onload = async () => {
         try {
           const origW = img.naturalWidth || img.width;
           const origH = img.naturalHeight || img.height;
@@ -226,9 +268,9 @@ const compressImageClient = async (file, maxWidth = 1200, quality = 0.65) => {
           canvas.height = height;
           const ctx = canvas.getContext('2d', { alpha: false });
           if (ctx) {
-            ctx.imageSmoothingQuality = 'high';
+            ctx.imageSmoothingQuality = 'medium';
             ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            const compressedDataUrl = await canvasToJpegDataUrl(canvas);
             // Dọn sạch VRAM Canvas & thu hồi Blob URL
             canvas.width = 1;
             canvas.height = 1;
@@ -717,8 +759,9 @@ export default function StaffSubmitScreen() {
       const newItems = files.map((file) => {
         const { isVideo } = getFileCategory(file);
         let blobUrl = '';
-        // Chỉ tạo blob URL cho ảnh tĩnh để render preview; Với Video không tạo blobUrl để tránh chiếm dụng RAM trên iPhone
-        if (!isVideo && typeof URL !== 'undefined' && URL.createObjectURL) {
+        // Trên Mobile, tránh tạo blobUrl cho ảnh chụp dung lượng lớn (> 1.5MB) để không bắt trình duyệt giải mã hàng chục ảnh 12MP-48MP cùng lúc gây đơ máy
+        const isLargeMobilePhoto = (file.size || 0) > 1500000;
+        if (!isVideo && !isLargeMobilePhoto && typeof URL !== 'undefined' && URL.createObjectURL) {
           try {
             blobUrl = URL.createObjectURL(file);
           } catch (blobErr) {
@@ -746,8 +789,9 @@ export default function StaffSubmitScreen() {
     }
   };
 
-  // Giới hạn số luồng upload song song (3 luồng đồng thời: ổn định, an toàn mạng và RAM)
-  const MAX_CONCURRENT = 3;
+  // Giới hạn số luồng upload song song (2 luồng trên Mobile để không nghẽn mạng 4G/RAM iOS, 3 luồng trên PC Web)
+  const isMobileWeb = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  const MAX_CONCURRENT = isMobileWeb ? 2 : 3;
 
   // Xử lý tải lên một tệp đơn lẻ độc lập
   const uploadSingleItem = async (nextItem) => {
@@ -1019,7 +1063,7 @@ export default function StaffSubmitScreen() {
             {Platform.OS === 'web' && (
               <input
                 type="file"
-                accept="image/*,video/*,.heic,.heif,.mov,.mp4,image/heic,image/heif,video/quicktime"
+                accept="image/*,video/*,.mov,.mp4,video/quicktime"
                 multiple
                 ref={mediaInputRef}
                 onClick={(e) => {
@@ -1117,8 +1161,13 @@ export default function StaffSubmitScreen() {
                                 <Text style={styles.videoBadgeTagText}>VIDEO</Text>
                               </View>
                             </View>
-                          ) : (
+                          ) : item.blobUrl ? (
                             <Image source={{ uri: item.blobUrl }} style={styles.historyGridImg} resizeMode="cover" />
+                          ) : (
+                            <View style={styles.historyVideoFallback}>
+                              <Text style={{ fontSize: 26 }}>🖼️</Text>
+                              <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 2, fontWeight: '600' }}>Ảnh HĐ</Text>
+                            </View>
                           )}
 
                           {/* Lớp phủ trạng thái Zalo (Đang gửi hoặc Thử lại nếu lỗi) */}
