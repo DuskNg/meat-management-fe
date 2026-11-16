@@ -1842,11 +1842,23 @@ export default function PortalScreen() {
         lastCustName = currentCust;
       }
 
-      let line = isRet ? '[-] TRẢ HÀNG: ' : '• ';
+      // Chuẩn hóa tên món khi trả hàng/nhập hàng: dùng dấu "• " đồng bộ, chỉ giữ "TRẢ:" hoặc "NHẬP:" (không lặp text, không dùng "[-]")
+      let displayItemName = (e.name || '').trim();
+      if (isRet) {
+        if (/^TRẢ HÀNG$/i.test(displayItemName)) {
+          displayItemName = 'TRẢ';
+        } else if (/^NHẬP HÀNG$/i.test(displayItemName)) {
+          displayItemName = 'NHẬP';
+        } else if (!/^(TRẢ|NHẬP)\s*:/i.test(displayItemName)) {
+          displayItemName = `TRẢ: ${displayItemName}`;
+        }
+      }
+
+      let line = '• ';
       if (!targetCustomerName && e.customerName) {
         line += `[${e.customerName}] `;
       }
-      line += e.name;
+      line += displayItemName;
       if (q > 0) line += `: ${q}kg`;
       if (p > 0) line += ` x ${formatUnitPriceShort(p)}`;
       line += ` = ${isRet ? '-' : ''}${formatAmountNoUnit(Math.abs(amt))}`;

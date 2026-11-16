@@ -530,15 +530,28 @@ export default function DashboardScreen() {
     if (socket && currentWorkspaceId) {
       joinWorkspaceRoom(currentWorkspaceId);
 
+      let customerUpdateTimer = null;
       const handleCustomerUpdate = (data) => {
-        console.log('[SOCKET] Nhận thông báo cập nhật khách hàng/ghi nợ:', data);
-        refetch();
-        refetchBad();
-        refetchPayments(); // Cập nhật lại lịch sử thanh toán qua socket
-        refetchTransactions(); // Cập nhật lại giao dịch qua socket
-        customerDebtHistoryModalRef.current?.refresh();
-        // Tự động cập nhật danh sách nợ trong ngày của nhân viên qua socket
-        employeeDailyDebtModalRef.current?.refresh();
+        // Gom nhóm (debounce) các sự kiện socket liên tiếp để tránh bão API đồng thời
+        if (customerUpdateTimer) clearTimeout(customerUpdateTimer);
+        customerUpdateTimer = setTimeout(() => {
+          console.log('[SOCKET] Nhận thông báo cập nhật khách hàng/ghi nợ:', data);
+          const isOnCustomerDetailPage =
+            typeof window !== 'undefined' &&
+            window.location &&
+            window.location.pathname &&
+            window.location.pathname.startsWith('/customer/');
+
+          refetch();
+          refetchBad();
+          // Tránh kéo toàn bộ lịch sử toàn hệ thống khi đang ở màn hình chi tiết 1 khách hàng
+          if (!isOnCustomerDetailPage) {
+            refetchPayments();
+            refetchTransactions();
+          }
+          customerDebtHistoryModalRef.current?.refresh();
+          employeeDailyDebtModalRef.current?.refresh();
+        }, 400);
       };
 
       // Đồng bộ danh sách locks khi mới kết nối
@@ -567,6 +580,7 @@ export default function DashboardScreen() {
       socket.on('STAFF_SUBMISSION_READY', handleStaffSubmissionReady);
 
       return () => {
+        if (customerUpdateTimer) clearTimeout(customerUpdateTimer);
         socket.off('CUSTOMER_UPDATED', handleCustomerUpdate);
         socket.off('RESOURCE_LOCKS_SYNC', handleLocksSync);
         socket.off('RESOURCE_LOCK_CHANGED', handleLockChanged);

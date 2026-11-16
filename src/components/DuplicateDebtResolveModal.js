@@ -15,6 +15,7 @@ import InvoiceImageViewerModal from './InvoiceImageViewerModal';
 import { api } from '../api/client';
 import { COLORS } from '../theme';
 import { showGlobalToast } from '../store/toastStore';
+import { isTruongHoangBranch } from './StaffSubmissionReviewModal';
 import {
   addConfirmedValidDuplicateKeys,
   buildDuplicateKeysFromResults,
@@ -358,6 +359,11 @@ const DuplicateDebtResolveModal = forwardRef(({ onEditTransaction, onRefresh }, 
 
     const allKeys = buildDuplicateKeysFromResults(duplicateList);
     addConfirmedValidDuplicateKeys(allKeys);
+    if (allKeys.length > 0) {
+      api.post('/transactions/confirmed-duplicates', { keys: allKeys }).catch((err) => {
+        console.warn('[DUPLICATE_AUDIT] Lỗi đồng bộ confirmed keys lên server:', err?.message);
+      });
+    }
     showGlobalToast('Đã xác nhận tất cả đơn là hợp lệ. Hệ thống sẽ không cảnh báo lại nữa!', 'success');
 
     setDuplicateList([]);
@@ -471,6 +477,11 @@ const DuplicateDebtResolveModal = forwardRef(({ onEditTransaction, onRefresh }, 
                 const isSelected = selectedTxIds.has(tx.id);
                 const hasInvoices = Array.isArray(tx.invoices) && tx.invoices.length > 0;
                 const timeStr = formatTimeOnly(tx.date || tx.createdAt);
+                // Kiểm tra nếu là cơ sở thuộc Nhóm Trường Hoàng và đơn đã được đánh dấu có chữ ký nhận
+                const isTH =
+                  isTruongHoangBranch({ id: tx.customerId, name: tx.customerName }) ||
+                  /tr[uư][oơờ]ng\s*ho[aà]ng/i.test(tx.rawTx?.customer?.group?.name || '');
+                const hasSignature = isTH && /\[Đã ký nhận\]/i.test(tx.note || '');
 
                 return (
                   <View
@@ -507,6 +518,13 @@ const DuplicateDebtResolveModal = forwardRef(({ onEditTransaction, onRefresh }, 
                             {tx.seqText}
                           </Text>
                         </View>
+
+                        {/* Huy hiệu Có chữ ký cho các đơn Nhóm Trường Hoàng đã có chữ ký nhận */}
+                        {hasSignature && (
+                          <View style={styles.signedBadge}>
+                            <Text style={styles.signedBadgeText}>✍️ Có chữ ký</Text>
+                          </View>
+                        )}
 
                         {/* Huy hiệu Sẽ xóa khi đã tick chọn */}
                         {isSelected && (
@@ -855,6 +873,19 @@ const styles = StyleSheet.create({
   },
   seqBadgeTextSelected: {
     color: '#DC2626',
+  },
+  signedBadge: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#4ADE80',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  signedBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#15803D',
   },
   selectedToDeleteBadge: {
     backgroundColor: '#EF4444',

@@ -569,6 +569,8 @@ export const computeDuplicatesSignature = (duplicateResults = []) => {
 
 // Khóa lưu danh sách các đơn trùng lặp đã được người dùng xác nhận là đúng (không phải trùng)
 export const CONFIRMED_VALID_DUPLICATES_STORAGE_KEY = 'meat_confirmed_valid_duplicate_keys';
+// Bộ nhớ đệm trong phiên làm việc (hỗ trợ cả thiết bị không có localStorage và đồng bộ tức thì)
+const inMemoryConfirmedDuplicateKeys = new Set();
 
 /**
  * Xây dựng khóa định danh duy nhất cho một nhóm nghi trùng trong ngày:
@@ -583,35 +585,39 @@ export const buildDuplicateGroupKey = ({ customerId, dateKey, productName, quant
 };
 
 /**
- * Lấy danh sách các key đã được người dùng xác nhận đúng từ localStorage:
+ * Lấy danh sách các key đã được người dùng xác nhận đúng từ localStorage và bộ nhớ đệm:
  */
 export const getConfirmedValidDuplicateKeys = () => {
+  const merged = new Set(inMemoryConfirmedDuplicateKeys);
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       const raw = window.localStorage.getItem(CONFIRMED_VALID_DUPLICATES_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          return new Set(parsed);
+          parsed.forEach((k) => {
+            if (k) merged.add(k);
+          });
         }
       }
     }
   } catch (err) {
     console.warn('[DUPLICATE_AUDIT] Lỗi đọc confirmed duplicate keys từ localStorage:', err);
   }
-  return new Set();
+  return merged;
 };
 
 /**
- * Lưu bổ sung các key đã được xác nhận đúng vào localStorage:
+ * Lưu bổ sung các key đã được xác nhận đúng vào bộ nhớ đệm và localStorage:
  */
 export const addConfirmedValidDuplicateKeys = (keys = []) => {
+  if (!Array.isArray(keys) || keys.length === 0) return;
+  keys.forEach((k) => {
+    if (k) inMemoryConfirmedDuplicateKeys.add(k);
+  });
   try {
-    if (typeof window !== 'undefined' && window.localStorage && Array.isArray(keys) && keys.length > 0) {
+    if (typeof window !== 'undefined' && window.localStorage) {
       const currentSet = getConfirmedValidDuplicateKeys();
-      keys.forEach((k) => {
-        if (k) currentSet.add(k);
-      });
       window.localStorage.setItem(
         CONFIRMED_VALID_DUPLICATES_STORAGE_KEY,
         JSON.stringify(Array.from(currentSet))

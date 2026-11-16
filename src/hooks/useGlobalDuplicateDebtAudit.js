@@ -9,6 +9,7 @@ import {
   getConfirmedValidDuplicateKeys,
 } from '../utils/debtExportAuditHelper';
 import { showGlobalToast } from '../store/toastStore';
+import { api } from '../api/client';
 
 // Chu kỳ quét trùng lặp tự động định kỳ: 30 phút (30 * 60 * 1000 ms)
 const DUPLICATE_AUDIT_INTERVAL_MS = 30 * 60 * 1000;
@@ -85,9 +86,14 @@ export const useGlobalDuplicateDebtAudit = ({
       cancelText: 'Đã hiểu / Bỏ qua',
       neutralText: '✅ Bằng cân nhưng đúng (Không báo lại)',
       onNeutral: () => {
-        // 1. Trích xuất các key của các đơn trùng trong targetList và lưu vào localStorage
+        // 1. Trích xuất các key của các đơn trùng trong targetList và lưu local + đồng bộ lên Backend
         const keys = buildDuplicateKeysFromResults(targetList);
         addConfirmedValidDuplicateKeys(keys);
+        if (keys.length > 0) {
+          api.post('/transactions/confirmed-duplicates', { keys }).catch((err) => {
+            console.warn('[DUPLICATE_AUDIT] Lỗi đồng bộ confirmed keys lên server:', err?.message);
+          });
+        }
 
         // 2. Lấy lại danh sách confirmed mới nhất
         const updatedConfirmedSet = getConfirmedValidDuplicateKeys();
@@ -178,13 +184,33 @@ export const useGlobalDuplicateDebtAudit = ({
     [showDuplicateAlertModal]
   );
 
-  // Lắng nghe thay đổi dữ liệu giao dịch từ API (sau khi refetch hoặc tải mới)
+  const [isConfirmedSynced, setIsConfirmedSynced] = useState(false);
+
+  // Đồng bộ danh sách key đã xác nhận từ Backend khi khởi tạo (tránh bật lại pop-up trên thiết bị mới)
+  const syncConfirmedFromServer = useCallback(async () => {
+    try {
+      const res = await api.get('/transactions/confirmed-duplicates');
+      if (res?.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        addConfirmedValidDuplicateKeys(res.data.data);
+      }
+    } catch (err) {
+      console.warn('[DUPLICATE_AUDIT] Không thể tải confirmed keys từ server:', err?.message);
+    } finally {
+      setIsConfirmedSynced(true);
+    }
+  }, []);
+
   useEffect(() => {
-    if (transactions && transactions.length > 0) {
+    syncConfirmedFromServer();
+  }, [syncConfirmedFromServer]);
+
+  // Lắng nghe thay đổi dữ liệu giao dịch từ API (chỉ quét sau khi đã đồng bộ confirmed keys từ server)
+  useEffect(() => {
+    if (isConfirmedSynced && transactions && transactions.length > 0) {
       const forceAlert = isAfterSubmitRef.current;
       executeAudit(transactions, forceAlert);
     }
-  }, [transactions, executeAudit]);
+  }, [isConfirmedSynced, transactions, executeAudit]);
 
   // Bộ đếm quét định kỳ: Cứ đúng 30 phút quét 1 lần
   useEffect(() => {

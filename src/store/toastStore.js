@@ -33,10 +33,11 @@ export const useToastStore = create((set) => ({
  * - showGlobalToast('Nội dung', 'success', 'Tiêu đề')
  * - showGlobalToast({ title: 'Tiêu đề', message: 'Nội dung', type: 'success' })
  */
-export const showGlobalToast = (arg1, type = 'success', title = 'Thành công', duration = 3000) => {
+export const showGlobalToast = (arg1, type = 'success', title = null, duration = 3000) => {
   if (arg1 && typeof arg1 === 'object') {
     useToastStore.getState().showToast(arg1);
   } else {
-    useToastStore.getState().showToast({ message: String(arg1 || ''), type, title, duration });
+    const resolvedTitle = title || (type === 'error' ? 'Lỗi' : type === 'warning' ? 'Cảnh báo' : type === 'info' ? 'Thông báo' : 'Thành công');
+    useToastStore.getState().showToast({ message: String(arg1 || ''), type, title: resolvedTitle, duration });
   }
 };

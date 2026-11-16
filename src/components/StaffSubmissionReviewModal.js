@@ -18,6 +18,7 @@ import DatePickerInput from './DatePickerInput';
 import ImagePreviewModal from './ImagePreviewModal';
 import StaffSubmissionDetailModal from './StaffSubmissionDetailModal';
 import PopupModal from './PopupModal';
+import AiAliasManagerModal from './AiAliasManagerModal';
 import PriceChangeReasonModal from './PriceChangeReasonModal';
 import MoneyInput from './MoneyInput';
 import { api, API_HOST, resolveMediaUrl } from '../api/client';
@@ -2876,6 +2877,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const imagePreviewModalRef = useRef(null);
   const detailModalRef = useRef(null);
   const popupModalRef = useRef(null);
+  const aiAliasModalRef = useRef(null);
   const priceChangeReasonModalRef = useRef(null);
   const isOpenActionRef = useRef(false);
 
@@ -5353,6 +5355,16 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             <View style={styles.headerActions}>
               <TouchableOpacity
                 style={[styles.btnLinkManager, isMobile && styles.btnLinkManagerMobile]}
+                onPress={() => aiAliasModalRef.current?.open()}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.btnLinkManagerText, isMobile && styles.btnLinkManagerTextMobile]}>
+                  {isMobile ? '📚 AI' : '📚 Từ điển AI'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.btnLinkManager, isMobile && styles.btnLinkManagerMobile]}
                 onPress={() => {
                   setShowLinkManager(!showLinkManager);
                   if (!showLinkManager) fetchStaffLinks();
@@ -5811,6 +5823,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
       {/* Modal hỏi lý do thay đổi đơn giá - zIndex 9999999 để đè lên StaffSubmissionDetailModal */}
       <PriceChangeReasonModal ref={priceChangeReasonModalRef} zIndex={9999999} />
+
+      {/* Modal quản lý Từ điển AI tự học độc lập ở tầng cao nhất */}
+      <AiAliasManagerModal ref={aiAliasModalRef} customers={customers} products={products} />
     </>
   );
 });
