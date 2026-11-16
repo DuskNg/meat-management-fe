@@ -4977,6 +4977,45 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
 
   // Trạng thái theo dõi các thẻ đang được kích hoạt quét lại AI
   const [reparsingMap, setReparsingMap] = useState({});
+  const [batchReparsing, setBatchReparsing] = useState(false);
+
+  // Danh sách các hóa đơn chưa duyệt đang bị lỗi AI
+  const errorSubmissions = useMemo(
+    () => submissions.filter((s) => s.status !== 'APPROVED' && s.status !== 'REJECTED' && Boolean(s.aiError)),
+    [submissions]
+  );
+
+  // Quét lại hàng loạt toàn bộ hóa đơn bị lỗi AI
+  const handleBatchReparseErrors = () => {
+    if (errorSubmissions.length === 0 || batchReparsing) return;
+    popupModalRef.current?.show({
+      type: 'confirm',
+      title: 'Quét lại các đơn lỗi',
+      message: `Bạn muốn quét lại ${errorSubmissions.length} hóa đơn đang bị lỗi? (Các đơn đã có dữ liệu thô từ AI sẽ được xử lý lại miễn phí 0đ).`,
+      confirmText: `Quét lại (${errorSubmissions.length})`,
+      cancelText: 'Hủy',
+      onConfirm: async () => {
+        setBatchReparsing(true);
+        try {
+          const ids = errorSubmissions.map((s) => s.id);
+          const res = await api.post('/staff-submissions/batch-reparse', { ids });
+          if (res.data?.success) {
+            const idSet = new Set(ids);
+            setSubmissions((prev) =>
+              prev.map((s) => (idSet.has(s.id) ? { ...s, status: 'ANALYZING', aiError: null } : s))
+            );
+            showGlobalToast(res.data.message || `Đang quét lại ${ids.length} đơn lỗi...`, 'success');
+            setTimeout(() => fetchSubmissions(), 3000);
+            setTimeout(() => fetchSubmissions(), 7000);
+          }
+        } catch (err) {
+          showGlobalToast(err.response?.data?.message || 'Không thể quét lại hàng loạt lúc này.', 'error');
+        } finally {
+          setBatchReparsing(false);
+        }
+      },
+    });
+  };
 
   // Chủ buôn kích hoạt AI quét lại một hóa đơn / video
   const handleReparseCard = async (subId) => {
@@ -5555,6 +5594,27 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                         {isMobile ? `🚀 LƯU (${validBatchCount})` : `🚀 LƯU TẤT CẢ (${validBatchCount} ĐƠN)`}
                       </Text>
                     )}
+                  </TouchableOpacity>
+                )}
+
+                {errorSubmissions.length > 0 && (
+                  <TouchableOpacity
+                    style={[
+                      styles.btnBatchReparseError,
+                      isMobile && styles.btnBatchReparseErrorMobile,
+                      batchReparsing && { opacity: 0.6 },
+                    ]}
+                    onPress={handleBatchReparseErrors}
+                    disabled={batchReparsing}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.btnBatchReparseErrorText, isMobile && styles.btnBatchReparseErrorTextMobile]}>
+                      {batchReparsing
+                        ? '⏳ Đang quét...'
+                        : isMobile
+                          ? `🔄 Lỗi (${errorSubmissions.length})`
+                          : `🔄 Quét lại ${errorSubmissions.length} đơn lỗi`}
+                    </Text>
                   </TouchableOpacity>
                 )}
 
@@ -6266,6 +6326,28 @@ const styles = StyleSheet.create({
   btnBatchSaveAllTextMobile: {
     fontSize: 10.5,
     fontWeight: 'bold',
+  },
+  btnBatchReparseError: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnBatchReparseErrorMobile: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  btnBatchReparseErrorText: {
+    color: '#B45309',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  btnBatchReparseErrorTextMobile: {
+    fontSize: 11,
   },
   btnBatchRejectAll: {
     backgroundColor: '#FEE2E2',
