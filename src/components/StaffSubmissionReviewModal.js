@@ -5367,7 +5367,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           {/* ─── HEADER ─── */}
           <View style={[styles.headerRow, isMobile && styles.headerRowMobile]}>
             <View style={{ flex: 1, minWidth: 0, marginRight: 6 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', minWidth: 0 }}>
                 <Text style={[styles.modalTitle, isMobile && styles.modalTitleMobile]} numberOfLines={1}>
                   {isMobile ? '🤖 Phân tích hóa đơn' : '🤖 PHÂN TÍCH HÓA ĐƠN & NHẬP CÔNG NỢ'}
                 </Text>
@@ -5469,6 +5469,7 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={{ maxWidth: '100%', flexGrow: 0 }}
               contentContainerStyle={[styles.statusTabs, isMobile && styles.statusTabsMobile]}
             >
               <TouchableOpacity
@@ -5901,6 +5902,7 @@ const styles = StyleSheet.create({
     maxHeight: '95%',
     width: '100%',
     maxWidth: '100%',
+    minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
@@ -5910,6 +5912,9 @@ const styles = StyleSheet.create({
     maxHeight: '100%',
     width: '100%',
     maxWidth: '100%',
+    minWidth: 0,
+    alignSelf: 'stretch',
+    overflow: 'hidden',
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
     borderRadius: 0,
@@ -5934,8 +5939,9 @@ const styles = StyleSheet.create({
     color: '#0F172A',
   },
   modalTitleMobile: {
-    fontSize: 14.5,
+    fontSize: 13.5,
     fontWeight: '700',
+    flexShrink: 1,
   },
   badgePending: {
     backgroundColor: '#EFF6FF',
@@ -6093,6 +6099,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
+    maxWidth: '100%',
+    minWidth: 0,
+    overflow: 'hidden',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderBottomWidth: 1,
