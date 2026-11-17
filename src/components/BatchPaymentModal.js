@@ -695,12 +695,22 @@ const BatchPaymentModal = forwardRef(({ onRefresh, currentUserId }, ref) => {
               <Text style={styles.groupCardHeaderTitle} numberOfLines={1}>
                 🏢 <Text style={{ color: '#047857' }}>{activeGroup.name}</Text> ({rows.length} quán)
               </Text>
-              <View style={styles.groupTotalDebtBadge}>
+              <TouchableOpacity
+                style={styles.groupTotalDebtBadge}
+                activeOpacity={0.7}
+                disabled={activeGroupTotalDebt <= 0}
+                onPress={() => {
+                  if (activeGroupTotalDebt > 0) {
+                    setGroupLumpSum(Math.round(activeGroupTotalDebt).toString());
+                    setError('');
+                  }
+                }}
+              >
                 <Text style={styles.groupTotalDebtLabel}>
                   {selectedDebtMonth !== 'all' ? `NỢ T${selectedDebtMonth}` : 'TỔNG NỢ'}:
                 </Text>
                 <Text style={styles.groupTotalDebtVal}>{formatCurrency(activeGroupTotalDebt)}</Text>
-              </View>
+              </TouchableOpacity>
             </View>
 
             {/* Hàng nhập số tiền & các nút phân bổ thu gọn */}
@@ -760,9 +770,20 @@ const BatchPaymentModal = forwardRef(({ onRefresh, currentUserId }, ref) => {
                   {diffLumpSum === 0 ? '✓ Khớp' : diffLumpSum > 0 ? `Dư ${formatCurrency(diffLumpSum)}` : `Vượt ${formatCurrency(Math.abs(diffLumpSum))}`}
                 </Text>
               )}
-              <Text style={styles.allocResultText}>
-                Còn lại: <Text style={[styles.allocResultBold, { color: COLORS.danger }]}>{formatCurrency(remainingGroupDebt)}</Text>
-              </Text>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                disabled={remainingGroupDebt <= 0}
+                onPress={() => {
+                  if (remainingGroupDebt > 0) {
+                    setGroupLumpSum(Math.round(remainingGroupDebt).toString());
+                    setError('');
+                  }
+                }}
+              >
+                <Text style={styles.allocResultText}>
+                  Còn lại: <Text style={[styles.allocResultBold, { color: COLORS.danger, textDecorationLine: remainingGroupDebt > 0 ? 'underline' : 'none' }]}>{formatCurrency(remainingGroupDebt)}</Text>
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
