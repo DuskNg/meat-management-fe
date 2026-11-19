@@ -2917,6 +2917,108 @@ export default function PortalScreen() {
         return (inv.imageUrl || inv.url || inv.fileUrl || '').trim();
       };
 
+      // Helper ghép nhiều ảnh hóa đơn thành 1 ảnh lưới ngang/dọc rõ nét để trỏ chuột trên Excel xem được TẤT CẢ các ảnh
+      const stitchInvoiceImagesForExcel = async (imgObjects) => {
+        if (!Array.isArray(imgObjects) || imgObjects.length === 0) return null;
+        if (imgObjects.length === 1) return imgObjects[0];
+        if (typeof document === 'undefined') return imgObjects[0];
+
+        const loadImageFromBytes = (imgObj) => new Promise((resolve) => {
+          try {
+            const mime = imgObj.ext === 'png' ? 'image/png' : 'image/jpeg';
+            const blob = new Blob([imgObj.bytes], { type: mime });
+            const objUrl = URL.createObjectURL(blob);
+            const img = new window.Image();
+            img.onload = () => {
+              URL.revokeObjectURL(objUrl);
+              resolve(img);
+            };
+            img.onerror = () => {
+              URL.revokeObjectURL(objUrl);
+              resolve(null);
+            };
+            img.src = objUrl;
+          } catch (_) {
+            resolve(null);
+          }
+        });
+
+        const loadedImgs = (await Promise.all(imgObjects.map(loadImageFromBytes))).filter(Boolean);
+        if (loadedImgs.length === 0) return imgObjects[0];
+        if (loadedImgs.length === 1) return imgObjects[0];
+
+        const count = loadedImgs.length;
+        // 2 hoặc 3 ảnh -> xếp 1 hàng ngang song song; từ 4 ảnh trở lên -> chia lưới 2 hoặc 3 cột
+        const cols = count <= 3 ? count : (count <= 4 ? 2 : 3);
+        const rows = Math.ceil(count / cols);
+        const tileW = cols === 2 ? 540 : 480;
+        const tileH = rows === 1 ? 740 : 580;
+        const gap = 8;
+        const pad = 6;
+        const headerH = 26;
+
+        const canvasW = pad * 2 + cols * tileW + (cols - 1) * gap;
+        const canvasH = pad * 2 + rows * (tileH + headerH) + (rows - 1) * gap;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = canvasW;
+        canvas.height = canvasH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return imgObjects[0];
+
+        ctx.fillStyle = '#F8FAFC';
+        ctx.fillRect(0, 0, canvasW, canvasH);
+
+        loadedImgs.forEach((img, idx) => {
+          const r = Math.floor(idx / cols);
+          const c = idx % cols;
+          const x = pad + c * (tileW + gap);
+          const y = pad + r * (tileH + headerH + gap);
+
+          // Thanh tiêu đề nhỏ đánh số ảnh (Ảnh 1/3, Ảnh 2/3...)
+          ctx.fillStyle = '#E2E8F0';
+          ctx.fillRect(x, y, tileW, headerH);
+          ctx.fillStyle = '#0F172A';
+          ctx.font = 'bold 14px Arial, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`Ảnh ${idx + 1}/${count}`, x + tileW / 2, y + headerH / 2);
+
+          // Khung nền trắng cho từng ảnh
+          const imgBoxY = y + headerH;
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(x, imgBoxY, tileW, tileH);
+
+          // Vẽ ảnh giữ đúng tỷ lệ gốc (object-fit: contain)
+          const ratio = Math.min(tileW / (img.width || 1), tileH / (img.height || 1));
+          const drawW = (img.width || 1) * ratio;
+          const drawH = (img.height || 1) * ratio;
+          const drawX = x + (tileW - drawW) / 2;
+          const drawY = imgBoxY + (tileH - drawH) / 2;
+          ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+          // Viền mảnh phân tách từng ảnh
+          ctx.strokeStyle = '#CBD5E1';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, tileW, tileH + headerH);
+        });
+
+        const stitchedBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+        if (!stitchedBlob) return imgObjects[0];
+        const stitchedBytes = new Uint8Array(await stitchedBlob.arrayBuffer());
+
+        // Tính kích thước popup Excel lớn, sắc nét (đơn vị pt) giữ đúng tỷ lệ khung hình ghép
+        const maxW = count === 2 ? 700 : (count === 3 ? 920 : 880);
+        const maxH = rows === 1 ? 490 : 640;
+        const scalePt = Math.min(maxW / canvasW, maxH / canvasH);
+        return {
+          bytes: stitchedBytes,
+          ext: 'jpeg',
+          widthPt: Math.max(360, Math.round(canvasW * scalePt)),
+          heightPt: Math.max(340, Math.round(canvasH * scalePt)),
+        };
+      };
+
       // Hàm chuyển đường dẫn hóa đơn thành URL trực tiếp để mở xem ngay từ Sheet 1 trên mọi máy tính
       const getDirectOpenUrl = (rawUrl) => {
         if (!rawUrl) return '';
@@ -3237,15 +3339,18 @@ export default function PortalScreen() {
             const imageItems = orderInvoices.filter((inv) => !isVideoInvoiceItem(inv) && getRawMediaUrl(inv));
             const videoItems = orderInvoices.filter((inv) => isVideoInvoiceItem(inv) && getRawMediaUrl(inv));
 
-            let embeddedCommentImg = null;
+            // Tải toàn bộ ảnh của ngày/đơn này và ghép thành 1 khung ảnh tổng hợp để di chuột trên Excel xem được ĐỦ tất cả ảnh
+            const fetchedImages = [];
             for (const inv of imageItems) {
               const u = getRawMediaUrl(inv);
               const imgObj = await fetchInvoiceImageForExcel(u, imageCacheMap);
               if (imgObj && imgObj.bytes) {
-                embeddedCommentImg = imgObj;
-                break;
+                fetchedImages.push(imgObj);
               }
             }
+            const embeddedCommentImg = fetchedImages.length > 0
+              ? await stitchInvoiceImagesForExcel(fetchedImages)
+              : null;
 
             const primaryItem = imageItems[0] || videoItems[0];
             const primaryRawUrl = getRawMediaUrl(primaryItem);

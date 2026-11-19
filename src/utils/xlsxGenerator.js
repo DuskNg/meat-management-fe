@@ -199,6 +199,8 @@ export const generateAutoFitXlsxBlob = ({
           cIdx,
           bytes: cell.commentImage.bytes,
           ext: cell.commentImage.ext === 'png' ? 'png' : 'jpeg',
+          widthPt: Number(cell.commentImage.widthPt) > 0 ? Math.round(Number(cell.commentImage.widthPt)) : 360,
+          heightPt: Number(cell.commentImage.heightPt) > 0 ? Math.round(Number(cell.commentImage.heightPt)) : 480,
         });
       }
     });
@@ -562,11 +564,13 @@ ${commentItemsXml}
       const relId = `rId_img${imgNum}`;
       const mediaFileName = `image${imgNum}.${c.ext}`;
 
-      // Đặt khung ảnh hóa đơn bật ra ngay bên cạnh ô "📷 Xem ảnh" trên Sheet 1 (rộng 260pt ~ 346px, cao 350pt ~ 466px)
+      // Đặt khung ảnh hóa đơn bật ra ngay bên cạnh ô "📷 Xem ảnh" trên Sheet 1 (tự động giãn rộng khi ghép nhiều ảnh)
       const marginLeftPt = (c.cIdx + 1) * 68;
       const marginTopPt = Math.max(4, c.rIdx * 15);
+      const boxWidthPt = c.widthPt || 360;
+      const boxHeightPt = c.heightPt || 480;
 
-      vmlShapesXml.push(`  <v:shape id="${shapeId}" type="#_x0000_t202" style="position:absolute;margin-left:${marginLeftPt}pt;margin-top:${marginTopPt}pt;width:260pt;height:350pt;z-index:${idx + 1};visibility:hidden" fillcolor="#ffffe1" o:insetmode="auto">
+      vmlShapesXml.push(`  <v:shape id="${shapeId}" type="#_x0000_t202" style="position:absolute;margin-left:${marginLeftPt}pt;margin-top:${marginTopPt}pt;width:${boxWidthPt}pt;height:${boxHeightPt}pt;z-index:${idx + 1};visibility:hidden" fillcolor="#ffffe1" o:insetmode="auto">
     <v:fill o:relid="${relId}" o:title="HoaDon_${imgNum}" type="frame" recolor="t"/>
     <v:shadow on="t" color="black" obscured="t"/>
     <v:path o:connecttype="none"/>

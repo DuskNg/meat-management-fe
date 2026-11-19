@@ -938,8 +938,18 @@ const ExportDebtModal = forwardRef(({ onRefresh }, ref) => {
         return true;
       });
 
-      // Tính toán tổng hợp sản lượng thịt theo khoảng ngày đang lọc (áp dụng cho mọi khung ngày: cả tháng hoặc từ ngày X đến ngày Y)
-      const meatSummary = computeMeatVolumeSummary(filteredTrans, payList);
+      // Lọc các khoản thanh toán / trả lại hàng phát sinh trong đúng khoảng ngày đang lọc
+      const filteredPays = (payList || []).filter(p => {
+        const d = new Date(p.paidAt || p.date || p.createdAt);
+        if (isNaN(d.getTime())) return false;
+        if (fromD && toD) {
+          return d >= fromD && d <= toD;
+        }
+        return true;
+      });
+
+      // Tính toán tổng hợp sản lượng thịt theo khoảng ngày đang lọc (chỉ trừ hàng trả lại trong đúng kỳ lọc)
+      const meatSummary = computeMeatVolumeSummary(filteredTrans, filteredPays);
       setMonthlyMeatSummary(meatSummary);
       const hasMeatSummary = Boolean(meatSummary.items && meatSummary.items.length > 0);
       setIsExportMonth(hasMeatSummary);
