@@ -739,9 +739,20 @@ const buildInvoiceRows = (
     }
   });
 
-  // Tính dayNetTotal cho mỗi ngày trên toàn lịch sử
+  // Tính dayNetTotal cho mỗi ngày trên toàn lịch sử và gom phần tiền trả hàng dư (khi ngày đó trả hàng > tiền mua hàng)
+  const excessReturns = [];
   Object.values(allDayMap).forEach((day) => {
-    day.dayNetTotal = Math.max(0, day.meatSum - day.returnSum);
+    const rawNet = day.meatSum - day.returnSum;
+    if (rawNet < 0) {
+      day.dayNetTotal = 0;
+      excessReturns.push({
+        monthKey: day.monthKey,
+        dateObj: day.dateObj,
+        remaining: Math.abs(rawNet),
+      });
+    } else {
+      day.dayNetTotal = rawNet;
+    }
     day.paidAmount = 0;
     day.remainingDebt = day.dayNetTotal;
     day.isPaid = false;
@@ -751,6 +762,27 @@ const buildInvoiceRows = (
 
   // 3. Phân bổ các khoản thanh toán tiền mặt (Đồng bộ chuẩn thuật toán với Hệ thống nội bộ)
   const allDaysOldestToNewest = Object.values(allDayMap).sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+
+  // Khấu trừ phần tiền hàng trả về dư vào các ngày còn nợ khác (ưu tiên các ngày cùng tháng trước, sau đó FIFO toàn lịch sử)
+  excessReturns.forEach((er) => {
+    for (const day of allDaysOldestToNewest) {
+      if (er.remaining <= 0) break;
+      if (day.monthKey !== er.monthKey || day.dayNetTotal <= 0) continue;
+      const used = Math.min(er.remaining, day.dayNetTotal);
+      day.dayNetTotal -= used;
+      day.remainingDebt = day.dayNetTotal;
+      er.remaining -= used;
+    }
+    for (const day of allDaysOldestToNewest) {
+      if (er.remaining <= 0) break;
+      if (day.dayNetTotal <= 0) continue;
+      const used = Math.min(er.remaining, day.dayNetTotal);
+      day.dayNetTotal -= used;
+      day.remainingDebt = day.dayNetTotal;
+      er.remaining -= used;
+    }
+  });
+
   const sortedCashPayments = allCashPayments.sort((a, b) => a.paidAt.getTime() - b.paidAt.getTime());
 
   // Helper thực hiện trừ tiền thanh toán vào một ngày cụ thể
@@ -865,7 +897,7 @@ const buildInvoiceRows = (
 
   // Cập nhật trạng thái thanh toán cuối cùng của từng ngày
   allDaysOldestToNewest.forEach((day) => {
-    if (day.dayNetTotal > 0 && day.paidAmount >= day.dayNetTotal) {
+    if ((day.dayNetTotal > 0 && day.paidAmount >= day.dayNetTotal) || (day.meatSum > 0 && day.dayNetTotal === 0)) {
       day.isPaid = true;
       day.isPartialPaid = false;
       day.remainingDebt = 0;

@@ -835,7 +835,7 @@ const TransactionDetailModal = forwardRef(({
               {payments.filter((p) => isReturnGoodsItem(p)).map((p, pIdx) => (
                 <View key={p.id || pIdx} style={[styles.paymentCard, styles.paymentCardReturnGoods]}>
                   <View style={styles.transCardHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
                       <Text style={[styles.paymentLabel, { color: '#C2410C' }]}>
                         Trả hàng #{pIdx + 1}
                       </Text>
@@ -879,7 +879,7 @@ const TransactionDetailModal = forwardRef(({
                         </TouchableOpacity>
                       )}
                     </View>
-                    <Text style={[styles.transCardTotal, { color: '#EA580C' }]}>
+                    <Text style={[styles.transCardTotal, { color: '#EA580C', flexShrink: 0 }]}>
                       -{formatCurrency(p.amount)}
                     </Text>
                   </View>
@@ -952,7 +952,7 @@ const TransactionDetailModal = forwardRef(({
               {payments.filter((p) => !isReturnGoodsItem(p)).map((p, pIdx) => (
                 <View key={p.id || pIdx} style={styles.paymentCard}>
                   <View style={styles.transCardHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
                       <Text style={styles.paymentLabel}>
                         Lượt #{pIdx + 1}
                       </Text>

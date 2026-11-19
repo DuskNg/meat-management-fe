@@ -111,7 +111,14 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
         : '/products';
       const res = await api.get(endpoint);
       if (res.data?.success && Array.isArray(res.data?.data)) {
-        setProducts(res.data.data);
+        // Đưa các loại thịt có giá riêng của NCC lên đầu danh sách, giữ thứ tự bảng chữ cái trong mỗi nhóm
+        const sorted = [...res.data.data].sort((a, b) => {
+          if (Boolean(a.hasCustomPrice) !== Boolean(b.hasCustomPrice)) {
+            return a.hasCustomPrice ? -1 : 1;
+          }
+          return (a.name || '').localeCompare(b.name || '', 'vi');
+        });
+        setProducts(sorted);
       }
     } catch (err) {
       console.warn('Lỗi tải danh mục sản phẩm:', err);
@@ -496,6 +503,40 @@ const SupplierDebtModal = forwardRef(({ supplier, onRefresh }, ref) => {
                           placeholder={item.productName || 'Chọn loại thịt...'}
                           onSelect={(p) => handleSelectProduct(idx, p)}
                           renderSelected={(p) => p?.name || item.productName || ''}
+                          renderOption={(p) => {
+                            const unitPrice = parseFloat(p?.costPrice) > 0 ? parseFloat(p.costPrice) : (parseFloat(p?.defaultPrice) || 0);
+                            return (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 8 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 6 }}>
+                                  <Text
+                                    style={{
+                                      fontSize: 14,
+                                      fontWeight: p?.hasCustomPrice ? '700' : '500',
+                                      color: p?.hasCustomPrice ? '#065F46' : '#1E293B',
+                                      flexShrink: 1,
+                                    }}
+                                    numberOfLines={1}
+                                  >
+                                    {p?.name}
+                                  </Text>
+                                  {p?.hasCustomPrice ? (
+                                    <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#047857' }}>Giá NCC</Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+                                <Text
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: p?.hasCustomPrice ? '700' : '500',
+                                    color: p?.hasCustomPrice ? '#047857' : '#64748B',
+                                  }}
+                                >
+                                  {formatCurrency(unitPrice)} đ/{p?.unit || 'kg'}
+                                </Text>
+                              </View>
+                            );
+                          }}
                           zIndex={999999}
                           onOpenChange={(isOpen) => setActiveSelectRowId(isOpen ? item.id : null)}
                         />
