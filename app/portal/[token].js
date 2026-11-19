@@ -1098,6 +1098,8 @@ const buildInvoiceRows = (
           amount: 0,
           totalPaymentAmount: pa.totalPaymentAmount || 0,
           note: pa.note || '',
+          targetDateKey: day.dateKey || '',
+          targetDateObj: day.dateObj || null,
         });
       }
       const item = paidDetailsMap.get(pKey);
@@ -1122,17 +1124,98 @@ const buildInvoiceRows = (
             amount: pm.amount,
             totalPaymentAmount: pm.amount,
             note: pm.note || '',
+            targetDateKey: '',
+            targetDateObj: null,
           });
         }
       }
     });
   }
 
-  const paidDetails = Array.from(paidDetailsMap.values()).sort((a, b) => {
-    const timeA = a.paidAt ? new Date(a.paidAt).getTime() : 0;
-    const timeB = b.paidAt ? new Date(b.paidAt).getTime() : 0;
-    return timeB - timeA;
+  // Gom các khoản thanh toán theo từng đợt (batch) để hiển thị gọn gàng, chuyên nghiệp
+  const formatShortDM = (dateKeyStr, fallbackDateObj) => {
+    if (dateKeyStr && /^\d{2}\/\d{2}\/\d{4}$/.test(dateKeyStr)) {
+      return dateKeyStr.slice(0, 5);
+    }
+    if (fallbackDateObj instanceof Date && !isNaN(fallbackDateObj.getTime())) {
+      return `${String(fallbackDateObj.getDate()).padStart(2, '0')}/${String(fallbackDateObj.getMonth() + 1).padStart(2, '0')}`;
+    }
+    return dateKeyStr || '';
+  };
+
+  const rawPaidList = Array.from(paidDetailsMap.values());
+  const groupedPaidMap = new Map();
+
+  rawPaidList.forEach((item) => {
+    const cleanNote = cleanDisplayNote(item.note || '');
+    // Nhận diện khóa nhóm đợt:
+    // 1) Dạng cũ có hậu tố " - Thanh toán nợ X ngày (...)" -> gom chung theo hậu tố đợt
+    // 2) Dạng chuẩn mới "Thanh toán nợ ngày DD/MM/YYYY" -> gom theo cùng ngày thanh toán (displayDate)
+    // 3) Thanh toán gộp lẻ bình thường -> giữ riêng 1 dòng
+    const batchSplitIdx = cleanNote.indexOf(' - ');
+    const isPerDayBatchNote = /^Thanh toán (?:nợ\s+)?ngày \d{1,2}\/\d{1,2}\/\d{4}$/i.test(cleanNote);
+    let groupKey = `SINGLE__${item.id}`;
+    if (batchSplitIdx !== -1) {
+      groupKey = `BATCH__${cleanNote.slice(batchSplitIdx + 3).trim()}`;
+    } else if (isPerDayBatchNote && item.displayDate) {
+      groupKey = `DAYBATCH__${item.displayDate}`;
+    }
+
+    if (!groupedPaidMap.has(groupKey)) {
+      groupedPaidMap.set(groupKey, {
+        id: groupKey,
+        paidAt: item.paidAt,
+        displayDate: item.displayDate,
+        amount: 0,
+        subItems: [],
+      });
+    }
+    const grp = groupedPaidMap.get(groupKey);
+    grp.amount += item.amount;
+    if (item.paidAt && (!grp.paidAt || new Date(item.paidAt).getTime() > new Date(grp.paidAt).getTime())) {
+      grp.paidAt = item.paidAt;
+      grp.displayDate = item.displayDate;
+    }
+    grp.subItems.push({
+      id: item.id,
+      displayDate: item.displayDate,
+      shortDate: formatShortDM(item.targetDateKey || item.displayDate, item.targetDateObj || item.paidAt),
+      sortTime: item.targetDateObj ? item.targetDateObj.getTime() : (item.paidAt ? new Date(item.paidAt).getTime() : 0),
+      amount: item.amount,
+    });
   });
+
+  const paidDetails = Array.from(groupedPaidMap.values())
+    .map((grp) => {
+      // Sắp xếp các ngày con tăng dần để tạo nhãn khoảng ngày (ví dụ: 01/11 – 12/11 (10 ngày))
+      const sortedSubs = [...grp.subItems].sort((a, b) => a.sortTime - b.sortTime);
+      let label = grp.displayDate;
+      if (sortedSubs.length > 1) {
+        const firstShort = sortedSubs[0].shortDate;
+        const lastShort = sortedSubs[sortedSubs.length - 1].shortDate;
+        const rangeText = firstShort && lastShort && firstShort !== lastShort
+          ? `${firstShort} – ${lastShort}`
+          : (firstShort || grp.displayDate);
+        // Nếu tất cả các ngày con có cùng 1 ngày thanh toán (displayDate) khác với ngày cuối cùng, hiển thị kèm ngày trả
+        const allSamePayDate = grp.subItems.every((s) => s.displayDate === grp.displayDate);
+        const payDateShort = grp.displayDate ? grp.displayDate.slice(0, 5) : '';
+        if (allSamePayDate && grp.displayDate && payDateShort !== lastShort) {
+          label = `${grp.displayDate} • ${rangeText} (${sortedSubs.length} ngày)`;
+        } else {
+          label = `${rangeText} (${sortedSubs.length} ngày)`;
+        }
+      }
+      return {
+        ...grp,
+        label,
+        subItems: sortedSubs,
+      };
+    })
+    .sort((a, b) => {
+      const timeA = a.paidAt ? new Date(a.paidAt).getTime() : 0;
+      const timeB = b.paidAt ? new Date(b.paidAt).getTime() : 0;
+      return timeB - timeA;
+    });
 
   return {
     sortedDays,
@@ -1537,14 +1620,12 @@ const drawInvoiceCanvas = (sortedDays, totals, customerName, fromDateStr = '', t
     let curDetailY = curSummaryY + 38;
     if (paidDetails.length > 0) {
       paidDetails.forEach((pd) => {
-        const dText = pd.displayDate || (pd.paidAt ? `${String(pd.paidAt.getDate()).padStart(2, '0')}/${String(pd.paidAt.getMonth() + 1).padStart(2, '0')}/${pd.paidAt.getFullYear()}` : '');
-        const cleanNoteText = cleanDisplayNote(pd.note || '');
-        const notePart = cleanNoteText ? ` (${cleanNoteText})` : '';
+        const dText = pd.label || pd.displayDate || (pd.paidAt ? `${String(pd.paidAt.getDate()).padStart(2, '0')}/${String(pd.paidAt.getMonth() + 1).padStart(2, '0')}/${pd.paidAt.getFullYear()}` : '');
 
         ctx.fillStyle = '#065F46';
         ctx.font = 'normal 11.5px Arial, sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(`• ${dText}${notePart}`, summaryStartX + 16, curDetailY);
+        ctx.fillText(`• ${dText}`, summaryStartX + 16, curDetailY);
 
         ctx.fillStyle = '#059669';
         ctx.font = 'bold 12px Arial, sans-serif';
@@ -1998,6 +2079,7 @@ export default function PortalScreen() {
 
   // Trạng thái mở / đóng khối tổng kết công nợ ở chân bảng (mặc định ban đầu chưa mở)
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
+  const [expandedPaidGroupIds, setExpandedPaidGroupIds] = useState({});
   const summarySlideAnim = useRef(new Animated.Value(0)).current; // 1 = mở, 0 = đóng
 
   const handleToggleSummary = () => {
@@ -3263,8 +3345,9 @@ export default function PortalScreen() {
         if (paidDetailsList.length > 0) {
           paidDetailsList.forEach((pd) => {
             const dText = pd.displayDate || '';
-            const cleanNoteText = cleanDisplayNote(pd.note || '');
-            const detailLabel = `  • Ngày ${dText}${cleanNoteText ? ` (${cleanNoteText})` : ''}`;
+            const detailLabel = pd.subItems && pd.subItems.length > 1
+              ? `  • Đợt ${pd.label}`
+              : `  • Ngày ${dText}`;
             summaryRows.push({
               label: detailLabel,
               value: -Math.abs(Math.round(Number(pd.amount) || 0)),
@@ -4281,26 +4364,68 @@ export default function PortalScreen() {
                               </Text>
                             </View>
 
-                            {/* Liệt kê chi tiết từng số tiền thanh toán */}
+                            {/* Liệt kê chi tiết từng đợt thanh toán (bấm để xổ chi tiết 2 cột nếu là đợt nhiều ngày) */}
                             {displayInvoiceData.totals.paidDetails && displayInvoiceData.totals.paidDetails.length > 0 && (
                               <View style={styles.invSumPaidDetailsContainer}>
                                 {displayInvoiceData.totals.paidDetails.map((pd, pIdx) => {
-                                  const cleanNoteText = cleanDisplayNote(pd.note || '');
-                                  const dateStr = pd.displayDate || (pd.paidAt ? `${String(pd.paidAt.getDate()).padStart(2, '0')}/${String(pd.paidAt.getMonth() + 1).padStart(2, '0')}/${pd.paidAt.getFullYear()}` : '');
+                                  const dateStr = pd.label || pd.displayDate || (pd.paidAt ? `${String(pd.paidAt.getDate()).padStart(2, '0')}/${String(pd.paidAt.getMonth() + 1).padStart(2, '0')}/${pd.paidAt.getFullYear()}` : '');
+                                  const hasSubs = Array.isArray(pd.subItems) && pd.subItems.length > 1;
+                                  const groupKey = pd.id || String(pIdx);
+                                  const isExpanded = Boolean(expandedPaidGroupIds[groupKey]);
+
                                   return (
-                                    <View key={pd.id || pIdx} style={styles.invSumPaidItemRow}>
-                                      <View style={styles.invSumPaidItemLeft}>
-                                        <Text style={styles.invSumPaidItemDot}>•</Text>
-                                        <Text style={styles.invSumPaidItemDate}>{dateStr}</Text>
-                                        {cleanNoteText ? (
-                                          <Text style={styles.invSumPaidItemNote} numberOfLines={1}>
-                                            ({cleanNoteText})
+                                    <View key={groupKey}>
+                                      {hasSubs ? (
+                                        <TouchableOpacity
+                                          style={styles.invSumPaidItemRow}
+                                          onPress={() =>
+                                            setExpandedPaidGroupIds((prev) => ({
+                                              ...prev,
+                                              [groupKey]: !prev[groupKey],
+                                            }))
+                                          }
+                                          activeOpacity={0.7}
+                                        >
+                                          <View style={styles.invSumPaidItemLeft}>
+                                            <Text style={styles.invSumPaidItemDot}>•</Text>
+                                            <Text style={styles.invSumPaidItemDate} numberOfLines={1}>
+                                              {dateStr}
+                                            </Text>
+                                            <View style={styles.invSumPaidExpandBadge}>
+                                              <Text style={styles.invSumPaidExpandBadgeText}>
+                                                {isExpanded ? 'Thu gọn ▴' : 'Chi tiết ▾'}
+                                              </Text>
+                                            </View>
+                                          </View>
+                                          <Text style={styles.invSumPaidItemAmt}>
+                                            - {formatCurrency(pd.amount)}
                                           </Text>
-                                        ) : null}
-                                      </View>
-                                      <Text style={styles.invSumPaidItemAmt}>
-                                        - {formatCurrency(pd.amount)}
-                                      </Text>
+                                        </TouchableOpacity>
+                                      ) : (
+                                        <View style={styles.invSumPaidItemRow}>
+                                          <View style={styles.invSumPaidItemLeft}>
+                                            <Text style={styles.invSumPaidItemDot}>•</Text>
+                                            <Text style={styles.invSumPaidItemDate}>{dateStr}</Text>
+                                          </View>
+                                          <Text style={styles.invSumPaidItemAmt}>
+                                            - {formatCurrency(pd.amount)}
+                                          </Text>
+                                        </View>
+                                      )}
+
+                                      {/* Lưới 2 cột chi tiết từng ngày khi mở rộng đợt thanh toán */}
+                                      {hasSubs && isExpanded && (
+                                        <View style={styles.invSumPaidSubGrid}>
+                                          {pd.subItems.map((sub, sIdx) => (
+                                            <View key={sub.id || sIdx} style={styles.invSumPaidSubCell}>
+                                              <Text style={styles.invSumPaidSubDate}>{sub.shortDate}:</Text>
+                                              <Text style={styles.invSumPaidSubAmt}>
+                                                -{formatCurrency(sub.amount)}
+                                              </Text>
+                                            </View>
+                                          ))}
+                                        </View>
+                                      )}
                                     </View>
                                   );
                                 })}
@@ -5703,6 +5828,50 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#059669',
     fontWeight: 'bold',
+  },
+  invSumPaidExpandBadge: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  invSumPaidExpandBadgeText: {
+    fontSize: 10,
+    color: '#047857',
+    fontWeight: '700',
+  },
+  invSumPaidSubGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+    marginBottom: 4,
+    marginLeft: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
+  },
+  invSumPaidSubCell: {
+    width: '50%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  invSumPaidSubDate: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  invSumPaidSubAmt: {
+    fontSize: 11,
+    color: '#059669',
+    fontWeight: '600',
   },
   emptyDaysNoteWrap: {
     paddingHorizontal: 8,

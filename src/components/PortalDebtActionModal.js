@@ -394,7 +394,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
       setSelectedDayKeys(allKeys);
       const sum = unpaidDays.reduce((acc, d) => acc + (d.remainingDebt || 0), 0);
       setCollectAmount(sum);
-      setCollectNote(`Thanh toán nợ ${allKeys.length} ngày (${allKeys.join(', ')})`);
+      setCollectNote(`Thanh toán nợ ${allKeys.length} ngày`);
     }
   };
 
@@ -403,7 +403,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
     if (unpaidDays.length > 0) {
       const allKeys = unpaidDays.map((d) => d.dateKey);
       setSelectedDayKeys(allKeys);
-      setCollectNote(`Thanh toán toàn bộ nợ (${allKeys.length} ngày)`);
+      setCollectNote('Thanh toán toàn bộ nợ');
     }
     setCollectAmount(currentCollectCustomer?.debt || 0);
   };
@@ -432,7 +432,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
         const paymentsPayload = selectedDays.map((d) => ({
           amount: d.remainingDebt,
           paidAt: paidDateObj.toISOString(),
-          note: `Thanh toán nợ ngày ${d.dateKey}${collectNote.trim() ? ' - ' + collectNote.trim() : ''}`,
+          note: `Thanh toán nợ ngày ${d.dateKey}`,
         }));
 
         try {
@@ -1735,7 +1735,7 @@ const PortalDebtActionModal = forwardRef(({ token, apiHost, onRefresh, onClose }
                                 </Text>
                                 {pm.note ? (
                                   <Text style={styles.historyNote} numberOfLines={1}>
-                                    {cleanDisplayNote(pm.note)}
+                                    {cleanDisplayNote(pm.note).replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()}
                                   </Text>
                                 ) : null}
                               </View>

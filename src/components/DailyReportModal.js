@@ -182,16 +182,11 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
     if (trimNote.startsWith('[Trả hàng nhanh]')) {
       return trimNote.replace('[Trả hàng nhanh]', '[Trả lại hàng]');
     }
-    if (trimNote.startsWith('Thanh toán nợ Tháng') && !trimNote.includes('ngày')) {
-      const d = new Date(paidAt);
-      if (!isNaN(d.getTime())) {
-        const dd = d.getDate().toString().padStart(2, '0');
-        const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-        const yyyy = d.getFullYear();
-        return `${trimNote} (ngày ${dd}/${mm}/${yyyy})`;
-      }
+    if (trimNote.startsWith('[Trả lại hàng]')) {
+      return trimNote;
     }
-    return trimNote;
+    // Bỏ phần ghi chú phụ trong ngoặc đối với các khoản thanh toán tiền mặt
+    return trimNote.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
   };
 
   // Helper xác định tháng mục tiêu của khoản thanh toán dựa trên ghi chú
