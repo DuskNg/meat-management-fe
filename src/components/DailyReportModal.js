@@ -53,6 +53,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   // Danh sách các ID đơn nợ trùng được chọn để xóa hàng loạt
   const [selectedDuplicateDebtIds, setSelectedDuplicateDebtIds] = useState(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  // Trạng thái mở rộng các đợt thu nợ gộp nhiều ngày
+  const [expandedPaymentBatchIds, setExpandedPaymentBatchIds] = useState({});
 
   // Tự động dọn dẹp các lựa chọn khi chuyển tab hoặc bộ lọc
   useEffect(() => {
@@ -787,30 +789,30 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       // Chuẩn bị dữ liệu chi tiết hóa đơn để hiển thị song song bên phải ảnh khi mở xem
       const entries = (raw.items && raw.items.length > 0)
         ? raw.items.map((it) => {
-            const qty = it.quantity != null ? parseFloat(it.quantity) : null;
-            const price = it.price != null ? parseFloat(it.price) : null;
-            const amt = it.amount != null
-              ? parseFloat(it.amount)
-              : ((qty != null && price != null) ? qty * price : 0);
-            return {
-              name: it.product?.name || it.productName || it.name || 'Món thịt',
-              quantity: qty,
-              price: price,
-              amount: amt,
-              type: isRet ? 'RETURN' : 'DEBT',
-              customerName: item.customerName,
-            };
-          })
+          const qty = it.quantity != null ? parseFloat(it.quantity) : null;
+          const price = it.price != null ? parseFloat(it.price) : null;
+          const amt = it.amount != null
+            ? parseFloat(it.amount)
+            : ((qty != null && price != null) ? qty * price : 0);
+          return {
+            name: it.product?.name || it.productName || it.name || 'Món thịt',
+            quantity: qty,
+            price: price,
+            amount: amt,
+            type: isRet ? 'RETURN' : 'DEBT',
+            customerName: item.customerName,
+          };
+        })
         : [
-            {
-              name: raw.note || (isRet ? 'Trả hàng nhanh' : (item.type === 'payment' ? 'Chứng từ thu nợ' : 'Tiền hàng')),
-              quantity: null,
-              price: null,
-              amount: parseFloat(item.amount || raw.totalAmount || 0),
-              type: isRet ? 'RETURN' : 'DEBT',
-              customerName: item.customerName,
-            },
-          ];
+          {
+            name: raw.note || (isRet ? 'Trả hàng nhanh' : (item.type === 'payment' ? 'Chứng từ thu nợ' : 'Tiền hàng')),
+            quantity: null,
+            price: null,
+            amount: parseFloat(item.amount || raw.totalAmount || 0),
+            type: isRet ? 'RETURN' : 'DEBT',
+            customerName: item.customerName,
+          },
+        ];
 
       const invoiceDateKey = item.time ? toDateKey(item.time) : selectedDate;
       const invoiceDayData = {
@@ -954,7 +956,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         // Phân loại khoản thu: trả cho tháng này vs trả nợ cũ tháng trước (theo ghi chú)
         const note = (p.note || '').trim();
         const monthMatch = note.match(/Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{1,2})\/(\d{4})/i) ||
-                           note.match(/Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{1,2})/i);
+          note.match(/Thanh toán (?:nợ|hóa đơn)?\s*[Tt]háng (\d{1,2})/i);
         let isForOtherMonth = false;
         if (monthMatch && targetMonth && targetYear) {
           const pM = parseInt(monthMatch[1], 10);
@@ -1047,8 +1049,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         const nameMatch = matchSearch(c.customerName || '', searchText);
         const phoneMatch = (c.phone || '').includes(searchText.trim());
         const amountMatch = (c.remainingInMonth || 0).toString().includes(searchText.trim()) ||
-                            (c.totalPurchase || 0).toString().includes(searchText.trim()) ||
-                            (c.totalPaid || 0).toString().includes(searchText.trim());
+          (c.totalPurchase || 0).toString().includes(searchText.trim()) ||
+          (c.totalPaid || 0).toString().includes(searchText.trim());
         return nameMatch || phoneMatch || amountMatch;
       }
       return true;
@@ -1080,7 +1082,108 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
       });
 
       // Sắp xếp danh sách: các công nợ trùng nhau của cùng một khách hàng luôn nằm liền kề nhau
-      return sortDailyTimelineItems(filtered);
+      const sortedList = sortDailyTimelineItems(filtered);
+
+      // Gom các khoản thu nợ theo đợt (nhiều ngày cùng 1 lần thu) thành 1 thẻ tổng gọn gàng, bấm để xổ chi tiết
+      const extractDebtDateInfo = (noteStr, fallbackTime) => {
+        const clean = cleanDisplayNote(noteStr || '');
+        const m = clean.match(/ngày (\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+        if (m) {
+          const dd = String(m[1]).padStart(2, '0');
+          const mm = String(m[2]).padStart(2, '0');
+          const yyyy = Number(m[3]);
+          return {
+            shortDate: `${dd}/${mm}`,
+            fullDate: `${dd}/${mm}/${yyyy}`,
+            sortTime: new Date(yyyy, Number(mm) - 1, Number(dd)).getTime(),
+          };
+        }
+        const d = new Date(fallbackTime);
+        if (!isNaN(d.getTime())) {
+          const dd = String(d.getDate()).padStart(2, '0');
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          return {
+            shortDate: `${dd}/${mm}`,
+            fullDate: `${dd}/${mm}/${d.getFullYear()}`,
+            sortTime: d.getTime(),
+          };
+        }
+        return { shortDate: '', fullDate: '', sortTime: 0 };
+      };
+
+      const batchBuckets = new Map();
+      const resultItems = [];
+
+      sortedList.forEach((item) => {
+        const isCashPayment = item.type === 'payment' && !isReturnPayment(item);
+        if (!isCashPayment) {
+          resultItems.push(item);
+          return;
+        }
+
+        const cleanNote = cleanDisplayNote(item.note || '');
+        const custKey = getCustomerKey(item);
+        const batchSplitIdx = cleanNote.indexOf(' - ');
+        const isPerDayBatchNote = /^Thanh toán (?:nợ\s+)?ngày \d{1,2}\/\d{1,2}\/\d{4}$/i.test(cleanNote);
+
+        let batchKey = null;
+        if (batchSplitIdx !== -1) {
+          batchKey = `BATCH__${custKey}__${cleanNote.slice(batchSplitIdx + 3).trim()}`;
+        } else if (isPerDayBatchNote) {
+          const createdMs = new Date(item.createdAt || item.time).getTime();
+          const minuteBucket = !isNaN(createdMs) ? Math.floor(createdMs / 60000) : 0;
+          batchKey = `DAYBATCH__${custKey}__${minuteBucket}`;
+        }
+
+        if (!batchKey) {
+          resultItems.push(item);
+          return;
+        }
+
+        if (!batchBuckets.has(batchKey)) {
+          const placeholder = { __batchPlaceholderKey: batchKey };
+          batchBuckets.set(batchKey, { key: batchKey, items: [] });
+          resultItems.push(placeholder);
+        }
+        batchBuckets.get(batchKey).items.push(item);
+      });
+
+      return resultItems.map((entry) => {
+        if (!entry.__batchPlaceholderKey) return entry;
+        const bucket = batchBuckets.get(entry.__batchPlaceholderKey);
+        if (!bucket || bucket.items.length <= 1) {
+          return bucket?.items?.[0] || entry;
+        }
+
+        const enrichedSubs = bucket.items
+          .map((sub) => ({
+            ...sub,
+            _debtDateInfo: extractDebtDateInfo(sub.note, sub.time),
+          }))
+          .sort((a, b) => a._debtDateInfo.sortTime - b._debtDateInfo.sortTime);
+
+        const totalBatchAmount = enrichedSubs.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+        const firstShort = enrichedSubs[0]?._debtDateInfo?.shortDate || '';
+        const lastShort = enrichedSubs[enrichedSubs.length - 1]?._debtDateInfo?.shortDate || '';
+        const rangeText = firstShort && lastShort && firstShort !== lastShort
+          ? `${firstShort} – ${lastShort}`
+          : (firstShort || '');
+        const batchRangeLabel = rangeText
+          ? `${rangeText} (${enrichedSubs.length} ngày)`
+          : `${enrichedSubs.length} ngày`;
+
+        const head = bucket.items[0];
+        return {
+          ...head,
+          id: bucket.key,
+          isPaymentBatch: true,
+          amount: totalBatchAmount,
+          batchItems: enrichedSubs,
+          batchCount: enrichedSubs.length,
+          batchRangeLabel,
+          details: `Thanh toán đợt ${batchRangeLabel}`,
+        };
+      });
     } else {
       // Tab Theo tháng: Trả về danh sách đối soát khách hàng đã lọc
       return filteredMonthlyCustomers;
@@ -1858,7 +1961,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
         return colY;
       };
 
-      const colTitlePrefix = activeFilter === 'duplicate' 
+      const colTitlePrefix = activeFilter === 'duplicate'
         ? '⚠️ DANH SÁCH ĐƠN NỢ TRÙNG'
         : activeFilter === 'debt'
           ? '🔴 DANH SÁCH ĐƠN NỢ MỚI'
@@ -1963,586 +2066,586 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
   return (
     <>
       <SmoothModal visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.modalView}>
-        <View style={styles.modalHeaderRow}>
-          <Text style={styles.modalTitle}>
-            {activeFilter === 'duplicate'
-              ? `⚠️ ĐƠN NỢ NGHI TRÙNG (${selectedDate})`
-              : (activeReportTab === 'day' ? '📊 THỐNG KÊ CÔNG NỢ TRONG NGÀY' : '📊 THỐNG KÊ CÔNG NỢ THEO THÁNG')}
-          </Text>
-          <TouchableOpacity style={styles.closeHeaderBtn} onPress={() => setVisible(false)}>
-            <Text style={styles.closeHeaderBtnText}>✕</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Thanh chọn tab thống kê */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabButton, activeReportTab === 'day' && styles.tabButtonActive]}
-            onPress={() => {
-              setActiveReportTab('day');
-              setError('');
-              setActiveFilter('all');
-              setSearchText('');
-              fetchReportData(selectedDate, selectedMonth, 'day');
-            }}
-          >
-            <Text style={[styles.tabButtonText, activeReportTab === 'day' && styles.tabButtonTextActive]}>
-              📅 Theo ngày
+        <View style={styles.modalView}>
+          <View style={styles.modalHeaderRow}>
+            <Text style={styles.modalTitle}>
+              {activeFilter === 'duplicate'
+                ? `⚠️ ĐƠN NỢ NGHI TRÙNG (${selectedDate})`
+                : (activeReportTab === 'day' ? '📊 THỐNG KÊ CÔNG NỢ TRONG NGÀY' : '📊 THỐNG KÊ CÔNG NỢ THEO THÁNG')}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabButton, activeReportTab === 'month' && styles.tabButtonActive]}
-            onPress={() => {
-              setActiveReportTab('month');
-              setError('');
-              setActiveFilter('all');
-              setSearchText('');
-              fetchReportData(selectedDate, selectedMonth, 'month');
-            }}
-          >
-            <Text style={[styles.tabButtonText, activeReportTab === 'month' && styles.tabButtonTextActive]}>
-              📅 Theo tháng
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Bộ chọn thời gian (Ngày hoặc Tháng) */}
-        {activeReportTab === 'day' ? (
-          <View style={styles.datePickerContainer}>
-            <DatePickerInput
-              value={selectedDate}
-              onChange={handleDateChange}
-              allowFuture={true}
-              dense={true}
-            />
-          </View>
-        ) : (
-          <View style={styles.datePickerContainer}>
-            <Text style={styles.sectionLabel}>Chọn tháng xem thống kê:</Text>
-            <View style={styles.monthSelectorRow}>
-              <TouchableOpacity style={styles.monthSelectorArrow} onPress={handlePrevMonth}>
-                <Text style={styles.monthSelectorArrowText}>◀</Text>
-              </TouchableOpacity>
-              <View style={styles.monthValueContainer}>
-                <Text style={styles.monthValueText}>Tháng {selectedMonth}</Text>
-              </View>
-              <TouchableOpacity style={styles.monthSelectorArrow} onPress={handleNextMonth}>
-                <Text style={styles.monthSelectorArrowText}>▶</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Thanh tìm kiếm nhanh dạng text */}
-        {!loading && !error && (
-          <View style={styles.searchContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="🔍 Tìm theo tên khách, loại thịt hoặc số tiền..."
-              placeholderTextColor={COLORS.textLight}
-              value={searchText}
-              onChangeText={setSearchText}
-            />
-            {searchText ? (
-              <TouchableOpacity style={styles.clearSearch} onPress={() => setSearchText('')}>
-                <Text style={styles.clearSearchText}>✕</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        )}
-
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Đang tổng hợp dữ liệu...</Text>
-          </View>
-        ) : error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>⚠️ {error}</Text>
-            <TouchableOpacity
-              style={[styles.button, styles.retryButton]}
-              onPress={() => fetchReportData()}
-            >
-              <Text style={styles.retryButtonText}>TẢI LẠI DỮ LIỆU</Text>
+            <TouchableOpacity style={styles.closeHeaderBtn} onPress={() => setVisible(false)}>
+              <Text style={styles.closeHeaderBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <View style={styles.mainContent}>
-            {/* Hộp tổng kết: Tab ngày hiển thị 2 ô nhanh, Tab tháng hiển thị lưới 4 chỉ số tài chính & sản lượng thịt */}
-            {activeReportTab === 'month' ? (
-              <View style={styles.monthlySummaryGrid}>
-                {/* Hàng 1: Tiền hàng & Tiền đã thu */}
-                <View style={styles.monthlySummaryRow}>
+
+          {/* Thanh chọn tab thống kê */}
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tabButton, activeReportTab === 'day' && styles.tabButtonActive]}
+              onPress={() => {
+                setActiveReportTab('day');
+                setError('');
+                setActiveFilter('all');
+                setSearchText('');
+                fetchReportData(selectedDate, selectedMonth, 'day');
+              }}
+            >
+              <Text style={[styles.tabButtonText, activeReportTab === 'day' && styles.tabButtonTextActive]}>
+                📅 Theo ngày
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabButton, activeReportTab === 'month' && styles.tabButtonActive]}
+              onPress={() => {
+                setActiveReportTab('month');
+                setError('');
+                setActiveFilter('all');
+                setSearchText('');
+                fetchReportData(selectedDate, selectedMonth, 'month');
+              }}
+            >
+              <Text style={[styles.tabButtonText, activeReportTab === 'month' && styles.tabButtonTextActive]}>
+                📅 Theo tháng
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Bộ chọn thời gian (Ngày hoặc Tháng) */}
+          {activeReportTab === 'day' ? (
+            <View style={styles.datePickerContainer}>
+              <DatePickerInput
+                value={selectedDate}
+                onChange={handleDateChange}
+                allowFuture={true}
+                dense={true}
+              />
+            </View>
+          ) : (
+            <View style={styles.datePickerContainer}>
+              <Text style={styles.sectionLabel}>Chọn tháng xem thống kê:</Text>
+              <View style={styles.monthSelectorRow}>
+                <TouchableOpacity style={styles.monthSelectorArrow} onPress={handlePrevMonth}>
+                  <Text style={styles.monthSelectorArrowText}>◀</Text>
+                </TouchableOpacity>
+                <View style={styles.monthValueContainer}>
+                  <Text style={styles.monthValueText}>Tháng {selectedMonth}</Text>
+                </View>
+                <TouchableOpacity style={styles.monthSelectorArrow} onPress={handleNextMonth}>
+                  <Text style={styles.monthSelectorArrowText}>▶</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Thanh tìm kiếm nhanh dạng text */}
+          {!loading && !error && (
+            <View style={styles.searchContainer}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="🔍 Tìm theo tên khách, loại thịt hoặc số tiền..."
+                placeholderTextColor={COLORS.textLight}
+                value={searchText}
+                onChangeText={setSearchText}
+              />
+              {searchText ? (
+                <TouchableOpacity style={styles.clearSearch} onPress={() => setSearchText('')}>
+                  <Text style={styles.clearSearchText}>✕</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Đang tổng hợp dữ liệu...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>⚠️ {error}</Text>
+              <TouchableOpacity
+                style={[styles.button, styles.retryButton]}
+                onPress={() => fetchReportData()}
+              >
+                <Text style={styles.retryButtonText}>TẢI LẠI DỮ LIỆU</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.mainContent}>
+              {/* Hộp tổng kết: Tab ngày hiển thị 2 ô nhanh, Tab tháng hiển thị lưới 4 chỉ số tài chính & sản lượng thịt */}
+              {activeReportTab === 'month' ? (
+                <View style={styles.monthlySummaryGrid}>
+                  {/* Hàng 1: Tiền hàng & Tiền đã thu */}
+                  <View style={styles.monthlySummaryRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.monthlyStatCard,
+                        styles.debtBox,
+                        activeFilter === 'all' && styles.activeStatCardAll,
+                      ]}
+                      onPress={() => setActiveFilter('all')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.monthlyStatLabel}>🔴 TIỀN HÀNG THÁNG</Text>
+                      <Text style={[styles.monthlyStatValue, { color: '#DC2626' }]}>
+                        {formatCurrency(monthlyData.totalPurchase)}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.monthlyStatCard,
+                        styles.paymentBox,
+                        activeFilter === 'payment' && styles.activePaymentBox,
+                      ]}
+                      onPress={() => handleFilterToggle('payment')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.monthlyStatLabel}>🟢 TIỀN ĐÃ THU</Text>
+                      <Text style={[styles.monthlyStatValue, { color: '#16A34A' }]}>
+                        {formatCurrency(monthlyData.totalPaid)}
+                      </Text>
+                      {monthlyData.totalPaidForPriorMonth > 0 && (
+                        <Text style={styles.monthlyStatSubValue} numberOfLines={1}>
+                          T{selectedMonth ? parseInt(selectedMonth.split('/')[0], 10) : ''}: {formatShortAmount(monthlyData.totalPaidForThisMonth)} • Tồn cũ: {formatShortAmount(monthlyData.totalPaidForPriorMonth)}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Hàng 2: Trả hàng & Còn nợ tháng này */}
+                  <View style={styles.monthlySummaryRow}>
+                    <View style={[styles.monthlyStatCard, styles.returnBox]}>
+                      <Text style={styles.monthlyStatLabel}>🟠 TIỀN TRẢ HÀNG</Text>
+                      <Text style={[styles.monthlyStatValue, { color: '#EA580C' }]}>
+                        {formatCurrency(monthlyData.totalReturn)}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.monthlyStatCard,
+                        monthlyData.remainingDebt > 0 ? styles.remainingBoxDebt : styles.remainingBoxZero,
+                        activeFilter === 'debt' && styles.activeDebtBox,
+                      ]}
+                      onPress={() => handleFilterToggle('debt')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.monthlyStatLabel}>
+                        {monthlyData.remainingDebt > 0 ? '🔵 CÒN NỢ THÁNG NÀY' : '✅ ĐÃ THU ĐỦ THÁNG'}
+                      </Text>
+                      <Text style={[
+                        styles.monthlyStatValue,
+                        { color: monthlyData.remainingDebt > 0 ? '#2563EB' : '#16A34A' }
+                      ]}>
+                        {formatCurrency(monthlyData.remainingDebt)}
+                      </Text>
+                      {monthlyData.cashFlowDiff !== monthlyData.remainingDebt && (
+                        <Text style={styles.monthlyStatSubValue} numberOfLines={1}>
+                          Chênh lệch Bán - Thu: {formatCurrency(monthlyData.cashFlowDiff)}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Thanh tóm tắt sản lượng thịt bán ra trong tháng */}
                   <TouchableOpacity
-                    style={[
-                      styles.monthlyStatCard,
-                      styles.debtBox,
-                      activeFilter === 'all' && styles.activeStatCardAll,
-                    ]}
-                    onPress={() => setActiveFilter('all')}
+                    style={styles.meatBarContainer}
+                    onPress={() => setShowMeatSummary(prev => !prev)}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.monthlyStatLabel}>🔴 TIỀN HÀNG THÁNG</Text>
-                    <Text style={[styles.monthlyStatValue, { color: '#DC2626' }]}>
-                      {formatCurrency(monthlyData.totalPurchase)}
+                    <View style={styles.meatBarLeft}>
+                      <Text style={styles.meatBarIcon}>🥩</Text>
+                      <Text style={styles.meatBarText}>
+                        Sản lượng thịt:{' '}
+                        <Text style={styles.meatBarHighlight}>
+                          {monthlyData.totalMeatKg.toLocaleString('vi-VN')} kg
+                        </Text>
+                        {monthlyData.meatSummaryList.length > 0 ? ` (${monthlyData.meatSummaryList.length} món thịt)` : ''}
+                      </Text>
+                    </View>
+                    <Text style={styles.meatBarToggleText}>
+                      {showMeatSummary ? '▲ Thu gọn' : '▼ Xem món thịt'}
                     </Text>
                   </TouchableOpacity>
 
+                  {/* Bảng chi tiết sản lượng từng loại thịt (Lưới 2 cột Mobile-First) */}
+                  {showMeatSummary && monthlyData.meatSummaryList.length > 0 && (
+                    <View style={styles.meatDetailGrid}>
+                      {monthlyData.meatSummaryList.map((mItem, mIdx) => (
+                        <View key={mItem.name || mIdx} style={styles.meatDetailItem}>
+                          <Text style={styles.meatDetailName} numberOfLines={1}>
+                            {mItem.name}
+                          </Text>
+                          <Text style={styles.meatDetailStats}>
+                            <Text style={styles.meatDetailKg}>
+                              {mItem.quantity.toLocaleString('vi-VN')} kg
+                            </Text>
+                            {mItem.amount > 0 ? ` • ${formatCurrency(mItem.amount)}` : ''}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Bộ lọc trạng thái đối soát khách hàng trong tháng */}
+                  <View style={styles.monthlyFilterPillsRow}>
+                    <TouchableOpacity
+                      style={[styles.filterPill, activeFilter === 'all' && styles.filterPillActive]}
+                      onPress={() => setActiveFilter('all')}
+                    >
+                      <Text style={[styles.filterPillText, activeFilter === 'all' && styles.filterPillTextActive]}>
+                        Tất cả ({monthlyData.customerList.length})
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.filterPill, activeFilter === 'debt' && styles.filterPillActiveDebt]}
+                      onPress={() => handleFilterToggle('debt')}
+                    >
+                      <Text style={[styles.filterPillText, activeFilter === 'debt' && styles.filterPillTextActiveDebt]}>
+                        🔴 Còn nợ ({monthlyData.customerList.filter(c => c.remainingInMonth > 0).length})
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.filterPill, activeFilter === 'payment' && styles.filterPillActivePaid]}
+                      onPress={() => handleFilterToggle('payment')}
+                    >
+                      <Text style={[styles.filterPillText, activeFilter === 'payment' && styles.filterPillTextActivePaid]}>
+                        🟢 Đã xong ({monthlyData.customerList.filter(c => c.isFullyPaid).length})
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.summaryContainer}>
                   <TouchableOpacity
                     style={[
-                      styles.monthlyStatCard,
+                      styles.summaryBox,
+                      styles.debtBox,
+                      activeFilter === 'debt' && styles.activeDebtBox,
+                      activeFilter !== 'all' && activeFilter !== 'debt' && styles.inactiveBox
+                    ]}
+                    onPress={() => handleFilterToggle('debt')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.summaryBoxLabel}>🔴 Nợ phát sinh</Text>
+                    <Text style={styles.summaryBoxValue}>{formatCurrency(totalDebtCreated)}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.summaryBox,
                       styles.paymentBox,
                       activeFilter === 'payment' && styles.activePaymentBox,
+                      activeFilter !== 'all' && activeFilter !== 'payment' && styles.inactiveBox
                     ]}
                     onPress={() => handleFilterToggle('payment')}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.monthlyStatLabel}>🟢 TIỀN ĐÃ THU</Text>
-                    <Text style={[styles.monthlyStatValue, { color: '#16A34A' }]}>
-                      {formatCurrency(monthlyData.totalPaid)}
-                    </Text>
-                    {monthlyData.totalPaidForPriorMonth > 0 && (
-                      <Text style={styles.monthlyStatSubValue} numberOfLines={1}>
-                        T{selectedMonth ? parseInt(selectedMonth.split('/')[0], 10) : ''}: {formatShortAmount(monthlyData.totalPaidForThisMonth)} • Tồn cũ: {formatShortAmount(monthlyData.totalPaidForPriorMonth)}
-                      </Text>
-                    )}
+                    <Text style={styles.summaryBoxLabel}>🟢 Tiền đã thu</Text>
+                    <Text style={styles.summaryBoxValue}>{formatCurrency(totalPaymentReceived)}</Text>
                   </TouchableOpacity>
                 </View>
+              )}
 
-                {/* Hàng 2: Trả hàng & Còn nợ tháng này */}
-                <View style={styles.monthlySummaryRow}>
-                  <View style={[styles.monthlyStatCard, styles.returnBox]}>
-                    <Text style={styles.monthlyStatLabel}>🟠 TIỀN TRẢ HÀNG</Text>
-                    <Text style={[styles.monthlyStatValue, { color: '#EA580C' }]}>
-                      {formatCurrency(monthlyData.totalReturn)}
+              {/* Banner cảnh báo phát hiện trùng đơn trong ngày */}
+              {activeReportTab === 'day' && duplicateDebtItems.length > 0 && (
+                <View style={styles.duplicateBanner}>
+                  <View style={styles.duplicateBannerLeft}>
+                    <Text style={styles.duplicateBannerTitle}>
+                      ⚠️ Phát hiện {duplicateDebtItems.length} đơn trùng ({duplicateCustomerCount} khách có từ 2 đơn nợ)
+                    </Text>
+                    <Text style={styles.duplicateBannerDesc}>
+                      Kiểm tra tránh trường hợp ghi nợ 2 lần cho cùng một khách hàng
                     </Text>
                   </View>
-
                   <TouchableOpacity
                     style={[
-                      styles.monthlyStatCard,
-                      monthlyData.remainingDebt > 0 ? styles.remainingBoxDebt : styles.remainingBoxZero,
-                      activeFilter === 'debt' && styles.activeDebtBox,
+                      styles.duplicateBannerBtn,
+                      activeFilter === 'duplicate' && styles.duplicateBannerBtnActive
                     ]}
-                    onPress={() => handleFilterToggle('debt')}
+                    onPress={() => handleFilterToggle('duplicate')}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.monthlyStatLabel}>
-                      {monthlyData.remainingDebt > 0 ? '🔵 CÒN NỢ THÁNG NÀY' : '✅ ĐÃ THU ĐỦ THÁNG'}
-                    </Text>
                     <Text style={[
-                      styles.monthlyStatValue,
-                      { color: monthlyData.remainingDebt > 0 ? '#2563EB' : '#16A34A' }
+                      styles.duplicateBannerBtnText,
+                      activeFilter === 'duplicate' && styles.duplicateBannerBtnTextActive
                     ]}>
-                      {formatCurrency(monthlyData.remainingDebt)}
+                      {activeFilter === 'duplicate' ? 'Xem tất cả' : 'Lọc xem ngay'}
                     </Text>
-                    {monthlyData.cashFlowDiff !== monthlyData.remainingDebt && (
-                      <Text style={styles.monthlyStatSubValue} numberOfLines={1}>
-                        Chênh lệch Bán - Thu: {formatCurrency(monthlyData.cashFlowDiff)}
-                      </Text>
-                    )}
                   </TouchableOpacity>
                 </View>
+              )}
 
-                {/* Thanh tóm tắt sản lượng thịt bán ra trong tháng */}
-                <TouchableOpacity
-                  style={styles.meatBarContainer}
-                  onPress={() => setShowMeatSummary(prev => !prev)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.meatBarLeft}>
-                    <Text style={styles.meatBarIcon}>🥩</Text>
-                    <Text style={styles.meatBarText}>
-                      Sản lượng thịt:{' '}
-                      <Text style={styles.meatBarHighlight}>
-                        {monthlyData.totalMeatKg.toLocaleString('vi-VN')} kg
+              {/* Thanh công cụ chọn nhiều để xóa hàng loạt khi đang lọc đơn trùng */}
+              {activeReportTab === 'day' && activeFilter === 'duplicate' && (
+                <View style={styles.duplicateBulkBar}>
+                  <View style={styles.duplicateBulkBarTop}>
+                    <Text style={styles.duplicateBulkCountText} numberOfLines={1}>
+                      Đã chọn:{' '}
+                      <Text style={styles.duplicateBulkCountHighlight}>
+                        {selectedDuplicateDebtIds.size}
                       </Text>
-                      {monthlyData.meatSummaryList.length > 0 ? ` (${monthlyData.meatSummaryList.length} món thịt)` : ''}
-                    </Text>
-                  </View>
-                  <Text style={styles.meatBarToggleText}>
-                    {showMeatSummary ? '▲ Thu gọn' : '▼ Xem món thịt'}
-                  </Text>
-                </TouchableOpacity>
-
-                {/* Bảng chi tiết sản lượng từng loại thịt (Lưới 2 cột Mobile-First) */}
-                {showMeatSummary && monthlyData.meatSummaryList.length > 0 && (
-                  <View style={styles.meatDetailGrid}>
-                    {monthlyData.meatSummaryList.map((mItem, mIdx) => (
-                      <View key={mItem.name || mIdx} style={styles.meatDetailItem}>
-                        <Text style={styles.meatDetailName} numberOfLines={1}>
-                          {mItem.name}
+                      /{displayItems.filter((it) => it.type === 'debt').length} đơn
+                      {selectedDuplicateDebtIds.size > 0 ? (
+                        <Text style={styles.duplicateBulkAmountText}>
+                          {' '}({formatCurrency(
+                            displayItems
+                              .filter((it) => it.type === 'debt' && selectedDuplicateDebtIds.has(it.id))
+                              .reduce((sum, it) => sum + Number(it.amount || 0), 0)
+                          )})
                         </Text>
-                        <Text style={styles.meatDetailStats}>
-                          <Text style={styles.meatDetailKg}>
-                            {mItem.quantity.toLocaleString('vi-VN')} kg
-                          </Text>
-                          {mItem.amount > 0 ? ` • ${formatCurrency(mItem.amount)}` : ''}
+                      ) : null}
+                    </Text>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.duplicateBulkDeleteBtn,
+                        selectedDuplicateDebtIds.size === 0 && styles.duplicateBulkDeleteBtnDisabled,
+                      ]}
+                      onPress={handleBulkDeleteDuplicates}
+                      disabled={selectedDuplicateDebtIds.size === 0 || isBulkDeleting}
+                      activeOpacity={0.7}
+                    >
+                      {isBulkDeleting ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <Text style={styles.duplicateBulkDeleteBtnText}>
+                          🗑️ Xóa đã chọn ({selectedDuplicateDebtIds.size})
                         </Text>
-                      </View>
-                    ))}
+                      )}
+                    </TouchableOpacity>
                   </View>
-                )}
 
-                {/* Bộ lọc trạng thái đối soát khách hàng trong tháng */}
-                <View style={styles.monthlyFilterPillsRow}>
-                  <TouchableOpacity
-                    style={[styles.filterPill, activeFilter === 'all' && styles.filterPillActive]}
-                    onPress={() => setActiveFilter('all')}
-                  >
-                    <Text style={[styles.filterPillText, activeFilter === 'all' && styles.filterPillTextActive]}>
-                      Tất cả ({monthlyData.customerList.length})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.filterPill, activeFilter === 'debt' && styles.filterPillActiveDebt]}
-                    onPress={() => handleFilterToggle('debt')}
-                  >
-                    <Text style={[styles.filterPillText, activeFilter === 'debt' && styles.filterPillTextActiveDebt]}>
-                      🔴 Còn nợ ({monthlyData.customerList.filter(c => c.remainingInMonth > 0).length})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.filterPill, activeFilter === 'payment' && styles.filterPillActivePaid]}
-                    onPress={() => handleFilterToggle('payment')}
-                  >
-                    <Text style={[styles.filterPillText, activeFilter === 'payment' && styles.filterPillTextActivePaid]}>
-                      🟢 Đã xong ({monthlyData.customerList.filter(c => c.isFullyPaid).length})
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.summaryContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.summaryBox,
-                    styles.debtBox,
-                    activeFilter === 'debt' && styles.activeDebtBox,
-                    activeFilter !== 'all' && activeFilter !== 'debt' && styles.inactiveBox
-                  ]}
-                  onPress={() => handleFilterToggle('debt')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.summaryBoxLabel}>🔴 Nợ phát sinh</Text>
-                  <Text style={styles.summaryBoxValue}>{formatCurrency(totalDebtCreated)}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.summaryBox,
-                    styles.paymentBox,
-                    activeFilter === 'payment' && styles.activePaymentBox,
-                    activeFilter !== 'all' && activeFilter !== 'payment' && styles.inactiveBox
-                  ]}
-                  onPress={() => handleFilterToggle('payment')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.summaryBoxLabel}>🟢 Tiền đã thu</Text>
-                  <Text style={styles.summaryBoxValue}>{formatCurrency(totalPaymentReceived)}</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Banner cảnh báo phát hiện trùng đơn trong ngày */}
-            {activeReportTab === 'day' && duplicateDebtItems.length > 0 && (
-              <View style={styles.duplicateBanner}>
-                <View style={styles.duplicateBannerLeft}>
-                  <Text style={styles.duplicateBannerTitle}>
-                    ⚠️ Phát hiện {duplicateDebtItems.length} đơn trùng ({duplicateCustomerCount} khách có từ 2 đơn nợ)
-                  </Text>
-                  <Text style={styles.duplicateBannerDesc}>
-                    Kiểm tra tránh trường hợp ghi nợ 2 lần cho cùng một khách hàng
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.duplicateBannerBtn,
-                    activeFilter === 'duplicate' && styles.duplicateBannerBtnActive
-                  ]}
-                  onPress={() => handleFilterToggle('duplicate')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[
-                    styles.duplicateBannerBtnText,
-                    activeFilter === 'duplicate' && styles.duplicateBannerBtnTextActive
-                  ]}>
-                    {activeFilter === 'duplicate' ? 'Xem tất cả' : 'Lọc xem ngay'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Thanh công cụ chọn nhiều để xóa hàng loạt khi đang lọc đơn trùng */}
-            {activeReportTab === 'day' && activeFilter === 'duplicate' && (
-              <View style={styles.duplicateBulkBar}>
-                <View style={styles.duplicateBulkBarTop}>
-                  <Text style={styles.duplicateBulkCountText} numberOfLines={1}>
-                    Đã chọn:{' '}
-                    <Text style={styles.duplicateBulkCountHighlight}>
-                      {selectedDuplicateDebtIds.size}
-                    </Text>
-                    /{displayItems.filter((it) => it.type === 'debt').length} đơn
-                    {selectedDuplicateDebtIds.size > 0 ? (
-                      <Text style={styles.duplicateBulkAmountText}>
-                        {' '}({formatCurrency(
-                          displayItems
-                            .filter((it) => it.type === 'debt' && selectedDuplicateDebtIds.has(it.id))
-                            .reduce((sum, it) => sum + Number(it.amount || 0), 0)
-                        )})
+                  <View style={styles.duplicateBulkActionsRow}>
+                    <TouchableOpacity
+                      style={styles.duplicateBulkQuickBtn}
+                      onPress={handleToggleSelectAllDuplicates}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.duplicateBulkQuickBtnText}>
+                        {selectedDuplicateDebtIds.size > 0 && selectedDuplicateDebtIds.size === displayItems.filter((it) => it.type === 'debt').length
+                          ? '✕ Bỏ chọn tất cả'
+                          : '✓ Chọn tất cả'}
                       </Text>
-                    ) : null}
-                  </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.duplicateBulkQuickBtn, styles.duplicateBulkSmartBtn]}
+                      onPress={handleSmartSelectDuplicates}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.duplicateBulkQuickBtnText, styles.duplicateBulkSmartBtnText]}>
+                        ⚡ Tự chọn đơn trùng thừa (giữ 1)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Ô chú thích 4 màu trạng thái giao dịch (bấm để lọc nhanh) */}
+              {activeReportTab === 'day' && (
+                <View style={styles.legendContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.legendBadge,
+                      styles.legendBadgeEdited,
+                      activeFilter === 'edited' && styles.legendBadgeActive
+                    ]}
+                    onPress={() => handleFilterToggle('edited')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.legendDot, { backgroundColor: '#8B5CF6' }]} />
+                    <Text style={[styles.legendText, { color: '#7E22CE' }]}>Đã sửa</Text>
+                  </TouchableOpacity>
 
                   <TouchableOpacity
                     style={[
-                      styles.duplicateBulkDeleteBtn,
-                      selectedDuplicateDebtIds.size === 0 && styles.duplicateBulkDeleteBtnDisabled,
+                      styles.legendBadge,
+                      styles.legendBadgeReturn,
+                      activeFilter === 'return' && styles.legendBadgeActive
                     ]}
-                    onPress={handleBulkDeleteDuplicates}
-                    disabled={selectedDuplicateDebtIds.size === 0 || isBulkDeleting}
+                    onPress={() => handleFilterToggle('return')}
                     activeOpacity={0.7}
                   >
-                    {isBulkDeleting ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <Text style={styles.duplicateBulkDeleteBtnText}>
-                        🗑️ Xóa đã chọn ({selectedDuplicateDebtIds.size})
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.duplicateBulkActionsRow}>
-                  <TouchableOpacity
-                    style={styles.duplicateBulkQuickBtn}
-                    onPress={handleToggleSelectAllDuplicates}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.duplicateBulkQuickBtnText}>
-                      {selectedDuplicateDebtIds.size > 0 && selectedDuplicateDebtIds.size === displayItems.filter((it) => it.type === 'debt').length
-                        ? '✕ Bỏ chọn tất cả'
-                        : '✓ Chọn tất cả'}
-                    </Text>
+                    <View style={[styles.legendDot, { backgroundColor: '#EA580C' }]} />
+                    <Text style={[styles.legendText, { color: '#EA580C' }]}>Trả hàng</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.duplicateBulkQuickBtn, styles.duplicateBulkSmartBtn]}
-                    onPress={handleSmartSelectDuplicates}
+                    style={[
+                      styles.legendBadge,
+                      styles.legendBadgePayment,
+                      activeFilter === 'payment' && styles.legendBadgeActive
+                    ]}
+                    onPress={() => handleFilterToggle('payment')}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.duplicateBulkQuickBtnText, styles.duplicateBulkSmartBtnText]}>
-                      ⚡ Tự chọn đơn trùng thừa (giữ 1)
-                    </Text>
+                    <View style={[styles.legendDot, { backgroundColor: '#16A34A' }]} />
+                    <Text style={[styles.legendText, { color: '#16A34A' }]}>Thu nợ</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.legendBadge,
+                      styles.legendBadgeDebt,
+                      activeFilter === 'debt' && styles.legendBadgeActive
+                    ]}
+                    onPress={() => handleFilterToggle('debt')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} />
+                    <Text style={[styles.legendText, { color: '#DC2626' }]}>Đơn nợ mới</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            )}
+              )}
 
-            {/* Ô chú thích 4 màu trạng thái giao dịch (bấm để lọc nhanh) */}
-            {activeReportTab === 'day' && (
-              <View style={styles.legendContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.legendBadge,
-                    styles.legendBadgeEdited,
-                    activeFilter === 'edited' && styles.legendBadgeActive
-                  ]}
-                  onPress={() => handleFilterToggle('edited')}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.legendDot, { backgroundColor: '#8B5CF6' }]} />
-                  <Text style={[styles.legendText, { color: '#7E22CE' }]}>Đã sửa</Text>
-                </TouchableOpacity>
+              {/* Tiêu đề danh sách chi tiết / bảng đối soát */}
+              <Text style={styles.listTitle}>
+                {activeReportTab === 'month'
+                  ? `📝 Bảng đối soát khách hàng trong tháng (${displayItems.length} khách):`
+                  : `📝 Danh sách chi tiết (${displayItems.length}):`}
+              </Text>
 
-                <TouchableOpacity
-                  style={[
-                    styles.legendBadge,
-                    styles.legendBadgeReturn,
-                    activeFilter === 'return' && styles.legendBadgeActive
-                  ]}
-                  onPress={() => handleFilterToggle('return')}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.legendDot, { backgroundColor: '#EA580C' }]} />
-                  <Text style={[styles.legendText, { color: '#EA580C' }]}>Trả hàng</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.legendBadge,
-                    styles.legendBadgePayment,
-                    activeFilter === 'payment' && styles.legendBadgeActive
-                  ]}
-                  onPress={() => handleFilterToggle('payment')}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.legendDot, { backgroundColor: '#16A34A' }]} />
-                  <Text style={[styles.legendText, { color: '#16A34A' }]}>Thu nợ</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.legendBadge,
-                    styles.legendBadgeDebt,
-                    activeFilter === 'debt' && styles.legendBadgeActive
-                  ]}
-                  onPress={() => handleFilterToggle('debt')}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} />
-                  <Text style={[styles.legendText, { color: '#DC2626' }]}>Đơn nợ mới</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Tiêu đề danh sách chi tiết / bảng đối soát */}
-            <Text style={styles.listTitle}>
-              {activeReportTab === 'month'
-                ? `📝 Bảng đối soát khách hàng trong tháng (${displayItems.length} khách):`
-                : `📝 Danh sách chi tiết (${displayItems.length}):`}
-            </Text>
-
-            {displayItems.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>
-                  {activeReportTab === 'day'
-                    ? 'Không có giao dịch công nợ phát sinh trong ngày này.'
-                    : 'Không có dữ liệu công nợ phát sinh trong tháng này.'}
-                </Text>
-              </View>
-            ) : activeReportTab === 'month' ? (
-              // BẢNG ĐỐI SOÁT KHÁCH HÀNG TRONG THÁNG (TABLE VIEW CHUẨN MẬT ĐỘ CAO)
-              <View style={styles.tableWrapper}>
-                <View style={styles.tableHeaderRow}>
-                  <Text style={[styles.tableHeaderCell, { width: 34, textAlign: 'center' }]}>STT</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.8 }]}>KHÁCH HÀNG</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.4, textAlign: 'right' }]}>TIỀN HÀNG</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.3, textAlign: 'right' }]}>ĐÃ THU</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.5, textAlign: 'right' }]}>CÒN NỢ</Text>
-                  <Text style={[styles.tableHeaderCell, { width: 44, textAlign: 'center' }]}>ẢNH</Text>
+              {displayItems.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>
+                    {activeReportTab === 'day'
+                      ? 'Không có giao dịch công nợ phát sinh trong ngày này.'
+                      : 'Không có dữ liệu công nợ phát sinh trong tháng này.'}
+                  </Text>
                 </View>
+              ) : activeReportTab === 'month' ? (
+                // BẢNG ĐỐI SOÁT KHÁCH HÀNG TRONG THÁNG (TABLE VIEW CHUẨN MẬT ĐỘ CAO)
+                <View style={styles.tableWrapper}>
+                  <View style={styles.tableHeaderRow}>
+                    <Text style={[styles.tableHeaderCell, { width: 34, textAlign: 'center' }]}>STT</Text>
+                    <Text style={[styles.tableHeaderCell, { flex: 1.8 }]}>KHÁCH HÀNG</Text>
+                    <Text style={[styles.tableHeaderCell, { flex: 1.4, textAlign: 'right' }]}>TIỀN HÀNG</Text>
+                    <Text style={[styles.tableHeaderCell, { flex: 1.3, textAlign: 'right' }]}>ĐÃ THU</Text>
+                    <Text style={[styles.tableHeaderCell, { flex: 1.5, textAlign: 'right' }]}>CÒN NỢ</Text>
+                    <Text style={[styles.tableHeaderCell, { width: 44, textAlign: 'center' }]}>ẢNH</Text>
+                  </View>
 
+                  <ScrollView
+                    style={styles.scrollList}
+                    contentContainerStyle={styles.scrollListContent}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {displayItems.map((cItem, cIdx) => {
+                      const isZebra = cIdx % 2 === 1;
+                      const hasDebt = cItem.remainingInMonth > 0;
+                      return (
+                        <View
+                          key={cItem.customerId || cIdx}
+                          style={[
+                            styles.tableRow,
+                            isZebra && styles.tableRowZebra,
+                            hasDebt && styles.tableRowHasDebt,
+                          ]}
+                        >
+                          {/* Cột 1: STT */}
+                          <Text style={[styles.tableCellText, { width: 34, textAlign: 'center', color: '#94A3B8' }]}>
+                            {cIdx + 1}
+                          </Text>
+
+                          {/* Cột 2: Tên khách hàng & SĐT */}
+                          <View style={{ flex: 1.8, paddingRight: 4 }}>
+                            <Text style={styles.tableCustomerName} numberOfLines={1}>
+                              {cItem.customerName}
+                            </Text>
+                            {cItem.phone ? (
+                              <Text style={styles.tableCustomerPhone} numberOfLines={1}>
+                                {cItem.phone}
+                              </Text>
+                            ) : null}
+                          </View>
+
+                          {/* Cột 3: Tiền hàng & tiền trả hàng nếu có */}
+                          <View style={{ flex: 1.4, alignItems: 'flex-end', paddingRight: 4 }}>
+                            <Text style={styles.tablePurchaseText} numberOfLines={1}>
+                              {formatCurrency(cItem.totalPurchase)}
+                            </Text>
+                            {cItem.totalReturn > 0 ? (
+                              <Text style={styles.tableReturnSubText} numberOfLines={1}>
+                                ↩ -{formatCurrency(cItem.totalReturn)}
+                              </Text>
+                            ) : null}
+                          </View>
+
+                          {/* Cột 4: Đã thu */}
+                          <View style={{ flex: 1.3, alignItems: 'flex-end', paddingRight: 4 }}>
+                            <Text style={styles.tablePaidText} numberOfLines={1}>
+                              {cItem.totalPaid > 0 ? formatCurrency(cItem.totalPaid) : '0 đ'}
+                            </Text>
+                          </View>
+
+                          {/* Cột 5: Còn nợ */}
+                          <View style={{ flex: 1.5, alignItems: 'flex-end', paddingRight: 4 }}>
+                            {hasDebt ? (
+                              <Text style={styles.tableDebtText} numberOfLines={1}>
+                                {formatCurrency(cItem.remainingInMonth)}
+                              </Text>
+                            ) : (
+                              <View style={styles.paidBadgePill}>
+                                <Text style={styles.paidBadgeText}>✓ ĐÃ XONG</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {/* Cột 6: Nút Xuất ảnh công nợ khách */}
+                          <View style={{ width: 44, alignItems: 'center', justifyContent: 'center' }}>
+                            <TouchableOpacity
+                              style={styles.tableActionIconBtn}
+                              onPress={() => onExportDebt?.(cItem.customerId, selectedMonth)}
+                              activeOpacity={0.7}
+                              title="Xuất ảnh công nợ"
+                            >
+                              <Text style={styles.tableActionIconText}>📸</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              ) : (
+                // Hiển thị danh sách chi tiết ngày 1 phần tử 1 hàng (full-width)
                 <ScrollView
                   style={styles.scrollList}
                   contentContainerStyle={styles.scrollListContent}
                   showsVerticalScrollIndicator={false}
                 >
-                  {displayItems.map((cItem, cIdx) => {
-                    const isZebra = cIdx % 2 === 1;
-                    const hasDebt = cItem.remainingInMonth > 0;
-                    return (
-                      <View
-                        key={cItem.customerId || cIdx}
-                        style={[
-                          styles.tableRow,
-                          isZebra && styles.tableRowZebra,
-                          hasDebt && styles.tableRowHasDebt,
-                        ]}
-                      >
-                        {/* Cột 1: STT */}
-                        <Text style={[styles.tableCellText, { width: 34, textAlign: 'center', color: '#94A3B8' }]}>
-                          {cIdx + 1}
-                        </Text>
-
-                        {/* Cột 2: Tên khách hàng & SĐT */}
-                        <View style={{ flex: 1.8, paddingRight: 4 }}>
-                          <Text style={styles.tableCustomerName} numberOfLines={1}>
-                            {cItem.customerName}
-                          </Text>
-                          {cItem.phone ? (
-                            <Text style={styles.tableCustomerPhone} numberOfLines={1}>
-                              {cItem.phone}
-                            </Text>
-                          ) : null}
-                        </View>
-
-                        {/* Cột 3: Tiền hàng & tiền trả hàng nếu có */}
-                        <View style={{ flex: 1.4, alignItems: 'flex-end', paddingRight: 4 }}>
-                          <Text style={styles.tablePurchaseText} numberOfLines={1}>
-                            {formatCurrency(cItem.totalPurchase)}
-                          </Text>
-                          {cItem.totalReturn > 0 ? (
-                            <Text style={styles.tableReturnSubText} numberOfLines={1}>
-                              ↩ -{formatCurrency(cItem.totalReturn)}
-                            </Text>
-                          ) : null}
-                        </View>
-
-                        {/* Cột 4: Đã thu */}
-                        <View style={{ flex: 1.3, alignItems: 'flex-end', paddingRight: 4 }}>
-                          <Text style={styles.tablePaidText} numberOfLines={1}>
-                            {cItem.totalPaid > 0 ? formatCurrency(cItem.totalPaid) : '0 đ'}
-                          </Text>
-                        </View>
-
-                        {/* Cột 5: Còn nợ */}
-                        <View style={{ flex: 1.5, alignItems: 'flex-end', paddingRight: 4 }}>
-                          {hasDebt ? (
-                            <Text style={styles.tableDebtText} numberOfLines={1}>
-                              {formatCurrency(cItem.remainingInMonth)}
-                            </Text>
-                          ) : (
-                            <View style={styles.paidBadgePill}>
-                              <Text style={styles.paidBadgeText}>✓ ĐÃ XONG</Text>
-                            </View>
-                          )}
-                        </View>
-
-                        {/* Cột 6: Nút Xuất ảnh công nợ khách */}
-                        <View style={{ width: 44, alignItems: 'center', justifyContent: 'center' }}>
-                          <TouchableOpacity
-                            style={styles.tableActionIconBtn}
-                            onPress={() => onExportDebt?.(cItem.customerId, selectedMonth)}
-                            activeOpacity={0.7}
-                            title="Xuất ảnh công nợ"
-                          >
-                            <Text style={styles.tableActionIconText}>📸</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
+                  {displayItems.map((item) => {
+                    const status = getItemStatus(item);
+                    const isDebt = item.type === 'debt';
+                    const isEdited = status === 'edited';
+                    const isReturnGoods = status === 'return';
+                    const isDuplicate = isItemDuplicateDebt(item);
+                    const palette = isDuplicate ? getDuplicatePalette(item) : null;
+                    const seqText = isDuplicate ? getItemDebtSequence(item) : '';
+                    const isSelected = selectedDuplicateDebtIds.has(item.id);
+                    const isRecurring = Boolean(
+                      isDebt && (
+                        item.isRecurring ||
+                        item.rawObj?.isRecurring ||
+                        item.rawObj?.recurringDebtId ||
+                        (typeof item.note === 'string' && /cố định/i.test(item.note)) ||
+                        (typeof item.rawObj?.note === 'string' && /cố định/i.test(item.rawObj.note))
+                      )
                     );
-                  })}
-                </ScrollView>
-              </View>
-            ) : (
-              // Hiển thị danh sách chi tiết ngày 1 phần tử 1 hàng (full-width)
-              <ScrollView
-                style={styles.scrollList}
-                contentContainerStyle={styles.scrollListContent}
-                showsVerticalScrollIndicator={false}
-              >
-                {displayItems.map((item) => {
-                  const status = getItemStatus(item);
-                  const isDebt = item.type === 'debt';
-                  const isEdited = status === 'edited';
-                  const isReturnGoods = status === 'return';
-                  const isDuplicate = isItemDuplicateDebt(item);
-                  const palette = isDuplicate ? getDuplicatePalette(item) : null;
-                  const seqText = isDuplicate ? getItemDebtSequence(item) : '';
-                  const isSelected = selectedDuplicateDebtIds.has(item.id);
-                  const isRecurring = Boolean(
-                    isDebt && (
-                      item.isRecurring ||
-                      item.rawObj?.isRecurring ||
-                      item.rawObj?.recurringDebtId ||
-                      (typeof item.note === 'string' && /cố định/i.test(item.note)) ||
-                      (typeof item.rawObj?.note === 'string' && /cố định/i.test(item.rawObj.note))
-                    )
-                  );
 
-                  let displayDetails = item.details ? cleanDisplayNote(item.details) : '';
-                  if (isReturnGoods) {
-                    if (displayDetails === '[Trả hàng nhanh] Trừ tiền công nợ đơn trong ngày' || displayDetails === 'Trả hàng' || displayDetails === 'Trả lại hàng') {
-                      displayDetails = 'Trả lại hàng';
-                    } else if (displayDetails?.startsWith('[Trả hàng nhanh]')) {
-                      displayDetails = displayDetails.replace('[Trả hàng nhanh]', '[Trả lại hàng]');
+                    let displayDetails = item.details ? cleanDisplayNote(item.details) : '';
+                    if (isReturnGoods) {
+                      if (displayDetails === '[Trả hàng nhanh] Trừ tiền công nợ đơn trong ngày' || displayDetails === 'Trả hàng' || displayDetails === 'Trả lại hàng') {
+                        displayDetails = 'Trả lại hàng';
+                      } else if (displayDetails?.startsWith('[Trả hàng nhanh]')) {
+                        displayDetails = displayDetails.replace('[Trả hàng nhanh]', '[Trả lại hàng]');
+                      }
                     }
-                  }
 
-                  return (
+                    return (
                     <View
                       key={item.id}
                       style={[
@@ -2645,27 +2748,48 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                             );
                           })()}
 
-                          <TouchableOpacity
-                            style={styles.itemEditBtn}
-                            onPress={() => {
-                              if (isDebt && onEditTransaction) {
-                                onEditTransaction(item.rawObj || item);
-                              } else if (!isDebt && onEditPayment) {
-                                onEditPayment(item.rawObj || item);
+                          {item.isPaymentBatch ? (
+                            <TouchableOpacity
+                              style={styles.batchExpandBtn}
+                              onPress={() =>
+                                setExpandedPaymentBatchIds((prev) => ({
+                                  ...prev,
+                                  [item.id]: !prev[item.id],
+                                }))
                               }
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.itemEditBtnText}>Sửa</Text>
-                          </TouchableOpacity>
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.batchExpandBtnText}>
+                                {expandedPaymentBatchIds[item.id]
+                                  ? `Thu gọn (${item.batchCount} ngày) ▴`
+                                  : `Chi tiết (${item.batchCount} ngày) ▾`}
+                              </Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <>
+                              <TouchableOpacity
+                                style={styles.itemEditBtn}
+                                onPress={() => {
+                                  if (isDebt && onEditTransaction) {
+                                    onEditTransaction(item.rawObj || item);
+                                  } else if (!isDebt && onEditPayment) {
+                                    onEditPayment(item.rawObj || item);
+                                  }
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={styles.itemEditBtnText}>Sửa</Text>
+                              </TouchableOpacity>
 
-                          <TouchableOpacity
-                            style={styles.itemDeleteBtn}
-                            onPress={() => handleDeleteItem(item)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.itemDeleteBtnText}>Xóa</Text>
-                          </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.itemDeleteBtn}
+                                onPress={() => handleDeleteItem(item)}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={styles.itemDeleteBtnText}>Xóa</Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
                         </View>
 
                         <View style={styles.itemAmountContainer}>
@@ -2691,56 +2815,88 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                       </View>
 
                       {displayDetails ? (
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Text style={[styles.itemDetails, { flex: 1 }]} numberOfLines={2}>
-                            {isDebt ? `🥩 ${displayDetails}` : isReturnGoods ? `↩️ ${displayDetails}` : `💵 ${displayDetails}`}
-                          </Text>
-                        </View>
-                      ) : null}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={[styles.itemDetails, { flex: 1 }]} numberOfLines={2}>
+                    {isDebt ? `🥩 ${displayDetails}` : isReturnGoods ? `↩️ ${displayDetails}` : `💵 ${displayDetails}`}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Danh sách các ngày con khi mở rộng đợt thu nợ gộp */}
+              {item.isPaymentBatch && expandedPaymentBatchIds[item.id] && (
+                <View style={styles.batchSubListBox}>
+                  {(item.batchItems || []).map((sub) => (
+                    <View key={sub.id} style={styles.batchSubRow}>
+                      <View style={styles.batchSubLeft}>
+                        <Text style={styles.batchSubDate}>
+                          • {sub._debtDateInfo?.fullDate || sub._debtDateInfo?.shortDate || 'Ngày nợ'}
+                        </Text>
+                        <Text style={styles.batchSubAmt}>-{formatCurrency(sub.amount)}</Text>
+                      </View>
+                      <View style={styles.batchSubActions}>
+                        <TouchableOpacity
+                          style={styles.batchSubEditBtn}
+                          onPress={() => onEditPayment && onEditPayment(sub.rawObj || sub)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.batchSubEditText}>Sửa</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.batchSubDelBtn}
+                          onPress={() => handleDeleteItem(sub)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.batchSubDelText}>Xóa</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  );
+                  ))}
+                </View>
+              )}
+            </View>
+          );
                 })}
-              </ScrollView>
+        </ScrollView>
             )}
-          </View>
+      </View>
         )}
 
-        {/* Nhóm nút hành động dưới đáy */}
-        <View style={styles.footerButtons}>
-          {activeReportTab === 'day' && activeFilter === 'duplicate' && selectedDuplicateDebtIds.size > 0 && (
+      {/* Nhóm nút hành động dưới đáy */}
+      <View style={styles.footerButtons}>
+        {activeReportTab === 'day' && activeFilter === 'duplicate' && selectedDuplicateDebtIds.size > 0 && (
+          <TouchableOpacity
+            style={styles.bulkDeleteFooterBtn}
+            onPress={handleBulkDeleteDuplicates}
+            disabled={isBulkDeleting}
+            activeOpacity={0.7}
+          >
+            {isBulkDeleting ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.bulkDeleteFooterBtnText} numberOfLines={1}>
+                🗑️ XÓA {selectedDuplicateDebtIds.size} ĐƠN ĐÃ CHỌN
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {activeReportTab === 'day' && (
+          <>
             <TouchableOpacity
-              style={styles.bulkDeleteFooterBtn}
-              onPress={handleBulkDeleteDuplicates}
-              disabled={isBulkDeleting}
+              style={styles.exportBundleBtn}
+              onPress={handleExportDailyBundle}
               activeOpacity={0.7}
             >
-              {isBulkDeleting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.bulkDeleteFooterBtnText} numberOfLines={1}>
-                  🗑️ XÓA {selectedDuplicateDebtIds.size} ĐƠN ĐÃ CHỌN
-                </Text>
-              )}
+              <Text style={styles.exportBundleBtnText} numberOfLines={1}>
+                📦 TRỌN BỘ 3 ẢNH
+              </Text>
             </TouchableOpacity>
-          )}
 
-          {activeReportTab === 'day' && (
-            <>
-              <TouchableOpacity
-                style={styles.exportBundleBtn}
-                onPress={handleExportDailyBundle}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.exportBundleBtnText} numberOfLines={1}>
-                  📦 TRỌN BỘ 3 ẢNH
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.exportReportBtn}
-                onPress={handleExportDailyReportImage}
-                activeOpacity={0.7}
-              >
+            <TouchableOpacity
+              style={styles.exportReportBtn}
+              onPress={handleExportDailyReportImage}
+              activeOpacity={0.7}
+            >
               <Text style={styles.exportReportBtnText} numberOfLines={1}>
                 {activeFilter === 'duplicate'
                   ? '📸 XUẤT BÁO CÁO ĐƠN TRÙNG'
@@ -2760,44 +2916,44 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           </>
         )}
 
-          {activeReportTab === 'month' && (
-            <TouchableOpacity
-              style={styles.exportReportBtn}
-              onPress={handleExportImage}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.exportReportBtnText} numberOfLines={1}>
-                📸 XUẤT ẢNH BÁO CÁO THÁNG
-              </Text>
-            </TouchableOpacity>
-          )}
-
+        {activeReportTab === 'month' && (
           <TouchableOpacity
-            style={styles.closeButtonNew}
-            onPress={() => setVisible(false)}
+            style={styles.exportReportBtn}
+            onPress={handleExportImage}
             activeOpacity={0.7}
           >
-            <Text style={styles.closeButtonTextNew}>ĐÓNG LẠI</Text>
+            <Text style={styles.exportReportBtnText} numberOfLines={1}>
+              📸 XUẤT ẢNH BÁO CÁO THÁNG
+            </Text>
           </TouchableOpacity>
-        </View>
+        )}
+
+        <TouchableOpacity
+          style={styles.closeButtonNew}
+          onPress={() => setVisible(false)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.closeButtonTextNew}>ĐÓNG LẠI</Text>
+        </TouchableOpacity>
       </View>
-    </SmoothModal>
-      {/* Modal xuất báo cáo ngày dạng bảng hóa đơn */}
-      <ExportDailyReportModal ref={exportDailyReportModalRef} />
-      {/* Modal tải ảnh hóa đơn */}
-      <InvoiceImageUploadModal
-        ref={invoiceImageUploadModalRef}
-        onSuccess={() => {
-          fetchReportData();
-          if (onRefresh) onRefresh();
-        }}
+    </View >
+    </SmoothModal >
+  {/* Modal xuất báo cáo ngày dạng bảng hóa đơn */ }
+  < ExportDailyReportModal ref = { exportDailyReportModalRef } />
+    {/* Modal tải ảnh hóa đơn */ }
+    < InvoiceImageUploadModal
+ref = { invoiceImageUploadModalRef }
+onSuccess = {() => {
+  fetchReportData();
+  if (onRefresh) onRefresh();
+}}
       />
-      {/* Modal xem ảnh hóa đơn phóng to */}
-      <InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
-      {/* Modal xem trước & chia sẻ trọn bộ 3 ảnh ngày kèm ảnh dài chống lỗi Zalo Mobile */}
-      <DailyBundlePreviewModal ref={dailyBundlePreviewModalRef} />
-      {/* Popup xác nhận xóa - render sau cùng để luôn ở trên cùng */}
-      <PopupModal ref={popupModalRef} />
+{/* Modal xem ảnh hóa đơn phóng to */ }
+<InvoiceImageViewerModal ref={invoiceImageViewerModalRef} />
+{/* Modal xem trước & chia sẻ trọn bộ 3 ảnh ngày kèm ảnh dài chống lỗi Zalo Mobile */ }
+<DailyBundlePreviewModal ref={dailyBundlePreviewModalRef} />
+{/* Popup xác nhận xóa - render sau cùng để luôn ở trên cùng */ }
+<PopupModal ref={popupModalRef} />
     </>
   );
 });
@@ -3901,5 +4057,84 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     lineHeight: 15,
+  },
+  batchExpandBtn: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  batchExpandBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  batchSubListBox: {
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#BBF7D0',
+    gap: 5,
+  },
+  batchSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  batchSubLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingRight: 8,
+  },
+  batchSubDate: {
+    fontSize: 12,
+    color: '#334155',
+    fontWeight: '600',
+  },
+  batchSubAmt: {
+    fontSize: 12,
+    color: '#059669',
+    fontWeight: '700',
+  },
+  batchSubActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  batchSubEditBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  batchSubEditText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1D4ED8',
+  },
+  batchSubDelBtn: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  batchSubDelText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#DC2626',
   },
 });

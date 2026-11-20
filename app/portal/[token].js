@@ -725,11 +725,16 @@ const buildInvoiceRows = (
       const payDate = effectiveDate;
       const pmMonth = payDate.getMonth() + 1;
       const pmYear = payDate.getFullYear();
+      const rawPaidDate = new Date(pm.paidAt || pm.date || pm.createdAt || payDate);
+      const actualPaidDateKey = !isNaN(rawPaidDate.getTime())
+        ? `${String(rawPaidDate.getDate()).padStart(2, '0')}/${String(rawPaidDate.getMonth() + 1).padStart(2, '0')}/${rawPaidDate.getFullYear()}`
+        : '';
       allCashPayments.push({
         id: pm.id || Math.random().toString(),
         amount: amt,
         remaining: amt,
         paidAt: payDate,
+        actualPaidDateKey,
         note: pm.note || '',
         monthKey: `${String(pmMonth).padStart(2, '0')}/${pmYear}`,
         monthDisplay: `T${pmMonth}`,
@@ -798,6 +803,7 @@ const buildInvoiceRows = (
       paymentId: pm.id,
       amount: used,
       paidAt: pm.paidAt,
+      actualPaidDateKey: pm.actualPaidDateKey || '',
       paidMonthKey: pm.monthKey,
       paidMonthDisplay: pm.monthDisplay,
       paidMonthFull: pm.monthFull,
@@ -1092,6 +1098,7 @@ const buildInvoiceRows = (
         paidDetailsMap.set(pKey, {
           id: pKey,
           paidAt: pa.paidAt,
+          actualPaidDateKey: pa.actualPaidDateKey || '',
           displayDate: pa.paidAt
             ? `${String(pa.paidAt.getDate()).padStart(2, '0')}/${String(pa.paidAt.getMonth() + 1).padStart(2, '0')}/${pa.paidAt.getFullYear()}`
             : '',
@@ -1157,8 +1164,8 @@ const buildInvoiceRows = (
     let groupKey = `SINGLE__${item.id}`;
     if (batchSplitIdx !== -1) {
       groupKey = `BATCH__${cleanNote.slice(batchSplitIdx + 3).trim()}`;
-    } else if (isPerDayBatchNote && item.displayDate) {
-      groupKey = `DAYBATCH__${item.displayDate}`;
+    } else if (isPerDayBatchNote && (item.actualPaidDateKey || item.displayDate)) {
+      groupKey = `DAYBATCH__${item.actualPaidDateKey || item.displayDate}`;
     }
 
     if (!groupedPaidMap.has(groupKey)) {

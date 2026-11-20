@@ -195,111 +195,35 @@ export default function QuickPriceScreen() {
       .filter(Boolean);
   }, [activeGroupCustomers, editingItemsMap, selectedGroupProductIds]);
 
-  // Helper: Tự động tải và áp dụng các món thịt cùng 1 mức giá cho tất cả nhà hàng trong một nhóm
-  const populateMeatsForGroup = async (groupCustomers, groupName = '') => {
+  // Helper: Nạp trước bảng giá riêng cho tất cả nhà hàng trong một nhóm (không tự liệt kê sẵn thịt)
+  const populateMeatsForGroup = async (groupCustomers) => {
     if (!groupCustomers || groupCustomers.length === 0) return [];
 
-    // 1. Tải giá riêng của tất cả khách hàng trong nhóm
-    const priceMapsWithCust = await Promise.all(
-      groupCustomers.map(async (c) => {
-        const pMap = await ensureCustomerPricesLoaded(c.id);
-        return { customerId: c.id, priceMap: pMap };
-      })
+    // 1. Tải trước bảng giá riêng của tất cả khách hàng trong nhóm
+    await Promise.all(
+      groupCustomers.map((c) => ensureCustomerPricesLoaded(c.id))
     );
 
-    // 2. Gom tất cả sản phẩm có giá riêng trong nhóm và tính đơn giá chung phổ biến nhất
-    const groupProductFreqPrice = new Map(); // prodId -> Map<price, count>
-    priceMapsWithCust.forEach(({ priceMap }) => {
-      priceMap.forEach((price, prodId) => {
-        if (!groupProductFreqPrice.has(prodId)) {
-          groupProductFreqPrice.set(prodId, new Map());
-        }
-        const freq = groupProductFreqPrice.get(prodId);
-        freq.set(price, (freq.get(price) || 0) + 1);
-      });
-    });
-
-    const groupCommonPrices = new Map(); // prodId -> commonPrice
-    groupProductFreqPrice.forEach((freqMap, prodId) => {
-      let bestPrice = null;
-      let maxCount = -1;
-      freqMap.forEach((count, price) => {
-        if (count > maxCount) {
-          maxCount = count;
-          bestPrice = price;
-        }
-      });
-      groupCommonPrices.set(prodId, bestPrice);
-    });
-
-    // 3. Xây dựng danh sách món thịt chuẩn cho cả nhóm
-    const productsList = linkInfo?.products || [];
-    const groupMeatItems = [];
-
-    groupCommonPrices.forEach((price, prodId) => {
-      const prod = productsList.find((p) => p.id === prodId);
-      if (prod) {
-        groupMeatItems.push({
-          productId: prod.id,
-          name: prod.name,
-          customName: prod.name,
-          unit: prod.unit || 'kg',
-          defaultPrice: prod.defaultPrice,
-          originalPrice: price,
-          currentPrice: price,
-          hasCustomPrice: true,
-          resetToDefault: false,
-          isEdited: false,
-          isEditingName: false,
-        });
-      }
-    });
-
-    // Sắp xếp danh sách món thịt theo tên tiếng Việt
-    groupMeatItems.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-
-    // 4. Áp dụng đồng loạt danh sách món thịt cùng 1 mức giá này cho TẤT CẢ các nhà hàng trong nhóm
+    // 2. Không tự động liệt kê sẵn danh sách thịt; chỉ khởi tạo danh sách rỗng để chọn thịt nào liệt kê thịt đó
     setEditingItemsMap((prev) => {
       const next = { ...prev };
       groupCustomers.forEach((c) => {
-        next[c.id] = groupMeatItems.map((it) => ({ ...it }));
+        if (!Array.isArray(next[c.id])) {
+          next[c.id] = [];
+        }
       });
       return next;
     });
 
-    return groupMeatItems;
+    return [];
   };
 
-  // Helper: Tải và nạp danh sách món thịt riêng cho một khách hàng đơn lẻ
+  // Helper: Nạp trước bảng giá riêng cho một khách hàng đơn lẻ (không tự liệt kê sẵn thịt)
   const populateMeatsForSingleCustomer = async (cust) => {
-    const priceMap = await ensureCustomerPricesLoaded(cust.id);
-    const productsList = linkInfo?.products || [];
-    const custItems = [];
-
-    priceMap.forEach((price, prodId) => {
-      const prod = productsList.find((p) => p.id === prodId);
-      if (prod) {
-        custItems.push({
-          productId: prod.id,
-          name: prod.name,
-          customName: prod.name,
-          unit: prod.unit || 'kg',
-          defaultPrice: prod.defaultPrice,
-          originalPrice: price,
-          currentPrice: price,
-          hasCustomPrice: true,
-          resetToDefault: false,
-          isEdited: false,
-          isEditingName: false,
-        });
-      }
-    });
-
-    custItems.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-
+    await ensureCustomerPricesLoaded(cust.id);
     setEditingItemsMap((prev) => ({
       ...prev,
-      [cust.id]: custItems,
+      [cust.id]: Array.isArray(prev[cust.id]) ? prev[cust.id] : [],
     }));
   };
 
@@ -411,12 +335,12 @@ export default function QuickPriceScreen() {
         return [...prev, ...toAdd];
       });
 
-      // Tự động tải và áp dụng các loại thịt cùng 1 mức giá cho tất cả nhà hàng trong nhóm
+      // Nạp trước bảng giá cho cả nhóm (không tự liệt kê sẵn thịt)
       setActiveGroupId(group.id);
       setSelectedGroupProductIds([]);
-      const items = await populateMeatsForGroup(groupCustomers, group.name);
+      await populateMeatsForGroup(groupCustomers, group.name);
       showGlobalToast(
-        `Đã chọn nhóm "${group.name}" (${groupCustomers.length} khách) với ${items?.length || 0} món thịt cùng giá!`,
+        `Đã chọn nhóm "${group.name}" (${groupCustomers.length} khách). Hãy chọn loại thịt cần đổi giá!`,
         'success'
       );
     }
@@ -446,11 +370,15 @@ export default function QuickPriceScreen() {
   };
 
   // Thêm một món thịt vào danh sách sửa (tự động đồng bộ cho nhóm nếu thuộc nhóm)
-  const handleAddMeatToCustomer = (customerId, product, priceMap) => {
+  const handleAddMeatToCustomer = async (customerId, product, initialPriceMap) => {
     const matchedGroup = getSelectedGroupOfCustomer(customerId);
     const targetCustomerIds = matchedGroup
       ? matchedGroup.customerIds.filter((id) => selectedCustomers.some((sc) => sc.id === id))
       : [customerId];
+
+    const priceMap = (initialPriceMap && initialPriceMap.size > 0)
+      ? initialPriceMap
+      : await ensureCustomerPricesLoaded(customerId);
 
     const hasCustom = priceMap.has(product.id);
     const origPrice = hasCustom ? priceMap.get(product.id) : product.defaultPrice;

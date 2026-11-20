@@ -854,10 +854,113 @@ const CustomerDebtHistoryModal = forwardRef(({
         groups[monthKey].totalReturn += (group.totalReturn || 0);
       });
 
+      // Xây dựng bản đồ phân bổ liên tháng cho từng khoản thanh toán tiền mặt để hiển thị chú thích rõ ràng
+      const paymentMonthBreakdownMap = new Map(); // paymentId -> { payment, byMonth: Map<monthKey, amount>, paidDateStr, totalAmt }
+      const parseMonthSortVal = (mk) => {
+        const [mmStr, yyyyStr] = (mk || '').split('/');
+        return (Number(yyyyStr) || 0) * 100 + (Number(mmStr) || 0);
+      };
+      const formatShortMonth = (mk) => {
+        const [mmStr] = (mk || '').split('/');
+        const mNum = parseInt(mmStr, 10);
+        return !isNaN(mNum) ? `T${mNum}` : mk;
+      };
+
+      payments.forEach((p) => {
+        if (isReturnPayment(p)) return;
+        const allocs = payAllocations[p.id] || [];
+        if (allocs.length === 0) return;
+
+        const byMonth = new Map();
+        allocs.forEach((alloc) => {
+          const ad = new Date(alloc.date);
+          if (isNaN(ad.getTime())) return;
+          const mKey = `${String(ad.getMonth() + 1).padStart(2, '0')}/${ad.getFullYear()}`;
+          byMonth.set(mKey, (byMonth.get(mKey) || 0) + (parseFloat(alloc.amount) || 0));
+        });
+
+        const pd = new Date(p.paidAt || p.date || p.createdAt);
+        const paidDateStr = !isNaN(pd.getTime())
+          ? `${String(pd.getDate()).padStart(2, '0')}/${String(pd.getMonth() + 1).padStart(2, '0')}/${pd.getFullYear()}`
+          : '';
+
+        paymentMonthBreakdownMap.set(p.id, {
+          id: p.id,
+          paidAt: pd,
+          paidDateStr,
+          totalAmt: parseFloat(p.amount || 0),
+          byMonth,
+        });
+      });
+
       Object.values(groups).forEach((m) => {
         const totalDeducted = Math.max(0, m.totalDebt - m.remainingDebt);
         m.totalReturn = groups[m.monthKey].totalReturn || 0;
         m.totalPayment = Math.max(0, totalDeducted - m.totalReturn);
+
+        // Tạo danh sách chú thích nguồn tiền đã trả phân bổ vào tháng này (gom theo ngày thu nếu cùng ngày không chia tháng)
+        const curMonthVal = parseMonthSortVal(m.monthKey);
+        const rawNotes = [];
+        const sameDaySimpleMap = new Map();
+
+        paymentMonthBreakdownMap.forEach((info) => {
+          const amtInMonth = info.byMonth.get(m.monthKey) || 0;
+          if (amtInMonth <= 0) return;
+
+          const otherMonths = Array.from(info.byMonth.entries())
+            .filter(([mk, amt]) => mk !== m.monthKey && amt > 0)
+            .sort((a, b) => parseMonthSortVal(a[0]) - parseMonthSortVal(b[0]));
+
+          if (otherMonths.length > 0) {
+            const olderParts = [];
+            const newerParts = [];
+            otherMonths.forEach(([mk, amt]) => {
+              const part = `${formatCurrency(amt)} cho ${formatShortMonth(mk)}`;
+              if (parseMonthSortVal(mk) < curMonthVal) {
+                olderParts.push(part);
+              } else {
+                newerParts.push(`${formatCurrency(amt)} sang ${formatShortMonth(mk)}`);
+              }
+            });
+            const detailChunks = [];
+            if (olderParts.length > 0) detailChunks.push(`đã bù ${olderParts.join(', ')}`);
+            if (newerParts.length > 0) detailChunks.push(`còn dư ${newerParts.join(', ')}`);
+
+            rawNotes.push({
+              id: info.id,
+              sortTime: info.paidAt ? info.paidAt.getTime() : 0,
+              dateStr: info.paidDateStr,
+              amount: amtInMonth,
+              subText: `từ đợt thu ${formatCurrency(info.totalAmt)}, ${detailChunks.join('; ')}`,
+              isSplit: true,
+            });
+          } else {
+            const key = info.paidDateStr || info.id;
+            if (!sameDaySimpleMap.has(key)) {
+              sameDaySimpleMap.set(key, {
+                id: `day_${key}`,
+                sortTime: info.paidAt ? info.paidAt.getTime() : 0,
+                dateStr: info.paidDateStr,
+                amount: 0,
+                count: 0,
+                subText: '',
+                isSplit: false,
+              });
+            }
+            const agg = sameDaySimpleMap.get(key);
+            agg.amount += amtInMonth;
+            agg.count += 1;
+          }
+        });
+
+        sameDaySimpleMap.forEach((agg) => {
+          rawNotes.push({
+            ...agg,
+            subText: agg.count > 1 ? `gộp ${agg.count} khoản thu trong ngày` : '',
+          });
+        });
+
+        m.paymentBreakdownNotes = rawNotes.sort((a, b) => b.sortTime - a.sortTime);
 
         // Gom toàn bộ transactions và payments của tháng để tính tổng sản lượng thịt
         const allTransInMonth = [];
@@ -1197,6 +1300,21 @@ const CustomerDebtHistoryModal = forwardRef(({
                             {formatCurrency(month.totalPayment)}
                           </Text>
                         </View>
+                        {month.paymentBreakdownNotes && month.paymentBreakdownNotes.length > 0 && (
+                          <View style={styles.paidBreakdownBox}>
+                            {month.paymentBreakdownNotes.map((pn) => (
+                              <View key={pn.id} style={styles.paidBreakdownItem}>
+                                <View style={styles.paidBreakdownTopRow}>
+                                  <Text style={styles.paidBreakdownDate}>• {pn.dateStr || 'Đợt thu'}:</Text>
+                                  <Text style={styles.paidBreakdownAmt}>{formatCurrency(pn.amount)}</Text>
+                                </View>
+                                {pn.subText ? (
+                                  <Text style={styles.paidBreakdownSub}>({pn.subText})</Text>
+                                ) : null}
+                              </View>
+                            ))}
+                          </View>
+                        )}
                         <View style={[styles.summaryRow, styles.debtRowBorder]}>
                           <Text style={styles.summaryLabelBold}>Còn nợ:</Text>
                           <Text style={[styles.summaryValueBold, hasDebt ? styles.textDebt : styles.textNoDebt]}>
@@ -2504,5 +2622,40 @@ const styles = StyleSheet.create({
   },
   monthRangeContent: {
     padding: 10,
+  },
+  paidBreakdownBox: {
+    marginTop: 2,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    gap: 4,
+  },
+  paidBreakdownItem: {
+    gap: 1,
+  },
+  paidBreakdownTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  paidBreakdownDate: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#065F46',
+  },
+  paidBreakdownAmt: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  paidBreakdownSub: {
+    fontSize: 11,
+    color: '#047857',
+    fontStyle: 'italic',
+    paddingLeft: 10,
   },
 });
