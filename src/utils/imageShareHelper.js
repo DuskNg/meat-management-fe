@@ -434,14 +434,23 @@ export const downloadOrShareMultipleImages = async ({
 
       const rawFileName = item.fileName || `Bao_cao_${i + 1}.png`;
       const extMatch = rawFileName.match(/\.[a-zA-Z0-9]+$/);
-      const ext = extMatch ? extMatch[0] : '.png';
-      const cleanBase = rawFileName.replace(ext, '');
-      const uniqueFileName = `${cleanBase}_${i + 1}_${Date.now().toString(36)}${ext}`;
+      const rawExt = extMatch ? extMatch[0] : '.png';
+      const cleanBase = rawFileName.replace(rawExt, '');
+
+      // Đồng bộ đuôi file chuẩn xác theo MIME thực tế của Blob để tránh lỗi Zalo Mobile không đọc được ảnh cuối
+      const resolveExtFromMime = (mime) => {
+        if (mime === 'image/jpeg' || mime === 'image/jpg') return '.jpg';
+        if (mime === 'image/webp') return '.webp';
+        return '.png';
+      };
 
       if (item.imageUri.startsWith('data:image/')) {
         const blob = base64ToBlob(item.imageUri);
         if (blob) {
-          blobDownloads.push({ blob, fileName: rawFileName });
+          const finalExt = resolveExtFromMime(blob.type);
+          const finalRawName = `${cleanBase}${finalExt}`;
+          const uniqueFileName = `${cleanBase}_${i + 1}_${Date.now().toString(36)}${finalExt}`;
+          blobDownloads.push({ blob, fileName: finalRawName });
           const file = createFileFromBlob(blob, uniqueFileName, i);
           if (file) filesToShare.push(file);
         }
@@ -449,7 +458,10 @@ export const downloadOrShareMultipleImages = async ({
         try {
           const res = await fetch(item.imageUri);
           const blob = await res.blob();
-          blobDownloads.push({ blob, fileName: rawFileName });
+          const finalExt = resolveExtFromMime(blob.type);
+          const finalRawName = `${cleanBase}${finalExt}`;
+          const uniqueFileName = `${cleanBase}_${i + 1}_${Date.now().toString(36)}${finalExt}`;
+          blobDownloads.push({ blob, fileName: finalRawName });
           const file = createFileFromBlob(blob, uniqueFileName, i);
           if (file) filesToShare.push(file);
         } catch (fetchErr) {
@@ -508,8 +520,12 @@ export const downloadOrShareMultipleImages = async ({
 
     if (canUseWebShare) {
       try {
+        // Trên Mobile (đặc biệt iOS Safari -> Zalo Share Extension):
+        // Khi chia sẻ TỪ 2 ẢNH TRỞ LÊN, TUYỆT ĐỐI chỉ truyền { files } (không kèm text/title)
+        // để tránh lỗi WebKit/Zalo làm hỏng hoặc rớt ảnh cuối cùng trong danh sách đính kèm.
+        const shouldAttachText = filesToShare.length === 1 && Boolean(text);
         let canShareWithText = false;
-        if (text) {
+        if (shouldAttachText) {
           try {
             canShareWithText = navigator.canShare({ files: filesToShare, text });
           } catch (_) {
@@ -523,14 +539,14 @@ export const downloadOrShareMultipleImages = async ({
             text,
             title: title || 'Hóa đơn giao hàng',
           });
-          showGlobalToast('Đã chuyển tiếp các ảnh & nội dung hóa đơn sang Zalo!', 'success');
+          showGlobalToast('Đã chuyển tiếp ảnh & nội dung hóa đơn sang Zalo!', 'success');
           return { success: true, sharedVia: 'mobile_share' };
         } else {
           await navigator.share({
             files: filesToShare,
           });
           if (text) {
-            showGlobalToast('Đã chuyển tiếp các ảnh sang Zalo (Nội dung hóa đơn đã sao chép sẵn vào bộ nhớ tạm)!', 'success');
+            showGlobalToast('Đã chuyển tiếp tất cả các ảnh sang Zalo (Nội dung đã sao chép sẵn vào bộ nhớ tạm)!', 'success');
           } else {
             showGlobalToast('Đã mở chia sẻ Zalo thành công!', 'success');
           }

@@ -1123,11 +1123,20 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
         const cleanNote = cleanDisplayNote(item.note || '');
         const custKey = getCustomerKey(item);
+        const groupPayMatch = cleanNote.match(/^Thu nợ gộp nhóm \[([^\]]+)\]/i);
         const batchSplitIdx = cleanNote.indexOf(' - ');
         const isPerDayBatchNote = /^Thanh toán (?:nợ\s+)?ngày \d{1,2}\/\d{1,2}\/\d{4}$/i.test(cleanNote);
 
         let batchKey = null;
-        if (batchSplitIdx !== -1) {
+        let groupMeta = null;
+        if (groupPayMatch) {
+          // Gom toàn bộ các quán trong cùng 1 đợt "Thu nợ gộp nhóm [Tên nhóm]" thành 1 thẻ duy nhất
+          const grpName = groupPayMatch[1].trim();
+          const createdMs = new Date(item.createdAt || item.time).getTime();
+          const minuteBucket = !isNaN(createdMs) ? Math.floor(createdMs / 60000) : 0;
+          batchKey = `GROUP_PAY__${grpName.toLowerCase()}__${cleanNote}__${minuteBucket}`;
+          groupMeta = { groupName: grpName, cleanNote };
+        } else if (batchSplitIdx !== -1) {
           batchKey = `BATCH__${custKey}__${cleanNote.slice(batchSplitIdx + 3).trim()}`;
         } else if (isPerDayBatchNote) {
           const createdMs = new Date(item.createdAt || item.time).getTime();
@@ -1142,7 +1151,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
 
         if (!batchBuckets.has(batchKey)) {
           const placeholder = { __batchPlaceholderKey: batchKey };
-          batchBuckets.set(batchKey, { key: batchKey, items: [] });
+          batchBuckets.set(batchKey, { key: batchKey, items: [], groupMeta });
           resultItems.push(placeholder);
         }
         batchBuckets.get(batchKey).items.push(item);
@@ -1155,6 +1164,29 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           return bucket?.items?.[0] || entry;
         }
 
+        const head = bucket.items[0];
+        const totalBatchAmount = bucket.items.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+
+        // Trường hợp 1: Gom thu nợ gộp nhóm nhiều quán thành 1 thẻ tổng
+        if (bucket.groupMeta) {
+          const sortedStores = [...bucket.items].sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0));
+          const monthMatch = (bucket.groupMeta.cleanNote || '').match(/Thanh toán nợ Tháng \d{1,2}\/\d{4}/i);
+          const monthPart = monthMatch ? ` • ${monthMatch[0]}` : '';
+          return {
+            ...head,
+            id: bucket.key,
+            customerName: `🏢 ${bucket.groupMeta.groupName}`,
+            isPaymentBatch: true,
+            isGroupPaymentBatch: true,
+            amount: totalBatchAmount,
+            batchItems: sortedStores,
+            batchCount: sortedStores.length,
+            batchUnitLabel: 'quán',
+            details: `Thu nợ gộp nhóm (${sortedStores.length} quán)${monthPart}`,
+          };
+        }
+
+        // Trường hợp 2: Gom thu nợ nhiều ngày của cùng 1 khách hàng
         const enrichedSubs = bucket.items
           .map((sub) => ({
             ...sub,
@@ -1162,7 +1194,6 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           }))
           .sort((a, b) => a._debtDateInfo.sortTime - b._debtDateInfo.sortTime);
 
-        const totalBatchAmount = enrichedSubs.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
         const firstShort = enrichedSubs[0]?._debtDateInfo?.shortDate || '';
         const lastShort = enrichedSubs[enrichedSubs.length - 1]?._debtDateInfo?.shortDate || '';
         const rangeText = firstShort && lastShort && firstShort !== lastShort
@@ -1172,14 +1203,15 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
           ? `${rangeText} (${enrichedSubs.length} ngày)`
           : `${enrichedSubs.length} ngày`;
 
-        const head = bucket.items[0];
         return {
           ...head,
           id: bucket.key,
           isPaymentBatch: true,
+          isGroupPaymentBatch: false,
           amount: totalBatchAmount,
           batchItems: enrichedSubs,
           batchCount: enrichedSubs.length,
+          batchUnitLabel: 'ngày',
           batchRangeLabel,
           details: `Thanh toán đợt ${batchRangeLabel}`,
         };
@@ -2761,8 +2793,8 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                             >
                               <Text style={styles.batchExpandBtnText}>
                                 {expandedPaymentBatchIds[item.id]
-                                  ? `Thu gọn (${item.batchCount} ngày) ▴`
-                                  : `Chi tiết (${item.batchCount} ngày) ▾`}
+                                  ? `Thu gọn (${item.batchCount} ${item.batchUnitLabel || 'ngày'}) ▴`
+                                  : `Chi tiết (${item.batchCount} ${item.batchUnitLabel || 'ngày'}) ▾`}
                               </Text>
                             </TouchableOpacity>
                           ) : (
@@ -2828,8 +2860,10 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
                   {(item.batchItems || []).map((sub) => (
                     <View key={sub.id} style={styles.batchSubRow}>
                       <View style={styles.batchSubLeft}>
-                        <Text style={styles.batchSubDate}>
-                          • {sub._debtDateInfo?.fullDate || sub._debtDateInfo?.shortDate || 'Ngày nợ'}
+                        <Text style={[styles.batchSubDate, { flex: 1, marginRight: 6 }]} numberOfLines={1}>
+                          • {item.isGroupPaymentBatch
+                            ? (sub.customerName || 'Khách hàng')
+                            : (sub._debtDateInfo?.fullDate || sub._debtDateInfo?.shortDate || 'Ngày nợ')}
                         </Text>
                         <Text style={styles.batchSubAmt}>-{formatCurrency(sub.amount)}</Text>
                       </View>

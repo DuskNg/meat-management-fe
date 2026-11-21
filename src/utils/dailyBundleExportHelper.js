@@ -481,9 +481,16 @@ export const generateDailyDebtImage = ({ selectedDate, transactions, payments })
     const summaryStartY = startTableY + tableHeaderHeight + tableContentHeight + 16;
     const canvasHeight = summaryStartY + summaryHeight + 30;
 
-    // Tạo canvas và phóng tỉ lệ phù hợp (Mobile dùng 1.5x để tối ưu bộ nhớ RAM/Safari, PC dùng 2x sắc nét)
+    // Tạo canvas và giới hạn kích thước an toàn trên Mobile để tránh tràn RAM Safari/Zalo khi chuyển tiếp 3 ảnh
     const isMobile = isMobileDevice();
-    const scale = isMobile ? 1.5 : 2;
+    let scale = isMobile ? 1.5 : 2;
+    if (isMobile) {
+      const maxDim = 2600;
+      const maxArea = 5500000;
+      const dimScale = Math.min(maxDim / Math.max(1, canvasWidth), maxDim / Math.max(1, canvasHeight));
+      const areaScale = Math.sqrt(maxArea / Math.max(1, canvasWidth * canvasHeight));
+      scale = Math.max(1, Math.min(scale, dimScale, areaScale));
+    }
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(canvasWidth * scale);
     canvas.height = Math.round(canvasHeight * scale);
@@ -832,7 +839,8 @@ export const generateDailyDebtImage = ({ selectedDate, transactions, payments })
     ctx.font = 'bold 17.5px Arial, sans-serif';
     ctx.fillText(`${new Intl.NumberFormat('vi-VN').format(finalRemaining)} đ`, summaryStartX + panelWidth - 10, curSummaryY + summaryRowHeight / 2);
 
-    const dataUrl = canvas.toDataURL('image/png');
+    // Trên Mobile xuất JPEG 0.88 để nhẹ hơn ~10 lần so với PNG, tránh Zalo Share Extension bị tràn RAM hỏng ảnh cuối
+    const dataUrl = isMobile ? canvas.toDataURL('image/jpeg', 0.88) : canvas.toDataURL('image/png');
     // Giải phóng bộ nhớ RAM/GPU của canvas ngay sau khi xuất base64
     canvas.width = 0;
     canvas.height = 0;
@@ -1050,7 +1058,8 @@ const generateMissingCustomersImage = ({ selectedDate, allTransactions, customer
     ctx.textAlign = 'right';
     ctx.fillText('Phần mềm Quản lý Sạp thịt', width - padding, footerY + 18);
 
-    const dataUrl = canvas.toDataURL('image/png');
+    // Trên Mobile xuất JPEG 0.88 để nhẹ hơn ~10 lần so với PNG, tránh Zalo Share Extension bị tràn RAM hỏng ảnh cuối
+    const dataUrl = isMobileDevice() ? canvas.toDataURL('image/jpeg', 0.88) : canvas.toDataURL('image/png');
     // Giải phóng bộ nhớ RAM/GPU của canvas ngay sau khi xuất base64
     canvas.width = 0;
     canvas.height = 0;
@@ -1402,8 +1411,15 @@ export const generateDuplicateDebtsImage = ({
 
     const totalHeight = listStartY + listHeight + footerGap + footerHeight + bottomPadding;
 
-    // Tỉ lệ scale phù hợp: Mobile dùng 1.25x - 1.5x để tối ưu bộ nhớ RAM/Safari tránh crash, PC dùng 2x sắc nét
-    const scale = isMobile ? (numRows > 14 ? 1.25 : 1.5) : 2;
+    // Tỉ lệ scale an toàn trên Mobile: giới hạn kích thước & tổng số pixel để ảnh 3 (đơn trùng) không bao giờ bị lỗi RAM trên Safari/Zalo
+    let scale = isMobile ? (numRows > 14 ? 1.25 : 1.5) : 2;
+    if (isMobile) {
+      const maxDim = 2600;
+      const maxArea = 5500000;
+      const dimScale = Math.min(maxDim / Math.max(1, width), maxDim / Math.max(1, totalHeight));
+      const areaScale = Math.sqrt(maxArea / Math.max(1, width * totalHeight));
+      scale = Math.max(1, Math.min(scale, dimScale, areaScale));
+    }
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(totalHeight * scale);
@@ -1611,7 +1627,8 @@ export const generateDuplicateDebtsImage = ({
 
     let dataUrl = '';
     try {
-      dataUrl = canvas.toDataURL('image/png');
+      // Trên Mobile xuất JPEG 0.88 để ảnh 3 siêu nhẹ (~150KB) và không bị lỗi khi chuyển tiếp 3 ảnh sang Zalo
+      dataUrl = isMobile ? canvas.toDataURL('image/jpeg', 0.88) : canvas.toDataURL('image/png');
     } catch (dataErr) {
       console.warn('Lỗi toDataURL ảnh đơn trùng:', dataErr);
     }
@@ -1746,7 +1763,8 @@ export const generateCombinedDailyBundleImage = async ({
       curY += imgH + sectionGap;
     });
 
-    const combinedUri = canvas.toDataURL('image/png');
+    const isMobileEnv = isMobileDevice();
+    const combinedUri = isMobileEnv ? canvas.toDataURL('image/jpeg', 0.88) : canvas.toDataURL('image/png');
     canvas.width = 0;
     canvas.height = 0;
     return combinedUri;
@@ -1882,7 +1900,8 @@ export const exportDailyReportBundle = async ({
       console.warn('Lỗi khi vẽ ảnh 2 (Khách quen sót đơn):', e2);
     }
 
-    // 4. Tạo Ảnh 3: Báo cáo đơn nợ trùng / khách trùng
+    // 4. Tạo Ảnh 3: Báo cáo đơn nợ trùng / khách trùng (nhường 1 nhịp ngắn để Safari/Mobile giải phóng bộ nhớ canvas trước đó)
+    await new Promise((r) => setTimeout(r, 30));
     onProgress?.('Đang tạo ảnh 3/3: Báo cáo đơn nợ trùng...');
     let img3 = null;
     try {
@@ -1896,6 +1915,7 @@ export const exportDailyReportBundle = async ({
     }
 
     // 5. Tạo Ảnh Dài Tổng Hợp All-In-One (Tránh lỗi trùng ảnh Zalo trên mobile)
+    await new Promise((r) => setTimeout(r, 30));
     let combinedImg = null;
     try {
       combinedImg = await generateCombinedDailyBundleImage({
@@ -1908,12 +1928,13 @@ export const exportDailyReportBundle = async ({
       console.warn('Lỗi khi ghép ảnh tổng hợp:', combErr);
     }
 
+    const imgExt = isMobileDevice() ? 'jpg' : 'png';
     const itemsToExport = [];
     if (img1) {
       itemsToExport.push({
         id: 'img1',
         imageUri: img1,
-        fileName: `1_BaoCaoCongNo_Ngay_${dateFileClean}.png`,
+        fileName: `1_BaoCaoCongNo_Ngay_${dateFileClean}.${imgExt}`,
         title: `Báo cáo công nợ ngày ${dateStr}`,
       });
     }
@@ -1921,7 +1942,7 @@ export const exportDailyReportBundle = async ({
       itemsToExport.push({
         id: 'img2',
         imageUri: img2,
-        fileName: `2_KhachChuaLenDon_Ngay_${dateFileClean}.png`,
+        fileName: `2_KhachChuaLenDon_Ngay_${dateFileClean}.${imgExt}`,
         title: `Khách chưa lên đơn ngày ${dateStr}`,
       });
     }
@@ -1929,7 +1950,7 @@ export const exportDailyReportBundle = async ({
       itemsToExport.push({
         id: 'img3',
         imageUri: img3,
-        fileName: `3_DonNoTrung_Ngay_${dateFileClean}.png`,
+        fileName: `3_DonNoTrung_Ngay_${dateFileClean}.${imgExt}`,
         title: `Đơn nợ trùng ngày ${dateStr}`,
       });
     } else {

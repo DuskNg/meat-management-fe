@@ -1235,13 +1235,17 @@ export default function DashboardScreen() {
       return dateList.length > 0 ? ` (${dateList.join(', ')})` : '';
     };
 
-    // Tính toán thông tin lương luỹ kế tính đến ngày hiện tại (đã trừ tạm ứng và trừ đợt trả lương)
+    // Tính toán thông tin lương luỹ kế tính đến ngày hiện tại (đã trừ tạm ứng và trừ đợt trả lương, trừ bớt số công đã trả)
     const computeCurrentSalaryInfo = () => {
+      const paidDays = Number(item.paidWorkingDays) || 0;
       if (item.currentRemainingSalary !== undefined && item.currentWorkingDays !== undefined) {
+        const displayDays = item.remainingCurrentWorkingDays !== undefined
+          ? item.remainingCurrentWorkingDays
+          : Math.max(0, Math.round((item.currentWorkingDays - paidDays) * 100) / 100);
         return {
           currentSalary: item.currentRemainingSalary,
           rawCurrentSalary: item.currentSalary,
-          currentWorkingDays: item.currentWorkingDays,
+          currentWorkingDays: displayDays,
           currentDayCutoff: item.currentDayCutoff,
           isCurrentMonth: item.isCurrentMonth,
           isPastMonth: item.isPastMonth,
@@ -1250,10 +1254,13 @@ export default function DashboardScreen() {
       }
       if (item.currentSalary !== undefined && item.currentWorkingDays !== undefined) {
         const netCur = Math.max(0, item.currentSalary - (item.totalAdvances || 0) - (item.totalPaidSalary || 0));
+        const displayDays = item.remainingCurrentWorkingDays !== undefined
+          ? item.remainingCurrentWorkingDays
+          : Math.max(0, Math.round((item.currentWorkingDays - paidDays) * 100) / 100);
         return {
           currentSalary: netCur,
           rawCurrentSalary: item.currentSalary,
-          currentWorkingDays: item.currentWorkingDays,
+          currentWorkingDays: displayDays,
           currentDayCutoff: item.currentDayCutoff,
           isCurrentMonth: item.isCurrentMonth,
           isPastMonth: item.isPastMonth,
@@ -1292,13 +1299,14 @@ export default function DashboardScreen() {
       const eligible = (!isFutureMonth && cutoff >= startDay) ? (cutoff - startDay + 1) : 0;
       const leaveD = item.leaveDays || 0;
       const curWorkDays = Math.max(0, eligible - leaveD);
+      const displayCurWorkDays = Math.max(0, Math.round((curWorkDays - paidDays) * 100) / 100);
       const curSal = Math.max(0, Math.round((item.baseSalary / totalDays) * curWorkDays));
       const netCur = Math.max(0, curSal - (item.totalAdvances || 0) - (item.totalPaidSalary || 0));
 
       return {
         currentSalary: netCur,
         rawCurrentSalary: curSal,
-        currentWorkingDays: curWorkDays,
+        currentWorkingDays: displayCurWorkDays,
         currentDayCutoff: cutoff,
         isCurrentMonth,
         isPastMonth,
@@ -1430,7 +1438,7 @@ export default function DashboardScreen() {
         {item.isPartiallyPaid && (
           <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginBottom: 5 }}>
             <Text style={{ fontSize: 10, color: '#D97706', fontWeight: '600', textAlign: 'center' }}>
-              ⏳ Đã trả: {formatCurrency(item.totalPaidSalary)} • Còn cần thanh toán: {formatCurrency(remainingSalary)}
+              ⏳ Đã trả: {formatCurrency(item.totalPaidSalary)}{Number(item.paidWorkingDays) > 0 ? ` (${item.paidWorkingDays}c)` : ''} • Còn cần thanh toán: {formatCurrency(remainingSalary)}
             </Text>
           </View>
         )}
