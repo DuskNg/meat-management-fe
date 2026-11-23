@@ -524,7 +524,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
       note: transItem.note || '',
       totalAmount: transItem.amount || 0,
       entries: transItem.items.map((it) => ({
-        productName: it.productName || it.product?.name || it.name || 'Món hàng',
+        productName: it.productName || it.rawName || it.product?.name || it.name || 'Món hàng',
         weight: it.quantity ?? it.weight ?? 0,
         price: it.price || 0,
         amount: it.amount || ((it.quantity || 0) * (it.price || 0)),
@@ -652,7 +652,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
             {item.items.map((it, idx) => (
               <View key={idx} style={[styles.subTableRow, idx % 2 === 1 && styles.subTableRowAlt]}>
                 <Text style={[styles.subTableTdCell, { flex: 2.2, fontWeight: '600' }]} numberOfLines={1}>
-                  {it.productName || 'Thịt'}
+                  {it.productName || it.rawName || it.product?.name || it.name || 'Thịt'}
                 </Text>
                 <Text style={[styles.subTableTdCell, { flex: 1.1, textAlign: 'center', color: '#64748B' }]}>
                   {it.quantity || 0} {it.unit || 'kg'}
@@ -661,7 +661,7 @@ const SupplierHistoryModal = forwardRef(({ supplier, onRefresh }, ref) => {
                   {formatCurrency(it.price)}
                 </Text>
                 <Text style={[styles.subTableTdCell, { flex: 1.6, textAlign: 'right', fontWeight: 'bold', color: '#DC2626' }]}>
-                  {formatCurrency(it.amount || 0)} đ
+                  {formatCurrency(it.amount || 0)}
                 </Text>
               </View>
             ))}

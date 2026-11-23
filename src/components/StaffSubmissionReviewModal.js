@@ -2842,6 +2842,9 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
   const [loading, setLoading] = useState(false);
   const [submissions, setSubmissions] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  // Số lượng thẻ hóa đơn render trước trên Mobile để tránh đơ máy khi mở 50-60 ảnh cùng lúc (PC giữ nguyên render toàn bộ)
+  const MOBILE_CARD_PAGE_SIZE = 12;
+  const [visibleCardCount, setVisibleCardCount] = useState(isMobile ? 12 : 9999);
 
   // Bộ lọc
   const [filterStatus, setFilterStatus] = useState('ALL'); // ALL | UNPROCESSED | APPROVED
@@ -4604,17 +4607,18 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
     }
   }, [filterStatus, filterDate]);
 
-  // Tự động cuộn lên đầu danh sách khi thay đổi từ khóa tìm kiếm hoặc bộ lọc
+  // Tự động cuộn lên đầu danh sách và reset phân trang hiển thị trên Mobile khi đổi bộ lọc hoặc mở lại modal
   useEffect(() => {
+    setVisibleCardCount(isMobile ? MOBILE_CARD_PAGE_SIZE : 9999);
     if (scrollViewRef.current) {
       if (typeof scrollViewRef.current.scrollTo === 'function') {
         scrollViewRef.current.scrollTo({ y: 0, animated: false });
       }
     }
-  }, [searchQuery, filterStatus, filterDate]);
+  }, [searchQuery, filterStatus, filterDate, isMobile, visible]);
 
-  // Cuộn nhanh đến 1 hóa đơn khi bấm tab thumbnail
-  const scrollToCard = (subId) => {
+  // Hàm thực thi cuộn tới DOM/Node của thẻ hóa đơn theo subId
+  const performScrollToNode = (subId) => {
     const node = cardLayoutRefs.current[subId];
     if (node) {
       if (typeof node.scrollIntoView === 'function') {
@@ -4632,6 +4636,29 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
           }
         );
       }
+    }
+  };
+
+  // Cuộn nhanh đến 1 hóa đơn khi bấm tab thumbnail (trên Mobile tự động mở rộng số thẻ nếu đích nằm ngoài vùng đang render)
+  const scrollToCard = (subId) => {
+    if (isMobile) {
+      const targetIdx = filteredSubmissions.findIndex((s) => s.id === subId);
+      if (targetIdx >= visibleCardCount) {
+        setVisibleCardCount(targetIdx + 6);
+        setTimeout(() => performScrollToNode(subId), 120);
+        return;
+      }
+    }
+    performScrollToNode(subId);
+  };
+
+  // Tự động tải thêm thẻ khi người dùng cuộn gần tới đáy trên Mobile
+  const handleCardsScroll = (e) => {
+    if (!isMobile || visibleCardCount >= filteredSubmissions.length) return;
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent || {};
+    if (!layoutMeasurement || !contentOffset || !contentSize) return;
+    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 600) {
+      setVisibleCardCount((prev) => Math.min(filteredSubmissions.length, prev + MOBILE_CARD_PAGE_SIZE));
     }
   };
 
@@ -5764,9 +5791,11 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                 !isMobile && styles.cardsScrollContentPC,
               ]}
               showsVerticalScrollIndicator={true}
+              onScroll={isMobile ? handleCardsScroll : undefined}
+              scrollEventThrottle={100}
             >
               <View style={[styles.cardsGrid, !isMobile && styles.cardsGridPC]}>
-                {filteredSubmissions.map((sub, idx) => {
+                {(isMobile ? filteredSubmissions.slice(0, visibleCardCount) : filteredSubmissions).map((sub, idx) => {
                   const card = cardDataMap[sub.id] || {
                     customer: null,
                     date: '',
@@ -5823,6 +5852,30 @@ const StaffSubmissionReviewModal = forwardRef(({ onRefresh }, ref) => {
                   );
                 })}
               </View>
+              {isMobile && visibleCardCount < filteredSubmissions.length && (
+                <TouchableOpacity
+                  style={{
+                    marginTop: 12,
+                    marginBottom: 8,
+                    paddingVertical: 11,
+                    borderRadius: 10,
+                    backgroundColor: '#EFF6FF',
+                    borderWidth: 1,
+                    borderColor: '#BFDBFE',
+                    alignItems: 'center',
+                  }}
+                  onPress={() =>
+                    setVisibleCardCount((prev) =>
+                      Math.min(filteredSubmissions.length, prev + MOBILE_CARD_PAGE_SIZE)
+                    )
+                  }
+                  activeOpacity={0.75}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1D4ED8' }}>
+                    ⬇️ Tải thêm hóa đơn (còn {filteredSubmissions.length - visibleCardCount} đơn)
+                  </Text>
+                </TouchableOpacity>
+              )}
             </ScrollView>
           )}
 

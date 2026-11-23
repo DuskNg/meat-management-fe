@@ -792,52 +792,96 @@ export default function StaffSubmitScreen() {
   // Giới hạn số luồng upload song song (2 luồng trên Mobile để không nghẽn mạng 4G/RAM iOS, 3 luồng trên PC Web)
   const isMobileWeb = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
   const MAX_CONCURRENT = isMobileWeb ? 2 : 3;
+  // Gom tối đa 3 ảnh vào 1 request để giảm độ trễ mạng 4G trên Mobile (Video vẫn gửi lẻ 1 tệp/request)
+  const IMAGE_BATCH_SIZE = 3;
 
-  // Xử lý tải lên một tệp đơn lẻ độc lập
-  const uploadSingleItem = async (nextItem) => {
+  // Xử lý tải lên một nhóm tệp (1 video hoặc tối đa 3 ảnh/request) để tăng tốc rõ rệt trên Mobile
+  const uploadBatchItems = async (batchItems) => {
+    const batchIds = batchItems.map((it) => it.id);
+    const preparedSuccess = [];
+    const preparedFailed = [];
+
     try {
-      // 1. Kiểm tra lại một lần nữa bằng Magic Bytes để đảm bảo tuyệt đối không nén nhầm Video thành Canvas Image
-      const checkCategory = await detectMediaCategoryFromFile(nextItem.file);
-      const isActuallyVideo = checkCategory.isVideo || nextItem.fileType === 'VIDEO';
-      const actualFileType = isActuallyVideo ? 'VIDEO' : 'IMAGE';
+      // 1. Nén / đọc dữ liệu song song các tệp trong cùng batch
+      // Trên Mobile Web giảm maxWidth xuống 1024px (nhẹ hơn ~30%, nén nhanh hơn trên iOS/Android mà AI vẫn đọc chữ rõ nét)
+      const targetMaxWidth = isMobileWeb ? 1024 : 1200;
 
-      let fileData = null;
-      if (actualFileType === 'IMAGE') {
-        fileData = await compressImageClient(nextItem.file);
-        if (!fileData) {
-          fileData = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(nextItem.file);
-            reader.onload = (ev) => resolve(ev.target.result);
-            reader.onerror = () => resolve(null);
-          });
-        }
-      } else {
-        // Đối với Video: Đọc trực tiếp nhị phân bằng FileReader, TUYỆT ĐỐI KHÔNG nén bằng Canvas ảnh
-        fileData = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(nextItem.file);
-          reader.onload = (ev) => resolve(ev.target.result);
-          reader.onerror = () => resolve(null);
-        });
-      }
+      await Promise.all(
+        batchItems.map(async (item) => {
+          try {
+            // Kiểm tra lại một lần nữa bằng Magic Bytes để đảm bảo tuyệt đối không nén nhầm Video thành Canvas Image
+            const checkCategory = await detectMediaCategoryFromFile(item.file);
+            const isActuallyVideo = checkCategory.isVideo || item.fileType === 'VIDEO';
+            const actualFileType = isActuallyVideo ? 'VIDEO' : 'IMAGE';
 
-      if (!fileData) {
-        throw new Error('Không thể đọc dữ liệu tệp.');
-      }
+            let fileData = null;
+            if (actualFileType === 'IMAGE') {
+              fileData = await compressImageClient(item.file, targetMaxWidth);
+              if (!fileData) {
+                fileData = await new Promise((resolve) => {
+                  const reader = new FileReader();
+                  reader.readAsDataURL(item.file);
+                  reader.onload = (ev) => resolve(ev.target.result);
+                  reader.onerror = () => resolve(null);
+                });
+              }
+            } else {
+              // Đối với Video: Đọc trực tiếp nhị phân bằng FileReader, TUYỆT ĐỐI KHÔNG nén bằng Canvas ảnh
+              fileData = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(item.file);
+                reader.onload = (ev) => resolve(ev.target.result);
+                reader.onerror = () => resolve(null);
+              });
+            }
 
-      // Chuẩn hóa MIME header cho Video nếu DataURL sinh ra bị thiếu hoặc sai (đặc biệt trên iOS Safari)
-      if (actualFileType === 'VIDEO' && typeof fileData === 'string' && fileData.startsWith('data:')) {
-        const commaIdx = fileData.indexOf(',');
-        if (commaIdx !== -1) {
-          const header = fileData.substring(0, commaIdx);
-          if (!header.includes('video')) {
-            fileData = 'data:video/mp4;base64,' + fileData.substring(commaIdx + 1);
+            if (!fileData) {
+              throw new Error('Không thể đọc dữ liệu tệp.');
+            }
+
+            // Chuẩn hóa MIME header cho Video nếu DataURL sinh ra bị thiếu hoặc sai (đặc biệt trên iOS Safari)
+            if (actualFileType === 'VIDEO' && typeof fileData === 'string' && fileData.startsWith('data:')) {
+              const commaIdx = fileData.indexOf(',');
+              if (commaIdx !== -1) {
+                const header = fileData.substring(0, commaIdx);
+                if (!header.includes('video')) {
+                  fileData = 'data:video/mp4;base64,' + fileData.substring(commaIdx + 1);
+                }
+              }
+            }
+
+            preparedSuccess.push({
+              item,
+              filePayload: {
+                fileData,
+                fileType: actualFileType,
+                fileName: item.name || (actualFileType === 'VIDEO' ? 'video.mp4' : 'image.jpg'),
+              },
+            });
+          } catch (prepErr) {
+            preparedFailed.push({
+              item,
+              errorMsg: prepErr?.message || 'Không thể đọc dữ liệu tệp.',
+            });
           }
-        }
+        })
+      );
+
+      // Đánh dấu lỗi ngay cho các tệp không đọc được (nếu có) để không ảnh hưởng các tệp hợp lệ còn lại
+      if (preparedFailed.length > 0) {
+        const failedMap = new Map(preparedFailed.map((f) => [f.item.id, f.errorMsg]));
+        setUploadQueue((prev) =>
+          prev.map((it) =>
+            failedMap.has(it.id) ? { ...it, status: 'ERROR', errorMsg: failedMap.get(it.id) } : it
+          )
+        );
       }
 
-      // 2. Gửi API lên máy chủ
+      if (preparedSuccess.length === 0) {
+        return;
+      }
+
+      // 2. Gửi API lên máy chủ trong 1 request cho cả nhóm tệp hợp lệ
       const [d, m, y] = selectedDate.split('/');
       const isoDate = `${y}-${m}-${d}`;
 
@@ -845,13 +889,7 @@ export default function StaffSubmitScreen() {
         senderName: 'Nhân viên',
         note: '',
         date: isoDate,
-        files: [
-          {
-            fileData,
-            fileType: actualFileType,
-            fileName: nextItem.name || (actualFileType === 'VIDEO' ? 'video.mp4' : 'image.jpg'),
-          },
-        ],
+        files: preparedSuccess.map((p) => p.filePayload),
       };
 
       // Tự động thử lại tối đa 3 lần nếu mạng 4G/WiFi chập chờn hoặc máy chủ đang bận
@@ -878,21 +916,24 @@ export default function StaffSubmitScreen() {
       }
 
       if (res.data?.success && res.data?.data?.length > 0) {
-        const savedSubmission = res.data.data[0];
+        const savedSubmissions = res.data.data;
 
-        // Thu hồi URL Blob để giải phóng RAM
-        if (nextItem.blobUrl) {
-          try {
-            URL.revokeObjectURL(nextItem.blobUrl);
-          } catch {}
-        }
+        // Thu hồi URL Blob của tất cả tệp trong batch để giải phóng RAM
+        preparedSuccess.forEach(({ item }) => {
+          if (item.blobUrl) {
+            try {
+              URL.revokeObjectURL(item.blobUrl);
+            } catch {}
+          }
+        });
 
-        // Đưa trực tiếp vào danh sách Đã gửi hôm nay
-        setHistorySubmissions((prev) => [savedSubmission, ...prev]);
+        // Đưa trực tiếp các hóa đơn vừa gửi lên đầu danh sách Đã gửi hôm nay
+        setHistorySubmissions((prev) => [...[...savedSubmissions].reverse(), ...prev]);
 
         // Xóa khỏi hàng đợi đang tải + kiểm tra hoàn thành toàn bộ
+        const doneIdSet = new Set(preparedSuccess.map((p) => p.item.id));
         setUploadQueue((prev) => {
-          const updated = prev.filter((it) => it.id !== nextItem.id);
+          const updated = prev.filter((it) => !doneIdSet.has(it.id));
           // Kiểm tra nếu không còn file nào đang chờ/đang gửi → toast tổng kết (bọc setTimeout để không setState trong render phase)
           const stillActive = updated.some((it) => it.status === 'QUEUED' || it.status === 'UPLOADING');
           if (!stillActive) {
@@ -918,41 +959,58 @@ export default function StaffSubmitScreen() {
       }
     } catch (err) {
       console.error('Lỗi khi tải tệp lên:', err);
+      const errIdSet = new Set(
+        preparedSuccess.length > 0 ? preparedSuccess.map((p) => p.item.id) : batchIds
+      );
+      const errMsg = err.response?.data?.message || err.message || 'Lỗi tải lên';
       setUploadQueue((prev) =>
         prev.map((it) =>
-          it.id === nextItem.id
-            ? { ...it, status: 'ERROR', errorMsg: err.response?.data?.message || err.message || 'Lỗi tải lên' }
-            : it
+          errIdSet.has(it.id) ? { ...it, status: 'ERROR', errorMsg: errMsg } : it
         )
       );
     } finally {
-      inFlightIdsRef.current.delete(nextItem.id);
+      batchIds.forEach((id) => inFlightIdsRef.current.delete(id));
       activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
       // Kích hoạt tiếp tục xử lý các tệp kế tiếp trong hàng đợi
       processUploadQueue();
     }
   };
 
-  // Tự động điều phối hàng đợi upload ngầm đa luồng (chạy đồng thời 3 tệp cùng lúc để tối ưu tốc độ)
+  // Tự động điều phối hàng đợi upload ngầm đa luồng (gom tối đa 3 ảnh/request để giảm độ trễ mạng 4G)
   const processUploadQueue = () => {
     while (activeUploadsRef.current < MAX_CONCURRENT) {
       const currentQueue = uploadQueueRef.current;
-      const nextItem = currentQueue.find(
+      const queuedItems = currentQueue.filter(
         (it) => it.status === 'QUEUED' && !inFlightIdsRef.current.has(it.id)
       );
-      if (!nextItem) break;
+      if (queuedItems.length === 0) break;
 
-      // Đánh dấu ngay ID đang tải vào Set để không bị luồng khác bốc trùng
-      inFlightIdsRef.current.add(nextItem.id);
+      const firstItem = queuedItems[0];
+      let batchItems = [];
+      if (firstItem.fileType === 'VIDEO') {
+        // Video dung lượng lớn nên luôn gửi riêng lẻ 1 tệp/request
+        batchItems = [firstItem];
+      } else {
+        // Gom tối đa IMAGE_BATCH_SIZE (3) ảnh vào chung 1 request
+        batchItems = queuedItems
+          .filter((it) => it.fileType !== 'VIDEO')
+          .slice(0, IMAGE_BATCH_SIZE);
+      }
+
+      if (batchItems.length === 0) break;
+
+      const batchIdSet = new Set(batchItems.map((it) => it.id));
+      // Đánh dấu ngay các ID đang tải vào Set để không bị luồng khác bốc trùng
+      batchItems.forEach((it) => inFlightIdsRef.current.add(it.id));
       activeUploadsRef.current += 1;
 
       // Chuyển trạng thái sang UPLOADING trên state
       setUploadQueue((prev) =>
-        prev.map((it) => (it.id === nextItem.id ? { ...it, status: 'UPLOADING', errorMsg: '' } : it))
+        prev.map((it) => (batchIdSet.has(it.id) ? { ...it, status: 'UPLOADING', errorMsg: '' } : it))
       );
 
-      // Chạy worker upload độc lập
-      uploadSingleItem(nextItem);
+      // Chạy worker upload cho nhóm tệp
+      uploadBatchItems(batchItems);
     }
   };
 

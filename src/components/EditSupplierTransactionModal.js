@@ -132,7 +132,7 @@ const EditSupplierTransactionModal = forwardRef(({ onRefresh }, ref) => {
           transaction.items.map((it) => ({
             id: it.id || Date.now() + Math.random(),
             productId: it.productId || '',
-            productName: it.productName || '',
+            productName: it.productName || it.rawName || it.product?.name || it.name || '',
             quantity: it.quantity ? String(it.quantity) : '',
             price: it.price ? String(it.price) : '',
             unit: it.unit || 'kg',
