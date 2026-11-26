@@ -63,6 +63,7 @@ import CustomerGroupsModal from '../src/components/CustomerGroupsModal';
 import { useCustomerGroups, removeCustomerFromSavedGroups } from '../src/hooks/useCustomerGroups';
 import QuickNoteModal from '../src/components/QuickNoteModal';
 import ScheduledNotificationModal from '../src/components/ScheduledNotificationModal';
+import ScheduledPriceUpdateModal from '../src/components/ScheduledPriceUpdateModal';
 import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewModal';
 import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
 import BankTransactionsView from '../src/components/BankTransactionsView';
@@ -180,6 +181,7 @@ export default function DashboardScreen() {
   const customerGroupsModalRef = useRef(null); // Modal quản lý nhóm nhà hàng & chuỗi chi nhánh
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
   const scheduledNotificationModalRef = useRef(null); // Modal tạo và xem thông báo hẹn ngày
+  const scheduledPriceUpdateModalRef = useRef(null); // Modal lên lịch tự động cập nhật giá thịt theo ngày
   const [dueNotifications, setDueNotifications] = useState([]);
   const hasToastedTodayNotifRef = useRef(false);
   const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
@@ -3463,6 +3465,22 @@ export default function DashboardScreen() {
 
                   <TouchableOpacity
                     style={styles.smartDebtMenuItem}
+                    onPress={() => {
+                      setShowDebtToolsMenu(false);
+                      scheduledPriceUpdateModalRef.current?.open();
+                    }}
+                  >
+                    <Text style={styles.smartDebtMenuIcon}>⏰</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.smartDebtMenuTitle}>Lên lịch cập nhật giá thịt</Text>
+                      <Text style={styles.smartDebtMenuSub}>Hẹn ngày tự động đổi giá sạp hoặc giá riêng khách</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <View style={styles.smartDebtMenuDivider} />
+
+                  <TouchableOpacity
+                    style={styles.smartDebtMenuItem}
                     onPress={async () => {
                       setShowDebtToolsMenu(false);
                       try {
@@ -3795,6 +3813,14 @@ export default function DashboardScreen() {
       <ScheduledNotificationModal
         ref={scheduledNotificationModalRef}
         onChanged={fetchDueNotifications}
+      />
+
+      {/* MODAL LÊN LỊCH TỰ ĐỘNG CẬP NHẬT GIÁ THỊT THEO NGÀY */}
+      <ScheduledPriceUpdateModal
+        ref={scheduledPriceUpdateModalRef}
+        onApplied={() => {
+          refetch?.();
+        }}
       />
 
       {/* MODAL LINK ZALO ANH CHỦ CẬP NHẬT GIÁ BÁN RIÊNG */}
