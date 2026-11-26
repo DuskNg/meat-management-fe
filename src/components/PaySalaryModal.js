@@ -312,10 +312,6 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
       setError('Vui lòng nhập số tiền chi trả lương lớn hơn 0.');
       return;
     }
-    if (previewData?.isOverlapped) {
-      setError(`Khoảng ngày này bị trùng lặp với đợt lương đã trả (${previewData.overlappedPeriod}).`);
-      return;
-    }
 
     setSubmitting(true);
     isSubmittingRef.current = true;
@@ -378,16 +374,6 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
             </View>
           ) : null}
 
-          {/* Cảnh báo trùng lặp khoảng ngày */}
-          {previewData?.isOverlapped ? (
-            <View style={styles.overlapBanner}>
-              <Text style={styles.overlapBannerTitle}>⚠️ Cảnh báo trùng đợt lương</Text>
-              <Text style={styles.overlapBannerText}>
-                Khoảng ngày bạn chọn bị trùng với đợt lương đã trả trước đó ({previewData.overlappedPeriod}). Vui lòng chọn lại khoảng ngày.
-              </Text>
-            </View>
-          ) : null}
-
           {/* 1. Khối chọn khoảng ngày chi trả */}
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>📅 KHOẢNG NGÀY TRẢ LƯƠNG</Text>
@@ -444,13 +430,15 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
             </View>
           </View>
 
-          {/* 2. Khối Số tiền chi trả (Tự động tính theo khoảng ngày) */}
+          {/* 2. Khối Số tiền chi trả (quy đổi số công theo tiền trả / công 1 ngày) */}
           <View style={styles.amountCard}>
             <View style={styles.amountHeaderRow}>
               <Text style={styles.amountLabel}>💵 SỐ TIỀN CHI TRẢ (VND):</Text>
-              {currentCalc.days > 0 ? (
+              {currentCalc.dailySalary > 0 ? (
                 <Text style={styles.suggestText}>
-                  ({currentCalc.days} ngày công • ~{formatCurrency(currentCalc.dailySalary)}/ngày{previewData?.totalAdvances > 0 ? ` • Trừ ứng -${formatCurrency(previewData.totalAdvances)}` : ''})
+                  (≈ {Math.round(((Number(amount) || 0) / currentCalc.dailySalary) * 10) / 10} công • ~{formatCurrency(currentCalc.dailySalary)}/c
+                  {previewData?.totalPaidInMonth > 0 ? ` • Đã trả: ${formatCurrency(previewData.totalPaidInMonth)}` : ''}
+                  {previewData?.totalAdvances > 0 ? ` • Đã ứng: -${formatCurrency(previewData.totalAdvances)}` : ''})
                 </Text>
               ) : null}
             </View>
@@ -483,10 +471,10 @@ const PaySalaryModal = forwardRef(({ onSuccess }, ref) => {
           <TouchableOpacity
             style={[
               styles.submitBtn,
-              (submitting || previewData?.isOverlapped) && styles.submitBtnDisabled,
+              submitting && styles.submitBtnDisabled,
             ]}
             onPress={handleSubmitPay}
-            disabled={submitting || previewData?.isOverlapped}
+            disabled={submitting}
           >
             {submitting ? (
               <ActivityIndicator color="#FFFFFF" size="small" />

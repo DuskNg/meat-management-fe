@@ -80,6 +80,12 @@ export default function QuickPriceScreen() {
   // State quản lý dropdown tìm thịt của khách nào đang mở
   const [activeDropdownCustId, setActiveDropdownCustId] = useState(null);
 
+  // Chế độ chọn thịt theo từng khách: 'manual' (Tự chọn thịt) | 'all_custom' (Tất cả thịt có giá riêng)
+  const [meatSelectModeMap, setMeatSelectModeMap] = useState({});
+  // Giá trị nhập tăng/giảm giá đồng loạt cho từng khách (số tiền VNĐ dương từ MoneyInput) và hướng (+1 tăng / -1 giảm)
+  const [bulkAdjustInputMap, setBulkAdjustInputMap] = useState({});
+  const [bulkAdjustSignMap, setBulkAdjustSignMap] = useState({});
+
   // Refs điều khiển modal
   const custSelectModalRef = useRef(null);
   const popupRef = useRef(null);
@@ -523,6 +529,112 @@ export default function QuickPriceScreen() {
       });
       return next;
     });
+  };
+
+  // Kiểm tra sản phẩm giả lập dùng cho ghi nợ nhanh / trả hàng nhanh (không phải loại thịt thật)
+  const isQuickDebtProduct = (prod) => {
+    const n = (prod?.name || '').trim().toLowerCase();
+    return n === 'tiền hàng' || n.startsWith('tiền') || n === 'trả hàng nhanh' || n === 'ghi nợ nhanh';
+  };
+
+  // Chuyển chế độ chọn thịt cho khách: Tự chọn thịt | Tất cả thịt có giá riêng
+  const handleSwitchMeatSelectMode = async (customerId, mode) => {
+    setMeatSelectModeMap((prev) => ({ ...prev, [customerId]: mode }));
+    if (mode !== 'all_custom') return;
+
+    const matchedGroup = getSelectedGroupOfCustomer(customerId);
+    const targetCustomerIds = matchedGroup
+      ? matchedGroup.customerIds.filter((id) => selectedCustomers.some((sc) => sc.id === id))
+      : [customerId];
+
+    const priceMap = await ensureCustomerPricesLoaded(customerId);
+    const allProducts = (linkInfo?.products || []).filter((prod) => !isQuickDebtProduct(prod));
+    const customProducts = allProducts.filter((prod) => priceMap.has(prod.id));
+
+    if (customProducts.length === 0) {
+      showGlobalToast('Khách hàng này chưa có món thịt nào được cài giá riêng.', 'info');
+      return;
+    }
+
+    setEditingItemsMap((prev) => {
+      const next = { ...prev };
+      targetCustomerIds.forEach((cId) => {
+        const existingItems = next[cId] || [];
+        const existingIds = new Set(existingItems.map((it) => it.productId));
+        const addedItems = customProducts
+          .filter((prod) => !existingIds.has(prod.id))
+          .map((prod) => {
+            const origPrice = priceMap.get(prod.id);
+            return {
+              productId: prod.id,
+              name: prod.name,
+              customName: prod.name,
+              unit: prod.unit || 'kg',
+              defaultPrice: prod.defaultPrice,
+              originalPrice: origPrice,
+              currentPrice: origPrice,
+              hasCustomPrice: true,
+              resetToDefault: false,
+              isEdited: false,
+              isEditingName: false,
+            };
+          });
+        next[cId] = [...existingItems, ...addedItems];
+      });
+      return next;
+    });
+
+    showGlobalToast(
+      `Đã nạp ${customProducts.length} món thịt có giá riêng của khách.`,
+      'success'
+    );
+  };
+
+  // Áp dụng tăng/giảm giá đồng loạt cho toàn bộ các món thịt đang chọn của khách (dùng MoneyInput)
+  const handleApplyBulkAdjust = (customerId) => {
+    const rawAmount = Number(bulkAdjustInputMap[customerId]) || 0;
+    const sign = bulkAdjustSignMap[customerId] === -1 ? -1 : 1;
+    const delta = rawAmount * sign;
+    if (!delta) {
+      showGlobalToast('Vui lòng nhập số tiền tăng/giảm (VD: gõ 5 -> 5.000 đ).', 'warning');
+      return;
+    }
+
+    const currentItems = editingItemsMap[customerId] || [];
+    if (currentItems.length === 0) {
+      showGlobalToast('Chưa có món thịt nào được chọn để điều chỉnh giá.', 'warning');
+      return;
+    }
+
+    const matchedGroup = getSelectedGroupOfCustomer(customerId);
+    const targetCustomerIds = matchedGroup
+      ? matchedGroup.customerIds.filter((id) => selectedCustomers.some((sc) => sc.id === id))
+      : [customerId];
+
+    setEditingItemsMap((prev) => {
+      const next = { ...prev };
+      targetCustomerIds.forEach((cId) => {
+        const items = next[cId] || [];
+        next[cId] = items.map((item) => {
+          const updatedPrice = Math.max(0, (Number(item.currentPrice) || 0) + delta);
+          const isChanged = updatedPrice !== item.originalPrice || item.customName !== item.name;
+          return {
+            ...item,
+            currentPrice: updatedPrice,
+            resetToDefault: false,
+            isEdited: isChanged,
+          };
+        });
+      });
+      return next;
+    });
+
+    setBulkAdjustInputMap((prev) => ({ ...prev, [customerId]: 0 }));
+    const signLabel = delta > 0 ? `+${formatCurrency(delta)}` : `-${formatCurrency(Math.abs(delta))}`;
+    showGlobalToast(
+      `Đã điều chỉnh ${signLabel} cho ${currentItems.length} món thịt đang chọn.`,
+      'success'
+    );
   };
 
   // Tính tổng số món thịt đang được sửa đơn giá trên tất cả các khách
@@ -1061,72 +1173,167 @@ export default function QuickPriceScreen() {
                     </View>
                   </View>
 
-                  {/* Ô tìm kiếm & thêm thịt dạng dropdown trực tiếp (không mở modal) */}
-                  <View
-                    style={[
-                      styles.searchMeatTriggerRow,
-                      isDropdownActive && { zIndex: 999999, elevation: 999999 },
-                    ]}
-                  >
-                    <CustomSelect
-                      value={null}
-                      placeholder={`🔍 Gõ tìm & thêm loại thịt cho ${cust.name}...`}
-                      options={linkInfo?.products || []}
-                      getOptionLabel={(p) => p?.name || ''}
-                      renderSelected={() => ''}
-                      renderOption={(prod) => {
-                        const priceMap = customerPricesMap[cust.id] || new Map();
-                        const hasCustom = priceMap.has(prod.id);
-                        const currentPrice = hasCustom ? priceMap.get(prod.id) : prod.defaultPrice;
-                        const isAdded = (editingItemsMap[cust.id] || []).some(
-                          (it) => it.productId === prod.id
-                        );
-
-                        return (
-                          <View style={styles.meatOptionRow}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.meatOptionName, isAdded && styles.meatOptionNameAdded]}>
-                                🥩 {prod.name}
-                              </Text>
-                              <Text style={styles.meatOptionMeta}>
-                                {hasCustom ? (
-                                  <Text style={styles.customPriceText}>
-                                    Giá riêng: {formatCurrency(currentPrice)}
-                                  </Text>
-                                ) : (
-                                  <Text style={styles.defaultPriceText}>
-                                    Giá sạp: {formatCurrency(prod.defaultPrice)}
-                                  </Text>
-                                )}
-                                {Boolean(prod.unit) && ` / ${prod.unit}`}
-                              </Text>
-                            </View>
-                            {isAdded ? (
-                              <View style={styles.optionAddedBadge}>
-                                <Text style={styles.optionAddedText}>Đang sửa</Text>
-                              </View>
-                            ) : (
-                              <View style={styles.optionAddBtn}>
-                                <Text style={styles.optionAddBtnText}>+ Thêm</Text>
-                              </View>
-                            )}
-                          </View>
-                        );
-                      }}
-                      onSelect={(prod) => {
-                        const priceMap = customerPricesMap[cust.id] || new Map();
-                        handleAddMeatToCustomer(cust.id, prod, priceMap);
-                      }}
-                      compact={true}
-                      zIndex={999999}
-                      onOpenChange={(isOpen) => {
-                        setActiveDropdownCustId(isOpen ? cust.id : null);
-                        if (isOpen) {
-                          ensureCustomerPricesLoaded(cust.id);
-                        }
-                      }}
-                    />
+                  {/* 2 nút chọn chế độ: Tự chọn thịt | Tất cả thịt có giá riêng */}
+                  <View style={styles.meatModeRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.meatModeBtn,
+                        (meatSelectModeMap[cust.id] || 'manual') === 'manual' && styles.meatModeBtnActive,
+                      ]}
+                      onPress={() => handleSwitchMeatSelectMode(cust.id, 'manual')}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.meatModeBtnText,
+                          (meatSelectModeMap[cust.id] || 'manual') === 'manual' && styles.meatModeBtnTextActive,
+                        ]}
+                      >
+                        🔍 Tự chọn thịt
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.meatModeBtn,
+                        meatSelectModeMap[cust.id] === 'all_custom' && styles.meatModeBtnActive,
+                      ]}
+                      onPress={() => handleSwitchMeatSelectMode(cust.id, 'all_custom')}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.meatModeBtnText,
+                          meatSelectModeMap[cust.id] === 'all_custom' && styles.meatModeBtnTextActive,
+                        ]}
+                      >
+                        📋 Tất cả thịt có giá riêng
+                      </Text>
+                    </TouchableOpacity>
                   </View>
+
+                  {/* Ô tìm kiếm & thêm thịt dạng dropdown trực tiếp (không mở modal) */}
+                  {(meatSelectModeMap[cust.id] || 'manual') === 'manual' && (
+                    <View
+                      style={[
+                        styles.searchMeatTriggerRow,
+                        isDropdownActive && { zIndex: 999999, elevation: 999999 },
+                      ]}
+                    >
+                      <CustomSelect
+                        value={null}
+                        placeholder={`🔍 Gõ tìm & thêm loại thịt cho ${cust.name}...`}
+                        options={(linkInfo?.products || []).filter((prod) => !isQuickDebtProduct(prod))}
+                        getOptionLabel={(p) => p?.name || ''}
+                        renderSelected={() => ''}
+                        renderOption={(prod) => {
+                          const priceMap = customerPricesMap[cust.id] || new Map();
+                          const hasCustom = priceMap.has(prod.id);
+                          const currentPrice = hasCustom ? priceMap.get(prod.id) : prod.defaultPrice;
+                          const isAdded = (editingItemsMap[cust.id] || []).some(
+                            (it) => it.productId === prod.id
+                          );
+
+                          return (
+                            <View style={styles.meatOptionRow}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.meatOptionName, isAdded && styles.meatOptionNameAdded]}>
+                                  🥩 {prod.name}
+                                </Text>
+                                <Text style={styles.meatOptionMeta}>
+                                  {hasCustom ? (
+                                    <Text style={styles.customPriceText}>
+                                      Giá riêng: {formatCurrency(currentPrice)}
+                                    </Text>
+                                  ) : (
+                                    <Text style={styles.defaultPriceText}>
+                                      Giá sạp: {formatCurrency(prod.defaultPrice)}
+                                    </Text>
+                                  )}
+                                  {Boolean(prod.unit) && ` / ${prod.unit}`}
+                                </Text>
+                              </View>
+                              {isAdded ? (
+                                <View style={styles.optionAddedBadge}>
+                                  <Text style={styles.optionAddedText}>Đang sửa</Text>
+                                </View>
+                              ) : (
+                                <View style={styles.optionAddBtn}>
+                                  <Text style={styles.optionAddBtnText}>+ Thêm</Text>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        }}
+                        onSelect={(prod) => {
+                          const priceMap = customerPricesMap[cust.id] || new Map();
+                          handleAddMeatToCustomer(cust.id, prod, priceMap);
+                        }}
+                        compact={true}
+                        zIndex={999999}
+                        onOpenChange={(isOpen) => {
+                          setActiveDropdownCustId(isOpen ? cust.id : null);
+                          if (isOpen) {
+                            ensureCustomerPricesLoaded(cust.id);
+                          }
+                        }}
+                      />
+                    </View>
+                  )}
+
+                  {/* Thanh tăng/giảm giá đồng loạt cho tất cả các món thịt đang chọn (sử dụng MoneyInput tự động .000) */}
+                  {items.length > 0 && (() => {
+                    const rawAmount = Number(bulkAdjustInputMap[cust.id]) || 0;
+                    const sign = bulkAdjustSignMap[cust.id] === -1 ? -1 : 1;
+                    const previewDelta = rawAmount * sign;
+                    const applyLabel = previewDelta
+                      ? `Áp dụng (${previewDelta > 0 ? '+' : '-'}${formatCurrency(Math.abs(previewDelta))})`
+                      : 'Áp dụng';
+                    return (
+                      <View style={styles.bulkAdjustBar}>
+                        <Text style={styles.bulkAdjustLabel}>⚡ Tăng/giảm đồng loạt ({items.length} món):</Text>
+                        <View style={styles.bulkAdjustInputRow}>
+                          <TouchableOpacity
+                            style={[
+                              styles.bulkSignBtn,
+                              sign === -1 && styles.bulkSignBtnMinus,
+                            ]}
+                            onPress={() =>
+                              setBulkAdjustSignMap((prev) => ({
+                                ...prev,
+                                [cust.id]: sign === -1 ? 1 : -1,
+                              }))
+                            }
+                            activeOpacity={0.75}
+                          >
+                            <Text
+                              style={[
+                                styles.bulkSignBtnText,
+                                sign === -1 && styles.bulkSignBtnTextMinus,
+                              ]}
+                            >
+                              {sign === -1 ? '➖ Giảm' : '➕ Tăng'}
+                            </Text>
+                          </TouchableOpacity>
+                          <MoneyInput
+                            value={bulkAdjustInputMap[cust.id] || 0}
+                            onChangeValue={(val) =>
+                              setBulkAdjustInputMap((prev) => ({ ...prev, [cust.id]: val }))
+                            }
+                            placeholder="Gõ 5 -> 5.000..."
+                            style={{ flex: 1, marginBottom: 0 }}
+                            inputStyle={styles.bulkAdjustInput}
+                          />
+                          <TouchableOpacity
+                            style={styles.bulkAdjustBtn}
+                            onPress={() => handleApplyBulkAdjust(cust.id)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.bulkAdjustBtnText}>{applyLabel}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })()}
 
                   {/* Danh sách các món thịt đang sửa của khách này (chỉ hiển thị món đã chọn) */}
                   {items.length === 0 ? (
@@ -1742,6 +1949,100 @@ const styles = StyleSheet.create({
   },
 
   // ─── DROPDOWN TÌM VÀ THÊM THỊT ───
+  meatModeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  meatModeBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  meatModeBtnActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#2563EB',
+  },
+  meatModeBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  meatModeBtnTextActive: {
+    color: '#1D4ED8',
+    fontWeight: '700',
+  },
+  bulkAdjustBar: {
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    gap: 6,
+  },
+  bulkAdjustLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  bulkAdjustInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bulkSignBtn: {
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bulkSignBtnMinus: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  bulkSignBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  bulkSignBtnTextMinus: {
+    color: '#B91C1C',
+  },
+  bulkAdjustInput: {
+    height: 36,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  bulkAdjustBtn: {
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#D97706',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bulkAdjustBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   searchMeatTriggerRow: {
     marginTop: 8,
     zIndex: 100,

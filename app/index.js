@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -62,6 +62,7 @@ import BatchExportDebtModal from '../src/components/BatchExportDebtModal';
 import CustomerGroupsModal from '../src/components/CustomerGroupsModal';
 import { useCustomerGroups, removeCustomerFromSavedGroups } from '../src/hooks/useCustomerGroups';
 import QuickNoteModal from '../src/components/QuickNoteModal';
+import ScheduledNotificationModal from '../src/components/ScheduledNotificationModal';
 import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewModal';
 import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
 import BankTransactionsView from '../src/components/BankTransactionsView';
@@ -178,6 +179,9 @@ export default function DashboardScreen() {
   const batchExportDebtModalRef = useRef(null); // Modal xuất công nợ hàng loạt (tải ảnh PC / chuyển tiếp Zalo)
   const customerGroupsModalRef = useRef(null); // Modal quản lý nhóm nhà hàng & chuỗi chi nhánh
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
+  const scheduledNotificationModalRef = useRef(null); // Modal tạo và xem thông báo hẹn ngày
+  const [dueNotifications, setDueNotifications] = useState([]);
+  const hasToastedTodayNotifRef = useRef(false);
   const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
   const duplicateDebtResolveModalRef = useRef(null); // Modal xem chi tiết và sửa/xóa trực tiếp các đơn nghi trùng
   const quickPriceLinkModalRef = useRef(null); // Modal link Zalo cập nhật giá bán cho Anh Chủ
@@ -656,6 +660,54 @@ export default function DashboardScreen() {
       }
     }
   }, [auth.user?.id, params?.testSalaryReminder]);
+
+  // Lấy danh sách thông báo hẹn ngày đến hạn hôm nay (giờ Việt Nam)
+  const fetchDueNotifications = useCallback(async () => {
+    if (!auth.user?.id) {
+      setDueNotifications([]);
+      return;
+    }
+    try {
+      const now = new Date();
+      const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+      const y = vnTime.getUTCFullYear();
+      const m = String(vnTime.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(vnTime.getUTCDate()).padStart(2, '0');
+      const todayYMD = `${y}-${m}-${d}`;
+
+      const res = await api.get('/scheduled-notifications', {
+        params: { targetDate: todayYMD, activeOnly: 'true' },
+      });
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        setDueNotifications(res.data.data);
+        if (res.data.data.length > 0 && !hasToastedTodayNotifRef.current) {
+          hasToastedTodayNotifRef.current = true;
+          showGlobalToast(
+            `🔔 Hôm nay có ${res.data.data.length} thông báo nhắc việc: ${res.data.data[0].content}`,
+            'info'
+          );
+        }
+      }
+    } catch (err) {
+      console.warn('[ScheduledNotification] Không thể tải thông báo hôm nay:', err?.message);
+    }
+  }, [auth.user?.id]);
+
+  useEffect(() => {
+    fetchDueNotifications();
+  }, [fetchDueNotifications]);
+
+  // Đóng thông báo đã hoàn thành trong ngày
+  const handleDismissDueNotification = async (notifId) => {
+    setDueNotifications((prev) => prev.filter((n) => n.id !== notifId));
+    try {
+      await api.put(`/scheduled-notifications/${notifId}`, { isDismissed: true });
+      showGlobalToast('Đã đóng thông báo hôm nay.', 'success');
+    } catch (err) {
+      fetchDueNotifications();
+      showGlobalToast('Không thể cập nhật trạng thái thông báo.', 'error');
+    }
+  };
 
   // 1.8. Dùng React Query tải danh sách nhà cung cấp
   const { data: suppliersResponse, isLoading: isLoadingSuppliers, refetch: refetchSuppliers, isRefetching: isRefetchingSuppliers } = useQuery({
@@ -2891,6 +2943,43 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* BANNER THÔNG BÁO HẸN NGÀY ĐẾN HẠN HÔM NAY */}
+        {dueNotifications.length > 0 && (
+          <View style={styles.groupReminderBannerContainer}>
+            {dueNotifications.map((notif) => (
+              <View
+                key={notif.id}
+                style={[
+                  styles.groupReminderBanner,
+                  { backgroundColor: '#EFF6FF', borderColor: '#93C5FD' },
+                ]}
+              >
+                <Text style={styles.groupReminderIcon}>🔔</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.groupReminderTitle, { color: '#1E3A8A' }]}>
+                    Thông báo hôm nay
+                  </Text>
+                  <Text style={[styles.groupReminderSub, { color: '#1E40AF', fontWeight: '600' }]}>
+                    {notif.content}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.groupReminderActionBtn, { backgroundColor: '#2563EB' }]}
+                  onPress={() => scheduledNotificationModalRef.current?.open()}
+                >
+                  <Text style={styles.groupReminderActionBtnText}>Quản lý</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.groupReminderDismissBtn}
+                  onPress={() => handleDismissDueNotification(notif.id)}
+                >
+                  <Text style={styles.groupReminderDismissBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* BANNER NHẮC HẸN CHỐT CÔNG NỢ ĐỊNH KỲ CHO CÁC NHÓM NHÀ HÀNG */}
         {!auth.user?.workspaceMember && activeReminderGroups.length > 0 && (
           <View style={styles.groupReminderBannerContainer}>
@@ -3358,6 +3447,22 @@ export default function DashboardScreen() {
 
                   <TouchableOpacity
                     style={styles.smartDebtMenuItem}
+                    onPress={() => {
+                      setShowDebtToolsMenu(false);
+                      scheduledNotificationModalRef.current?.open();
+                    }}
+                  >
+                    <Text style={styles.smartDebtMenuIcon}>🔔</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.smartDebtMenuTitle}>Tạo thông báo hẹn ngày</Text>
+                      <Text style={styles.smartDebtMenuSub}>Chọn ngày & nội dung, đến ngày sẽ tự động nhắc</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <View style={styles.smartDebtMenuDivider} />
+
+                  <TouchableOpacity
+                    style={styles.smartDebtMenuItem}
                     onPress={async () => {
                       setShowDebtToolsMenu(false);
                       try {
@@ -3685,6 +3790,12 @@ export default function DashboardScreen() {
 
       {/* MODAL GHI CHÚ NHANH CẦN NHỚ */}
       <QuickNoteModal ref={quickNoteModalRef} />
+
+      {/* MODAL TẠO VÀ QUẢN LÝ THÔNG BÁO HẸN NGÀY */}
+      <ScheduledNotificationModal
+        ref={scheduledNotificationModalRef}
+        onChanged={fetchDueNotifications}
+      />
 
       {/* MODAL LINK ZALO ANH CHỦ CẬP NHẬT GIÁ BÁN RIÊNG */}
       <QuickPriceLinkModal ref={quickPriceLinkModalRef} />

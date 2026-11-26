@@ -675,4 +675,57 @@ export const shareTextToZalo = async ({
   return true;
 };
 
+/**
+ * Tải xuống hoặc chia sẻ trực tiếp tệp tài liệu (Excel .xlsx, PDF...) sang Zalo trên Web Mobile
+ * - Web PC: Giữ nguyên logic tải trực tiếp tệp về máy tính.
+ * - Web Mobile: Ưu tiên dùng Web Share API (navigator.share) chuyển tiếp tệp sang Zalo; nếu trình duyệt không hỗ trợ mới fallback tải về máy.
+ * @param {Object} params
+ * @param {Blob} params.blob - Dữ liệu nhị phân Blob của tệp
+ * @param {string} params.fileName - Tên tệp (ví dụ: CongNo_KhachHang_Thang11.xlsx)
+ * @param {string} [params.title] - Tiêu đề khi chia sẻ
+ * @param {string} [params.text] - Mô tả ngắn khi chia sẻ
+ * @returns {Promise<{ status: 'shared' | 'downloaded' | 'cancelled' }>}
+ */
+export const downloadOrShareFile = async ({ blob, fileName, title = '', text = '' }) => {
+  if (!blob || typeof window === 'undefined' || typeof document === 'undefined') {
+    return { status: 'cancelled' };
+  }
+
+  const resolvedFileName = fileName || `File_${Date.now()}.xlsx`;
+  const isMobile = isMobileDevice();
+
+  // Trên Web Mobile: ưu tiên gọi bảng chia sẻ hệ thống để chuyển tiếp thẳng sang Zalo
+  if (isMobile && typeof navigator !== 'undefined' && navigator.share) {
+    try {
+      const shareFile = createFileFromBlob(blob, resolvedFileName, 0);
+      if (shareFile && navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+        await navigator.share({
+          files: [shareFile],
+          title: title || resolvedFileName,
+          text: text || title || resolvedFileName,
+        });
+        return { status: 'shared' };
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
+        // Người dùng chủ động hủy hộp thoại chia sẻ
+        return { status: 'cancelled' };
+      }
+      console.warn('[WebShare File] Không thể chia sẻ tệp trực tiếp, fallback tải về máy:', err);
+    }
+  }
+
+  // Web PC (hoặc Mobile không hỗ trợ Web Share API cho tệp): tải file trực tiếp về thiết bị
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = resolvedFileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 250);
+
+  return { status: 'downloaded' };
+};
+
 

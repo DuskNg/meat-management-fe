@@ -29,6 +29,7 @@ import { showGlobalToast } from '../../src/store/toastStore';
 import {
   downloadOrShareImage,
   downloadOrShareMultipleImages,
+  downloadOrShareFile,
   shareTextToZalo,
   copyTextToClipboard,
 } from '../../src/utils/imageShareHelper';
@@ -3595,23 +3596,25 @@ export default function PortalScreen() {
         autoFilterRef,
       });
 
-      // Tải tệp về máy với định dạng tên file: CongNo_[Tên khách]_Thang[A].xlsx
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
       const cleanName = (custName || 'KhachHang').trim().replace(/\s+/g, '_').replace(/[/\\?%*:|"<>]/g, '_');
-      link.download = `CongNo_${cleanName}_Thang${validMonth}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 200);
+      const excelFileName = `CongNo_${cleanName}_Thang${validMonth}.xlsx`;
 
-      showGlobalToast(
-        embeddedInvoiceCount > 0
-          ? `Đã xuất file Excel công nợ kèm ${embeddedInvoiceCount} ảnh hóa đơn ngay trên Sheet 1 cho [${custName || 'Khách hàng'}]!`
-          : `Đã xuất file Excel công nợ cho [${custName || 'Khách hàng'}]!`,
-        'success'
-      );
+      // Web PC: giữ nguyên tải file về máy; Web Mobile: ưu tiên mở bảng chia sẻ chuyển tiếp sang Zalo
+      const shareResult = await downloadOrShareFile({
+        blob,
+        fileName: excelFileName,
+        title: `Công nợ ${custName || 'Khách hàng'} - Tháng ${validMonth}`,
+        text: `Bảng kê công nợ ${custName || 'Khách hàng'} (Tháng ${validMonth})`,
+      });
+
+      if (shareResult?.status !== 'cancelled') {
+        showGlobalToast(
+          embeddedInvoiceCount > 0
+            ? `Đã xuất file Excel công nợ kèm ${embeddedInvoiceCount} ảnh hóa đơn ngay trên Sheet 1 cho [${custName || 'Khách hàng'}]!`
+            : `Đã xuất file Excel công nợ cho [${custName || 'Khách hàng'}]!`,
+          'success'
+        );
+      }
     } catch (err) {
       console.error('Lỗi khi xuất file Excel trên Portal:', err);
       showGlobalToast('Đã xảy ra lỗi khi xuất file Excel công nợ.', 'error');
