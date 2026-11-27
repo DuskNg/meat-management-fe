@@ -93,7 +93,7 @@ const DailyBundlePreviewModal = forwardRef((props, ref) => {
         imageUri: bundleData.combinedImg,
         fileName: `BaoCaoTongHop_ToanDien_${cleanDate}.png`,
         title: `Báo cáo tổng hợp toàn diện ngày ${selectedDate}`,
-        text: `Báo cáo công nợ ngày, khách quen sót đơn và đơn nợ trùng ngày ${selectedDate}`,
+        text: `Báo cáo công nợ ngày, khách quen sót đơn, đơn nợ trùng và nhập hàng NCC ngày ${selectedDate}`,
       });
     } catch (err) {
       console.error('Lỗi khi gửi ảnh dài tổng hợp:', err);
@@ -122,15 +122,15 @@ const DailyBundlePreviewModal = forwardRef((props, ref) => {
     }
   };
 
-  // Xử lý chia sẻ cả 3 ảnh riêng biệt
+  // Xử lý chia sẻ cả bộ ảnh riêng biệt
   const handleShareAllSeparate = async () => {
     if (!bundleData?.itemsToExport || bundleData.itemsToExport.length === 0 || sharingAll) return;
     setSharingAll(true);
     try {
       await downloadOrShareMultipleImages({
         items: bundleData.itemsToExport,
-        title: `Trọn bộ 3 ảnh báo cáo ngày ${selectedDate}`,
-        text: `Báo cáo công nợ, khách chưa lên đơn và đơn trùng ngày ${selectedDate}`,
+        title: `Trọn bộ ${bundleData.itemsToExport.length} ảnh báo cáo ngày ${selectedDate}`,
+        text: `Báo cáo công nợ, khách chưa lên đơn, đơn trùng và nhập hàng NCC ngày ${selectedDate}`,
       });
     } catch (err) {
       console.error('Lỗi khi chia sẻ 3 ảnh:', err);
@@ -291,7 +291,9 @@ const DailyBundlePreviewModal = forwardRef((props, ref) => {
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
                     <Text style={styles.btnShareAllSeparateText}>
-                      {isMobile ? '📤 CHUYỂN TIẾP CẢ 3 ẢNH RIÊNG BIỆT VÀO ZALO' : '💾 TẢI CẢ 3 ẢNH VỀ MÁY TÍNH'}
+                      {isMobile
+                        ? `📤 CHUYỂN TIẾP CẢ ${imageList.length} ẢNH RIÊNG BIỆT VÀO ZALO`
+                        : `💾 TẢI CẢ ${imageList.length} ẢNH VỀ MÁY TÍNH`}
                     </Text>
                   )}
                 </TouchableOpacity>

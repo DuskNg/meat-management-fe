@@ -328,9 +328,9 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
   const customerNameMap = new Map(customers.map((c) => [c.id, c.name]));
 
   const getStatusBadge = (status) => {
-    if (status === 'APPLIED') return { label: 'Đã áp dụng', bg: '#DCFCE7', color: '#15803D' };
+    if (status === 'APPLIED') return { label: 'Đã xong', bg: '#DCFCE7', color: '#15803D' };
     if (status === 'FAILED') return { label: 'Lỗi', bg: '#FEE2E2', color: '#B91C1C' };
-    return { label: 'Chờ đến ngày', bg: '#DBEAFE', color: '#1D4ED8' };
+    return { label: 'Chờ hẹn', bg: '#DBEAFE', color: '#1D4ED8' };
   };
 
   return (
@@ -527,10 +527,10 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
             ) : (
               <View style={styles.tableBox}>
                 <View style={styles.tableHeader}>
-                  <Text style={[styles.thText, { width: 82 }]}>Ngày áp dụng</Text>
+                  <Text style={[styles.thText, { width: 72 }]}>Ngày</Text>
                   <Text style={[styles.thText, { flex: 1 }]}>Chi tiết giá mới</Text>
-                  <Text style={[styles.thText, { width: 72, textAlign: 'center' }]}>Trạng thái</Text>
-                  <Text style={[styles.thText, { width: 96, textAlign: 'right' }]}>Thao tác</Text>
+                  <Text style={[styles.thText, { width: 64, textAlign: 'center' }]}>Trạng thái</Text>
+                  <Text style={[styles.thText, { width: 60, textAlign: 'right' }]}>Thao tác</Text>
                 </View>
                 {schedules.map((sched, idx) => {
                   const badge = getStatusBadge(sched.status);
@@ -544,34 +544,25 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
 
                   return (
                     <View key={sched.id} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
-                      <Text style={[styles.tdDate, { width: 82 }]}>{formatYMDToDMY(sched.targetDate)}</Text>
+                      <Text style={[styles.tdDate, { width: 72 }]}>{formatYMDToDMY(sched.targetDate)}</Text>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.tdScope}>{scopeLabel}</Text>
-                        <Text style={styles.tdItems} numberOfLines={3}>{itemsSummary}</Text>
+                        <Text style={styles.tdItems}>{itemsSummary}</Text>
                       </View>
-                      <View style={{ width: 72, alignItems: 'center' }}>
+                      <View style={{ width: 64, alignItems: 'center' }}>
                         <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
                           <Text style={[styles.statusBadgeText, { color: badge.color }]}>{badge.label}</Text>
                         </View>
                       </View>
                       <View style={styles.rowActions}>
                         {sched.status !== 'APPLIED' && (
-                          <>
-                            <TouchableOpacity
-                              style={[styles.iconBtn, { backgroundColor: '#DCFCE7' }]}
-                              onPress={() => handleApplyNow(sched)}
-                              title="Áp dụng ngay"
-                            >
-                              <Text style={styles.iconBtnText}>⚡</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={styles.iconBtn}
-                              onPress={() => handleStartEdit(sched)}
-                              title="Sửa"
-                            >
-                              <Text style={styles.iconBtnText}>✏️</Text>
-                            </TouchableOpacity>
-                          </>
+                          <TouchableOpacity
+                            style={styles.iconBtn}
+                            onPress={() => handleStartEdit(sched)}
+                            title="Sửa"
+                          >
+                            <Text style={styles.iconBtnText}>✏️</Text>
+                          </TouchableOpacity>
                         )}
                         <TouchableOpacity
                           style={[styles.iconBtn, styles.iconBtnDanger]}
@@ -817,12 +808,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tableRowAlt: { backgroundColor: '#F8FAFC' },
-  tdDate: { fontSize: 12, fontWeight: '700', color: '#0F172A' },
-  tdScope: { fontSize: 11.5, fontWeight: '700', color: '#1E293B' },
+  tdDate: { fontSize: 11.5, fontWeight: '700', color: '#0F172A' },
+  tdScope: { fontSize: 12, fontWeight: '700', color: '#1E293B' },
   tdItems: { fontSize: 11.5, color: '#475569', marginTop: 2 },
   statusBadge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
   statusBadgeText: { fontSize: 10, fontWeight: '700' },
-  rowActions: { width: 96, flexDirection: 'row', justifyContent: 'flex-end', gap: 4 },
+  rowActions: { width: 60, flexDirection: 'row', justifyContent: 'flex-end', gap: 4 },
   iconBtn: {
     width: 28,
     height: 28,

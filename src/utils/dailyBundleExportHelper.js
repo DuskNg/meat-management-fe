@@ -1662,11 +1662,213 @@ export const generateDuplicateDebtsImage = ({
  * - Tránh 100% việc trình duyệt mobile chặn tải nhiều file
  * - Khách hàng và kế toán chỉ cần 1 ảnh duy nhất để xem trọn vẹn 3 nội dung
  *
+/**
+ * ── 4. TẠO ẢNH BÁO CÁO NHẬP HÀNG NHÀ CUNG CẤP TRONG NGÀY ──
+ */
+export const generateSupplierImportsImage = ({
+  selectedDate,
+  supplierTransactions = [],
+  supplierPayments = [],
+}) => {
+  if (typeof document === 'undefined') return null;
+
+  const txs = Array.isArray(supplierTransactions) ? supplierTransactions : [];
+  const pays = Array.isArray(supplierPayments) ? supplierPayments : [];
+  const totalImport = txs.reduce((sum, t) => sum + (parseFloat(t.totalAmount) || 0), 0);
+  const totalPaid = pays.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+
+  const canvasWidth = 1040;
+  const paddingX = 28;
+  const contentWidth = canvasWidth - paddingX * 2;
+  const headerHeight = 82;
+  const summaryHeight = 76;
+  const tableHeaderHeight = 38;
+
+  const colStt = 52;
+  const colSupplier = 230;
+  const colAmount = 175;
+  const colDetail = contentWidth - colStt - colSupplier - colAmount;
+
+  const tempCanvas = document.createElement('canvas');
+  const tempCtx = tempCanvas.getContext('2d');
+  tempCtx.font = '13px Arial, sans-serif';
+
+  const preparedRows = txs.map((tx, idx) => {
+    const items = Array.isArray(tx.items) ? tx.items : [];
+    const detailLines = [];
+    if (items.length > 0) {
+      items.forEach((it) => {
+        const name = it.productName || it.rawName || it.name || 'Thịt';
+        const qty = it.quantity != null && it.quantity !== '' ? `${it.quantity} ${it.unit || 'kg'}` : '';
+        const price = it.price ? formatCurrency(it.price) : '';
+        const amt = it.amount ? formatCurrency(it.amount) : '';
+        const line = qty && price
+          ? `• ${name}: ${qty} × ${price} = ${amt}`
+          : `• ${name}${amt ? `: ${amt}` : ''}`;
+        const wrapped = wrapText(tempCtx, line, colDetail - 20);
+        detailLines.push(...(wrapped.length > 0 ? wrapped : [line]));
+      });
+    } else {
+      const fallbackText = (tx.note || '').trim() || 'Nhập hàng nhà cung cấp';
+      const wrapped = wrapText(tempCtx, fallbackText, colDetail - 20);
+      detailLines.push(...(wrapped.length > 0 ? wrapped : [fallbackText]));
+    }
+
+    const rowHeight = Math.max(46, 20 + detailLines.length * 19);
+    return {
+      stt: idx + 1,
+      supplierName: tx.supplierName || 'Nhà cung cấp',
+      totalAmount: parseFloat(tx.totalAmount) || 0,
+      detailLines,
+      rowHeight,
+    };
+  });
+
+  const rowsHeight = preparedRows.length > 0
+    ? preparedRows.reduce((sum, r) => sum + r.rowHeight, 0)
+    : 64;
+  const footerHeight = 46;
+  const canvasHeight = headerHeight + summaryHeight + tableHeaderHeight + rowsHeight + footerHeight + 28;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  // Header màu đỏ cam đậm phân biệt rõ báo cáo NCC
+  ctx.fillStyle = '#9A3412';
+  ctx.fillRect(0, 0, canvasWidth, headerHeight);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 22px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`🥩 BÁO CÁO NHẬP HÀNG NHÀ CUNG CẤP NGÀY ${selectedDate}`, canvasWidth / 2, headerHeight / 2 - 10);
+  ctx.fillStyle = '#FED7AA';
+  ctx.font = 'bold 13px Arial, sans-serif';
+  ctx.fillText(`Tổng hợp toàn bộ đơn nhập thịt từ các lò / nhà cung cấp trong ngày`, canvasWidth / 2, headerHeight / 2 + 16);
+
+  // Khối tóm tắt 3 ô
+  const sumY = headerHeight + 12;
+  const boxW = (contentWidth - 20) / 3;
+  const summaryBoxes = [
+    { label: 'TỔNG TIỀN NHẬP HÀNG', value: formatCurrency(totalImport), bg: '#FFF7ED', border: '#FDBA74', color: '#C2410C' },
+    { label: 'SỐ LƯỢT NHẬP TRONG NGÀY', value: `${txs.length} đơn`, bg: '#F8FAFC', border: '#CBD5E1', color: '#0F172A' },
+    { label: 'ĐÃ TRẢ NCC TRONG NGÀY', value: formatCurrency(totalPaid), bg: '#F0FDF4', border: '#86EFAC', color: '#15803D' },
+  ];
+
+  summaryBoxes.forEach((box, i) => {
+    const bx = paddingX + i * (boxW + 10);
+    ctx.fillStyle = box.bg;
+    ctx.fillRect(bx, sumY, boxW, 54);
+    ctx.strokeStyle = box.border;
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(bx, sumY, boxW, 54);
+
+    ctx.fillStyle = '#64748B';
+    ctx.font = 'bold 11px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(box.label, bx + boxW / 2, sumY + 17);
+
+    ctx.fillStyle = box.color;
+    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.fillText(box.value, bx + boxW / 2, sumY + 38);
+  });
+
+  // Bảng chi tiết
+  const thY = headerHeight + summaryHeight;
+  ctx.fillStyle = '#F1F5F9';
+  ctx.fillRect(paddingX, thY, contentWidth, tableHeaderHeight);
+  ctx.strokeStyle = '#CBD5E1';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(paddingX, thY, contentWidth, tableHeaderHeight);
+
+  ctx.fillStyle = '#334155';
+  ctx.font = 'bold 12.5px Arial, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillText('STT', paddingX + colStt / 2, thY + tableHeaderHeight / 2);
+  ctx.textAlign = 'left';
+  ctx.fillText('NHÀ CUNG CẤP', paddingX + colStt + 10, thY + tableHeaderHeight / 2);
+  ctx.fillText('CHI TIẾT MẶT HÀNG NHẬP', paddingX + colStt + colSupplier + 10, thY + tableHeaderHeight / 2);
+  ctx.textAlign = 'right';
+  ctx.fillText('THÀNH TIỀN', paddingX + contentWidth - 12, thY + tableHeaderHeight / 2);
+
+  let curY = thY + tableHeaderHeight;
+  if (preparedRows.length === 0) {
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(paddingX, curY, contentWidth, 64);
+    ctx.strokeStyle = '#E2E8F0';
+    ctx.strokeRect(paddingX, curY, contentWidth, 64);
+    ctx.fillStyle = '#64748B';
+    ctx.font = 'italic 14px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Chưa có giao dịch nhập hàng nhà cung cấp nào trong ngày ${selectedDate}.`, canvasWidth / 2, curY + 32);
+    curY += 64;
+  } else {
+    preparedRows.forEach((r, idx) => {
+      ctx.fillStyle = idx % 2 === 1 ? '#F8FAFC' : '#FFFFFF';
+      ctx.fillRect(paddingX, curY, contentWidth, r.rowHeight);
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.strokeRect(paddingX, curY, contentWidth, r.rowHeight);
+
+      ctx.fillStyle = '#475569';
+      ctx.font = 'bold 13px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(r.stt), paddingX + colStt / 2, curY + 23);
+
+      ctx.fillStyle = '#0F172A';
+      ctx.font = 'bold 13.5px Arial, sans-serif';
+      ctx.textAlign = 'left';
+      const supLines = wrapText(ctx, r.supplierName, colSupplier - 18);
+      supLines.slice(0, 2).forEach((ln, lIdx) => {
+        ctx.fillText(ln, paddingX + colStt + 10, curY + 22 + lIdx * 18);
+      });
+
+      ctx.fillStyle = '#334155';
+      ctx.font = '13px Arial, sans-serif';
+      r.detailLines.forEach((ln, lIdx) => {
+        ctx.fillText(ln, paddingX + colStt + colSupplier + 10, curY + 22 + lIdx * 19);
+      });
+
+      ctx.fillStyle = '#DC2626';
+      ctx.font = 'bold 14px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(formatCurrency(r.totalAmount), paddingX + contentWidth - 12, curY + 23);
+
+      curY += r.rowHeight;
+    });
+  }
+
+  // Dòng tổng cộng cuối bảng
+  ctx.fillStyle = '#FFF7ED';
+  ctx.fillRect(paddingX, curY, contentWidth, footerHeight);
+  ctx.strokeStyle = '#FDBA74';
+  ctx.strokeRect(paddingX, curY, contentWidth, footerHeight);
+  ctx.fillStyle = '#9A3412';
+  ctx.font = 'bold 15px Arial, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`TỔNG CỘNG NHẬP HÀNG (${txs.length} ĐƠN):`, paddingX + 14, curY + footerHeight / 2);
+  ctx.textAlign = 'right';
+  ctx.fillText(formatCurrency(totalImport), paddingX + contentWidth - 12, curY + footerHeight / 2);
+
+  const isMobileEnv = isMobileDevice();
+  const dataUri = isMobileEnv ? canvas.toDataURL('image/jpeg', 0.9) : canvas.toDataURL('image/png');
+  canvas.width = 0;
+  canvas.height = 0;
+  return dataUri;
+};
+
+/**
  * @param {Object} params
  * @param {string} params.selectedDate - Ngày xuất báo cáo (DD/MM/YYYY)
  * @param {string} [params.img1] - Data URI ảnh Báo cáo công nợ ngày
  * @param {string} [params.img2] - Data URI ảnh Khách quen chưa có đơn
  * @param {string} [params.img3] - Data URI ảnh Báo cáo đơn nợ trùng
+ * @param {string} [params.img4] - Data URI ảnh Nhập hàng nhà cung cấp
  * @returns {Promise<string|null>} Data URI ảnh dài tổng hợp
  */
 export const generateCombinedDailyBundleImage = async ({
@@ -1674,6 +1876,7 @@ export const generateCombinedDailyBundleImage = async ({
   img1,
   img2,
   img3,
+  img4,
 }) => {
   if (typeof document === 'undefined' || typeof window === 'undefined') return null;
 
@@ -1681,6 +1884,7 @@ export const generateCombinedDailyBundleImage = async ({
     { img: img1, title: 'BÁO CÁO CÔNG NỢ & THU TIỀN TRONG NGÀY' },
     { img: img2, title: 'DANH SÁCH KHÁCH QUEN CHƯA LÊN ĐƠN HÔM NAY' },
     { img: img3, title: 'BÁO CÁO ĐƠN NỢ TRÙNG TRONG NGÀY' },
+    { img: img4, title: 'BÁO CÁO NHẬP HÀNG NHÀ CUNG CẤP TRONG NGÀY' },
   ].filter((item) => item.img && typeof item.img === 'string' && item.img.length > 50 && !item.img.startsWith('data:,'));
 
   if (validEntries.length === 0) return null;
@@ -1741,7 +1945,7 @@ export const generateCombinedDailyBundleImage = async ({
 
     ctx.fillStyle = '#A7F3D0';
     ctx.font = 'bold 13.5px Arial, sans-serif';
-    ctx.fillText(`(Gồm: Báo cáo công nợ ngày • Khách chưa lên đơn • Đơn nợ trùng)`, canvasWidth / 2, bannerHeight / 2 + 16);
+    ctx.fillText(`(Gồm: Công nợ ngày • Khách chưa lên đơn • Đơn nợ trùng • Nhập hàng NCC)`, canvasWidth / 2, bannerHeight / 2 + 16);
 
     let curY = bannerHeight + padding;
 
@@ -1809,8 +2013,20 @@ export const exportDailyReportBundle = async ({
     let finalTransactions = transactions;
     let finalPayments = payments;
     let finalCustomers = customers;
+    let supplierDailyData = { transactions: [], payments: [] };
 
     const promises = [];
+    promises.push(
+      api.get('/suppliers/daily-imports', { params: { date: dateStr } })
+        .then((res) => {
+          if (res.data?.success && res.data?.data) {
+            supplierDailyData = res.data.data;
+          }
+        })
+        .catch((err) => {
+          console.warn('Lỗi tải nhập hàng NCC trong ngày:', err);
+        })
+    );
     if (!finalTransactions) {
       promises.push(
         api.get('/transactions', { params: { date: dateStr } })
@@ -1875,7 +2091,7 @@ export const exportDailyReportBundle = async ({
     }
 
     // 2. Tạo Ảnh 1: Báo cáo công nợ & thu tiền trong ngày
-    onProgress?.('Đang tạo ảnh 1/3: Báo cáo công nợ ngày...');
+    onProgress?.('Đang tạo ảnh 1/4: Báo cáo công nợ ngày...');
     let img1 = null;
     try {
       img1 = generateDailyDebtImage({
@@ -1888,7 +2104,7 @@ export const exportDailyReportBundle = async ({
     }
 
     // 3. Tạo Ảnh 2: Danh sách khách quen chưa có đơn nợ hôm nay
-    onProgress?.('Đang tạo ảnh 2/3: Khách quen chưa có đơn...');
+    onProgress?.('Đang tạo ảnh 2/4: Khách quen chưa có đơn...');
     let img2 = null;
     try {
       img2 = generateMissingCustomersImage({
@@ -1902,7 +2118,7 @@ export const exportDailyReportBundle = async ({
 
     // 4. Tạo Ảnh 3: Báo cáo đơn nợ trùng / khách trùng (nhường 1 nhịp ngắn để Safari/Mobile giải phóng bộ nhớ canvas trước đó)
     await new Promise((r) => setTimeout(r, 30));
-    onProgress?.('Đang tạo ảnh 3/3: Báo cáo đơn nợ trùng...');
+    onProgress?.('Đang tạo ảnh 3/4: Báo cáo đơn nợ trùng...');
     let img3 = null;
     try {
       img3 = generateDuplicateDebtsImage({
@@ -1914,7 +2130,21 @@ export const exportDailyReportBundle = async ({
       console.warn('Lỗi khi vẽ ảnh 3 (Đơn trùng):', e3);
     }
 
-    // 5. Tạo Ảnh Dài Tổng Hợp All-In-One (Tránh lỗi trùng ảnh Zalo trên mobile)
+    // 5. Tạo Ảnh 4: Báo cáo nhập hàng nhà cung cấp trong ngày
+    await new Promise((r) => setTimeout(r, 30));
+    onProgress?.('Đang tạo ảnh 4/4: Nhập hàng nhà cung cấp...');
+    let img4 = null;
+    try {
+      img4 = generateSupplierImportsImage({
+        selectedDate: dateStr,
+        supplierTransactions: supplierDailyData?.transactions || [],
+        supplierPayments: supplierDailyData?.payments || [],
+      });
+    } catch (e4) {
+      console.warn('Lỗi khi vẽ ảnh 4 (Nhập hàng NCC):', e4);
+    }
+
+    // 6. Tạo Ảnh Dài Tổng Hợp All-In-One (Tránh lỗi trùng ảnh Zalo trên mobile)
     await new Promise((r) => setTimeout(r, 30));
     let combinedImg = null;
     try {
@@ -1923,6 +2153,7 @@ export const exportDailyReportBundle = async ({
         img1,
         img2,
         img3,
+        img4,
       });
     } catch (combErr) {
       console.warn('Lỗi khi ghép ảnh tổng hợp:', combErr);
@@ -1956,6 +2187,14 @@ export const exportDailyReportBundle = async ({
     } else {
       console.warn('Không tạo được ảnh đơn trùng (img3 rỗng hoặc lỗi bộ nhớ).');
     }
+    if (img4 && typeof img4 === 'string' && img4.length > 50 && !img4.startsWith('data:,')) {
+      itemsToExport.push({
+        id: 'img4',
+        imageUri: img4,
+        fileName: `4_NhapHangNCC_Ngay_${dateFileClean}.${imgExt}`,
+        title: `Nhập hàng nhà cung cấp ngày ${dateStr}`,
+      });
+    }
 
     if (itemsToExport.length === 0 && !combinedImg) {
       showGlobalToast('Không thể tạo hình ảnh báo cáo (dữ liệu trống hoặc thiết bị không hỗ trợ).', 'warning');
@@ -1970,6 +2209,7 @@ export const exportDailyReportBundle = async ({
         img1,
         img2,
         img3,
+        img4,
         combinedImg,
         itemsToExport,
         dateStr,
@@ -1981,8 +2221,8 @@ export const exportDailyReportBundle = async ({
     // Tự động tải tất cả file về máy tính (PC) hoặc chuyển tiếp Zalo (Mobile)
     const shareResult = await downloadOrShareMultipleImages({
       items: itemsToExport,
-      title: `Trọn bộ 3 ảnh báo cáo ngày ${dateStr}`,
-      text: `Báo cáo công nợ, khách chưa lên đơn và đơn trùng ngày ${dateStr}`,
+      title: `Trọn bộ ${itemsToExport.length} ảnh báo cáo ngày ${dateStr}`,
+      text: `Báo cáo công nợ, khách chưa lên đơn, đơn trùng và nhập hàng NCC ngày ${dateStr}`,
     });
 
     return {
@@ -1991,6 +2231,7 @@ export const exportDailyReportBundle = async ({
       img1,
       img2,
       img3,
+      img4,
       combinedImg,
       itemsToExport,
     };

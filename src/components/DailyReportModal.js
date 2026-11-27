@@ -2922,7 +2922,7 @@ const DailyReportModal = forwardRef(({ onRefresh, onExportDebt, onEditTransactio
               activeOpacity={0.7}
             >
               <Text style={styles.exportBundleBtnText} numberOfLines={1}>
-                📦 TRỌN BỘ 3 ẢNH
+                📦 TRỌN BỘ 4 ẢNH
               </Text>
             </TouchableOpacity>
 

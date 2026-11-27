@@ -64,6 +64,7 @@ import { useCustomerGroups, removeCustomerFromSavedGroups } from '../src/hooks/u
 import QuickNoteModal from '../src/components/QuickNoteModal';
 import ScheduledNotificationModal from '../src/components/ScheduledNotificationModal';
 import ScheduledPriceUpdateModal from '../src/components/ScheduledPriceUpdateModal';
+import NotificationCenterModal from '../src/components/NotificationCenterModal';
 import StaffSubmissionReviewModal from '../src/components/StaffSubmissionReviewModal';
 import QuickPriceLinkModal from '../src/components/QuickPriceLinkModal';
 import BankTransactionsView from '../src/components/BankTransactionsView';
@@ -182,7 +183,9 @@ export default function DashboardScreen() {
   const quickNoteModalRef = useRef(null); // Modal ghi chú nhanh cần nhớ
   const scheduledNotificationModalRef = useRef(null); // Modal tạo và xem thông báo hẹn ngày
   const scheduledPriceUpdateModalRef = useRef(null); // Modal lên lịch tự động cập nhật giá thịt theo ngày
+  const notificationCenterModalRef = useRef(null); // Modal trung tâm thông báo tổng hợp trên header
   const [dueNotifications, setDueNotifications] = useState([]);
+  const [todayPriceSchedules, setTodayPriceSchedules] = useState([]);
   const hasToastedTodayNotifRef = useRef(false);
   const staffSubmissionReviewModalRef = useRef(null); // Modal duyệt hóa đơn & tích kê từ Zalo nhân viên
   const duplicateDebtResolveModalRef = useRef(null); // Modal xem chi tiết và sửa/xóa trực tiếp các đơn nghi trùng
@@ -699,6 +702,96 @@ export default function DashboardScreen() {
     fetchDueNotifications();
   }, [fetchDueNotifications]);
 
+  // Lấy danh sách lịch cập nhật giá thịt của ngày hôm nay (giờ Việt Nam) hoặc lịch lỗi
+  const fetchTodayPriceSchedules = useCallback(async () => {
+    if (!auth.user?.id) {
+      setTodayPriceSchedules([]);
+      return;
+    }
+    try {
+      const now = new Date();
+      const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+      const y = vnTime.getUTCFullYear();
+      const m = String(vnTime.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(vnTime.getUTCDate()).padStart(2, '0');
+      const todayYMD = `${y}-${m}-${d}`;
+
+      const res = await api.get('/scheduled-price-updates');
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        const relevant = res.data.data.filter(
+          (s) => s.targetDate === todayYMD || s.status === 'FAILED'
+        );
+        setTodayPriceSchedules(relevant);
+      }
+    } catch (err) {
+      console.warn('[ScheduledPriceUpdate] Không thể tải lịch giá hôm nay:', err?.message);
+    }
+  }, [auth.user?.id]);
+
+  useEffect(() => {
+    fetchTodayPriceSchedules();
+  }, [fetchTodayPriceSchedules]);
+
+  // Tổng hợp tiền khách trả trong ngày hôm nay (loại bỏ trả hàng) từ danh sách thanh toán
+  const todayPaymentsSummary = useMemo(() => {
+    const rawList = paymentsResponse?.data || [];
+    if (!Array.isArray(rawList) || rawList.length === 0) {
+      return { count: 0, totalAmount: 0, items: [] };
+    }
+    const now = new Date();
+    const vnNow = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+    const todayYMD = `${vnNow.getUTCFullYear()}-${String(vnNow.getUTCMonth() + 1).padStart(2, '0')}-${String(vnNow.getUTCDate()).padStart(2, '0')}`;
+
+    const items = [];
+    let totalAmount = 0;
+    rawList.forEach((p) => {
+      const note = (p.note || '').toLowerCase();
+      if (
+        note.includes('[trả lại hàng]') ||
+        note.includes('[trả hàng]') ||
+        note.includes('trả lại hàng') ||
+        note.includes('trả hàng')
+      ) {
+        return;
+      }
+      const pd = new Date(p.paidAt || p.createdAt);
+      if (isNaN(pd.getTime())) return;
+      const vnPd = new Date(pd.getTime() + 7 * 60 * 60 * 1000);
+      const pYMD = `${vnPd.getUTCFullYear()}-${String(vnPd.getUTCMonth() + 1).padStart(2, '0')}-${String(vnPd.getUTCDate()).padStart(2, '0')}`;
+      if (pYMD === todayYMD) {
+        const amt = parseFloat(p.amount) || 0;
+        if (amt > 0) {
+          totalAmount += amt;
+          items.push({
+            id: p.id,
+            customerName: p.customer?.name || 'Khách hàng',
+            amount: amt,
+          });
+        }
+      }
+    });
+    return { count: items.length, totalAmount, items };
+  }, [paymentsResponse]);
+
+  // Thông tin nhắc trả lương cuối tháng & nhắc định kỳ ngày 1/15
+  const salaryReminderInfo = useMemo(() => {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const curDay = now.getDate();
+    const lastDay = new Date(curYear, curMonth, 0).getDate();
+    const monthKey = `${String(curMonth).padStart(2, '0')}/${curYear}`;
+    const isExported =
+      typeof window !== 'undefined' &&
+      localStorage.getItem(`salary_exported_${monthKey}`) === 'true';
+    return {
+      shouldShow: curDay === lastDay && !isExported,
+      monthKey,
+    };
+  }, []);
+
+  const isPeriodicDay = todayDayOfMonth === 1 || todayDayOfMonth === 15;
+
   // Đóng thông báo đã hoàn thành trong ngày
   const handleDismissDueNotification = async (notifId) => {
     setDueNotifications((prev) => prev.filter((n) => n.id !== notifId));
@@ -731,6 +824,16 @@ export default function DashboardScreen() {
     enabled: Boolean(auth.user && auth.hasPermission('canManageDebt')),
     refetchInterval: 30000,
   });
+
+  // Tổng số mục thông báo hiển thị trên badge nút chuông header (đặt sau unbilledDeliveryData để tránh TDZ)
+  const totalHeaderNotificationCount =
+    dueNotifications.length +
+    todayPriceSchedules.length +
+    (unbilledDeliveryData?.unbilledCount > 0 ? 1 : 0) +
+    (todayPaymentsSummary.count > 0 ? 1 : 0) +
+    (salaryReminderInfo.shouldShow ? 1 : 0) +
+    activeReminderGroups.length +
+    (isPeriodicDay ? 1 : 0);
 
   // 1.9. Dùng React Query tải danh sách nhân viên (tự động tải lại khi đổi tháng xem lương)
   const { data: employeesResponse, isLoading: isLoadingEmployees, refetch: refetchEmployees } = useQuery({
@@ -2869,25 +2972,6 @@ export default function DashboardScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerRightRow}>
-            {/* Nút Báo hàng & Chốt đơn từ Zalo Portal */}
-            {!auth.user?.workspaceMember && (
-              <TouchableOpacity
-                style={[styles.portalNotifyBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
-                onPress={() => deliveryRequestsModalRef.current?.open()}
-                activeOpacity={0.7}
-                title="Danh sách báo hàng (Zalo Portal)"
-              >
-                <Text style={styles.portalNotifyIcon}>📋</Text>
-                {unbilledDeliveryData?.unbilledCount > 0 && (
-                  <View style={[styles.portalNotifyBadge, { backgroundColor: '#EA580C' }]}>
-                    <Text style={styles.portalNotifyBadgeText}>
-                      {unbilledDeliveryData.unbilledCount > 9 ? '9+' : unbilledDeliveryData.unbilledCount}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
-
             {/* Nút Quản lý Link Ghim Zalo (Khách & NCC) */}
             {!auth.user?.workspaceMember && (
               <TouchableOpacity
@@ -2897,18 +2981,6 @@ export default function DashboardScreen() {
                 title="Link Ghim Zalo (Khách & NCC)"
               >
                 <ZaloIcon size={22} />
-              </TouchableOpacity>
-            )}
-
-            {/* Nút xem khách trả tiền trong tháng (dạng bảng) */}
-            {auth.hasPermission('canManageDebt') && (
-              <TouchableOpacity
-                style={[styles.portalNotifyBtn, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC' }]}
-                onPress={() => monthlyPaymentsModalRef.current?.open()}
-                activeOpacity={0.7}
-                title="Khách trả tiền trong tháng (dạng bảng)"
-              >
-                <Text style={styles.portalNotifyIcon}>💰</Text>
               </TouchableOpacity>
             )}
 
@@ -2931,6 +3003,23 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             )}
 
+            {/* Nút Trung tâm Thông báo tổng hợp (Lên lịch, Báo hàng, Tiền trả hôm nay, Lương, Định kỳ) */}
+            <TouchableOpacity
+              style={[styles.portalNotifyBtn, { backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }]}
+              onPress={() => notificationCenterModalRef.current?.open()}
+              activeOpacity={0.7}
+              title="Trung tâm thông báo"
+            >
+              <Text style={styles.portalNotifyIcon}>🔔</Text>
+              {totalHeaderNotificationCount > 0 && (
+                <View style={[styles.portalNotifyBadge, { backgroundColor: '#DC2626' }]}>
+                  <Text style={styles.portalNotifyBadgeText}>
+                    {totalHeaderNotificationCount > 9 ? '9+' : totalHeaderNotificationCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.merchantProfileCardRight}
               onPress={() => profileModalRef.current?.open()}
@@ -2945,97 +3034,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* BANNER THÔNG BÁO HẸN NGÀY ĐẾN HẠN HÔM NAY */}
-        {dueNotifications.length > 0 && (
-          <View style={styles.groupReminderBannerContainer}>
-            {dueNotifications.map((notif) => (
-              <View
-                key={notif.id}
-                style={[
-                  styles.groupReminderBanner,
-                  { backgroundColor: '#EFF6FF', borderColor: '#93C5FD' },
-                ]}
-              >
-                <Text style={styles.groupReminderIcon}>🔔</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.groupReminderTitle, { color: '#1E3A8A' }]}>
-                    Thông báo hôm nay
-                  </Text>
-                  <Text style={[styles.groupReminderSub, { color: '#1E40AF', fontWeight: '600' }]}>
-                    {notif.content}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.groupReminderActionBtn, { backgroundColor: '#2563EB' }]}
-                  onPress={() => scheduledNotificationModalRef.current?.open()}
-                >
-                  <Text style={styles.groupReminderActionBtnText}>Quản lý</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.groupReminderDismissBtn}
-                  onPress={() => handleDismissDueNotification(notif.id)}
-                >
-                  <Text style={styles.groupReminderDismissBtnText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* BANNER NHẮC HẸN CHỐT CÔNG NỢ ĐỊNH KỲ CHO CÁC NHÓM NHÀ HÀNG */}
-        {!auth.user?.workspaceMember && activeReminderGroups.length > 0 && (
-          <View style={styles.groupReminderBannerContainer}>
-            {activeReminderGroups.map((rg) => (
-              <View key={rg.id} style={styles.groupReminderBanner}>
-                <Text style={styles.groupReminderIcon}>📅</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.groupReminderTitle}>
-                    Đến kỳ gửi công nợ {rg.billingCycle === '15_to_end' ? 'nửa tháng (15 - 31)' : 'cuối tháng'}: <Text style={{ fontWeight: 'bold' }}>{rg.name}</Text>
-                  </Text>
-                  <Text style={styles.groupReminderSub}>
-                    Gồm {(rg.customerIds || []).length} quán thành viên. Bấm nút bên cạnh để xuất bảng kê gửi Zalo ngay!
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.groupReminderActionBtn}
-                  onPress={() => batchExportDebtModalRef.current?.open(rg.customerIds)}
-                >
-                  <Text style={styles.groupReminderActionBtnText}>📊 Xuất nợ ngay</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.groupReminderDismissBtn}
-                  onPress={() => setDismissedReminderGroupIds((prev) => new Set([...prev, rg.id]))}
-                >
-                  <Text style={styles.groupReminderDismissBtnText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* BANNER CẢNH BÁO QUÁN BÁO HÀNG CHƯA CÓ CÔNG NỢ */}
-        {!auth.user?.workspaceMember && unbilledDeliveryData?.unbilledCount > 0 && (
-          <View style={styles.groupReminderBannerContainer}>
-            <TouchableOpacity
-              style={[styles.groupReminderBanner, styles.unbilledDeliveryBanner]}
-              onPress={() => deliveryRequestsModalRef.current?.open()}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.groupReminderIcon}>⚠️</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.unbilledDeliveryBannerTitle}>
-                  Có {unbilledDeliveryData.unbilledCount} quán đã báo hàng hôm nay nhưng chưa có công nợ!
-                </Text>
-                <Text style={styles.unbilledDeliveryBannerSub} numberOfLines={1}>
-                  {(unbilledDeliveryData.unbilledCustomers || []).map((c) => c.customerName).join(', ')}
-                </Text>
-              </View>
-              <View style={styles.unbilledDeliveryActionBtn}>
-                <Text style={styles.unbilledDeliveryActionBtnText}>Xem & Chốt ➔</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
+        {/* Toàn bộ thông báo (Hẹn ngày, Lịch giá thịt, Báo hàng, Tiền trả trong ngày, Lương, Định kỳ) đã được gom vào nút 🔔 trên Header */}
 
         {/* TỔNG TIỀN NỢ & KINH DOANH: Chỉ hiện với chủ tài khoản, ẩn với tài khoản thành viên */}
         {!auth.user?.workspaceMember && <View style={styles.summaryCard}>
@@ -3495,8 +3494,8 @@ export default function DashboardScreen() {
                   >
                     <Text style={styles.smartDebtMenuIcon}>📦</Text>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.smartDebtMenuTitle}>Tải trọn bộ 3 ảnh báo cáo</Text>
-                      <Text style={styles.smartDebtMenuSub}>Công nợ ngày, khách chưa lên đơn & đơn trùng</Text>
+                      <Text style={styles.smartDebtMenuTitle}>Tải trọn bộ 4 ảnh báo cáo</Text>
+                      <Text style={styles.smartDebtMenuSub}>Công nợ ngày, khách chưa lên đơn, đơn trùng & nhập hàng NCC</Text>
                     </View>
                   </TouchableOpacity>
 
@@ -3820,7 +3819,31 @@ export default function DashboardScreen() {
         ref={scheduledPriceUpdateModalRef}
         onApplied={() => {
           refetch?.();
+          fetchTodayPriceSchedules();
         }}
+      />
+
+      {/* MODAL TRUNG TÂM THÔNG BÁO TỔNG HỢP TRÊN HEADER */}
+      <NotificationCenterModal
+        ref={notificationCenterModalRef}
+        dueNotifications={dueNotifications}
+        todayPriceSchedules={todayPriceSchedules}
+        unbilledDeliveryData={unbilledDeliveryData}
+        todayPaymentsSummary={todayPaymentsSummary}
+        salaryReminderInfo={salaryReminderInfo}
+        activeReminderGroups={activeReminderGroups}
+        isPeriodicDay={isPeriodicDay}
+        onDismissDueNotification={handleDismissDueNotification}
+        onDismissReminderGroup={(gId) =>
+          setDismissedReminderGroupIds((prev) => new Set([...prev, gId]))
+        }
+        onOpenScheduledNotifications={() => scheduledNotificationModalRef.current?.open()}
+        onOpenScheduledPriceUpdates={() => scheduledPriceUpdateModalRef.current?.open()}
+        onOpenDeliveryRequests={() => deliveryRequestsModalRef.current?.open()}
+        onOpenTodayPayments={() => monthlyPaymentsModalRef.current?.open()}
+        onOpenSalaryNotification={(mKey) => monthlySalaryNotificationModalRef.current?.open(mKey)}
+        onOpenGroupExport={(cIds) => batchExportDebtModalRef.current?.open(cIds)}
+        onOpenPeriodicReminder={() => periodicDebtReminderModalRef.current?.open()}
       />
 
       {/* MODAL LINK ZALO ANH CHỦ CẬP NHẬT GIÁ BÁN RIÊNG */}
