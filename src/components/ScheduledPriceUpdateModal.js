@@ -61,10 +61,9 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
 
-  // Form tạo/sửa lịch
+  // Form tạo/sửa lịch (chỉ áp dụng giá riêng cho khách hàng)
   const [editingId, setEditingId] = useState(null);
   const [targetDateDMY, setTargetDateDMY] = useState(() => getTomorrowVN());
-  const [scope, setScope] = useState('DEFAULT'); // 'DEFAULT' | 'CUSTOMER'
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]); // [{ productId, productName, oldPrice, newPrice }]
   const [note, setNote] = useState('');
@@ -110,7 +109,6 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
   const resetForm = () => {
     setEditingId(null);
     setTargetDateDMY(getTomorrowVN());
-    setScope('DEFAULT');
     setSelectedCustomerIds([]);
     setSelectedItems([]);
     setNote('');
@@ -129,12 +127,12 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
     submit: () => handleSave(),
   }));
 
-  // Thêm loại thịt vào danh sách lịch (nếu đang chọn đúng 1 khách thì ưu tiên lấy giá riêng hiện tại của khách đó)
+  // Thêm loại thịt vào danh sách lịch (ưu tiên lấy giá riêng hiện tại của khách hàng đang chọn)
   const handleAddProduct = async (prod) => {
     if (!prod || selectedItems.some((it) => it.productId === prod.id)) return;
 
     let basePrice = Number(prod.defaultPrice) || 0;
-    if (scope === 'CUSTOMER' && selectedCustomerIds.length > 0) {
+    if (selectedCustomerIds.length > 0) {
       try {
         const res = await api.get(`/products?customerId=${selectedCustomerIds[0]}`);
         if (res.data?.success && Array.isArray(res.data.data)) {
@@ -223,8 +221,8 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
       setErrorText('Vui lòng chọn ngày tự động cập nhật giá.');
       return;
     }
-    if (scope === 'CUSTOMER' && selectedCustomerIds.length === 0) {
-      setErrorText('Vui lòng chọn ít nhất 1 khách hàng khi cập nhật giá riêng.');
+    if (selectedCustomerIds.length === 0) {
+      setErrorText('Vui lòng chọn ít nhất 1 khách hàng.');
       return;
     }
     if (selectedItems.length === 0) {
@@ -237,8 +235,8 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
     try {
       const payload = {
         targetDate: formatDMYToYMD(targetDateDMY),
-        scope,
-        customerIds: scope === 'CUSTOMER' ? selectedCustomerIds : [],
+        scope: 'CUSTOMER',
+        customerIds: selectedCustomerIds,
         items: selectedItems.map((it) => ({
           productId: it.productId,
           productName: it.productName,
@@ -272,7 +270,6 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
   const handleStartEdit = (sched) => {
     setEditingId(sched.id);
     setTargetDateDMY(formatYMDToDMY(sched.targetDate));
-    setScope(sched.scope === 'CUSTOMER' ? 'CUSTOMER' : 'DEFAULT');
     setSelectedCustomerIds(Array.isArray(sched.customerIds) ? sched.customerIds : []);
     setSelectedItems(
       (sched.items || []).map((it) => ({
@@ -343,8 +340,8 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
           {/* Header chuẩn Bottom-Sheet */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <Text style={styles.headerTitle}>⏰ LÊN LỊCH CẬP NHẬT GIÁ THỊT</Text>
-              <Text style={styles.headerSub}>Đến ngày đã chọn, hệ thống tự động đổi giá thịt</Text>
+              <Text style={styles.headerTitle}>⏰ LÊN LỊCH CẬP NHẬT GIÁ RIÊNG</Text>
+              <Text style={styles.headerSub}>Đến ngày đã chọn, hệ thống tự động đổi giá riêng của khách</Text>
             </View>
             <TouchableOpacity onPress={() => setVisible(false)} style={styles.closeBtn} activeOpacity={0.7}>
               <Text style={styles.closeBtnText}>✕</Text>
@@ -363,71 +360,46 @@ const ScheduledPriceUpdateModal = forwardRef(({ onApplied }, ref) => {
                 showIcon={true}
               />
 
-              {/* Phạm vi áp dụng */}
-              <Text style={[styles.label, { marginTop: 10 }]}>PHẠM VI ÁP DỤNG *</Text>
-              <View style={styles.scopeRow}>
-                <TouchableOpacity
-                  style={[styles.scopeBtn, scope === 'DEFAULT' && styles.scopeBtnActive]}
-                  onPress={() => setScope('DEFAULT')}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.scopeBtnText, scope === 'DEFAULT' && styles.scopeBtnTextActive]}>
-                    🏪 Giá chung sạp
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.scopeBtn, scope === 'CUSTOMER' && styles.scopeBtnActive]}
-                  onPress={() => setScope('CUSTOMER')}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.scopeBtnText, scope === 'CUSTOMER' && styles.scopeBtnTextActive]}>
-                    👥 Giá riêng khách
-                  </Text>
-                </TouchableOpacity>
+              {/* Chọn khách hàng áp dụng giá riêng */}
+              <View style={[styles.dropdownWrap, activeDropdown === 'customer' && { zIndex: 999999, elevation: 999999 }]}>
+                <Text style={[styles.label, { marginTop: 10 }]}>CHỌN KHÁCH HÀNG *</Text>
+                <CustomSelect
+                  value={null}
+                  placeholder="🔍 Tìm & thêm khách hàng..."
+                  options={customers}
+                  getOptionLabel={(c) => c?.name || ''}
+                  renderSelected={() => ''}
+                  onSelect={(c) => {
+                    if (c?.id && !selectedCustomerIds.includes(c.id)) {
+                      setSelectedCustomerIds((prev) => [...prev, c.id]);
+                    }
+                  }}
+                  compact={true}
+                  zIndex={999999}
+                  onOpenChange={(isOpen) => setActiveDropdown(isOpen ? 'customer' : null)}
+                />
+                {selectedCustomerIds.length > 0 && (
+                  <View style={styles.chipsWrap}>
+                    {selectedCustomerIds.map((cId) => (
+                      <TouchableOpacity
+                        key={cId}
+                        style={styles.custChip}
+                        onPress={() => setSelectedCustomerIds((prev) => prev.filter((id) => id !== cId))}
+                      >
+                        <Text style={styles.custChipText}>
+                          {customerNameMap.get(cId) || 'Khách hàng'} ✕
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
-
-              {/* Chọn khách hàng nếu phạm vi là CUSTOMER */}
-              {scope === 'CUSTOMER' && (
-                <View style={[styles.dropdownWrap, activeDropdown === 'customer' && { zIndex: 999999, elevation: 999999 }]}>
-                  <Text style={[styles.label, { marginTop: 10 }]}>CHỌN KHÁCH HÀNG *</Text>
-                  <CustomSelect
-                    value={null}
-                    placeholder="🔍 Tìm & thêm khách hàng..."
-                    options={customers}
-                    getOptionLabel={(c) => c?.name || ''}
-                    renderSelected={() => ''}
-                    onSelect={(c) => {
-                      if (c?.id && !selectedCustomerIds.includes(c.id)) {
-                        setSelectedCustomerIds((prev) => [...prev, c.id]);
-                      }
-                    }}
-                    compact={true}
-                    zIndex={999999}
-                    onOpenChange={(isOpen) => setActiveDropdown(isOpen ? 'customer' : null)}
-                  />
-                  {selectedCustomerIds.length > 0 && (
-                    <View style={styles.chipsWrap}>
-                      {selectedCustomerIds.map((cId) => (
-                        <TouchableOpacity
-                          key={cId}
-                          style={styles.custChip}
-                          onPress={() => setSelectedCustomerIds((prev) => prev.filter((id) => id !== cId))}
-                        >
-                          <Text style={styles.custChipText}>
-                            {customerNameMap.get(cId) || 'Khách hàng'} ✕
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              )}
 
               {/* Chọn món thịt */}
               <View style={[styles.dropdownWrap, activeDropdown === 'product' && { zIndex: 999999, elevation: 999999 }]}>
                 <View style={styles.meatHeaderRow}>
                   <Text style={[styles.label, { marginTop: 10, marginBottom: 0 }]}>CHỌN LOẠI THỊT & GIÁ MỚI *</Text>
-                  {scope === 'CUSTOMER' && selectedCustomerIds.length > 0 && (
+                  {selectedCustomerIds.length > 0 && (
                     <TouchableOpacity onPress={handleLoadAllCustomMeats} style={styles.loadCustomBtn}>
                       <Text style={styles.loadCustomBtnText}>📋 Nạp thịt có giá riêng</Text>
                     </TouchableOpacity>

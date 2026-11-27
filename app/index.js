@@ -3473,7 +3473,7 @@ export default function DashboardScreen() {
                     <Text style={styles.smartDebtMenuIcon}>⏰</Text>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.smartDebtMenuTitle}>Lên lịch cập nhật giá thịt</Text>
-                      <Text style={styles.smartDebtMenuSub}>Hẹn ngày tự động đổi giá sạp hoặc giá riêng khách</Text>
+                      <Text style={styles.smartDebtMenuSub}>Hẹn ngày tự động đổi giá riêng cho khách hàng</Text>
                     </View>
                   </TouchableOpacity>
 
